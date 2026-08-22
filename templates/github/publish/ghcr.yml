@@ -1,0 +1,48 @@
+      # Image conteneur sur le registry GitHub (ghcr.io). Aucun secret à créer —
+      # le `GITHUB_TOKEN` du run suffit, d'où le `packages: write` ajouté aux
+      # permissions du job.
+      #
+      # Le Dockerfile doit COPIER le dist/ déjà construit, pas le rebuilder.
+      # Un Dockerfile qui refait `pnpm build` casse la propriété n°2 en silence.
+      #
+      # Et il porte le fallback SPA, que le workflow ne peut pas faire pour lui :
+      # la stack est TanStack Router (routage client), donc recharger /settings
+      # demande au serveur un fichier qui n'existe pas. Sans `try_files`, 404.
+      #
+      #   FROM nginx:alpine
+      #   COPY dist/ /usr/share/nginx/html/
+      #   RUN printf 'server { listen 80; root /usr/share/nginx/html; \
+      #     location / { try_files $uri $uri/ /index.html; } }' \
+      #     > /etc/nginx/conf.d/default.conf
+      #
+      # Le tag est le SHA, jamais `latest` seul : `latest` rend impossible de
+      # dire quelle image tourne en prod, et donc de revenir en arrière.
+      #
+      # Et c'est `steps.run.outputs.sha`, PAS `github.sha`. Sur un événement
+      # `workflow_run`, la doc GitHub est explicite : GITHUB_SHA vaut « last
+      # commit on default branch », pas le commit qui a déclenché le CI. Avec
+      # `github.sha`, l'image contient le dist/ du commit A et porte le tag du
+      # commit B dès qu'un merge arrive pendant le déploiement — et c'est ce
+      # tag qui sert à dire ce qui tourne en prod, et à revenir en arrière.
+      #
+      # ATTENTION `.dockerignore` : `context: .` respecte ce fichier. S'il
+      # exclut `dist` (fréquent, il recopie souvent `.gitignore`), le
+      # `COPY dist/` échoue sur un « file not found » qui n'explique rien.
+      # `dist` doit être exclu de git ET inclus dans le contexte Docker.
+      # Buildx n'est pas strictement requis pour un build simple, mais tous les
+      # exemples officiels de `build-push-action` le posent, et la doc ne
+      # garantit nulle part le repli sans lui. Un step, et l'ambiguïté tombe.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.run.outputs.sha }}

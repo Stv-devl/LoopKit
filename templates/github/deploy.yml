@@ -1,0 +1,181 @@
+# CD — ce qui sort de la machine.
+#
+# `.claude/commands/ship.md` distingue deux familles de gates : celles qui
+# décident **ce qui est construit** (`/interface`, `/plan`) et celles qui
+# décident **ce qui sort** (push, PR, merge). Ce fichier est de la seconde
+# famille, et il en est le dernier maillon.
+#
+# Quatre propriétés, et aucune n'est optionnelle :
+#
+#   1. Il ne déploie QUE ce qu'un CI vert a produit. Sans exception : le
+#      déclenchement manuel lui-même va chercher le dernier run CI **réussi**
+#      au lieu de reconstruire. Un déploiement qui peut partir sur un rouge
+#      n'est pas un CD, c'est un `scp` avec des étapes.
+#   2. Il déploie l'ARTEFACT de ce run, jamais un rebuild. Rebuilder, c'est
+#      expédier un binaire que rien n'a testé — même commit, autre sortie, et
+#      personne ne le voit passer.
+#   3. Le JOB fournit l'environnement, le step `Publish` ne le suppose jamais.
+#      Voir le bloc `steps:` : c'est la propriété dont l'oubli est silencieux.
+#   4. `environment:` est la validation humaine. Configure la required reviewer
+#      dans Settings → Environments, ou ce fichier déploie tout seul.
+#
+# L'étape `Publish` est la seule chose qui dépende de ton hébergeur, et elle
+# n'est pas écrite ici : `install.sh` l'y a insérée depuis
+# `templates/github/publish/<cible>.yml` au moment où tu as choisi la cible
+# (`--deploy=`, ou la question posée par l'installeur). Chaque snippet porte la
+# liste exacte des secrets et variables à créer côté GitHub.
+#
+# Changer d'avis plus tard : relance `./install.sh <projet> --deploy=<autre>`
+# et fusionne le `deploy.yml.new` qu'il écrit à côté.
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # jamais annuler un déploiement en cours
+
+# Moindre privilège : `contents: read` et rien d'autre par défaut. Une cible
+# qui exige plus (Pages, GHCR) a fait ajouter sa ligne ici par l'installeur,
+# depuis son fichier `.perms` — jamais accordée « au cas où ».
+permissions:
+  contents: read
+  actions: read # nécessaire pour lire les runs et l'artefact d'un AUTRE workflow
+  # >>> PUBLISH_PERMISSIONS <<<
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Sur `workflow_run`, on ne part que si le CI a conclu au vert. Sur
+    # `workflow_dispatch` il n'y a pas de run déclencheur : la garantie est
+    # reportée au step « Resolve » ci-dessous, qui refuse de continuer s'il
+    # n'existe aucun run CI vert à déployer.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    # Le bloc entier vient du fragment `<cible>.environment` quand il existe :
+    # Pages impose son nom d'environment ET fabrique sa propre URL, les deux
+    # lignes doivent donc pouvoir varier ensemble. Sans fragment, le défaut.
+    environment:
+      # >>> PUBLISH_ENVIRONMENT <<<
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Quel run déployer ?
+      #
+      # Ce step est la correction d'un vrai défaut : le déclenchement manuel
+      # faisait un `pnpm install && pnpm build` depuis un checkout arbitraire,
+      # donc il déployait un binaire qu'aucune gate n'avait vu — en
+      # contradiction directe avec la propriété n°1 que ce fichier affirme.
+      #
+      # Il n'y a plus de branche « rebuild ». Les deux déclenchements résolvent
+      # un run de CI réussi, et seul son artefact est déployé.
+      # ------------------------------------------------------------------
+      - name: Resolve the CI run to deploy
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_run" ]; then
+            id="$RUN_ID"; sha="$RUN_SHA"
+          else
+            # Dispatch manuel : le dernier CI VERT de la branche par défaut.
+            # Aucun run vert → on s'arrête, plutôt que de déployer autre chose.
+            # `|| true` : sans lui, un `gh` en échec (réseau, token) fait
+            # retourner 1 à `read`, et `set -e` tue le step AVANT le message
+            # ci-dessous — le garde ne couvrait que le cas « aucun run vert »,
+            # pas le cas « gh est cassé ». Les deux mènent ici maintenant.
+            id=""; sha=""
+            read -r id sha < <(gh run list --workflow=CI --branch="$DEFAULT_BRANCH" \
+              --status=success --limit=1 \
+              --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"') || true
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "Aucun run CI vert exploitable sur $DEFAULT_BRANCH." >&2
+              echo "Causes : aucun run reussi, ou 'gh run list' a echoue." >&2
+              exit 1
+            fi
+            echo "Dispatch manuel : deploiement du run CI $id ($sha)."
+            # Si ce run a plus de `retention-days` (7 dans ci.yml), son artefact
+            # a expire et le telechargement plus bas echouera sur un message qui
+            # ne dit pas ca. Relancer le CI sur la branche par defaut regle le
+            # cas ; monter la retention dans ci.yml est l'autre option.
+          fi
+          echo "id=$id"   >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------------------
+      # 2. Setup — INCONDITIONNEL, et c'est une correction, pas un excès de zèle.
+      #
+      # Ces steps ont d'abord été gardés par `workflow_dispatch`, au motif que
+      # « le chemin normal n'a besoin que du dist/ ». C'est vrai d'une seule
+      # cible (netlify --dir=dist) et faux de toutes les autres :
+      #   - ghcr    : `context: .` sans checkout ne trouve aucun Dockerfile ;
+      #   - vercel  : `pnpm dlx` sans setup → `pnpm: command not found`, pnpm
+      #     n'étant PAS préinstallé sur les images ubuntu-22.04 / 24.04
+      #     (npm et yarn le sont, pas lui) ;
+      #   - netlify : idem.
+      # Un step de publication ne peut pas supposer l'environnement du job : le
+      # squelette le fournit, une fois, pour tout le monde.
+      #
+      # L'ORDRE COMPTE : checkout AVANT le téléchargement de l'artefact.
+      # `actions/checkout` nettoie le workspace (`clean: true` par défaut) et
+      # effacerait un `dist/` déjà téléchargé.
+      #
+      # `ref:` est explicite : le défaut de checkout est la tête de la branche
+      # par défaut, PAS le commit du run résolu ci-dessus. Sans cette ligne, on
+      # déploierait le dist/ d'un commit avec le Dockerfile et la config d'un
+      # autre.
+      # ------------------------------------------------------------------
+      - name: Checkout the commit that produced the build
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.run.outputs.sha }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      # Le checkout ci-dessus ne remet pas en cause la propriété n°2 : il
+      # apporte les SOURCES (Dockerfile, config d'hébergeur), jamais les octets
+      # publiés. Ceux-là sortent de cet artefact, et de lui seul.
+      - name: Download the build the CI produced
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ steps.run.outputs.sha }}
+          path: dist
+          run-id: ${{ steps.run.outputs.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ------------------------------------------------------------------
+      # 3. Fallback SPA — avant la publication, jamais après.
+      #
+      # La stack est TanStack Router (`01-stack.md`), donc du routage CLIENT :
+      # le serveur ne connaît qu'un fichier réel, `index.html`. Naviguer vers
+      # /settings marche (c'est du JS) ; RECHARGER /settings demande au serveur
+      # un fichier qui n'existe pas. Sans cette étape le site a l'air de
+      # marcher et casse au premier F5, sur un lien partagé.
+      #
+      # Chaque cible a sa forme ; celles qui n'en ont pas besoin ici (ssh, ghcr)
+      # la portent dans leur nginx, et leur snippet le dit.
+      # ------------------------------------------------------------------
+      # >>> PUBLISH_SPA <<<
+
+      # >>> PUBLISH_STEP <<<

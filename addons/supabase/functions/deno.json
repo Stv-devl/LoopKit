@@ -1,0 +1,19 @@
+{
+  "imports": {
+    "supabase": "npm:@supabase/supabase-js@2",
+    "hono": "npm:hono@4",
+    "zod": "npm:zod@4",
+    "std/": "jsr:@std/",
+    "@shared/": "./_shared/"
+  },
+  "tasks": {
+    "check": "deno check **/*.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt --check",
+    "test": "deno test --allow-env --allow-net",
+    "gate": "deno task check && deno task lint && deno task fmt && deno task test"
+  },
+  "fmt": {
+    "lineWidth": 100
+  }
+}

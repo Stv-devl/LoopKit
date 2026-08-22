@@ -1,0 +1,17 @@
+      # FILL — aucune cible de déploiement choisie.
+      #
+      # Ce step échoue exprès. Un CD non configuré qui « réussit » à ne rien
+      # déployer est le pire des trois états : le badge est vert, personne ne
+      # regarde, et tu découvres trois semaines plus tard que la prod n'a
+      # jamais bougé.
+      #
+      # Deux sorties honnêtes :
+      #   - pas encore de prod  → supprime ce fichier, garde ci.yml.
+      #   - une prod existe     → relance l'installeur avec la cible :
+      #                           ./install.sh <projet> --deploy=vercel
+      #                           (ou netlify | pages | ssh | ghcr)
+      - name: Publish
+        run: |
+          echo "FILL: aucune cible de déploiement déclarée." >&2
+          echo "Voir CLAUDE.md, section Environment." >&2
+          exit 1

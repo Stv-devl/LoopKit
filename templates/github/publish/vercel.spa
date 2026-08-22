@@ -1,0 +1,16 @@
+      # Build Output API : `handle: filesystem` sert d'abord les fichiers réels
+      # (assets hashés, favicon), et seulement ensuite tout le reste tombe sur
+      # index.html. Sans le `handle`, la règle attrape AUSSI les assets et le
+      # site sert du HTML à la place du JS.
+      - name: SPA fallback
+        run: |
+          mkdir -p .vercel/output
+          cat > .vercel/output/config.json <<'JSON'
+          {
+            "version": 3,
+            "routes": [
+              { "handle": "filesystem" },
+              { "src": "/.*", "dest": "/index.html" }
+            ]
+          }
+          JSON

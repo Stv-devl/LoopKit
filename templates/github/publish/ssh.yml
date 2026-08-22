@@ -1,0 +1,54 @@
+      # Serveur en SSH (VPS, bare metal).
+      #
+      # `--delete` supprime côté serveur ce qui n'est plus dans le build : sans
+      # lui, un asset renommé reste servi indéfiniment et tu debugges un cache
+      # qui n'existe pas. C'est aussi ce qui rend le garde ci-dessous
+      # obligatoire — voir « la destination » plus bas.
+      #
+      # `StrictHostKeyChecking=accept-new` accepte une clé inconnue au premier
+      # contact mais refuse un CHANGEMENT de clé ensuite : le compromis
+      # utilisable en CI. `no` accepterait n'importe quoi, MITM compris.
+      #
+      # LA DESTINATION. `DEPLOY_PATH` est une *variable* de dépôt, pas un
+      # secret : si personne ne l'a créée, GitHub n'échoue pas, il interpole une
+      # chaîne VIDE. La commande devenait alors
+      #     rsync --delete dist/ user@host:/
+      # c'est-à-dire « efface tout ce qui n'est pas dans mon build, à la racine
+      # du serveur ». Le garde `:?` et le refus de `/` existent pour ça.
+      #
+      # Elle passe aussi par `env:` et non par `${{ }}` dans la commande :
+      # GitHub substitue `${{ }}` TEXTUELLEMENT avant que bash ne lise la
+      # ligne, donc une valeur contenant un guillemet sort de la chaîne et
+      # exécute ce qu'elle veut. Les guillemets ne protègent de rien quand
+      # l'attaquant fournit aussi le guillemet.
+      #
+      # À créer côté GitHub — Settings → Secrets and variables → Actions :
+      #   secret  DEPLOY_KEY    (clé privée SANS passphrase, dédiée au déploiement)
+      #   secret  DEPLOY_HOST   (user@hote)
+      #   var     DEPLOY_PATH   (chemin absolu servi par le serveur web)
+      #   var     PRODUCTION_URL
+      #
+      # Le fallback SPA est ici l'affaire de ton serveur web, pas du workflow :
+      #   nginx    try_files $uri $uri/ /index.html;
+      #   Apache   FallbackResource /index.html
+      # Sans ça, recharger /settings renvoie un 404.
+      - name: Publish
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?secret DEPLOY_HOST manquant}"
+          : "${DEPLOY_PATH:?variable DEPLOY_PATH manquante — refus de rsync --delete vers la racine}"
+          case "$DEPLOY_PATH" in
+            /) echo "DEPLOY_PATH=/ interdit avec --delete." >&2; exit 1 ;;
+            /*) : ;;
+            *) echo "DEPLOY_PATH doit être un chemin absolu (reçu: $DEPLOY_PATH)." >&2; exit 1 ;;
+          esac
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
+            dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"

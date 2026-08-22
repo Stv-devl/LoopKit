@@ -1,0 +1,101 @@
+# Dependencies & build output
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Test & coverage output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Environment — never versioned. `.env.example` IS versioned and is the only
+# copy an agent is allowed to read (CLAUDE.md, Security).
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# =============================================================================
+# Claude Code session state
+#
+# `.claude/` is versioned — the rules, hooks, agents and commands ARE the kit.
+# What the hooks WRITE at runtime is not: it is per-session, per-machine, and
+# committing it means shipping one developer's context thresholds and TDD
+# markers to everyone else.
+# =============================================================================
+
+# Worktrees. Required by .claude/guides/10-worktrees.md BEFORE the first fork —
+# a worktree checkout inside a versioned .claude/ is a repo inside a repo.
+.claude/worktrees/
+
+# Written by hook-lib.sh / enforce-architecture.py (timing campaign)
+.claude/.hook-timings.log
+
+# Written by eslint-check.sh, consumed by eslint-batch.sh
+.claude/.eslint-queue
+.claude/.eslint-queue.*
+
+# Written by token-statusline.py at the 90 / 95 / 97 % context thresholds
+.claude/.token-warning
+.claude/.token-stop-agents
+.claude/.codex-ready
+
+# Written by workflow.py when the CLI reports subscription usage. A different
+# quantity from the three above (.claude/rules/11-token-budget.md).
+.claude/.quota-warning
+
+# Written by tdd-prove-red.sh (RED markers). It also drops its own .gitignore
+# inside the directory; this line is the belt to that pair of braces.
+.claude/.tdd-red/
+
+# .claude/.tdd-unfrozen is deliberately NOT ignored: the whole point of the
+# exception list is that it is visible in review (.claude/rules/05-testing.md).
+
+# Local, per-machine overrides (plugin enablement, extra permissions). Never
+# versioned: one developer's disabled plugin is not a project decision.
+.claude/settings.local.json
+
+# Python bytecode — the hooks are Python, so every run of enforce-architecture.py
+# or english-comments.py leaves one of these behind.
+__pycache__/
+*.py[cod]
+
+# Ruff's cache. It drops its own .gitignore containing `*` inside the directory;
+# this line is the belt to that pair of braces, exactly like .claude/.tdd-red/.
+.ruff_cache/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# =============================================================================
+# Loop artifacts that are local by nature
+#
+# Everything else under docs/ IS versioned: the product frame, the stories, the
+# specs, the plans and the research cache are what the loop reads back — see
+# CLAUDE.md, "Reading a path in these files".
+# =============================================================================
+
+# The /audit:part register. Out of the loop, never a gate: it is a working
+# sample of one machine at one moment, and re-running the part is what makes it
+# a diff. Ignoring it means the diff is local — the register still works run to
+# run on this machine, it just stops being shared (.claude/commands/audit/part.md).
+docs/audits/
+
+# Written by /handoff:codex, per session and per machine: the context of one
+# interrupted run, obsolete the moment it is consumed by ./codex-handoff.sh.
+# The rest of docs/work/<slug>/ stays versioned — it is the loop's memory, and a
+# fresh worktree gets no untracked file (.claude/guides/10-worktrees.md).
+handoff-codex.md

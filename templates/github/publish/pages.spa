@@ -1,0 +1,7 @@
+      # GitHub Pages n'a pas de règle de réécriture. Le seul levier est le
+      # fichier `404.html`, servi tel quel sur tout chemin inconnu : on y met
+      # le même bundle, le routeur client prend la main et rend la bonne vue.
+      # L'URL est conservée, le statut HTTP reste 404 — invisible pour un
+      # humain, mais c'est le compromis que Pages impose.
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html

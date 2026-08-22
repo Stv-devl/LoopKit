@@ -1,0 +1,173 @@
+# CI — le miroir serveur de `/ship`.
+#
+# Ce fichier est la SEULE copie du CI. Le contrat qu'il applique — quels rôles
+# de gate, quels seuils — est déclaré dans `.claude/rules/00-project.md`
+# ("Commands", les six rôles) et `.claude/rules/05-testing.md` (le plancher de
+# couverture). Changer un seuil ici sans le changer là-bas, ou l'inverse, est
+# exactement le mode de panne que `/kit:doctor` traque partout ailleurs.
+#
+# Pourquoi il existe alors que `/ship` fait déjà tourner les mêmes commandes :
+# `/ship` tourne sur UNE machine, celle de la personne qui l'a lancé, avec ses
+# hooks, son cache et son node_modules. Rien ne rattrape un push qui ne passe
+# pas par `/ship` — hook désactivé, `--no-verify`, une autre machine, un agent
+# qui a court-circuité l'étape. Le CI est la barrière que personne ne peut
+# contourner depuis son poste.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+# Un push de plus sur la même branche annule le run précédent : le seul
+# verdict qui compte est celui du dernier commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `pnpm/action-setup` lit le champ `packageManager` de package.json —
+      # une seule déclaration de version, pas deux à garder synchrones.
+      #
+      # ATTENTION, c'est le premier mur d'un projet neuf : sans ce champ ET
+      # sans `version:` ici, l'action ne se rabat sur rien, elle ECHOUE. La doc
+      # est explicite : `version` est « optional when there is a packageManager
+      # […] field in the package.json, otherwise this field is required ».
+      # Le kit ne scaffolde aucun package.json, donc le champ est à toi :
+      #     "packageManager": "pnpm@10.x.y"
+      # ou, à défaut, ajoute `with: { version: 10 }` ci-dessous.
+      - uses: pnpm/action-setup@v4
+
+      # Plancher déclaré par `.claude/rules/01-stack.md` : Node 20.19+ ou
+      # 22.12+ (contrainte de Vite 8, qui est ESM-only). Descendre sous ce
+      # plancher est une décision, pas un détail de config.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      # Les gates ci-dessous portent toutes la même condition, et ses deux
+      # membres traitent deux choses différentes :
+      #
+      #   !cancelled()                      → elles tournent TOUTES même si
+      #     l'une d'elles échoue. Sans ça le premier échec masque les quatre
+      #     autres et il faut trois allers-retours pour voir l'ensemble.
+      #
+      #   steps.install.outcome == 'success' → mais PAS si l'installation a
+      #     échoué. `!cancelled()` est vrai après un échec, et `Install` n'est
+      #     pas une gate, c'est un prérequis : sans node_modules elles
+      #     partent quand même et échouent toutes sur des modules introuvables.
+      #     Toutes les erreurs à l'écran, la seule qui compte noyée en première.
+
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm typecheck
+
+      # `--max-warnings=0` n'est pas de la rigueur décorative : c'est la seule
+      # chose qui voit un composant que le React Compiler a silencieusement
+      # sauté, un hook conditionnel, et un test sans assertion / `.only` /
+      # `.skip` — `test:run` reste VERT sur les trois.
+      # Détail : `.claude/rules/01-stack.md`, "La lint sur les tests".
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm lint
+
+      # DEUX steps, pas un. `test:coverage` couvrait les deux rôles d'un coup
+      # ("tests run-once" + le plancher) et c'etait le defaut : il exige
+      # `@vitest/coverage-v8`, que rien n'installait, donc sur un scaffold neuf
+      # la CI mourait AVANT la collecte et le role obligatoire "tests run-once"
+      # partait avec le plancher. Un rouge bruyant, pas un vert silencieux —
+      # mais le role le plus important du fichier ne doit pas dependre d'un
+      # provider optionnel. Separes, un provider manquant ne fait tomber que la
+      # gate coverage.
+      # NE JAMAIS mettre `pnpm test` ici : c'est le mode watch, il ne rend
+      # jamais la main et le job meurt au timeout.
+      - name: Tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test:run
+
+      # Le plancher : lines 90 / functions 90 / branches 85, declare par
+      # `.claude/rules/05-testing.md` et applique par
+      # `.claude/skills/templates/tooling-config.md`.
+      # Dependance obligatoire, et elle n'est pas dans package.json par defaut :
+      #     pnpm add -D @vitest/coverage-v8
+      # (`provider: 'v8'` dans la config vitest ; le paquet est separe du core).
+      - name: Coverage floor
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test:coverage
+
+      # La seule surface de sécurité qu'une machine lit mieux qu'un relecteur :
+      # une CVE publiée la semaine dernière ne change rien à ton diff.
+      #
+      # Son rouge est une décision, pas un mur (`.claude/rules/00-project.md`) :
+      #   - correctif publié  → bump, point.
+      #   - aucun correctif   → ce step ne peut pas être la personne qui
+      #                         tranche. Documente l'avis et la joignabilité
+      #                         (le chemin vulnérable est-il seulement appelé ?)
+      #                         dans `pnpm.auditConfig.ignoreCves` de
+      #                         package.json — visible en review, daté, avec sa
+      #                         raison. Ce qui est interdit, c'est la troisième
+      #                         option : monter `--audit-level` pour que ça
+      #                         passe.
+      - name: Dependency audit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm audit --audit-level=high
+
+      # Le pendant CI de la seconde ligne "securite deterministe" de `/ship`.
+      # L'audit de dependances etait deja ici ; le scan de secrets ne l'etait
+      # pas — alors que `ci.md` dit que la CI existe precisement pour le push
+      # qui a saute `/ship`. Un `VITE_*_SECRET` part dans le bundle : tout ce
+      # qui est prefixe `VITE_` est publie, par construction.
+      # Le second grep retire les cles publiques par design, sinon la ligne crie
+      # au loup a chaque run. `set -o pipefail` + le test d'existence : sans eux
+      # le code de sortie lu est celui du SECOND grep, et un `src/` illisible
+      # passe pour un scan propre (`/ship`, meme correction).
+      - name: Bundle secrets
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          test -d src/ || { echo "src/ introuvable — scan impossible"; exit 1; }
+          if grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
+               src/ $( [ -f .env.example ] && echo .env.example ) \
+             | grep -vE '(ANON|PUBLIC|PUBLISHABLE)_KEY'; then
+            echo "::error::un secret est expose via une variable VITE_* (elle part dans le bundle)"
+            exit 1
+          fi
+
+      - name: Build
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm build
+
+      # Le build est ce que le CD déploiera. On le publie en artefact pour que
+      # `deploy.yml` reprenne EXACTEMENT ce binaire-là, plutôt que de rebuilder
+      # depuis un checkout qui pourrait avoir bougé.
+      # Celui-ci dépend du BUILD, pas de l'install : sans `steps.build`, un
+      # `pnpm build` rouge laissait l'upload partir quand même et échouer sur
+      # `if-no-files-found: error`. Deux erreurs, la vraie enterrée sous la
+      # seconde. Même famille que la garde ci-dessus, un cran plus loin.
+      - name: Upload build
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && github.event_name == 'push' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error

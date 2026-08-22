@@ -1,0 +1,2 @@
+  pages: write # requis par actions/deploy-pages
+  id-token: write # l'attestation OIDC que Pages vérifie

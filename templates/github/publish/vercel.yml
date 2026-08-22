@@ -1,0 +1,27 @@
+      # Vercel. `config.json` est écrit par le step « SPA fallback » qui
+      # précède — il porte les `routes`, donc il n'est pas réécrit ici.
+      #
+      # Le token passe par `env` et PAS par `--token=` : un argument de ligne
+      # de commande est lisible dans la liste des processus du runner, et le
+      # CLI lit `VERCEL_TOKEN` depuis l'environnement de toute façon.
+      #
+      # Le piège de cette cible : `vercel deploy` sans `--prebuilt`
+      # REBUILD côté Vercel, ce qui casse la propriété n°2 — tu déploierais un
+      # binaire que le CI n'a pas testé. On reconstitue donc l'arborescence
+      # « Build Output API » depuis le dist/ du CI, et `--prebuilt` publie
+      # exactement ça.
+      #
+      # À créer côté GitHub — Settings → Secrets and variables → Actions :
+      #   secret  VERCEL_TOKEN         (Account settings → Tokens)
+      #   secret  VERCEL_ORG_ID        (.vercel/project.json après `vercel link`)
+      #   secret  VERCEL_PROJECT_ID    (idem)
+      #   var     PRODUCTION_URL
+      - name: Publish
+        run: |
+          mkdir -p .vercel/output/static
+          cp -r dist/. .vercel/output/static/
+          pnpm dlx vercel deploy --prebuilt --prod
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

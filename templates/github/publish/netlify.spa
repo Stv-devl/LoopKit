@@ -1,0 +1,7 @@
+      # Netlify lit `_redirects` à la racine du dossier publié. `200` (et non
+      # `301`) sert index.html SOUS l'URL demandée : le routeur client lit
+      # ensuite le vrai chemin. Un 301 réécrirait l'URL et perdrait la route.
+      # On n'écrase pas un fichier que le dépôt fournirait déjà.
+      - name: SPA fallback
+        run: |
+          [ -f dist/_redirects ] || printf '/*  /index.html  200\n' > dist/_redirects

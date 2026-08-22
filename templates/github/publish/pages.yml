@@ -1,0 +1,16 @@
+      # GitHub Pages. Aucun secret à créer — le `GITHUB_TOKEN` du run suffit.
+      # Active la source « GitHub Actions » dans Settings → Pages, sinon le
+      # déploiement échoue sur un 404 qui ne dit pas pourquoi.
+      #
+      # Une seule variable utile : `var PRODUCTION_URL`, et encore, l'action
+      # renvoie déjà l'URL réelle dans son output `page_url`.
+      #
+      # Vite : règle `base` dans vite.config.ts sur '/<nom-du-repo>/' si le site
+      # n'est pas à la racine du domaine, ou tous les assets partent en 404.
+      - name: Package for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4
