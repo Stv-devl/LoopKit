@@ -1,0 +1,1 @@
+{"tool_name":"Edit","tool_input":{"file_path":"__FIXTURE_ROOT__/src/item.utils.test.ts","old_string":"expect(1).toBe(1)","new_string":"expect(1).toBe(2)"}}

@@ -10,7 +10,7 @@
 #   TypeScript program before it lints one line: 3-8s, per file, per write. An
 #   EXECUTE phase writes twenty-odd files, so that is minutes of wall-clock —
 #   spent on a hook that is NON-BLOCKING by design and stops nothing (the real
-#   gate is `pnpm lint --max-warnings=0` in /ship, see 00-project.md).
+#   gate is `pnpm lint --max-warnings=0` in /loop:ship, see 00-project.md).
 #   Same signal, one process instead of twenty: enqueue here, lint at Stop.
 #
 # What it costs: the count now lands at the END of the turn instead of right

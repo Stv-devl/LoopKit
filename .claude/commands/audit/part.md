@@ -13,7 +13,7 @@ and are the external facts they rest on still true.
 
 | Command | Asks |
 | --- | --- |
-| `/review` | is **this diff** correct — inside the loop |
+| `/loop:review` | is **this diff** correct — inside the loop |
 | `/audit:security` | what is **exposed** today |
 | `/audit:mutation` | do the tests **constrain** the code |
 | `/kit:doctor` | do the values declared twice still **agree** — deterministic, free |

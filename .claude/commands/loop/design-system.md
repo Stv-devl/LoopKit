@@ -3,7 +3,7 @@ description: The design system, in two modes — extract it from the code, or cr
 argument-hint: [--new | --extract] [optional: area to refresh]
 ---
 
-# /design-system — the reference `/interface` and the `ui` reviewer obey
+# /loop:design-system — the reference `/loop:interface` and the `ui` reviewer obey
 
 No agent can read a folder listing and infer a system. This command produces
 `docs/design-system.md`, the document they can obey — either by **extracting**
@@ -73,7 +73,7 @@ positioning call made against a rendered page, and the agents have no eyes.
 ## Process
 
 1. **Read `docs/product/brief.md`.** If it does not exist, stop and suggest
-   `/product` first. Without it the three directions each invent a different
+   `/loop:product` first. Without it the three directions each invent a different
    product and the comparison is meaningless.
 
    **You need two reference screens, and you read the brief to find them — you do
@@ -81,13 +81,13 @@ positioning call made against a rendered page, and the agents have no eyes.
    product with no code, but the detection above sends a repo here whenever
    `docs/design-system.md` is missing and `src/components/ui/` does not exist —
    which a shipped product can satisfy (components colocated in features, a UI
-   folder under another name, a repo that entered by `/spec` and never ran this
+   folder under another name, a repo that entered by `/loop:spec` and never ran this
    command). So branch on what the brief actually says:
 
    | The brief | Where the pair comes from |
    | --- | --- |
-   | `Planned surfaces` is filled | there, and nowhere else. `/product` asks for those screens outright on a greenfield product, so this is the normal case |
-   | `Planned surfaces` is `n/a` **and** `Current surface` names real features | the product already has screens: take the pair from `Current surface` and **open them in the code** before proposing anything. `n/a` here is `/product` writing the correct value for a product that has code — not an old brief |
+   | `Planned surfaces` is filled | there, and nowhere else. `/loop:product` asks for those screens outright on a greenfield product, so this is the normal case |
+   | `Planned surfaces` is `n/a` **and** `Current surface` names real features | the product already has screens: take the pair from `Current surface` and **open them in the code** before proposing anything. `n/a` here is `/loop:product` writing the correct value for a product that has code — not an old brief |
    | both empty or absent | infer the pair from `Users & jobs` |
 
    **Whatever the row, name the two screens out loud before step 3**, and say
@@ -143,7 +143,7 @@ positioning call made against a rendered page, and the agents have no eyes.
    Nothing downstream happens until the user validates.
 
    > **The canvas, and why only on the winner.** Claude Code's built-in `/design`
-   > can turn a preview into an editable canvas (`/interface`, "The canvas"), which
+   > can turn a preview into an editable canvas (`/loop:interface`, "The canvas"), which
    > is what makes a graft a drag instead of a chat round. Offer it **once the
    > direction is picked**, never on the three candidates: converting them means
    > re-authoring the exact thing being judged, and a direction that got restyled
@@ -165,7 +165,7 @@ positioning call made against a rendered page, and the agents have no eyes.
    first two or three stories will be heavier for it — that is the trade, and it
    is the right one.
 
-7. **Stop.** Suggest `/bmad:pm` or `/spec` for the first feature, and state
+7. **Stop.** Suggest `/bmad:pm` or `/loop:spec` for the first feature, and state
    plainly that later runs of this command will be `extract`.
 
 ---
@@ -174,7 +174,7 @@ positioning call made against a rendered page, and the agents have no eyes.
 
 > **Not the same mechanism as the canvas.** This section is `DesignSync`: a
 > claude.ai/design **design-system project**, a card index built from `@dsCard`
-> markers, the shop window for this document. The canvas of `/interface` is a
+> markers, the shop window for this document. The canvas of `/loop:interface` is a
 > published **Artifact** holding `.dc.html` artboards, and it renders one feature's
 > screens. Same product family, two surfaces: this one mirrors the system, that
 > one decides a screen. Neither reads the other.

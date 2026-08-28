@@ -159,7 +159,7 @@ export function useItemsRealtime(): void {
 > discards the payload here, so the validation looks like ceremony — until the
 > first `setQueryData` optimisation lands and the hook is already importing the
 > layer that hands it a typed `Item`. Going gateway → hook directly is what
-> `/review`'s `tests` and `correctness` dimensions flag as reaching past a layer;
+> `/loop:review`'s `tests` and `correctness` dimensions flag as reaching past a layer;
 > it costs one file to not do it.
 
 Chatty table? Debounce the invalidation rather than dropping events — a burst of

@@ -1,4 +1,4 @@
-# CI — le miroir serveur de `/ship`.
+# CI — le miroir serveur de `/loop:ship`.
 #
 # Ce fichier est la SEULE copie du CI. Le contrat qu'il applique — quels rôles
 # de gate, quels seuils — est déclaré dans `.claude/rules/00-project.md`
@@ -6,10 +6,10 @@
 # couverture). Changer un seuil ici sans le changer là-bas, ou l'inverse, est
 # exactement le mode de panne que `/kit:doctor` traque partout ailleurs.
 #
-# Pourquoi il existe alors que `/ship` fait déjà tourner les mêmes commandes :
-# `/ship` tourne sur UNE machine, celle de la personne qui l'a lancé, avec ses
+# Pourquoi il existe alors que `/loop:ship` fait déjà tourner les mêmes commandes :
+# `/loop:ship` tourne sur UNE machine, celle de la personne qui l'a lancé, avec ses
 # hooks, son cache et son node_modules. Rien ne rattrape un push qui ne passe
-# pas par `/ship` — hook désactivé, `--no-verify`, une autre machine, un agent
+# pas par `/loop:ship` — hook désactivé, `--no-verify`, une autre machine, un agent
 # qui a court-circuité l'étape. Le CI est la barrière que personne ne peut
 # contourner depuis son poste.
 
@@ -129,15 +129,15 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm audit --audit-level=high
 
-      # Le pendant CI de la seconde ligne "securite deterministe" de `/ship`.
+      # Le pendant CI de la seconde ligne "securite deterministe" de `/loop:ship`.
       # L'audit de dependances etait deja ici ; le scan de secrets ne l'etait
       # pas — alors que `ci.md` dit que la CI existe precisement pour le push
-      # qui a saute `/ship`. Un `VITE_*_SECRET` part dans le bundle : tout ce
+      # qui a saute `/loop:ship`. Un `VITE_*_SECRET` part dans le bundle : tout ce
       # qui est prefixe `VITE_` est publie, par construction.
       # Le second grep retire les cles publiques par design, sinon la ligne crie
       # au loup a chaque run. `set -o pipefail` + le test d'existence : sans eux
       # le code de sortie lu est celui du SECOND grep, et un `src/` illisible
-      # passe pour un scan propre (`/ship`, meme correction).
+      # passe pour un scan propre (`/loop:ship`, meme correction).
       - name: Bundle secrets
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         shell: bash

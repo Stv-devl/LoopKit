@@ -3,10 +3,10 @@ description: RESEARCH step — multi-modal parallel fan-out (code, blast radius,
 argument-hint: [path to the entry artifact: docs/specs/<x>.md or docs/stories/<slug>/<n>.md]
 ---
 
-# /research — map the ground before planning on it
+# /loop:research — map the ground before planning on it
 
 First step of the feature loop. You produce **one file on disk**
-(`docs/work/<slug>/research.md`) that `/interface`, `/plan` and the reviewers will
+(`docs/work/<slug>/research.md`) that `/loop:interface`, `/loop:plan` and the reviewers will
 read. Nothing here is written from memory: every claim carries evidence
 (`path:line`, a query result, a migration name).
 
@@ -22,11 +22,11 @@ entry artifact's path, so anyone holding that path gets the same answer:
 - entry `docs/stories/<feature>/<epic>.<story>.md` → slug = `<feature>-<epic>.<story>`
   (e.g. `docs/stories/inbox/1.2.md` → `inbox-1.2`)
 
-`/research` is the step that **records** it — by creating `docs/work/<slug>/`,
+`/loop:research` is the step that **records** it — by creating `docs/work/<slug>/`,
 after which every later step simply reads it out of the path it was handed.
-Recorded, not owned: `/tracks` and `/orchestrate`'s Phase 0.5 have to name the
+Recorded, not owned: `/loop:tracks` and `/loop:orchestrate`'s Phase 0.5 have to name the
 worktree and the branch **before** this step ever runs, and a rule saying "only
-`/research` may compute it" left them with no name to use. They apply the two
+`/loop:research` may compute it" left them with no name to use. They apply the two
 lines above; they do not invent a spelling.
 
 > The distinction is not pedantic. One track = one worktree = one branch
@@ -75,8 +75,8 @@ refresh what's stale, don't silently start a second folder under a different nam
    because promoting a fact is a decision, not a probe result. Do it now, in this
    step; deferred, it never happens and the next feature pays the fetch.
 4. **Write** `docs/work/<slug>/research.md`.
-5. **Stop.** Suggest `/interface docs/work/<slug>/research.md` (UI feature) or
-   `/plan docs/work/<slug>/research.md` (no UI).
+5. **Stop.** Suggest `/loop:interface docs/work/<slug>/research.md` (UI feature) or
+   `/loop:plan docs/work/<slug>/research.md` (no UI).
 
 ### Base questions (always, grouped into the profile's probe batches)
 
@@ -195,10 +195,10 @@ Token profile: economy | standard | critical
 untagged answer is one nobody can tell apart from a guess>
 
 ## Traps (points of vigilance for the review)
-- <one line each — these become review criteria in /review>
+- <one line each — these become review criteria in /loop:review>
 
 ## Open questions
-<what no probe could settle, and what would settle it. `/plan` clears this list
+<what no probe could settle, and what would settle it. `/loop:plan` clears this list
 AT ITS GATE, before the user's go — so write each one as a question that can be
 answered, not as a note.>
 ```
@@ -208,8 +208,8 @@ answered, not as a note.>
 - Every claim carries evidence. A probe that found nothing says "nothing found",
   it does not guess.
 - Do not implement, do not design, do not decide the plan. Map only.
-- The **Traps** section is not decoration: `/review` receives it verbatim.
-- The **Open questions** section is not decoration either: `/plan` must clear it
+- The **Traps** section is not decoration: `/loop:review` receives it verbatim.
+- The **Open questions** section is not decoration either: `/loop:plan` must clear it
   at its gate, and anything left there becomes an assumption frozen into a test.
   An empty list is a fine answer; an unanswerable one is a fact the user needs.
 

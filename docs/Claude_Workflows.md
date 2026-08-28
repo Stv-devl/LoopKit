@@ -3,97 +3,99 @@
 **Une seule boucle**, deux entrées. Prends l'entrée la plus légère qui suffit.
 
 ```
-                            /product          (une fois par produit)
-                                │
-ENTRÉE COMPLEXE (multi-épics)   ▼
-  /bmad:pm ─▶ /bmad:sm ─▶ /stories:review ─▶ /bmad:architect ─▶ /design-system
-                                                      │
-ENTRÉE SIMPLE (1 écran, CRUD, fix)                    │
-  /spec ──────────────────────────────────────────────┤
-                                                      ▼
-                                        FEATURE READY  (ligne READY du board)
-                                                      │
-BOUCLE (identique pour les deux)                      ▼
-  /research ─▶ /interface ─▶ /plan ─▶ EXECUTE ─▶ /review ─▶ /ship ─▶ feature suivante
-       └────────────── /orchestrate enchaîne tout ─────────────┘
+                                   /loop:product        (une fois par produit)
+                                        │
+ENTRÉE COMPLEXE (multi-épics)           ▼
+  /bmad:pm ─▶ /bmad:sm ─▶ /stories:review ─▶ /bmad:architect ─▶ /loop:design-system
+                                        │
+ENTRÉE SIMPLE (1 écran, CRUD)           │
+  /loop:spec ───────────────────────────┤
+ENTRÉE BUG (symptôme → reproduction)    │
+  /loop:debug ──────────────────────────┤
+                                        ▼
+                              FEATURE READY   (ligne READY du board)
+                                        │
+BOUCLE (identique pour les deux)        ▼
+  /loop:research ─▶ /loop:interface ─▶ /loop:plan ─▶ EXECUTE ─▶ /loop:review ─▶ /loop:ship ─▶ suivante
+       └────────────────── /loop:orchestrate enchaîne tout ──────────────────┘
 ```
 
-`/orchestrate <artefact>` fait tourner la boucle entière. Chaque étape reste
+`/loop:orchestrate <artefact>` fait tourner la boucle entière. Chaque étape reste
 appelable seule si tu veux reprendre au milieu.
 
 **FEATURE READY, concrètement** : c'est `docs/product/backlog.md`, ouvert par
-`/product`. **Une ligne par unité de boucle** — une spec fait une ligne, un
-pipeline complet en fait une par story. `/spec` et `/stories:review` inscrivent
+`/loop:product`. **Une ligne par unité de boucle** — une spec fait une ligne, un
+pipeline complet en fait une par story. `/loop:spec` et `/stories:review` inscrivent
 leurs lignes en `READY` (un contrat ou un slice relu existe derrière) — et
-`/orchestrate` aussi, pour le seul cas d'un artefact présent sur le disque et sur
+`/loop:orchestrate` aussi, pour le seul cas d'un artefact présent sur le disque et sur
 aucune ligne —,
-`/product` inscrit en `DRAFT` tout ce qu'il ne fait que recenser — c'est la seule
+`/loop:product` inscrit en `DRAFT` tout ce qu'il ne fait que recenser — c'est la seule
 commande qui écrit cet état, et c'est ce qui rend le gate capable de refuser.
-`/orchestrate` refuse d'entrer sur une ligne `DRAFT` et passe celle qu'il prend en
-`IN LOOP`, `/ship` la passe en `SHIPPED` et annonce la suivante. Pas de board sur
+`/loop:orchestrate` refuse d'entrer sur une ligne `DRAFT` et passe celle qu'il prend en
+`IN LOOP`, `/loop:ship` la passe en `SHIPPED` et annonce la suivante. Pas de board sur
 le disque → l'étape est annoncée sautée, rien ne bloque.
 
 Trois règles font que le board reste lisible au bout de vingt features, et la
-**seule copie** des six états, des colonnes et des transitions est `/product`,
+**seule copie** des six états, des colonnes et des transitions est `/loop:product`,
 section « The board's state machine » — tout le reste la cite :
 
 - **La clé d'une ligne est la cellule `Feature / story`**, jamais le chemin de
   l'artefact — c'est précisément ce qui change quand un `DRAFT` devient une spec.
-  `/spec` et `/stories:review` *déplacent* la ligne que `/product` a ouverte, ils
+  `/loop:spec` et `/stories:review` *déplacent* la ligne que `/loop:product` a ouverte, ils
   n'en ajoutent pas une seconde ; sur le pipeline complet, la ligne de la feature
   est *remplacée* par une ligne par story, l'unité de boucle étant la story.
-- **Ce que `/product` trouve déjà en production s'inscrit `SHIPPED`**, pas
+- **Ce que `/loop:product` trouve déjà en production s'inscrit `SHIPPED`**, pas
   `DRAFT`. `DRAFT` veut dire « framé par rien » : l'écrire sur ce qui tourne
   déjà ferait refuser le gate sur du travail terminé.
 - **L'ordre des lignes est la priorité**, de haut en bas — le seul endroit du kit
-  où une priorité est écrite. `/ship` nomme la **première** ligne `READY`, pas
+  où une priorité est écrite. `/loop:ship` nomme la **première** ligne `READY`, pas
   « une » ligne `READY` : avec cinq candidates, prendre celle qu'on a lue en
-  premier fait passer un accident de lecture pour une décision produit. `/product`
+  premier fait passer un accident de lecture pour une décision produit. `/loop:product`
   est la seule commande qui réordonne ; toutes les autres ajoutent **en fin de
   table** et ne déplacent qu'un état. Sur le pipeline complet, `/stories:review`
   remplace la ligne de la feature par ses lignes de story **à la même position,
   dans l'ordre des ids** — le rang porte la priorité, l'ordre des ids porte les
   dépendances.
 - **`IN LOOP` se rend.** Cet état affirme qu'une session tient le travail *à cet
-  instant* ; seul `/ship` le solde. Toute autre sortie — gate rouge qu'on ne
+  instant* ; seul `/loop:ship` le solde. Toute autre sortie — gate rouge qu'on ne
   reprend pas aujourd'hui, track abandonné, question produit renvoyée à
   l'utilisateur — passe la ligne en `BLOCKED` avec la raison. Sans ça la ligne
-  reste `IN LOOP` pour toujours : `/tracks` ne la forke plus, `/ship` ne la
-  nomme plus, l'unité disparaît de la boucle en ayant l'air saine. `/ship` liste
+  reste `IN LOOP` pour toujours : `/loop:tracks` ne la forke plus, `/loop:ship` ne la
+  nomme plus, l'unité disparaît de la boucle en ayant l'air saine. `/loop:ship` liste
   les `BLOCKED` mais n'en propose jamais une comme feature suivante.
 
 **Le profil de token se décide côté produit**, pas au lancement de la boucle :
-`/spec` et `/bmad:pm` posent la question fermée (paiement, autorisation,
+`/loop:spec` et `/bmad:pm` posent la question fermée (paiement, autorisation,
 destruction de données) et écrivent `Token profile:` en tête de leur artefact,
-`/bmad:sm` le recopie sur chaque story, `/orchestrate` l'hérite au lieu de
-retomber sur `economy`, et `/ship` arme son `/audit:security` dessus. C'est le
+`/bmad:sm` le recopie sur chaque story, `/loop:orchestrate` l'hérite au lieu de
+retomber sur `economy`, et `/loop:ship` arme son `/audit:security` dessus. C'est le
 seul moment où l'information est connue.
 
 **Le board et le `Status` de story disent la même chose, à deux endroits** :
 `READY` ↔ `Approved`, `IN LOOP` ↔ `InProgress`/`Review`, `SHIPPED` ↔ `Done`. Les
-deux sont posés ensemble, par `/orchestrate` (Phase 0) ou par `/bmad:dev` (étape
-2) selon le chemin, et relus par `/tracks` — qui ne forke **que** des stories
-`Approved`. Une story en cours qui reste `Approved` est une story que `/tracks`
+deux sont posés ensemble, par `/loop:orchestrate` (Phase 0) ou par `/bmad:dev` (étape
+2) selon le chemin, et relus par `/loop:tracks` — qui ne forke **que** des stories
+`Approved`. Une story en cours qui reste `Approved` est une story que `/loop:tracks`
 proposera à une deuxième session.
 
 Les deux états terminaux sont `SHIPPED` et **`DROPPED`** — livré, ou décidé
 contre. Une story tuée au gate `/stories:review` passe `Status: Dropped` et sa
 ligne à `DROPPED` : supprimer la ligne ferait passer une décision pour un oubli,
 et un id libéré finit toujours par être réutilisé. `DROPPED` a deux autres
-rédacteurs, et pas un de plus : `/product` (au refresh) et `/ship` (étape 6),
+rédacteurs, et pas un de plus : `/loop:product` (au refresh) et `/loop:ship` (étape 6),
 uniquement pour une décision que tu prends **dans le tour**, jamais déduite d'une
 ligne qui a l'air vieille. Dans les trois cas, la ligne **et** le `Status` de la
-story bougent ensemble : `/ship` lit la ligne, `/tracks` lit le `Status`, et une
+story bougent ensemble : `/loop:ship` lit la ligne, `/loop:tracks` lit le `Status`, et une
 story tuée d'un seul côté revient par l'autre. Sans eux le chemin léger n'avait aucune sortie — une
-spec abandonnée restait `READY`, et `/ship` la reproposait indéfiniment.
+spec abandonnée restait `READY`, et `/loop:ship` la reproposait indéfiniment.
 
 **Sauf sur un point, et c'est voulu** : `BLOCKED` n'a pas de `Status` à lui. Une
 story rendue repasse `Approved` — plus aucune session ne la tient, et c'est
 exactement ce que ce champ dit — et c'est la **ligne du board** qui porte la mise
-en attente. `/tracks` lit donc les deux et écarte les lignes `BLOCKED` : sans ça
+en attente. `/loop:tracks` lit donc les deux et écarte les lignes `BLOCKED` : sans ça
 une story mise de côté serait reforkée dès le passage suivant.
 
-**`/design-system` est un prérequis dur de `/interface`**, pas une option : sans
+**`/loop:design-system` est un prérequis dur de `/loop:interface`**, pas une option : sans
 `docs/design-system.md`, les propositions inventent des composants au lieu de
 composer avec les primitives existantes. Écrit une fois, rafraîchi quand le kit
 bouge.
@@ -120,11 +122,11 @@ Il a **deux modes**, détectés automatiquement (`--new` / `--extract` pour forc
 ## Entrée simple (défaut)
 
 ```bash
-/spec ma feature                     # interview → docs/specs/<slug>.md (le contrat)
-/orchestrate docs/specs/<slug>.md    # research → interface → plan → execute → review → ship
+/loop:spec ma feature                     # interview → docs/specs/<slug>.md (le contrat)
+/loop:orchestrate docs/specs/<slug>.md    # research → interface → plan → execute → review → ship
 ```
 
-`/spec` pose 3-4 questions, écrit le contrat, **s'arrête** — tu relis les critères
+`/loop:spec` pose 3-4 questions, écrit le contrat, **s'arrête** — tu relis les critères
 d'acceptation avant que quoi que ce soit ne parte.
 
 ## Entrée complexe
@@ -140,7 +142,7 @@ Ou étape par étape (chaque commande marche seule) :
 /bmad:sm docs/prd/<slug>.md              # → stories FONCTIONNELLES, en Draft
 /stories:review docs/stories/<slug>/     # gate parallèle → stories Approved
 /bmad:architect docs/prd/<slug>.md       # → docs/architecture/<slug>.md
-/orchestrate docs/stories/<slug>/1.1.md  # la boucle, story par story
+/loop:orchestrate docs/stories/<slug>/1.1.md  # la boucle, story par story
 ```
 
 > **Les stories passent avant l'archi.** Une story mal découpée se réécrit en 2
@@ -148,8 +150,8 @@ Ou étape par étape (chaque commande marche seule) :
 > coûte une journée. `/stories:review` la tue avant.
 
 Le contexte technique (chemins, contrats, pièges) n'est pas recopié par le SM :
-c'est `/plan` qui l'injecte dans la story, au moment où il est frais et sourcé
-par `/research`.
+c'est `/loop:plan` qui l'injecte dans la story, au moment où il est frais et sourcé
+par `/loop:research`.
 
 Statuts d'une story : `Draft → Approved → InProgress → Review → Done`, plus
 `Dropped` (terminal, posé par `/stories:review`).
@@ -159,20 +161,20 @@ Statuts d'une story : `Draft → Approved → InProgress → Review → Done`, p
 Deux façons de faire tourner une story `Approved` :
 
 ```bash
-/orchestrate docs/stories/<slug>/1.1.md   # d'un trait : boucle complète, ship inclus
+/loop:orchestrate docs/stories/<slug>/1.1.md   # d'un trait : boucle complète, ship inclus
 ```
 
 ```bash
 /bmad:dev docs/stories/<slug>/1.1.md      # boucle SANS ship → Status Review
 /bmad:qa  docs/stories/<slug>/1.1.md      # gate → PASS / CONCERNS / FAIL
-/ship     docs/stories/<slug>/1.1.md      # seulement si PASS
+/loop:ship     docs/stories/<slug>/1.1.md      # seulement si PASS
 ```
 
 La seconde te rend la main entre le code et le gate : sur `CONCERNS`/`FAIL`, tu
 reboucles `/bmad:dev` → `/bmad:qa` jusqu'au `PASS`. `/bmad:dev` tient aussi le
 carnet de bord de la story (Status, Dev Agent Record, Change Log).
 
-Prends `/orchestrate` quand la story est balisée, la boucle dev/QA quand tu veux
+Prends `/loop:orchestrate` quand la story est balisée, la boucle dev/QA quand tu veux
 un point d'arrêt avant le commit.
 
 ---
@@ -193,7 +195,7 @@ coverage, build, `audit`). Il réduit les relectures identiques par plusieurs
 modèles.
 
 **Il en ajoute un, dans un sens seulement.** `critical` arme un `/audit:security`
-d'**une** surface à `/ship` (étape 1bis) : la liste qui justifie `critical` est
+d'**une** surface à `/loop:ship` (étape 1bis) : la liste qui justifie `critical` est
 mot pour mot celle des features où une barrière serveur manquante n'est pas un
 Minor. Descendre une feature en `economy` pour éviter cet agent est une décision
 de sécurité, pas de budget — `.claude/rules/11-token-budget.md`.
@@ -236,24 +238,34 @@ artefact, de ne pas refaire les phases terminées et de respecter les règles TD
 
 | Commande    | Ce qu'elle fait                                                               | Produit                        |
 | ----------- | ----------------------------------------------------------------------------- | ------------------------------ |
-| `/research` | Fan-out multi-modal : code, blast radius, **état réel en base**, API tierces  | `docs/work/<slug>/research.md` |
-| `/interface` | Propositions UI concurrentes (nombre = profil de tokens), rendues sur un **canvas éditable**, puis **tu choisis** : gate humain. SKIP si pas d'UI | `docs/work/<slug>/design.md`   |
-| `/plan`     | Chaîne d'écriture + **lots parallélisables** + contrats + plan de test        | `docs/work/<slug>/plan.md`     |
+| `/loop:research` | Fan-out multi-modal : code, blast radius, **état réel en base**, API tierces  | `docs/work/<slug>/research.md` |
+| `/loop:interface` | Propositions UI concurrentes (nombre = profil de tokens), rendues sur un **canvas éditable**, puis **tu choisis** : gate humain. SKIP si pas d'UI | `docs/work/<slug>/design.md`   |
+| `/loop:plan`     | Chaîne d'écriture + lots + contrats + plan de test, puis `plan-critic` (complétude et qualité séparées) | `docs/work/<slug>/plan.md` |
 | EXECUTE     | Inline, séquentiel, dans l'ordre du plan (les écritures sont couplées)        | le code                        |
-| `/review`   | Étage 0 : passe visuelle (UI) · Étage 1 : 5 dimensions · Étage 2 : réfutation | verdict PASS/CONCERNS/FAIL     |
-| `/ship`     | Gates parallèles, commit via l'agent `github`, board à jour, feature suivante | le commit                      |
+| `/loop:review`   | Étage 0 : passe visuelle (UI) · Étage 1 : 5 dimensions · Étage 2 : réfutation | verdict PASS/CONCERNS/FAIL     |
+| `/loop:ship`     | Gates parallèles, commit via l'agent `github`, board à jour, feature suivante | le commit                      |
+
+Deux commandes bornées vivent autour de cette boucle : `/loop:spike` tranche une
+question fermée (ou retourne `indeterminate` avec la preuve manquante), et
+`/kit:recipe` transforme une procédure déjà prouvée en guide froid cité par un
+seul caller. Sur profils standard/critical, la review ajoute une passe
+shadow-areas de trois éléments maximum ; economy reste silencieux.
 
 **Deux étapes s'arrêtent sur toi, et elles décident deux choses différentes.**
-`/interface` te présente ses propositions et attend que tu tranches (greffe possible,
+`/loop:interface` te présente ses propositions et attend que tu tranches (greffe possible,
 3 tours maximum) : ça fixe **ce qu'est l'écran**, et c'est ce qui rend honnête le
-fait que `/review` note ensuite un écart en Major. `/plan` imprime son `Test plan`
+fait que `/loop:review` note ensuite un écart en Major. `/loop:plan` imprime son `Test plan`
 et attend ton feu vert : ça fixe **ce que « correct » veut dire pour la logique**,
 et c'est le dernier moment gratuit — juste après, ces fichiers de test gèlent.
-Aucune ne remplace l'autre, aucune ne passe sur ton silence. Les gates de `/ship`
-(push, PR, merge) et celui de `/tracks` sont d'une autre nature : ils décident ce
+Avant de te le présenter, `plan-critic` cherche les omissions et les défauts
+d'exécution sur deux scores indépendants ; tout Critical/Major est réfuté puis
+corrigé. Chaque gate est plafonné à trois échecs dans `attempts.json` : au
+troisième, la ligne revient `BLOCKED` avec le gate et sa raison.
+Aucune ne remplace l'autre, aucune ne passe sur ton silence. Les gates de `/loop:ship`
+(push, PR, merge) et celui de `/loop:tracks` sont d'une autre nature : ils décident ce
 qui **sort de la machine**, jamais ce qu'elle doit produire.
 
-### Le canvas de `/interface`, et pourquoi la commande ne s'appelle pas `/design`
+### Le canvas de `/loop:interface`, et pourquoi la commande ne s'appelle pas `/design`
 
 Claude Code embarque sa propre skill **`/design`** (research preview) : elle publie
 un canvas pan/zoom en Artifact, un *artboard* par écran, et — là où la sauvegarde
@@ -265,9 +277,9 @@ et le comportement, et ils l'écrivent noir sur blanc — **ils ne voient rien**
 Trois conséquences, et elles sont l'essentiel de l'intégration :
 
 1. **La commande du kit a déménagé.** Une commande projet nommée `design` masque
-   la skill intégrée, et l'étape *l'appelle*. Elle s'appelle donc `/interface` —
+   la skill intégrée, et l'étape *l'appelle*. Elle s'appelle donc `/loop:interface` —
    ce que son titre disait déjà. L'artefact reste `docs/work/<slug>/design.md`, la
-   dimension du `reviewer` reste `ui`, `/design-system` ne bouge pas.
+   dimension du `reviewer` reste `ui`, `/loop:design-system` ne bouge pas.
 2. **Le kit ne fabrique jamais le canvas lui-même.** La skill possède un payload
    précompilé et un helper dont le chemin n'existe que pendant son exécution :
    toute opération (rendu, re-seed après une greffe, relecture) passe par elle,
@@ -276,34 +288,34 @@ Trois conséquences, et elles sont l'essentiel de l'intégration :
    langue, l'interdit d'icônes — et récupère un lien.
 3. **Le canvas est un miroir, `design.md` reste le contrat.** Passé le gate, le
    document gèle et le canvas, lui, reste éditable sans que rien ne surveille.
-   `/review` compare le diff à `design.md` et note un écart en Major : un canvas
+   `/loop:review` compare le diff à `design.md` et note un écart en Major : un canvas
    qui bouge après coup déplace l'image, jamais la référence. Une modification
    après le gate **rouvre le gate**, sinon c'est de la décoration. Et rien ne
    descend du canvas vers le code : un artboard est une maquette, le code entre
-   par `/plan` et EXECUTE, avec ses tests.
+   par `/loop:plan` et EXECUTE, avec ses tests.
 
 Le canvas est une research preview (login claude.ai first-party, `node` ou `bun`
 sur la machine). Indisponible, l'étape le dit en une ligne et le gate se tient sur
 les propositions textuelles, comme avant. La jambe se dégrade, le gate jamais.
 
-À ne pas confondre avec `DesignSync`, que `/design-system` utilise déjà : ça, ce
+À ne pas confondre avec `DesignSync`, que `/loop:design-system` utilise déjà : ça, ce
 sont les **projets design-system** de claude.ai/design, l'index de cartes
 `@dsCard`, la vitrine du document. Deux surfaces, aucune ne lit l'autre.
 
 Chaque étape est appelable seule, donc tu peux **reprendre au milieu** : après un
-fix à la main, `/review <artefact>` relance juste le gate ; après une review,
-`/ship <artefact>` juste la clôture. La boucle lit ses artefacts sur disque
+fix à la main, `/loop:review <artefact>` relance juste le gate ; après une review,
+`/loop:ship <artefact>` juste la clôture. La boucle lit ses artefacts sur disque
 (`docs/work/<slug>/`), pas la conversation — un contexte neuf reprend où tu en
 étais.
 
 Le `<slug>` se **déduit du chemin de l'artefact d'entrée** (`docs/specs/inbox.md`
-→ `inbox` ; `docs/stories/inbox/1.2.md` → `inbox-1.2`), et `/research` est l'étape
+→ `inbox` ; `docs/stories/inbox/1.2.md` → `inbox-1.2`), et `/loop:research` est l'étape
 qui l'**enregistre**, en créant le dossier. Les étapes suivantes le lisent dans le
 chemin qu'on leur passe plutôt que de le redéduire : deux orthographes = un
-`/plan` qui ne trouve aucune research et repart de zéro.
+`/loop:plan` qui ne trouve aucune research et repart de zéro.
 
-Une exception, et elle est structurelle : `/tracks` et la Phase 0.5
-d'`/orchestrate` nomment le worktree et la branche **avant** que `/research` ait
+Une exception, et elle est structurelle : `/loop:tracks` et la Phase 0.5
+d'`/loop:orchestrate` nomment le worktree et la branche **avant** que `/loop:research` ait
 tourné. Elles appliquent donc la déduction elles-mêmes — c'est tout l'intérêt
 qu'elle soit une fonction du chemin. Sur une story c'est `inbox-1.2`, **jamais**
 `inbox` : trois stories forkées sous le slug de la feature, c'est trois tracks
@@ -318,13 +330,13 @@ celle qu'un agent contourne le plus volontiers.
 
 | Moment | Ce qui tient la règle |
 | --- | --- |
-| Liste des cas | Le **gate humain de `/plan`** : le `Test plan` est imprimé et attend ton feu vert. C'est le dernier endroit où la définition de « correct » est gratuite à changer. |
+| Liste des cas | Le **gate humain de `/loop:plan`** : le `Test plan` est imprimé et attend ton feu vert. C'est le dernier endroit où la définition de « correct » est gratuite à changer. |
 | Écriture du test | L'agent **`test-writer`**, un par couche. Il reçoit les `Contracts` et son bloc du plan, et il lui est **interdit d'ouvrir le module** qu'il teste. |
 | Le rouge | `tdd-prove-red.sh` (PostToolUse) lance le fichier et compare les **symboles** testés à ce que le module exporte réellement. Un test qui passe alors que le comportement nommé n'existe pas est signalé comme n'assertant rien. |
 | Le passage au code | `tdd-require-red.sh` (PreToolUse) **refuse de créer** le module tant que ce rouge n'a pas été constaté. C'est le seul endroit où « implémentation avant test » devient impossible. |
 | Après le vert | `tdd-freeze-tests.sh` gèle le fichier. **Ajouter** un cas passe (insertion pure). **Corriger** un cas est refusé → `.claude/.tdd-unfrozen`, avec une raison, visiblement. |
 | Le contournement | Les trois hooks ci-dessus ne voient que `Write` et `Edit`. `prevent-destructive-commands.sh` ferme la porte de derrière : écrire une de ces couches ou un fichier de test **depuis le shell** (`>`, `tee`, `sed -i`) est refusé, ainsi qu'un `-u` de snapshot nommant un fichier gelé — là c'est le *runner* qui réécrit le test. Tout autre `.ts` écrit au shell repasse par ta validation. |
-| Au gate | La dimension `tests` de `/review` compare les fichiers gelés au plan validé : cas supprimé, affaibli ou renommé = **Major**, gel contourné = **Critical**. |
+| Au gate | La dimension `tests` de `/loop:review` compare les fichiers gelés au plan validé : cas supprimé, affaibli ou renommé = **Major**, gel contourné = **Critical**. |
 
 **Une couche à la fois**, RED→GREEN, dans l'ordre des dépendances — jamais trois
 rouges d'un bloc puis trois verts. Écrire tous les tests avant tout code est la
@@ -332,7 +344,7 @@ lecture fausse la plus répandue du TDD : l'implémentation est alors générée
 contre une douzaine d'assertions rouges simultanées, « juste assez de code »
 n'est plus jugeable, et une assertion fausse ne se découvre qu'après le gel.
 La *liste* des cas, elle, s'écrit bien en entier d'avance — c'est l'analyse, et
-c'est ce que `/plan` te fait valider.
+c'est ce que `/loop:plan` te fait valider.
 
 Deux règles de contenu qui valent pour toutes les couches : on asserte le
 **comportement** (la valeur rendue, l'effet observable), jamais qu'un mock a été
@@ -356,7 +368,7 @@ boucle, jamais en gate.
 | Commande              | Quand                                                             |
 | --------------------- | ----------------------------------------------------------------- |
 | `/database:migration` | Toute migration SQL — jamais de SQL écrit à la main               |
-| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/ship` sur profil `critical`, une surface |
+| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/loop:ship` sur profil `critical`, une surface |
 | `/audit:mutation`     | Est-ce que les tests gelés **contraignent** le code, ou se contentent-ils de l'exécuter ? |
 | `/audit:part <nom>`   | Est-ce que **cette partie-là** (react-query, zustand, ci-cd, testing, forms, guardrails…) est cohérente, vraie et réellement appliquée ? Fan-out sur des fichiers disjoints, **réfutation obligatoire** de chaque constat, registre dans `docs/audits/<partie>.md`. Le premier passage est un échantillon ; tous les suivants sont un diff |
 | `/refactor:split`     | Un fichier dépasse son seuil (`.claude/rules/02-architecture.md`) |
@@ -401,16 +413,16 @@ backend dans `commands/ship.md`** (le bloc est en `pnpm`, il ne teste rien sur u
 repo Python) et **`07-backend.md` dans les dimensions de `agents/reviewer.md`**.
 Non câblé = installé mais muet.
 
-Côté boucle, rien ne change : `/interface` se saute quand il n'y a pas d'UI, les
+Côté boucle, rien ne change : `/loop:interface` se saute quand il n'y a pas d'UI, les
 commandes `/backend:*` sont ce qu'EXECUTE utilise pour construire, et les
 commandes d'audit (`/backend:audit`, `security`, `perf`, `rag-audit`) sont ce
-qu'un finding de `/review` devient quand une dimension doit creuser.
+qu'un finding de `/loop:review` devient quand une dimension doit creuser.
 
 ## Ce qui tourne en parallèle
 
 **Partie produit (amont)**
 
-- **`/product`** : 1 explorer groupe front, backend et data ; un second seulement pour une base distante.
+- **`/loop:product`** : 1 explorer groupe front, backend et data ; un second seulement pour une base distante.
 - **`/bmad:pm`** : 1 explorer couvre l'existant, les contraintes réelles et
   l'antériorité ; un second n'est permis que pour des surfaces réellement
   indépendantes.
@@ -420,19 +432,21 @@ qu'un finding de `/review` devient quand une dimension doit creuser.
   au-delà. Chaque lot contrôle aussi la couverture depuis le catalogue global.
 - **`/bmad:architect`** : fan-out de cartographie ; la rédaction reste en un seul
   contexte (une archi doit être cohérente, pas rapide).
-- **`/design-system`** : mode `extract`, 4 explorers (tokens, primitives,
+- **`/loop:design-system`** : mode `extract`, 4 explorers (tokens, primitives,
   composition, états) ; mode `bootstrap`, 3 `designer` sur des répertoires
   candidats disjoints, puis **tu juges** — pas d'agent juge.
 
 **Boucle**
 
-- **`/research`** : 3 sondes de base, les sondes obligatoires déclenchées par la
+- **`/loop:research`** : 3 sondes de base, les sondes obligatoires déclenchées par la
   surface touchée (migration superseded, consommateurs d'un symbole, module
   backend partagé…), la sonde base réelle et la doc externe.
-- **`/interface`** : 3 angles (minimal / densité / guidé) + 1 juge.
-- **`/review`** : 5 dimensions **+ 1 `e2e-tester` par flux** dans le même message,
+- **`/loop:interface`** : 3 angles (minimal / densité / guidé) + 1 juge.
+- **`/loop:debug`** : reproduction isolée avant tout fix, causes candidates
+  classées, logs temporaires de validation, puis cause prouvée.
+- **`/loop:review`** : 5 dimensions **+ 1 `e2e-tester` par flux** dans le même message,
   puis 1 réfuteur par finding Critical/Major.
-- **`/ship`** : `typecheck` + `lint` (`--max-warnings=0`) + tests (run-once) +
+- **`/loop:ship`** : `typecheck` + `lint` (`--max-warnings=0`) + tests (run-once) +
   `coverage` + `build` + `pnpm audit` + le grep des `VITE_*` secrets, lancés
   ensemble. Le `lint` n'est pas décoratif : c'est le seul qui voie un test sans
   assertion, un `it.only` et un composant que le compilateur React a sauté. Les
@@ -445,10 +459,10 @@ qu'un finding de `/review` devient quand une dimension doit creuser.
 
 - **`/audit:security`** : 2 auditeurs groupés en `economy`, 3 en
   `standard`, ou 6 surfaces séparées en `critical`, puis réfutation par lots
-  avec le `verifier` existant. Ce n'est pas la dimension `security` de `/review` : celle-ci
+  avec le `verifier` existant. Ce n'est pas la dimension `security` de `/loop:review` : celle-ci
   juge un diff dans la boucle, celui-là lit le dépôt entier, y compris le code que
   personne n'a touché depuis six mois.
-  **Un seul appelant automatique** : `/ship` sur profil `critical`, pour une
+  **Un seul appelant automatique** : `/loop:ship` sur profil `critical`, pour une
   surface. Partout ailleurs il reste à la demande, et il n'écrit jamais rien —
   les correctifs repassent par la boucle avec leurs tests.
 
@@ -460,7 +474,7 @@ reste en chaîne parce que le code est couplé.
 
 Ce qui **ne** se parallélise **pas** : EXECUTE. Deux agents qui écrivent des
 fichiers couplés coûtent plus cher que l'attente. Seuls les _lots_ déclarés
-disjoints par `/plan` peuvent forker.
+disjoints par `/loop:plan` peuvent forker.
 
 ## Worktrees — plusieurs travaux en même temps
 
@@ -468,22 +482,22 @@ Deux niveaux, à ne pas confondre :
 
 | Niveau | Unité | Isolation |
 | --- | --- | --- |
-| **Dans** une passe de boucle | les _lots_ de `/plan` | aucune — des agents dans le même arbre, fichiers disjoints |
+| **Dans** une passe de boucle | les _lots_ de `/loop:plan` | aucune — des agents dans le même arbre, fichiers disjoints |
 | **Entre** passes de boucle | une **track** (1 spec, 1 story) | **1 worktree + 1 branche** : `.claude/worktrees/<slug>`, `feat/<slug>` |
 
-Le fork se décide en **Phase 0.5 de `/orchestrate`**, une fois, et seulement si
+Le fork se décide en **Phase 0.5 de `/loop:orchestrate`**, une fois, et seulement si
 les quatre conditions tiennent : ≥ 2 tracks en vol, fichiers disjoints, aucune
 **fondation partagée** touchée, arbre propre. Une feature seule reste dans
 l'arbre principal — le setup ne rembourse rien.
 
 **Combien de tracks, ce n'est pas « deux » par défaut** : ça se calcule contre
 l'état du dépôt au moment où on le demande, et ça change après chaque merge.
-C'est le rôle de **`/tracks`** — il calcule, il vérifie, il prépare les
+C'est le rôle de **`/loop:tracks`** — il calcule, il vérifie, il prépare les
 worktrees, et il se relance après chaque merge plutôt que de se rappeler du
 compte précédent.
 
 ```
-/tracks docs/stories/<slug>/
+/loop:tracks docs/stories/<slug>/
 ```
 
 Quatre étapes, dans cet ordre — débloquées par dépendance (un prérequis
@@ -501,7 +515,7 @@ candidate est exclue — une exclusion que personne n'a écrite revient en confl
 de merge. La création des worktrees est **gatée** : elle attend ton go.
 
 Et la colonne `Parallel with` de la story map est une indication, pas un
-verdict : elle est écrite avant le code et elle dérive. `/tracks` ouvre les
+verdict : elle est écrite avant le code et elle dérive. `/loop:tracks` ouvre les
 fichiers qu'elle nomme, et quand le code la contredit, **c'est le code qui
 gagne** — la story map est corrigée dans la même passe. Méthode complète :
 `.claude/guides/10-worktrees.md`, « How many tracks ».

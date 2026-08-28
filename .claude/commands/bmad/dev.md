@@ -18,23 +18,23 @@ exactly where it stopped.
 2. Set `Status` to `InProgress`, and move the story's line on
    `docs/product/backlog.md` to `IN LOOP` — the board **only from the main tree**,
    never from a worktree (`10-worktrees.md`, "Never in a worktree"); no board →
-   one line, move on. Both, for the same reason: `/tracks` reads `Status` to
-   decide what may fork now, and `/ship` reads the board to name what comes next.
-   This path does not go through `/orchestrate`'s Phase 0, so it carries that step
+   one line, move on. Both, for the same reason: `/loop:tracks` reads `Status` to
+   decide what may fork now, and `/loop:ship` reads the board to name what comes next.
+   This path does not go through `/loop:orchestrate`'s Phase 0, so it carries that step
    itself — including the way back: you hand back before the commit, so if the
-   story is not going to `/ship` today, its line moves to **`BLOCKED`** with the
+   story is not going to `/loop:ship` today, its line moves to **`BLOCKED`** with the
    reason rather than staying `IN LOOP`, which asserts a session holds it right
-   now. Columns, states and transitions: `/product`, "The board's state machine"
+   now. Columns, states and transitions: `/loop:product`, "The board's state machine"
    — the only copy.
 3. **Run the loop steps yourself, stopping before SHIP.** Do not call
-   `/orchestrate` here: it ships at the end, and the whole point of `/bmad:dev` is
+   `/loop:orchestrate` here: it ships at the end, and the whole point of `/bmad:dev` is
    to hand back before the commit. Chain them:
    ```
-   /research docs/stories/<slug>/<n>.md
-   /interface   docs/work/<slug>/research.md    (SKIP if the story has no UI)
-   /plan     …                                → also fills the story's ## Plan
+   /loop:research docs/stories/<slug>/<n>.md
+   /loop:interface   docs/work/<slug>/research.md    (SKIP if the story has no UI)
+   /loop:plan     …                                → also fills the story's ## Plan
    EXECUTE inline, in the plan's order
-   /review   docs/work/<slug>/plan.md
+   /loop:review   docs/work/<slug>/plan.md
    ```
    Fix the surviving Critical/Major findings inline before handing over.
    If the story's own notes leave a product question open, ask the user; don't
@@ -43,9 +43,9 @@ exactly where it stopped.
    exhaustive **file list**), set `Status` to `Review`, add a Change Log line.
 5. **Stop.** Suggest `/bmad:qa docs/stories/<slug>/<n>.md`.
 
-> Calling `/orchestrate` directly on a story does the same build and also ships.
+> Calling `/loop:orchestrate` directly on a story does the same build and also ships.
 > Use `/bmad:dev` when you want the dev/QA separation (fix loop before the gate),
-> `/orchestrate` when you want the story to go all the way in one pass.
+> `/loop:orchestrate` when you want the story to go all the way in one pass.
 
 ## Rules
 
@@ -55,7 +55,7 @@ exactly where it stopped.
   pages/components, data client only in gateway/services, `Result<T>`, no `any`.
 - React Query states (`isPending`/`isError`/empty/`isFetching`), **plus
   `isPlaceholderData` as soon as the key carries a filter, a sort or a page** —
-  `/review` grades that fifth one (`patterns/react-query.md`, "When the key
+  `/loop:review` grades that fifth one (`patterns/react-query.md`, "When the key
   changes"), so the brief names it too. And the copy language split
   (`.claude/rules/03-conventions.md`).
 - Tests for the story's business logic are part of the story, not a follow-up.

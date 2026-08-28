@@ -3,10 +3,15 @@ description: SHIP step — parallel gates (typecheck/test/build/audit), a securi
 argument-hint: [path docs/work/<slug>/plan.md or the entry artifact]
 ---
 
-# /ship — close the loop
+# /loop:ship — close the loop
 
 Last step. Nothing ships on a green review alone: the review reads code, the
 gates run it.
+
+Each mechanical gate uses its own `attempts.json` key under
+`/loop:orchestrate`'s attempt protocol. Record a failure before fixing, clear
+only that key when its rerun passes, and at the third failure stop with
+`BLOCKED — <gate> failed 3x : <reason>` instead of starting a fourth run.
 
 ## Process
 
@@ -65,7 +70,7 @@ All green is the condition to continue. **Red = stop and fix** — never ship
 >
 > The coverage gate is a **floor, not a verdict**: it makes an unwalked branch
 > impossible to ship silently. It says nothing about whether the assertions bite —
-> that is `/review`'s `tests` dimension. Passing it is not an argument against a
+> that is `/loop:review`'s `tests` dimension. Passing it is not an argument against a
 > review finding.
 
 **The two security lines read differently from the other four.** `pnpm audit` red
@@ -185,10 +190,10 @@ the fix. It does not merge.
 
 **If the fix is not happening today, give the line back.** A track that stops
 without shipping leaves its board line on `IN LOOP`, which asserts that a session
-holds it right now — `/tracks` will not fork it and step 6 below will not name
+holds it right now — `/loop:tracks` will not fork it and step 6 below will not name
 it, so the unit vanishes from the loop while looking healthy. Move it to
 **`BLOCKED`** with the reason in one line, from the main tree, and put the story's
-`Status` back to `Approved` — no session holds it any more (`/product`, "The
+`Status` back to `Approved` — no session holds it any more (`/loop:product`, "The
 board's state machine"). Still fixing it in this session → leave it `IN LOOP` and
 say nothing; that is what the state is for.
 
@@ -204,23 +209,23 @@ say nothing; that is what the state is for.
 - Full pipeline: story `Status` → `Done`, fill the Change Log.
 - `docs/product/backlog.md`: the line moves to `SHIPPED` and its `Shipped`
    column takes today's date (`YYYY-MM-DD`). If the feature has no
-  line (it entered by `/spec` before the board existed), **add it as `SHIPPED`** —
+  line (it entered by `/loop:spec` before the board existed), **add it as `SHIPPED`** —
   a board that only records what it happened to know about is worse than none.
   Match the line on its `Feature / story` cell, never on the artifact path.
   No board file at all → say so in one line and move on.
-  Columns, states and transitions: `/product`, "The board's state machine".
+  Columns, states and transitions: `/loop:product`, "The board's state machine".
 - `docs/product/brief.md`, **if this feature added or removed a surface**: update
   `Current surface` and the `(mapped <date>)` next to it. Never touch `Out of
   product` or `Product invariants` — those are the user's decisions, which is why
-  `/product` itself carries them over unchanged on a refresh. No brief → one line,
+  `/loop:product` itself carries them over unchanged on a refresh. No brief → one line,
   move on.
 
   > **Why the board is not enough.** `/bmad:pm` *narrows its exploration* on
-  > `Current surface` and `/spec` leans on it to avoid re-deriving the existing
+  > `Current surface` and `/loop:spec` leans on it to avoid re-deriving the existing
   > product. Nothing else in the loop writes that section, so without this line it
-  > freezes at the day `/product` ran while the code moves under it — and the next
+  > freezes at the day `/loop:product` ran while the code moves under it — and the next
   > feature is framed against a description that is wrong with authority. Two
-  > lines here, or a re-run of `/product` nobody schedules.
+  > lines here, or a re-run of `/loop:product` nobody schedules.
 - Write nothing to `docs/work/<slug>/` — it stays as the trace of the loop.
 
 ### 6. Next feature
@@ -228,12 +233,12 @@ say nothing; that is what the state is for.
 Read the board and name the **topmost** `READY` line + the command that opens it:
 
 ```
-/orchestrate docs/specs/<next>.md          (light)
-/orchestrate docs/stories/<slug>/<n>.md    (full)
+/loop:orchestrate docs/specs/<next>.md          (light)
+/loop:orchestrate docs/stories/<slug>/<n>.md    (full)
 ```
 
 **Topmost, not "a" `READY`.** The order of the rows *is* the priority — the only
-place the kit writes one down (`/product`, "The board's state machine"). With five
+place the kit writes one down (`/loop:product`, "The board's state machine"). With five
 `READY` lines, picking the one you noticed first hands a product decision to an
 accident of parsing, and it is invisible: the answer looks exactly like a
 priority. If the top line is wrong for today, say which one you would take and
@@ -245,9 +250,9 @@ List the `BLOCKED` ones with their reason, and let the user decide whether one
 comes back; naming one as "the next feature" re-opens a decision in silence.
 
 **If the user answers "not that one, and not later", write `DROPPED`.** You are
-one of the three commands allowed to (`/product`, "The board's state machine"),
+one of the three commands allowed to (`/loop:product`, "The board's state machine"),
 and only for a decision the user takes here, in this turn, in front of you. Never
-for a line that merely looks stale — that is `/product`'s conversation, not this
+for a line that merely looks stale — that is `/loop:product`'s conversation, not this
 one — and never by deleting the row: a deleted line reads as a unit nobody ever
 thought of, which is the one thing the board exists to prevent. "Not now" is not
 `DROPPED`; it is the line staying `READY`, below the one you take next, or
@@ -256,8 +261,8 @@ thought of, which is the one thing the board exists to prevent. "Not now" is not
 **And on the full pipeline, the story file goes with it**: `Status` → `Dropped`,
 the reason on one line in the Change Log. Step 5 above already writes that twin
 for `SHIPPED` (`Status` → `Done`); this state has one too, and it is the half
-`/tracks` reads. Drop the row alone and the story stays `Approved`, so the next
-`/tracks` forks a unit the user just killed — `/orchestrate` will stop on the
+`/loop:tracks` reads. Drop the row alone and the story stays `Approved`, so the next
+`/loop:tracks` forks a unit the user just killed — `/loop:orchestrate` will stop on the
 terminal row, but the worktree and the branch exist by then.
 
 ## Output

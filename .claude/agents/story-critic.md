@@ -56,7 +56,7 @@ story, then judge the complete catalog for global consistency.
 - [ ] **Stays inside the product**: nothing the story delivers is something the
       same brief's `Out of product` says the product will never be. That section
       is the durable anti scope-creep and **you are its only enforcer** — no
-      reviewer replays it against the code, and a feature entering by `/spec`
+      reviewer replays it against the code, and a feature entering by `/loop:spec`
       never meets you at all. Report it **Major**, quote the line of `Out of
       product` it crosses, and escalate it exactly like an invariant: you may not
       resolve it by narrowing the story until it fits. It is Major and not

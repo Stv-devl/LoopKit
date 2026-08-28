@@ -84,7 +84,7 @@ export default [
   //
   // 1. The PARSER. ESLint 10's default parser is espree, which does not read a
   //    type annotation: on one `.ts` file it is a hard `Parsing error` that
-  //    FAILS the run — and `pnpm lint --max-warnings=0` is a /ship gate, so the
+  //    FAILS the run — and `pnpm lint --max-warnings=0` is a /loop:ship gate, so the
   //    gate goes with it. `tseslint.configs.recommended` is what supplies it.
   //
   // 2. The `files` KEY. A flat-config object with no `files` applies only to

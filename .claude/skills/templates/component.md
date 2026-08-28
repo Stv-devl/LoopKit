@@ -2,10 +2,10 @@
 
 > **Colours and spacing come from tokens, never from raw palette classes.** The
 > classes below (`bg-surface`, `text-muted`, `border-danger`) are **placeholders
-> for this repo's own token names** — `/design-system` writes the real ones into
+> for this repo's own token names** — `/loop:design-system` writes the real ones into
 > the `@theme` block, and `docs/design-system.md` is their single source of
 > truth. Rewrite them once, here, when that file exists. A raw `bg-white` /
-> `text-gray-500` / `border-red-500` in a diff is what `/review`'s `ui`
+> `text-gray-500` / `border-red-500` in a diff is what `/loop:review`'s `ui`
 > dimension flags: it survives a theme change, a dark mode and a rebrand by
 > quietly looking wrong.
 

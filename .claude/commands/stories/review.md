@@ -34,7 +34,7 @@ overlaps, and dependency cycles are part of every review batch.
    - **CONCERNS** if only Major/Minor
    - **PASS** otherwise
 4. **Apply the fixes** to the story files (rewrite the slice, split, merge, drop,
-   reorder, sharpen the AC). This command owns the story files — unlike `/review`,
+   reorder, sharpen the AC). This command owns the story files — unlike `/loop:review`,
    you fix here rather than only reporting.
 
    **Two classes of finding are escalated, never fixed here, and they are the ones
@@ -63,10 +63,10 @@ overlaps, and dependency cycles are part of every review batch.
    already had if this gate has run before, **a new one at step 6 otherwise** —
    which is the normal case, since on a first pass the board holds one `DRAFT`
    line for the whole feature and no per-story line exists yet. Both halves, or it
-   comes back: `/tracks` reads `Status` and would fork a story left `Approved`,
-   `/ship` step 6 would name a line left `READY` as the next feature — and a story
+   comes back: `/loop:tracks` reads `Status` and would fork a story left `Approved`,
+   `/loop:ship` step 6 would name a line left `READY` as the next feature — and a story
    with no row at all is the "unit nobody ever thought about" the board exists to
-   make impossible. Neither is a state to invent — see `/product`, "The board's
+   make impossible. Neither is a state to invent — see `/loop:product`, "The board's
    state machine".
 5. Re-run step 2 **only on the stories you rewrote**, in one critic batch (not
    the whole set). Include the updated complete catalog so global checks remain
@@ -91,29 +91,29 @@ overlaps, and dependency cycles are part of every review batch.
      (that board is the FEATURE READY gate — skip in one line if the file doesn't
      exist), list the residual Minor in your report, and suggest
      `/bmad:architect docs/prd/<slug>.md`. A Minor is reported, it does not hold
-     the slice: `Draft` blocks `/bmad:architect` and `/tracks` outright, so leaving
+     the slice: `Draft` blocks `/bmad:architect` and `/loop:tracks` outright, so leaving
      the set there over a wording finding deadlocks the pipeline.
 
-     > **The feature's `DRAFT` line, if `/product` opened one, is replaced — not
+     > **The feature's `DRAFT` line, if `/loop:product` opened one, is replaced — not
      > kept beside yours.** The board holds **one line per unit of loop**, and on
      > the full pipeline that unit is the story: a feature-level line names
-     > something no `/orchestrate` can ever take, and it would sit `DRAFT` forever
+     > something no `/loop:orchestrate` can ever take, and it would sit `DRAFT` forever
      > while its stories ship. Match it on the `Feature / story` cell (the feature
      > name your story ids extend), replace it with the per-story lines **at that
      > same position and in id order** — the dropped ids included, at their rank,
      > carrying `DROPPED` — and say so in your report. The rank is the
-     > priority (`/product`, "the order of the rows is the priority") and the id
+     > priority (`/loop:product`, "the order of the rows is the priority") and the id
      > order is the dependency order — appending the stories at the bottom instead
-     > loses both at once. Columns, states and transitions: `/product`, "The board's
+     > loses both at once. Columns, states and transitions: `/loop:product`, "The board's
      > state machine" — the only copy.
      > **An escalated `Out of product` finding is presented, and you wait.** It is
      > a Major, so it does not fail the slice — but it is the one Major whose
      > answer is not yours and not the critic's. State it in two lines (the story,
      > the excluded line it crosses), and ask: move the boundary in the brief, or
      > drop the story. **You do not edit the brief either way** — `docs/product/brief.md`
-     > has one writer, `/product`, and its two decision sections are chosen by the
+     > has one writer, `/loop:product`, and its two decision sections are chosen by the
      > user in that command's closed question. "Move the boundary" means a
-     > `/product` refresh, and you say so. Suggest `/bmad:architect` only after the
+     > `/loop:product` refresh, and you say so. Suggest `/bmad:architect` only after the
      > answer. Marking the
      > stories `Approved` and listing the finding among the residual Minor is how a
      > product boundary gets crossed with everyone's signature on it.
@@ -141,7 +141,7 @@ overlaps, and dependency cycles are part of every review batch.
   settle by rewriting the story — see step 4.
 
 > At this stage the stories are **functional**. They carry no architecture context
-> yet — that is normal, `/plan` injects it per feature. Do not flag a missing
+> yet — that is normal, `/loop:plan` injects it per feature. Do not flag a missing
 > file path as a finding.
 
 ## Rules

@@ -10,7 +10,7 @@ You turn the PRD into **story files**, one per story. This runs **before**
 killed at `/stories:review` before anyone pays for an architecture built on it.
 
 The stories you write are **functional**. You do not invent file paths, contracts
-or patterns — that context is injected later, per story, by `/plan`, when it is
+or patterns — that context is injected later, per story, by `/loop:plan`, when it is
 fresh and grounded in real research.
 
 ## Process
@@ -89,7 +89,7 @@ As a <role>, I want <action>, so that <benefit>.
 NOT architecture.>
 
 ## Plan
-<!-- filled by /plan — files, contracts, patterns, pitfalls -->
+<!-- filled by /loop:plan — files, contracts, patterns, pitfalls -->
 
 ## Dev Agent Record
 <!-- filled during EXECUTE -->
@@ -110,12 +110,12 @@ NOT architecture.>
   "Write the migration" is a task, not a story.
 - **Carry the PRD's `Token profile` verbatim into every story**, and pass it to
   every `story-writer` batch. A story never lowers it. It is the line
-  `/orchestrate` Phase 0 inherits instead of defaulting to `economy`, the one
-  `/bmad:qa` means by "the story's token profile", and the one `/ship` reads to
+  `/loop:orchestrate` Phase 0 inherits instead of defaulting to `economy`, the one
+  `/bmad:qa` means by "the story's token profile", and the one `/loop:ship` reads to
   arm its security audit — a story that drops it disarms all three in silence.
 - Every AC is observable — a reviewer must be able to prove it false.
 - Cover every PRD functional requirement; invent nothing beyond the PRD.
 - No architecture, no file paths, no repository signatures. If you feel the urge
-  to write one, it belongs in `/plan`.
+  to write one, it belongs in `/loop:plan`.
 
 ## Task: $ARGUMENTS

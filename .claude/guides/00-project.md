@@ -5,7 +5,7 @@ loads this file; `.claude/rules/00-project.md` names it.
 
 ## Why five of the six run twice
 
-`/ship` runs them before the commit, on the machine that launched it;
+`/loop:ship` runs them before the commit, on the machine that launched it;
 `.github/workflows/ci.yml` runs them after the push, where nobody can skip them —
 a disabled hook, a `--no-verify`, another machine, an agent that short-circuited
 the step. The sixth, the dev server, is a local role with nothing to serve in CI.
@@ -13,8 +13,8 @@ Which role lands where, why no agent runs in CI, and what the deploy workflow
 guarantees: `.claude/skills/templates/ci.md`; the enforced copy is the YAML
 itself. The script **names** in the rule are a twin of its `run:` lines —
 `/kit:doctor`'s `ci-scripts` compares them, and it is the only thing that does.
-**A green CI is not a reason to stop running `/ship`**: it reports on a diff
-already pushed, `/ship` reports while the fix is still free.
+**A green CI is not a reason to stop running `/loop:ship`**: it reports on a diff
+already pushed, `/loop:ship` reports while the fix is still free.
 
 ## Why the dependency audit is a gate
 
@@ -37,7 +37,7 @@ the third option: swallowing it silently because the release is due.
 **Why lint is a gate and not just a hook.** `eslint-check.sh` enqueues after
 every write and `eslint-batch.sh` lints the batch once, at the end of the turn
 — and it is **non-blocking**: it prints a count, nothing more. `pnpm lint
---max-warnings=0` in `/ship` is the only thing that stops the three classes of
+--max-warnings=0` in `/loop:ship` is the only thing that stops the three classes of
 defect nothing else sees: conditional hooks and exhaustive-deps; a component
 the React Compiler **silently skipped** (a green build says nothing about
 whether the code is actually memoized); and a test that asserts nothing, is

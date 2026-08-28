@@ -10,21 +10,21 @@ validation points**: the user approves the PRD, the story set, and the
 architecture before any code.
 
 > For a small feature (one screen, a CRUD, a fix), this is oversized — use
-> `/spec` then `/orchestrate`. Same loop, lighter entry.
+> `/loop:spec` then `/loop:orchestrate`. Same loop, lighter entry.
 
 ```
-/product ─(once)─▶ /bmad:pm ─▶ /bmad:sm ─▶ /stories:review ─▶ /bmad:architect ─▶ /design-system ─(once)
-                                                                                        │
-                                                                       per story ▼ FEATURE READY
-                                        /orchestrate = research → interface → plan → execute → review → ship
-                                                                                        │
-                                                                                  next story
+/loop:product ─(once)─▶ /bmad:pm ─▶ /bmad:sm ─▶ /stories:review ─▶ /bmad:architect ─▶ /loop:design-system ─(once)
+                                                                                            │
+                                                                          per story ▼ FEATURE READY
+              /loop:orchestrate = research → interface → plan → execute → review → ship
+                                                                                            │
+                                                                                      next story
 ```
 
 ## Phases
 
 ### 1. Frame (once per product, skip if done)
-`docs/product/brief.md` missing → `/product`. It also opens the backlog board,
+`docs/product/brief.md` missing → `/loop:product`. It also opens the backlog board,
 which is the FEATURE READY gate the loop checks.
 
 ### 2. Planning
@@ -35,21 +35,21 @@ which is the FEATURE READY gate the loop checks.
    confirms the slice.
 4. `/bmad:architect docs/prd/<slug>.md` → architecture + story map.
    **Pause**: validation.
-5. `/design-system` → `docs/design-system.md`, **if** any story has a user surface
+5. `/loop:design-system` → `docs/design-system.md`, **if** any story has a user surface
    and the file doesn't exist yet. Written once per product, but it is a hard
-   prerequisite of `/interface`: without it the proposals invent components.
+   prerequisite of `/loop:interface`: without it the proposals invent components.
 
 ### 3. Build loop (story by story)
 For each `Approved` story, in the architecture's dependency order:
 
 ```
-/orchestrate docs/stories/<slug>/<n>.md
+/loop:orchestrate docs/stories/<slug>/<n>.md
 ```
 
 which runs research → interface → plan → execute → review → ship for that story, and
 names the next one.
 
-- **Before each story, run `/tracks docs/stories/<slug>/`** — it computes what can
+- **Before each story, run `/loop:tracks docs/stories/<slug>/`** — it computes what can
   run in parallel *now* (method and ceiling: `.claude/guides/10-worktrees.md`,
   "How many tracks"), verifies the story map against the code, and prepares the
   worktrees. **Three tracks maximum**; a fourth is queued, not dropped. Do not
@@ -58,7 +58,7 @@ names the next one.
   `.claude/worktrees/<feature>-<epic>.<story>` on the matching `feat/` branch,
   **never `<slug>`**: everywhere else in this file `<slug>` is the PRD's, and
   three stories forking under it is three tracks in one worktree. The derivation
-  is `/research`'s rule; `/tracks` spells it out. Never merged into one loop
+  is `/loop:research`'s rule; `/loop:tracks` spells it out. Never merged into one loop
   pass, never two in one tree, and one session drives one worktree: N tracks
   means N sessions.
 - Stories touching a **shared foundation** (migrations, `src/lib/*`, `shared/*`,
@@ -80,12 +80,12 @@ When every story is `Done`:
   *while* the epic was being built, without any story touching a dependency.
 - Recap: epics delivered, feature-level AC checked, what stays OUT, what needs
   deploying.
-- `docs/product/backlog.md`: **verify, don't rewrite.** `/ship` moved each line
+- `docs/product/backlog.md`: **verify, don't rewrite.** `/loop:ship` moved each line
   to `SHIPPED` story by story, at step 5. What you check is that nothing was left
   behind: no line of this epic still on `IN LOOP` (a track that stopped without
   giving the line back), and every `BLOCKED` one named with its reason in the
-  recap. Writing states here would be a second authority on a file `/ship` already
-  owns — `/product`, "The board's state machine", is the only copy.
+  recap. Writing states here would be a second authority on a file `/loop:ship` already
+  owns — `/loop:product`, "The board's state machine", is the only copy.
 
 ## Resume
 

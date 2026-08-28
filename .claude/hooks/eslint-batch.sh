@@ -8,8 +8,8 @@
 # The twin of eslint-check.sh: that one enqueues, this one lints. Non-blocking,
 # exactly as before — it emits a count and exits 0. It never returns
 # {"decision": "block"}, and that is deliberate: the blocking lint is
-# `pnpm lint --max-warnings=0` in /ship (00-project.md), and a lint hook that
-# can hold the turn open is a lint hook that argues with the /plan gate.
+# `pnpm lint --max-warnings=0` in /loop:ship (00-project.md), and a lint hook that
+# can hold the turn open is a lint hook that argues with the /loop:plan gate.
 #
 
 set -e
@@ -61,7 +61,7 @@ WARNING_COUNT=$(grep -c ", Warning - " <<< "$ESLINT_OUTPUT" || true)
 
 if [[ "${ERROR_COUNT:-0}" -eq 0 ]] && [[ "${WARNING_COUNT:-0}" -eq 0 ]]; then exit 0; fi
 
-jq -n --arg msg "ESLint: ${ERROR_COUNT} error(s), ${WARNING_COUNT} warning(s) across ${#FILES[@]} file(s) written this turn. Not a gate — /ship runs the blocking one." \
+jq -n --arg msg "ESLint: ${ERROR_COUNT} error(s), ${WARNING_COUNT} warning(s) across ${#FILES[@]} file(s) written this turn. Not a gate — /loop:ship runs the blocking one." \
     '{systemMessage: $msg}'
 
 exit 0

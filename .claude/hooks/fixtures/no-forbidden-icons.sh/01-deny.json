@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/src/Icon.tsx","content":"import { Rocket } from 'lucide-react'"}}

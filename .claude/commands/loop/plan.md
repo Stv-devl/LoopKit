@@ -3,12 +3,12 @@ description: PLAN step — merge research + design into an executable plan with 
 argument-hint: [path docs/work/<slug>/research.md or design.md]
 ---
 
-# /plan — the write order, decided once and written down
+# /loop:plan — the write order, decided once and written down
 
 Third step of the loop. You merge the entry artifact + research + design (+ the
 architecture, in the full pipeline) into **one executable plan**. This is where
 the technical context finally lands on the story: the stories were written
-functional on purpose, `/plan` injects the paths, contracts and pitfalls at the
+functional on purpose, `/loop:plan` injects the paths, contracts and pitfalls at the
 moment they are freshest.
 
 You **do not write code here**.
@@ -21,7 +21,7 @@ You **do not write code here**.
 
    > **Two slugs, and they are not the same string.** `<slug>` above is the
    > **loop** slug, and for a story it carries the story number:
-   > `docs/stories/inbox/1.2.md` → `inbox-1.2` (`/research`, "The slug", the only
+   > `docs/stories/inbox/1.2.md` → `inbox-1.2` (`/loop:research`, "The slug", the only
    > copy of the rule). The architecture is written **once per PRD**, so its file
    > is `docs/architecture/inbox.md` — the loop slug without its `-<epic>.<story>`
    > suffix. Look it up under the loop slug and you find nothing, and this step
@@ -66,15 +66,26 @@ You **do not write code here**.
      feature from running beside this one in parallel — name them, they are the
      input of the worktree decision.
 4. **Write** `docs/work/<slug>/plan.md`. Take `<slug>` from the path you were
-   handed — `/research` already recorded it by creating that folder, so reading it
+   handed — `/loop:research` already recorded it by creating that folder, so reading it
    off the path cannot disagree with it. Deriving it again from the entry artifact
    would.
 5. **If the entry artifact is a story**, fill its `## Plan` section with a
    condensed version (files, contracts, pitfalls) and a link to the full plan.
    This is where the architecture context finally lands on the story — the reason
-   `/bmad:sm` deliberately left it empty. Skip for a `/spec` entry (the spec has
+   `/bmad:sm` deliberately left it empty. Skip for a `/loop:spec` entry (the spec has
    no such section).
-6. **TEST PLAN GATE — stop and ask the user.** Print the `Test plan` section in
+6. **PLAN CRITIC GATE.** Launch one `plan-critic` with the plan path and its entry
+   artifact. It returns `completeness` and `quality` as two independent scores;
+   never average them. Hand every Critical/Major claim to a `verifier` using the
+   same find-then-refute mechanics as `/loop:review`.
+
+   Any surviving Critical/Major rewrites the plan before EXECUTE, then reruns
+   only the affected critic axis. Record a failed pass as gate `plan-critic` in
+   `docs/work/<slug>/attempts.json` through `kit-attempts.py`. At the third failed
+   pass, stop and apply the loop's `BLOCKED` contract; a fourth rewrite is never
+   attempted. Clear that gate after both axes have no surviving blocker. Persist
+   the final two scores under `## Plan critic` in the plan.
+7. **TEST PLAN GATE — stop and ask the user.** Print the `Test plan` section in
    full and wait for an explicit go.
 
    **First, clear research's `Open questions`.** That section holds what no probe
@@ -85,7 +96,7 @@ You **do not write code here**.
    silently becomes an assumption baked into a frozen test — which is exactly the
    failure this gate exists to prevent. If research left none, say so in one line.
 
-   **And if this plan corrects a defect** — a bug report, a `/review` finding, a
+   **And if this plan corrects a defect** — a bug report, a `/loop:review` finding, a
    regression — check that the `Test plan` opens with the case that **reproduces
    it**, at whatever layer the defect lives, component included
    (`.claude/rules/05-testing.md`, "A bugfix opens with the test that reproduces
@@ -107,7 +118,7 @@ You **do not write code here**.
    against them. Amend the plan from the answer, then continue. Do not start
    EXECUTE on silence.
 
-7. **Stop.** Suggest `/orchestrate docs/work/<slug>/plan.md` (which executes,
+8. **Stop.** Suggest `/loop:orchestrate docs/work/<slug>/plan.md` (which executes,
    reviews and ships), or execute inline if the caller already asked for it.
 
 ## Template `docs/work/<slug>/plan.md`
@@ -190,6 +201,11 @@ Delete the block when the work introduces new behaviour only.>
 
 ## Acceptance criteria (carried from the entry artifact)
 - [ ] <verbatim, they are the final gate>
+
+## Plan critic
+- completeness: <0-100>
+- quality: <0-100>
+- surviving blockers: none
 ```
 
 ## Rules
@@ -198,7 +214,7 @@ Delete the block when the work introduces new behaviour only.>
 - **No parallel lot that shares a file.** When in doubt, sequential — a merge
   conflict inside a feature costs more than the wait.
 - A worktree isolates a **track** (this whole plan), never a lot. Declaring one
-  is `/orchestrate`'s Phase 0.5 call; the plan only records it.
+  is `/loop:orchestrate`'s Phase 0.5 call; the plan only records it.
 - No manual SQL: any migration goes through `/database:migration`.
 - Copy the acceptance criteria **verbatim**; do not rephrase them softer.
 - The test plan's **test-first** block is the deliverable the user actually

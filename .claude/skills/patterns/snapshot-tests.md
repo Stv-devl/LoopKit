@@ -52,7 +52,7 @@ describe('Button', () => {
 ## Never in the three frozen layers
 
 **No snapshot — file or inline — in `utils.ts`, `mapper.ts`,
-`repository.ts`/`services.ts`.** Those files are frozen after the `/plan` gate
+`repository.ts`/`services.ts`.** Those files are frozen after the `/loop:plan` gate
 (`.claude/rules/05-testing.md`), and a snapshot is the one assertion that
 rewrites itself: `pnpm test:run -u` edits the inline snapshot in place and
 regenerates the `.snap`. The writer is the **test runner**, so no Write/Edit

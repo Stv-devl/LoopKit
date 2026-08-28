@@ -222,7 +222,7 @@ def marker_path(path: str) -> str:
     """Same derivation as marker_path() in the two bash TDD hooks.
 
     `tr -c 'A-Za-z0-9._-' '_'` over the absolute path. The marker directory is
-    shared with the TypeScript cycle on purpose: `/review`'s `tests` dimension
+    shared with the TypeScript cycle on purpose: `/loop:review`'s `tests` dimension
     checks "a marker exists for each test-first file in the diff" without
     caring which language produced it.
     """

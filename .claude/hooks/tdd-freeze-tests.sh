@@ -2,7 +2,7 @@
 #
 # Hook: tdd-freeze-tests
 # Event: PreToolUse (Write|Edit)
-# Purpose: Once written and validated at the /plan gate, a test file of the three
+# Purpose: Once written and validated at the /loop:plan gate, a test file of the three
 #          test-first layers is immutable for the rest of the feature. The
 #          implementation bends to the test, never the reverse.
 #          Scope + rationale: .claude/rules/05-testing.md ("Test-first").
@@ -304,7 +304,7 @@ if [[ -n "$OLD_STRING" && "$OLD_STRING" != *"expect("* && "$NEW_STRING" == *"$OL
     #
     #    Limit, stated rather than hidden: this catches the vi/jest mock calls.
     #    A `vi.spyOn` on a namespace import of the module under test is not
-    #    matched, and neither is a specifier behind a variable — /review's
+    #    matched, and neither is a specifier behind a variable — /loop:review's
     #    `tests` dimension owns those.
     #
     #    utils/mapper are pure, so 05-testing.md forbids mocking them at all —
@@ -350,11 +350,11 @@ if [[ -n "$OLD_STRING" && "$OLD_STRING" != *"expect("* && "$NEW_STRING" == *"$OL
     fi
 
     if [[ -z "$REFUSED" ]]; then
-        jq -n --arg m "TDD: new case appended to the frozen test '$FILE_PATH' — allowed (the test list grows as you learn), nothing existing was touched. Say in your next message which behaviour it covers and why the /plan test plan missed it; /review compares this file against that plan." '{systemMessage: $m}'
+        jq -n --arg m "TDD: new case appended to the frozen test '$FILE_PATH' — allowed (the test list grows as you learn), nothing existing was touched. Say in your next message which behaviour it covers and why the /loop:plan test plan missed it; /loop:review compares this file against that plan." '{systemMessage: $m}'
         exit 0
     fi
 
     deny "Frozen test: this edit to '$FILE_PATH' looks like an insertion, but $REFUSED (.claude/rules/05-testing.md).\n\nAdding a case is allowed; opening a way into a case that already runs is not — an inserted 'return;' leaves every assertion intact and kills the case anyway, and the lint cannot see it.\n\nA real append: anchor on a line outside any case body (the closing '});' of the previous one), keep that anchor verbatim, and let the added block carry its own 'expect('. Add its fixtures in the same edit.\n\nIf you genuinely need to change what an existing case asserts, that is a plan-level correction: tell the user which case and why, add one line to .claude/.tdd-unfrozen in this shape:\n\n    $FILE_PATH  # <one-line reason>\n\nthen edit."
 fi
 
-deny "Frozen test: '$FILE_PATH' is a test-first file (.claude/rules/05-testing.md).\n\nIt was validated at the /plan gate and the implementation is written against it. Adjusting a test so it agrees with the code is exactly what the freeze prevents. The fix is almost always in the implementation, not here.\n\nTwo different situations, and this edit is neither:\n\n  ADDING a case — allowed without any ceremony, but only as a pure insertion: anchor the edit on a line outside any case body and carrying no 'expect(', keep that anchor verbatim, and let the added block carry its own 'expect('. Rewriting an 'it()' title is not an insertion.\n\n  CORRECTING an assertion — a plan-level correction, so:\n    1. say so to the user, with which case and why\n    2. add one line to .claude/.tdd-unfrozen, in this shape:\n         $FILE_PATH  # <one-line reason>\n    3. then edit"
+deny "Frozen test: '$FILE_PATH' is a test-first file (.claude/rules/05-testing.md).\n\nIt was validated at the /loop:plan gate and the implementation is written against it. Adjusting a test so it agrees with the code is exactly what the freeze prevents. The fix is almost always in the implementation, not here.\n\nTwo different situations, and this edit is neither:\n\n  ADDING a case — allowed without any ceremony, but only as a pure insertion: anchor the edit on a line outside any case body and carrying no 'expect(', keep that anchor verbatim, and let the added block carry its own 'expect('. Rewriting an 'it()' title is not an insertion.\n\n  CORRECTING an assertion — a plan-level correction, so:\n    1. say so to the user, with which case and why\n    2. add one line to .claude/.tdd-unfrozen, in this shape:\n         $FILE_PATH  # <one-line reason>\n    3. then edit"

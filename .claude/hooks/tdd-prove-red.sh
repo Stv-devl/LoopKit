@@ -23,7 +23,7 @@
 # the marker is written, because both produce a red that proves nothing:
 #
 #   - the file contains no assertion at all. `expect-expect` catches that, but
-#     only at the `pnpm lint` gate in /ship — long after this marker unlocked the
+#     only at the `pnpm lint` gate in /loop:ship — long after this marker unlocked the
 #     implementation and the freeze closed the file.
 #   - the run died before reaching any assertion. An unresolved import OF THE
 #     MODULE UNDER TEST is the legitimate first red and stays accepted; a syntax
@@ -277,7 +277,7 @@ if [[ "$STATE" == "RED" ]]; then
     # is the intended outcome: a noisy block beats a TDD that believes it is on.
 
     if [[ -z "$HAS_ASSERTION" ]]; then
-        emit "TDD: $FILE_PATH failed, but it contains no assertion — no expect(), no assert. A run that fails without asserting anything proves nothing about the behaviour it names, so NO marker was recorded and the module still cannot be created. Write the cases from the /plan test plan, then save again.\\n\\n$TAIL"
+        emit "TDD: $FILE_PATH failed, but it contains no assertion — no expect(), no assert. A run that fails without asserting anything proves nothing about the behaviour it names, so NO marker was recorded and the module still cannot be created. Write the cases from the /loop:plan test plan, then save again.\\n\\n$TAIL"
     fi
 
     if [[ "$FAILURE_KIND" == "broken-file" ]]; then
@@ -295,7 +295,7 @@ if [[ "$STATE" == "RED" ]]; then
     # single `expect(1).toBe(2)` wrote the marker and unlocked module creation.
     # A failure that names nothing proves nothing, in either direction.
     if [[ -z "$SYMBOLS" ]]; then
-        emit "TDD: $FILE_PATH failed, but this hook cannot tell what it exercises — it carries no import of '$MODULE_BASE' that can be read. A red that names nothing about the module under test proves nothing about the behaviour it claims, so NO marker was recorded and the module still cannot be created. Import the symbols from the /plan Contracts block and save again.\\n\\n$TAIL"
+        emit "TDD: $FILE_PATH failed, but this hook cannot tell what it exercises — it carries no import of '$MODULE_BASE' that can be read. A red that names nothing about the module under test proves nothing about the behaviour it claims, so NO marker was recorded and the module still cannot be created. Import the symbols from the /loop:plan Contracts block and save again.\\n\\n$TAIL"
     fi
 
     mkdir -p "$RED_DIR"

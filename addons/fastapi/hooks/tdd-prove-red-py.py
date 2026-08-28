@@ -238,7 +238,7 @@ def main() -> None:
                 "TDD: %s failed, but it contains no assertion — no `assert`, no "
                 "`pytest.raises`. A run that fails without asserting anything proves "
                 "nothing about the behaviour it names, so NO marker was recorded and "
-                "%s still cannot be created. Write the cases from the /plan test "
+                "%s still cannot be created. Write the cases from the /loop:plan test "
                 "plan, then save again.\n\n%s" % (file_path, impl_rel, tail)
             )
 
@@ -317,7 +317,7 @@ def main() -> None:
                 "ruff has no equivalent of `no-disabled-tests`, and the freeze only "
                 "inspects what an edit adds. Remove the skip and save again; if the "
                 "case is genuinely not ready, `pytest.mark.xfail` is not the answer "
-                "either — park it as a comment in the /plan test plan.\n\n%s"
+                "either — park it as a comment in the /loop:plan test plan.\n\n%s"
                 % (file_path, skipped.group(0).strip(), impl_rel, tail)
             )
 

@@ -6,7 +6,7 @@ argument-hint: [path docs/prd/<slug>.md]
 # /bmad:architect — Architect
 
 From a **PRD** and its **reviewed stories** (`Approved`), you produce the
-technical design that every story's `/plan` will draw on. You don't write code —
+technical design that every story's `/loop:plan` will draw on. You don't write code —
 you decide the structure, the contracts, the wiring points, and the build order.
 
 > Runs **after** `/stories:review`. Designing against a slice that hasn't survived
@@ -21,7 +21,7 @@ you decide the structure, the contracts, the wiring points, and the build order.
    > kit's own headline claim — *a bad slice is rewritten in two minutes while it
    > is functional, and costs a day once an architecture stands on it* — and this
    > is the only place anything can act on it. A command that names the risk and
-   > proceeds anyway enforces nothing. Same shape as `/design-system` stopping on
+   > proceeds anyway enforces nothing. Same shape as `/loop:design-system` stopping on
    > a missing `docs/product/brief.md`.
 2. **Map the existing code with bounded context.** Default to one `explorer`
    covering patterns, wiring, reuse and blast radius. Use at most two when the
@@ -30,15 +30,15 @@ you decide the structure, the contracts, the wiring points, and the build order.
    feature template and patterns directly relevant to the mapped surfaces.
 3. **Write** `docs/architecture/<slug>.md` (template below) — `<slug>` being the
    **PRD's**, the one you were handed. One architecture per PRD, never per story:
-   a story's own loop slug adds `-<epic>.<story>` (`/research`, "The slug"), and
-   `/plan` reads this file by the PRD slug precisely because it is shared by every
+   a story's own loop slug adds `-<epic>.<story>` (`/loop:research`, "The slug"), and
+   `/loop:plan` reads this file by the PRD slug precisely because it is shared by every
    story of the feature.
 4. **Design system check** — if any story has a user surface and
-   `docs/design-system.md` does not exist, the next step is `/design-system`, not
-   the loop: without it `/interface` invents components instead of composing with the
+   `docs/design-system.md` does not exist, the next step is `/loop:design-system`, not
+   the loop: without it `/loop:interface` invents components instead of composing with the
    primitives already in `src/components/ui/`. Say so explicitly.
-5. **Stop.** Suggest `/design-system` (if step 4 triggered), then
-   `/orchestrate docs/stories/<slug>/1.1.md` (the first story enters the loop).
+5. **Stop.** Suggest `/loop:design-system` (if step 4 triggered), then
+   `/loop:orchestrate docs/stories/<slug>/1.1.md` (the first story enters the loop).
 
 ## Template `docs/architecture/<slug>.md`
 

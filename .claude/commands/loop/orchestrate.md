@@ -3,7 +3,7 @@ description: Runs the whole feature loop — research → interface → plan →
 argument-hint: [--economy|--standard|--critical] [path: spec, story, research/design/plan artifact]
 ---
 
-# /orchestrate — the feature loop, end to end
+# /loop:orchestrate — the feature loop, end to end
 
 You receive an **entry artifact** and drive it to shipped:
 
@@ -11,7 +11,7 @@ You receive an **entry artifact** and drive it to shipped:
 RESEARCH → INTERFACE → PLAN → EXECUTE → REVIEW → SHIP → next feature
 ```
 
-Both pipelines converge here: a `/spec` contract (light) and a reviewed story
+Both pipelines converge here: a `/loop:spec` contract (light) and a reviewed story
 (full) enter the same loop. **You decide** what to skip, sequence or parallelise
 from the real dependencies — not from a frozen script.
 
@@ -26,14 +26,14 @@ from the real dependencies — not from a frozen script.
 > its own worktree. See Phase 0.5.
 
 The loop's artifacts live in `docs/work/<slug>/`. The slug is **derived from the
-entry artifact's path** by the two-line rule in `/research` — the only copy.
-`/research` is where it gets **recorded** (it creates the folder), and every phase
+entry artifact's path** by the two-line rule in `/loop:research` — the only copy.
+`/loop:research` is where it gets **recorded** (it creates the folder), and every phase
 after that reads it out of the path it was handed rather than re-deriving it.
 
 **Phase 0.5 is the one exception, and it is not optional**: it names the worktree
 and the branch before Phase 1 has run, so it applies the derivation rule itself.
 Same rule, same spelling — that is the whole point of the rule being a function of
-the path. A second spelling means `/plan` silently reads no research at all, and a
+the path. A second spelling means `/loop:plan` silently reads no research at all, and a
 worktree nobody can match to a `docs/work/` folder.
 
 
@@ -68,6 +68,24 @@ launch no new agent: finish the current atomic write/test, refresh the checkpoin
 and yield. When `.claude/.codex-ready` exists, do not start another phase. The
 external `workflow.sh` supervisor will stop Claude and continue with Codex.
 
+## Gate attempt ceiling
+
+Every retryable gate owns one key in `docs/work/<slug>/attempts.json`:
+`interface`, `plan-critic`, `test-plan`, each `red:<layer>`, `review`, and each
+ship gate (`typecheck`, `lint`, `test`, `coverage`, `build`, `audit`, `security`).
+On failure run:
+
+```bash
+python3 .claude/hooks/kit-attempts.py fail docs/work/<slug>/plan.md <gate> "<last failure>" \
+  --board docs/product/backlog.md --unit "<exact Feature / story cell>"
+```
+
+On success use action `pass` and omit the reason. Exit 3 is the third failure:
+the script writes `BLOCKED — <gate> failed 3x : <reason>` into the exact unit
+cell, so never start a fourth attempt. In a worktree omit `--board/--unit`, report
+that exact main-tree edit and stop. Return a story to `Approved` when blocking.
+A new session does not reset the counter; a successful gate does.
+
 ---
 
 ## Phase 0 — Read & decide
@@ -77,28 +95,28 @@ external `workflow.sh` supervisor will stop Claude and continue with Codex.
    Read the entry artifact in full. If it is a `plan.md`, jump to Phase 4.
 
    > **Every entry artifact carries the line**, not only a resumed `plan.md`:
-   > `/spec` and `/bmad:pm` decide it at their interview, where the four triggers
+   > `/loop:spec` and `/bmad:pm` decide it at their interview, where the four triggers
    > of `critical` are known, and `/bmad:sm` copies it onto every story. Reaching
    > the default here on a spec or a story means the line is missing — say so
-   > rather than silently shipping `economy`, because `/ship` step 1bis arms its
+   > rather than silently shipping `economy`, because `/loop:ship` step 1bis arms its
    > security audit on this value and nothing downstream can re-derive it.
 2. **FEATURE READY check** — if `docs/product/backlog.md` exists, the entry must
    be a `READY` line. Not listed → add the line **as `READY`**, at the end of the
    table, `Entry artifact` = the path you were handed and `Pipeline` = `light` for
-   a spec / `full` for a story, and say so: the artifact exists and you just read
+   a spec / `full` for a story / `BUG` for `debug.md`, and say so: the artifact exists and you just read
    it in full, which is exactly what the state means (2bis then moves it, under
    the same main-tree rule). At the end, never inserted: the row order is the
-   priority `/ship` reads, and a line that jumps the queue because a session
+   priority `/loop:ship` reads, and a line that jumps the queue because a session
    happened to open it is a priority nobody set. Listed as
    `DRAFT` → stop and ask: a feature that hasn't been framed isn't ready to build.
-   That state is `/product`'s — it is what that command writes for a feature it
+   That state is `/loop:product`'s — it is what that command writes for a feature it
    merely noticed — and it is the only thing this gate can refuse. Listed as
    `BLOCKED` → say so and take it back: the line is one somebody put down on
    purpose, so name the reason it carries before moving it, and stop if that
    reason is still open. `DROPPED` or `SHIPPED` → stop: those two are terminal,
    and building on one of them means someone handed you the wrong artifact.
    No board at all → skip this check in one line (the light path doesn't require one).
-   Columns, states and transitions: `/product`, "The board's state machine" — the
+   Columns, states and transitions: `/loop:product`, "The board's state machine" — the
    only copy.
 2bis. **Take the entry** — mark it in flight and say so in one line:
    - the entry is a **story** → `Status` to `InProgress`. Always: the story file
@@ -107,27 +125,27 @@ external `workflow.sh` supervisor will stop Claude and continue with Codex.
      worktree must never write `docs/product/backlog.md`
      (`.claude/guides/10-worktrees.md`, "Never in a worktree" — one file, every
      track, a conflict at every merge). Inside one, say so in one line and leave
-     the board alone: `Status` is the authority `/tracks` reads, and `/ship` moves
+     the board alone: `Status` is the authority `/loop:tracks` reads, and `/loop:ship` moves
      the line at step 5, after the merge, from the main tree.
 
-   > **This is not bookkeeping, it is the anti-collision.** `/tracks` reads
-   > `Status` to decide what may fork right now, and `/ship` reads the board to
+   > **This is not bookkeeping, it is the anti-collision.** `/loop:tracks` reads
+   > `Status` to decide what may fork right now, and `/loop:ship` reads the board to
    > name the next feature. Leave them on `Approved` / `READY` and the work you
-   > are doing reads as available: two sessions on one story, or `/ship` naming
+   > are doing reads as available: two sessions on one story, or `/loop:ship` naming
    > the story it just built as the next one. The `/bmad:dev` path already does
    > this (`Status` → `InProgress` at step 2) — this line is what makes the
    > one-shot path keep the same promise.
 
    > **What you take, you give back.** `IN LOOP` asserts that a session holds the
-   > work *right now*; only `/ship` step 5 clears it by shipping. Any other exit —
+   > work *right now*; only `/loop:ship` step 5 clears it by shipping. Any other exit —
    > a gate you cannot make green today, a track abandoned, a product question
    > sent back to the user, a session that simply ends the pass — moves the line
    > to **`BLOCKED`** with the reason in one line, from the main tree, and puts
    > the story's `Status` back to `Approved` — no session holds it any more, and
    > that field says exactly that. The **board line**, not `Status`, is what
-   > records that it is on hold; `/tracks` reads both, and drops a `BLOCKED` line
+   > records that it is on hold; `/loop:tracks` reads both, and drops a `BLOCKED` line
    > from its candidates. Skip that and the board claims a session is on it
-   > forever: `/tracks` will not fork it and `/ship` will not name it, so the unit
+   > forever: `/loop:tracks` will not fork it and `/loop:ship` will not name it, so the unit
    > disappears from the loop while looking perfectly healthy. That is the failure
    > mode this state exists for.
 3. Announce in one line each: which phases are **SKIP** and why.
@@ -154,13 +172,13 @@ the authority — read it before forking):
 4. clean tree, known base branch.
 
 When several passes qualify, **how many fork is computed, not assumed**, and
-**three is the ceiling**. In a story pipeline, `/tracks` does it and prepares the
+**three is the ceiling**. In a story pipeline, `/loop:tracks` does it and prepares the
 worktrees; standalone, run the four steps of `10-worktrees.md`, "How many
 tracks", yourself and announce the number with the named set. One session drives
 one worktree: N tracks means N sessions.
 
 **How** (the table in `10-worktrees.md` is the reference). `<slug>` here is the
-**loop slug of this pass**, derived from the entry artifact by `/research`'s rule
+**loop slug of this pass**, derived from the entry artifact by `/loop:research`'s rule
 — `docs/stories/inbox/1.2.md` gives `inbox-1.2`, never `inbox`. Forking a story
 under its feature's name puts every story of that feature on one branch:
 
@@ -184,7 +202,7 @@ line. Otherwise: main tree, one line — "single track, no worktree".
 
 ## Phase 1 — RESEARCH (parallel)
 
-Run `/research <entry artifact>` → `docs/work/<slug>/research.md`.
+Run `/loop:research <entry artifact>` → `docs/work/<slug>/research.md`.
 Multi-modal fan-out: code pattern, wiring, reuse, blast radius, live DB state,
 external API contract. Barrier: the file exists before designing.
 
@@ -193,36 +211,40 @@ and that restatement is what Phase 5 hands the reviewers.
 
 ## Phase 2 — INTERFACE (parallel, skippable)
 
-Run `/interface docs/work/<slug>/research.md` → `docs/work/<slug>/design.md`.
+Run `/loop:interface docs/work/<slug>/research.md` → `docs/work/<slug>/design.md`.
 Competing proposals, judged into one — **how many is the token profile's call,
-declared in `/interface`, not here**. On the default (`economy`) that is one
+declared in `/loop:interface`, not here**. On the default (`economy`) that is one
 designer producing two concise alternatives, judged on the main thread with no
 judge agent; three angles plus a separate judge is the `critical` arity. Skip
 announced in Phase 0 if there's no UI.
 
 **The retained proposal is rendered before the gate**, on an editable canvas
 published as an Artifact — Claude Code's built-in `/design`, invoked from the main
-thread. Arity and fallback are `/interface`'s call, not this file's; what matters
+thread. Arity and fallback are `/loop:interface`'s call, not this file's; what matters
 here is that the extra main-thread context is the canvas, not the agents.
 
-**This phase ends on a human gate too.** `/interface` presents the options and waits
+**This phase ends on a human gate too.** `/loop:interface` presents the options and waits
 for the user to pick — retained as proposed, edited on the canvas, or grafted —
-same shape as `/design-system`, capped at 3 rounds. Do not enter Phase 3 on
+same shape as `/loop:design-system`, capped at 3 rounds. Do not enter Phase 3 on
 silence. A canvas edited **after** the gate reopens the gate: `design.md` is what
 Phase 5 reviews against, and it does not follow the canvas on its own.
 
 > Two gates, two different questions, and neither substitutes for the other: this
 > one fixes **what the screen is**, Phase 3's fixes **what "correct" means for the
-> logic**. Skipping this one and letting `/review` enforce `design.md` anyway
+> logic**. Skipping this one and letting `/loop:review` enforce `design.md` anyway
 > means enforcing a choice nobody made.
 
 ## Phase 3 — PLAN
 
-Run `/plan …` → `docs/work/<slug>/plan.md`: write chain, parallel lots, files,
+Run `/loop:plan …` → `docs/work/<slug>/plan.md`: write chain, parallel lots, files,
 contracts, test plan, acceptance criteria carried verbatim.
 
+Before the human test-plan gate, `/loop:plan` launches `plan-critic`, refutes its
+Critical/Major claims, and rewrites until both completeness and quality are clear
+or the attempt ceiling blocks the line. The two scores remain separate.
+
 **This phase ends on a human gate, and it is the loop's most load-bearing one.**
-`/plan` prints its `Test plan` and waits for the user's explicit go. What is
+`/loop:plan` prints its `Test plan` and waits for the user's explicit go. What is
 being validated is the definition of "correct" for the three test-first layers,
 **before any implementation exists** — the last point where changing it is free,
 since the go freezes those files (`.claude/rules/05-testing.md`).
@@ -326,16 +348,16 @@ Load what you need from `.claude/skills/patterns/` and `templates/`. Respect
 > outside the data layer / composition root. What it deliberately does **not**
 > cover — business logic in components, `as` casts, an over-threshold file — is
 > the `reviewer` agent's job, and `eslint` here is only informational: the real
-> lint gate is `pnpm lint` in `/ship`.
+> lint gate is `pnpm lint` in `/loop:ship`.
 
 ## Phase 5 — REVIEW (parallel, two stages)
 
-Run `/review docs/work/<slug>/plan.md`. On a UI feature it opens with a
+Run `/loop:review docs/work/<slug>/plan.md`. On a UI feature it opens with a
 **visual pass on the main thread**, then groups review dimensions and verifier
 batches according to the token profile. Pass it the plan's **`Vigilance`**
 section — research's traps already restated as things checkable against this
 diff: "object redefined by migration X" became the criterion "does the diff
-revert X?". That restatement is what `/plan` was asked to produce; going back to
+revert X?". That restatement is what `/loop:plan` was asked to produce; going back to
 the raw `Traps` throws it away.
 
 Fix surviving Critical/Major findings **inline**, then re-run only the affected
@@ -343,17 +365,17 @@ dimensions.
 
 ## Phase 6 — SHIP
 
-Run `/ship docs/work/<slug>/plan.md`: parallel gates (`typecheck`, `lint`,
+Run `/loop:ship docs/work/<slug>/plan.md`: parallel gates (`typecheck`, `lint`,
 `test:run`, `test:coverage`, `build`, `audit`), acceptance criteria walked one by
 one, commit via the `github` agent, board advanced, next feature named.
 
 **On a `critical` profile it also runs one `/audit:security` surface** before the
-commit (`/ship`, step 1bis) — the profile you resolved in Phase 0 is what arms
+commit (`/loop:ship`, step 1bis) — the profile you resolved in Phase 0 is what arms
 it, so a feature you upgraded for the review arity is a feature you also
 committed to auditing. Zero cost on the other two profiles.
 
 On a track that forked, the gates run **in its worktree** and the merge back is
-`/ship`'s last, user-gated step — one track integrated at a time.
+`/loop:ship`'s last, user-gated step — one track integrated at a time.
 
 ---
 

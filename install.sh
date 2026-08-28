@@ -2,21 +2,25 @@
 #
 # LoopKit — installe le kit dans un projet cible.
 #
-#   ./install.sh /chemin/vers/mon-projet [--supabase] [--fastapi]
+#   ./install.sh /chemin/vers/mon-projet [--react-ts] [--supabase] [--fastapi]
 #                                        [--no-ci]
 #                                        [--deploy=none|netlify|vercel|pages|ssh|ghcr]
+#
+# Sans profil, installe le core agnostique. --react-ts ajoute les hooks front ;
+# --supabase l'implique ; --fastapi se cumule directement avec core.
 #
 # --no-ci   n'installe AUCUN workflow GitHub. Pour un projet local sans depot
 #           distant : les workflows n'y tourneraient jamais, et un deploy.yml
 #           non rempli resterait un FILL que personne ne finira. Les gates, elles,
-#           ne bougent pas — c'est /ship qui les tient, avec ou sans CI.
+#           ne bougent pas — c'est /loop:ship qui les tient, avec ou sans CI.
 #
 # --deploy  choisit la cible du CD. Omis dans un terminal, la question est posee ;
 #           omis dans un script (pas de TTY), c'est `none` — le workflow echoue
 #           alors volontairement tant que personne n'a choisi.
 #
-# Ne remplace jamais un fichier existant : il écrit `<fichier>.new` à côté et
-# le signale à la fin. À toi de fusionner.
+# Ne remplace jamais un fichier existant : il écrit `<fichier>.new` à côté.
+# Exception volontaire : settings.json fusionne les hooks sélectionnés dans le
+# fichier actif, faute de quoi une mise à jour installe des guardrails muets.
 
 set -euo pipefail
 
@@ -25,11 +29,13 @@ TARGET="${1:-}"
 shift || true
 WITH_SUPABASE=false
 WITH_FASTAPI=false
+WITH_REACT_TS=false
 DEPLOY_TARGET=""
 NO_CI=false
 
 for arg in "$@"; do
     case "$arg" in
+        --react-ts) WITH_REACT_TS=true ;;
         --supabase) WITH_SUPABASE=true ;;
         --fastapi)  WITH_FASTAPI=true ;;
         --deploy=*) DEPLOY_TARGET="${arg#*=}" ;;
@@ -37,6 +43,10 @@ for arg in "$@"; do
         *) echo "erreur: option inconnue '$arg'." >&2; exit 1 ;;
     esac
 done
+
+# Supabase is a React/TypeScript layer in this kit; FastAPI remains cumulative
+# directly on core and does not pull front-end assumptions by itself.
+$WITH_SUPABASE && WITH_REACT_TS=true
 
 # Les cibles disponibles SONT les fichiers de templates/github/publish/. Aucune
 # liste en dur : en ajouter une, c'est deposer un fichier, et la question comme
@@ -56,7 +66,7 @@ deploy_is_valid() {
 }
 
 if [[ -z "$TARGET" ]]; then
-    echo "usage: ./install.sh /chemin/vers/mon-projet [--supabase] [--fastapi]" >&2
+    echo "usage: ./install.sh /chemin/vers/mon-projet [--react-ts] [--supabase] [--fastapi]" >&2
     exit 1
 fi
 if [[ ! -d "$TARGET" ]]; then
@@ -189,8 +199,61 @@ copy_tree() {
         copy_file "$f" "$dst/$rel"
     done < <(find "$src" \
         \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' \) -prune -o \
-        -type f ! -name '*.pyc' ! -name '.DS_Store' \
+        -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
+}
+
+# install_settings <target settings> <react true|false>
+# settings.json is the one kit file that must merge on every update: a .new here
+# means newly added hooks stay mute. User keys win; selected hook groups merge by
+# event + matcher and commands remain unique. Re-running is byte-stable.
+install_settings() {
+    local target="$1" react="$2" selected tmp
+    selected="$(mktemp)"
+    tmp="$(mktemp)"
+
+    if $react; then
+        cp "$KIT_DIR/.claude/settings.json" "$selected"
+    else
+        jq '
+          def core:
+            (.command | endswith("protect-files.sh") or
+                        endswith("english-comments.py") or
+                        endswith("prevent-destructive-commands.sh") or
+                        endswith("enforce-git-workflow.sh") or
+                        endswith("auto-approve-config.sh"));
+          .hooks |= with_entries(
+            .value |= [ .[] | .hooks |= map(select(core)) | select(.hooks | length > 0) ]
+          )
+        ' "$KIT_DIR/.claude/settings.json" > "$selected"
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    if [[ ! -e "$target" ]]; then
+        cp "$selected" "$target"
+        INSTALLED+=("$target")
+        rm -f "$selected" "$tmp"
+        return
+    fi
+
+    jq -s '
+      def merged_groups($groups):
+        $groups
+        | group_by(.matcher // "__all__")
+        | map(.[0] as $base
+              | $base + {hooks: ([.[].hooks[]] | group_by(.command) | map(last))});
+      .[0] as $old | .[1] as $new
+      | ($new * $old)
+      | .permissions.allow = ((($old.permissions.allow // []) + ($new.permissions.allow // [])) | unique)
+      | .hooks = (reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
+          .[$event] = merged_groups((($old.hooks[$event] // []) + ($new.hooks[$event] // [])))))
+    ' "$target" "$selected" > "$tmp"
+    if jq -e --slurpfile candidate "$tmp" '. == $candidate[0]' "$target" >/dev/null; then
+        rm -f "$tmp"
+    else
+        mv "$tmp" "$target"
+    fi
+    rm -f "$selected"
 }
 
 # wire_fastapi <target>
@@ -214,45 +277,43 @@ add_py_hooks() {
           def add_pre($cmd):
             (.hooks.PreToolUse) |= map(
               if .matcher == "Write|Edit"
-              then .hooks += [{type: "command", command: $cmd, timeout: 5}]
+              then .hooks = ((.hooks + [{type: "command", command: $cmd, timeout: 5}]) | unique_by(.command))
               else . end);
-          add_pre("$CLAUDE_PROJECT_DIR/.claude/hooks/no-any-type-py.py")
+          .hooks.PreToolUse |= ((. // []) +
+            (if any(.matcher == "Write|Edit") then []
+             else [{matcher: "Write|Edit", hooks: []}] end))
+          | .hooks.PostToolUse |= ((. // []) +
+            (if any(.matcher == "Write|Edit") then []
+             else [{matcher: "Write|Edit", hooks: []}] end))
+          | add_pre("$CLAUDE_PROJECT_DIR/.claude/hooks/no-any-type-py.py")
           | add_pre("$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-backend-layers.py")
           | add_pre("$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-require-red-py.py")
           | add_pre("$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-freeze-tests-py.py")
           | (.hooks.PostToolUse) |= map(
               if .matcher == "Write|Edit"
-              then .hooks += [{type: "command",
+              then .hooks = ((.hooks + [{type: "command",
                                command: "$CLAUDE_PROJECT_DIR/.claude/hooks/ruff-on-save.sh",
                                timeout: 30},
                               {type: "command",
                                command: "$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-prove-red-py.py",
-                               timeout: 180}]
+                               timeout: 180}]) | unique_by(.command))
               else . end)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 
 wire_fastapi() {
-    local t="$1" f installed_settings=false installed_claude=false installed_guard=false
+    local t="$1" f installed_claude=false installed_guard=false
     for f in "${INSTALLED[@]:-}"; do
-        [[ "$f" == "$t/.claude/settings.json" ]] && installed_settings=true
         [[ "$f" == "$t/CLAUDE.md" ]] && installed_claude=true
         [[ "$f" == "$t/.claude/hooks/prevent-destructive-commands.sh" ]] && installed_guard=true
     done
 
     if ! command -v jq &> /dev/null; then
         echo "  ! jq absent : déclare les 6 hooks Python à la main (README, § 6. Hooks)." >&2
-    elif $installed_settings; then
+    elif [[ -e "$t/.claude/settings.json" ]]; then
         add_py_hooks "$t/.claude/settings.json" \
             && echo "  câblé : les 6 hooks Python dans .claude/settings.json" \
             || echo "  ! échec du câblage jq : déclare les 6 hooks à la main (README, § 6)." >&2
-    elif [[ -e "$t/.claude/settings.json.new" ]]; then
-        # Le .new est à nous : on y met les hooks de l'addon, pour que la fusion
-        # manuelle porte le fichier complet et pas la moitié.
-        add_py_hooks "$t/.claude/settings.json.new" \
-            && echo "  ! settings.json préexistant : les 6 hooks sont dans settings.json.new," >&2 \
-            && echo "    à fusionner. Non fusionnés = muets." >&2 \
-            || echo "  ! déclare les 6 hooks à la main (README, § 6. Hooks)." >&2
     fi
 
     if $installed_claude && ! grep -q "07-backend.md" "$t/CLAUDE.md"; then
@@ -404,7 +465,7 @@ elif [[ -z "$DEPLOY_TARGET" && -t 0 ]]; then
     echo
     echo "Ce projet a-t-il un depot GitHub distant ?"
     echo "  non  = projet local. Aucun workflow installe : ils n'y tourneraient"
-    echo "         jamais. Les six gates restent tenues par /ship, comme avant."
+    echo "         jamais. Les six gates restent tenues par /loop:ship, comme avant."
     read -r -p "  [O/n] : " answer
     case "${answer:-o}" in
         [nN]*) NO_CI=true ;;
@@ -447,6 +508,12 @@ fi
 echo "Installation du kit dans : $TARGET"
 
 copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
+install_settings "$TARGET/.claude/settings.json" "$WITH_REACT_TS"
+if $WITH_REACT_TS; then
+    printf '%s\n' 'react-ts' > "$TARGET/.claude/INSTALL_PROFILE"
+else
+    printf '%s\n' 'core' > "$TARGET/.claude/INSTALL_PROFILE"
+fi
 copy_file "$KIT_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
 copy_file "$KIT_DIR/AGENTS.md" "$TARGET/AGENTS.md"
 copy_file "$KIT_DIR/codex-handoff.sh" "$TARGET/codex-handoff.sh"
@@ -459,7 +526,7 @@ copy_file "$KIT_DIR/docs/Claude_Workflows.md" "$TARGET/docs/Claude_Workflows.md"
 copy_file "$KIT_DIR/docs/ADAPTATION.md" "$TARGET/docs/ADAPTATION.md"
 
 # Le ledger des faits externes deja etablis. Il est FROID par construction :
-# .claude/rules/01-stack.md le nomme, /research et doc-researcher le lisent, et
+# .claude/rules/01-stack.md le nomme, /loop:research et doc-researcher le lisent, et
 # aucune session ne le paie. Sans cette copie, 01-stack.md pointe dans le vide
 # et /kit:doctor (settled-ledger) le signale des la premiere execution.
 copy_file "$KIT_DIR/docs/research-cache/settled.md" "$TARGET/docs/research-cache/settled.md"
@@ -547,21 +614,6 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
     echo
 fi
 
-# Un settings.json non fusionné = AUCUN hook déclaré. Tout le kit devient
-# déclaratif : les règles sont là, rien ne les tient. Ça ne peut pas se perdre
-# dans la liste générique ci-dessus.
-if [[ -e "$TARGET/.claude/settings.json.new" ]]; then
-    cat >&2 <<'EOF'
-  !! settings.json existait déjà — le kit a écrit settings.json.new À CÔTÉ.
-     Tant que les deux ne sont pas fusionnés, AUCUN hook n'est déclaré :
-     ni TDD, ni no-any, ni archi, ni protection des fichiers. Les règles
-     sont installées, rien ne les applique.
-     Fusionne les blocs "hooks" (et "worktree") de .claude/settings.json.new
-     dans ton .claude/settings.json, puis supprime le .new.
-
-EOF
-fi
-
 if [[ "$GITIGNORE_TOUCHED" -eq 1 ]]; then
     echo "  .gitignore : bloc « état de session » ajouté (9 chemins écrits par les hooks)."
     echo
@@ -570,8 +622,8 @@ fi
 if $NO_CI; then
     cat <<'EOF'
 Pas de CI : aucun workflow installé. Les six rôles de gate n'ont pas bougé
-d'un pouce — c'est /ship qui les tient, avant chaque commit, comme avant.
-Le CI n'a jamais été qu'une SECONDE copie, pour ce que /ship ne peut pas
+d'un pouce — c'est /loop:ship qui les tient, avant chaque commit, comme avant.
+Le CI n'a jamais été qu'une SECONDE copie, pour ce que /loop:ship ne peut pas
 couvrir : une machine qui n'est pas la tienne.
 
 Le jour où tu pousses sur un dépôt distant :
@@ -582,7 +634,7 @@ EOF
 else
     cat <<'EOF'
 CI/CD — .github/workflows/ci.yml part opérationnel (les six rôles de gate,
-miroir serveur de /ship). deploy.yml a été assemblé pour la cible choisie ;
+miroir serveur de /loop:ship). deploy.yml a été assemblé pour la cible choisie ;
 sur `none` son étape Publish échoue exprès tant que tu n'en as pas nommé une.
 Déclare le local ET la prod dans CLAUDE.md, section Environment.
 Contrat : .claude/skills/templates/ci.md.
@@ -591,14 +643,13 @@ EOF
 fi
 
 cat <<'EOF'
-À remplir avant de lancer quoi que ce soit :
+Adapte maintenant le kit depuis le projet cible :
 
-  grep -rnE "FILL|CONFIGURE" .claude/ CLAUDE.md docs/
+  /kit:init
 
-Dans l'ordre : 01-stack.md (client de données) → enforce-architecture.py
-(DATA_CLIENT_MODULE + COMPOSITION_ROOTS) → 00-project.md (scripts, dont lint)
-→ 02-architecture.md (backend) → 06-database.md → CLAUDE.md → 03-conventions.md
-(langues).
+La commande inspecte ce qu'elle peut prouver, pose des questions fermées pour
+les choix, conserve tout marqueur qu'elle ne peut pas résoudre, puis lance
+/kit:doctor. Sa source ordonnée est docs/ADAPTATION.md.
 
 Puis, avant la première feature — ce n'est pas un FILL, c'est un prérequis :
 scaffolder src/lib/result.ts, src/lib/errors.ts et src/lib/queryClient.ts

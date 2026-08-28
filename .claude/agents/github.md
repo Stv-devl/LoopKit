@@ -82,7 +82,7 @@ Asked to integrate a `feat/<slug>` worktree branch:
 2. Rebase it on the base branch. Conflicts → stop and report them; do not
    resolve them blind, the track's author context is not yours.
 3. If the rebase moved anything, say so: the gates must be re-run **before** the
-   merge, and that call belongs to `/ship`, not to you.
+   merge, and that call belongs to `/loop:ship`, not to you.
 4. Show the branch, `git diff --stat <base>...<branch>` and the exact merge
    command. **Ask. Then merge.**
 5. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty

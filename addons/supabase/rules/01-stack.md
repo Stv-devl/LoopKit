@@ -32,7 +32,7 @@
 > **The settled facts are no longer among them, and that is deliberate.** They
 > live in `docs/research-cache/settled.md`, which this addon does not touch, so
 > `cp addons/supabase/rules/01-stack.md .claude/rules/` can no longer delete
-> answers the loop had already paid `/research` to establish — which is exactly
+> answers the loop had already paid `/loop:research` to establish — which is exactly
 > what it used to do, silently. Do **not** reintroduce a dated table here:
 > `/kit:doctor`'s `settled-ledger` reports it.
 >
@@ -89,12 +89,12 @@ judgement calls into build failures. `pnpm test:run` stays **green** on all five
 
 **`it.todo` is deliberately not caught** — it is the honest way to park a case.
 In one of the three frozen test-first files it is a hole no lint can see, and
-`/review`'s `tests` dimension owns it, because only it reads the plan.
+`/loop:review`'s `tests` dimension owns it, because only it reads the plan.
 
 ## Settled external facts
 
 **The ledger is `docs/research-cache/settled.md`**, cold on purpose, read by
-`/research` and `doc-researcher` and by nobody else. This addon does not
+`/loop:research` and `doc-researcher` and by nobody else. This addon does not
 override it: installing Supabase leaves every settled answer in place. No row
 is ever copied back into a rule file — `/kit:doctor`'s `settled-ledger` refuses
 a dated table here.

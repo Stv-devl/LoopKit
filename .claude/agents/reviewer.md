@@ -44,7 +44,7 @@ research step — treat each one as a criterion you must explicitly clear.
       — that section only, it is short. Those are the product's hard limits, and
       this dimension is the **only** thing that checks them against real code: a
       story gate can catch one contradicted in intent (`story-critic`), nothing
-      catches one introduced at implementation, and a feature entering by `/spec`
+      catches one introduced at implementation, and a feature entering by `/loop:spec`
       never meets a story gate at all. Breaking one is a **Critical** — name the
       invariant. No brief, or no such section → skip it in one line, do not infer
       invariants from the code.
@@ -155,6 +155,12 @@ research step — treat each one as a criterion you must explicitly clear.
       where auth/CORS/rate-limit are applied, error shape. Section empty = no
       backend in this repo, so backend code in the diff is itself a finding.
 - [ ] The feature covers **all** the spec's acceptance criteria
+- [ ] **Relevancy and residue:** the diff still answers the entry need after its
+      implementation choices, and leaves no obsolete branch, duplicate path,
+      temporary diagnostic (`LOOPKIT_DEBUG`), dead export, or superseded file
+      behind. Major when the stale path can still run or contradict the new one;
+      Minor when it is inert residue. This is not a request for unrelated cleanup:
+      report only rot created or made obsolete by this diff.
 
 ### `tests`
 - [ ] Any new/modified business logic (services/repository, mapper, utils, hooks)
@@ -211,7 +217,7 @@ research step — treat each one as a criterion you must explicitly clear.
       in the `pnpm lint` gate — if you find one here, the gate is not wired: say
       so, it is a finding about the repo.
 - [ ] An **`it.todo`** in one of the three test-first files: the lint lets it
-      through on purpose, and it means a case validated at the `/plan` gate was
+      through on purpose, and it means a case validated at the `/loop:plan` gate was
       never written. **Major** — you are the only check that sees it, because you
       are the only one reading `plan.md`'s test plan.
 - [ ] A **snapshot** (`toMatchSnapshot` / `toMatchInlineSnapshot`) inside one of

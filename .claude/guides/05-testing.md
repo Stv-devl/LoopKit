@@ -9,8 +9,8 @@ about to argue that this feature is the exception. Not loaded at session start.
 `utils.ts`, `mapper.ts` and `repository.ts`/`services.ts` are pure logic — no
 DOM, no `QueryClient`, no transport — so the write-run loop costs milliseconds.
 On a component it costs ten times more, for a contract still moving between
-`/interface` and `/review`. The ordering rule is priced, not doctrinal: it is
-applied where it is cheap and where the contract is already settled by `/plan`.
+`/loop:interface` and `/loop:review`. The ordering rule is priced, not doctrinal: it is
+applied where it is cheap and where the contract is already settled by `/loop:plan`.
 
 The two exclusions follow the same logic. A snapshot is written *from* the
 output, so ordering one first is incoherent. `src/lib/result.ts` and

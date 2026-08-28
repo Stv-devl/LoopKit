@@ -8,7 +8,7 @@ nothing tells you it was the wrong choice.
 
 > **Routing = TanStack Router** (`.claude/rules/01-stack.md`). Search params here
 > are **typed and validated** — `validateSearch` is what makes `Route.useSearch()`
-> return something other than `unknown`, and `pnpm typecheck` is a `/ship` gate.
+> return something other than `unknown`, and `pnpm typecheck` is a `/loop:ship` gate.
 > An untyped `useSearchParams()` string bag is the other ecosystem's answer.
 
 ## When the URL, and when not

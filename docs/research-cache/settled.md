@@ -10,14 +10,14 @@ It is read at exactly one moment, by exactly two readers, both of which name it:
 
 | Reader | When |
 | --- | --- |
-| `/research` (main thread) | before any fetch. A question this file answers is **not** researched — not "researched quickly", not researched |
+| `/loop:research` (main thread) | before any fetch. A question this file answers is **not** researched — not "researched quickly", not researched |
 | `doc-researcher` | before its **first** network call, together with the topic files next to it |
 
 The three or four facts that fire **silently while code is being written**, with
 no pattern file open at that moment, are the exception: they stay hot, in
 `01-stack.md`'s short *Traps that stay loaded* table. Everything else lives here.
 
-**Who writes a row:** the main thread, at the synthesis step of `/research`, in
+**Who writes a row:** the main thread, at the synthesis step of `/loop:research`, in
 the same pass. The `doc-researcher` agent never does — it is forbidden from
 editing a rule or this ledger, and returns a `Promote to the ledger` block
 instead. Deferred, it never happens.

@@ -52,8 +52,8 @@ proposing. A component inventory tells you what exists; a real screen tells you
 how this product actually looks and behaves. Your proposal must be recognisable
 as part of the same product.
 
-`docs/design-system.md` is a **hard prerequisite** of `/interface`: the command runs
-`/design-system` before fanning you out, precisely so you never have to guess.
+`docs/design-system.md` is a **hard prerequisite** of `/loop:interface`: the command runs
+`/loop:design-system` before fanning you out, precisely so you never have to guess.
 So if the file is not there, you were launched around that step — open your
 report with that fact in one line, then work from the primitives folder
 (`src/components/ui/`) + the real screens. Do it, but say plainly that the
@@ -64,7 +64,7 @@ The opposite case happens right after a design-system `bootstrap`: the document
 exists, the code does not. Its primitives table then carries a `Built?` column,
 and the screens you would have read do not exist yet. Compose from the declared
 primitives anyway — that is what they are for — and **name every one you use that
-is still `Built? = no`**, so `/plan` sequences its creation before the screen that
+is still `Built? = no`**, so `/loop:plan` sequences its creation before the screen that
 needs it. That is the one situation where using a not-yet-existing component is
 correct rather than an invention.
 
@@ -79,7 +79,7 @@ correct rather than an invention.
 > direction "feels" anything. Write the tokens, render them, let the human judge.
 >
 > In mode `propose` this changed shape, not substance: the main thread now renders
-> the retained proposal on an editable canvas before the gate (`/interface`, "The
+> the retained proposal on an editable canvas before the gate (`/loop:interface`, "The
 > canvas"), one artboard per screen. **You still never see it** — but your report
 > is now read by a renderer as well as by a human, so name each screen, its frame
 > size and its states precisely. A screen you left implicit becomes an artboard
@@ -114,7 +114,7 @@ it counts against you.
 
 ### mode `system` — genesis of the design system
 
-Only reachable from `/design-system` in `bootstrap` mode, on a product with no UI
+Only reachable from `/loop:design-system` in `bootstrap` mode, on a product with no UI
 code yet. You receive: the **product brief** (`docs/product/brief.md`), the
 **interview answers verbatim**,
 **one direction**, the **two reference screens** to render, and **your output
@@ -167,7 +167,7 @@ Hard constraints on that file:
 ### mode `judge`
 
 **Not used in `bootstrap`** — a visual direction is the user's call, made against
-the rendered preview, and you have no eyes. This mode is for `/interface` only.
+the rendered preview, and you have no eyes. This mode is for `/loop:interface` only.
 
 You receive the three proposals verbatim + the entry artifact. Score each on:
 
