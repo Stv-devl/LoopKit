@@ -3,16 +3,16 @@ description: INTERFACE step — competing UI proposals, rendered on an editable 
 argument-hint: [path docs/work/<slug>/research.md]
 ---
 
-# /interface — decide the interface before writing it
+# /loop:interface — decide the interface before writing it
 
 Second step of the loop. Without it, the first idea always wins by default.
 You generate **competing proposals in parallel**, render the retained one on a
 canvas the user can actually edit, and **the user picks what gets frozen** — this
-step ends on a gate, like `/plan`.
+step ends on a gate, like `/loop:plan`.
 
 **SKIP this step** — announce it in one line — when the feature has no user
 surface (pure migration, cron, edge function, refactor). Then go straight to
-`/plan`.
+`/loop:plan`.
 
 > **Why this command is not called `/design`.** Claude Code ships its own
 > `/design` — the Claude Design canvas, in research preview — and this step
@@ -20,17 +20,17 @@ surface (pure migration, cron, edge function, refactor). Then go straight to
 > one, and `Skill("design")` would then resolve back into this file. So the
 > command moved and nothing else did: the artifact is still
 > `docs/work/<slug>/design.md`, the reviewer dimension is still `ui`, and
-> `/design-system` is untouched.
+> `/loop:design-system` is untouched.
 
 ## Process
 
 1. Read `docs/work/<slug>/research.md`, the entry artifact it names, and
    `docs/design-system.md`. If the design system doc is missing, run
-   `/design-system` first — the proposals need it or they invent components.
+   `/loop:design-system` first — the proposals need it or they invent components.
    If its primitives table has a `Built?` column with `no` rows, the system came
    from a `bootstrap` and the code does not exist yet: proposals compose from the
    declared primitives, and the `Components` table below marks each unbuilt one so
-   `/plan` schedules it before the screen that consumes it.
+   `/loop:plan` schedules it before the screen that consumes it.
 2. Read the token profile from the research artifact:
 
    - **economy (default):** launch 1 designer asked for two concise alternatives
@@ -78,22 +78,22 @@ surface (pure migration, cron, edge function, refactor). Then go straight to
    Nothing downstream happens until the user validates. **Do not continue on
    silence.**
 
-   > Why this gate exists, and it is the same argument as `/plan`'s: `typecheck`,
+   > Why this gate exists, and it is the same argument as `/loop:plan`'s: `typecheck`,
    > `lint` and `build` verify a property, so they can be automated. "Is this the
    > right screen" only verifies against your intent, and no gate downstream can
-   > stand in for you. `/review`'s stage 0 then scores divergence from this file
+   > stand in for you. `/loop:review`'s stage 0 then scores divergence from this file
    > as a **Major** — that severity is only honest if a human actually chose it.
    >
-   > `/design-system` already works this way for the system-level decision. This
+   > `/loop:design-system` already works this way for the system-level decision. This
    > is the same decision, one feature down, and it is the one you have the most
    > opinion about — and the cheapest to change at this exact moment, before
-   > `/plan` sequences it and the test files freeze.
+   > `/loop:plan` sequences it and the test files freeze.
 
 6. **Write** `docs/work/<slug>/design.md`: the design the user retained, grafts
    included, plus the rejected options in one line each (so the decision isn't
    re-litigated in three weeks). Record the gate itself: which option was chosen,
    any graft asked for, and the canvas URL with the date it was last read.
-7. **Stop.** Suggest `/plan docs/work/<slug>/design.md`.
+7. **Stop.** Suggest `/loop:plan docs/work/<slug>/design.md`.
 
 ## The canvas
 
@@ -110,13 +110,13 @@ So every canvas operation — first render, re-seed after a graft, read-back —
 happens by invoking `Skill` with `design` and a **design brief**. Never hand-write a
 `.dc.html` bundle, never call the helper yourself, never edit a seeded page.
 
-**Main thread only**, like the `DesignSync` push in `/design-system`: it publishes
+**Main thread only**, like the `DesignSync` push in `/loop:design-system`: it publishes
 an Artifact and works in the tree. A `designer` agent never renders.
 
 ### What the design brief must carry
 
 > **"Design brief" is not `docs/product/brief.md`.** That one is the *product*
-> brief — the frame `/product` wrote, which `/bmad:pm` and `/spec` read. This one
+> brief — the frame `/loop:product` wrote, which `/bmad:pm` and `/loop:spec` read. This one
 > is the payload of a single `Skill` invocation and lives nowhere on disk. Two
 > objects, and the pipeline hands both to a `designer`: say which every time.
 
@@ -126,7 +126,7 @@ Write it once, in the invocation, so the skill does not have to ask or rediscove
 | --- | --- |
 | `docs/design-system.md`, by path | the skill's first move is to reconstruct the app's tokens and components from the code. Handing it the extracted document is the same answer for a fraction of the tokens |
 | the retained proposal — screens, components, states, copy | otherwise it designs its own thing, and the gate stops comparing anything to the proposals you just paid for |
-| **static mockups, not a clickable prototype** | the skill asks this exact question when the request is silent. Answering it up front saves a round trip; a prototype is not what `/plan` reads |
+| **static mockups, not a clickable prototype** | the skill asks this exact question when the request is silent. Answering it up front saves a round trip; a prototype is not what `/loop:plan` reads |
 | working directory `docs/work/<slug>/canvas/`, one artboard per screen, `Main.dc.html` = the entry screen | keeps the artboards next to the artifact that cites them. **Keep them**: every later change re-seeds from those files |
 | the mandatory states (`.claude/rules/08-feedback.md`), the user language (`03-conventions.md`) and the icon ban (`09-icons.md`) | an artboard with no empty state renders a design that is not the one you validated. And say the icon ban **in the design brief**: `no-forbidden-icons` sees the `.dc.html` sources because they are written with `Write`, but the published page is assembled by the skill's helper through `node` — no hook reads those bytes |
 
@@ -176,7 +176,7 @@ Canvas: <artifact URL, or "none — rendered leg unavailable"> — last read <YY
 | Element | Primitive used | New? | To build first? |
 | --- | --- | --- | --- |
 <new = must be justified: why no existing primitive fits.
-"to build first" = declared in the design system but not yet coded. /plan reads
+"to build first" = declared in the design system but not yet coded. /loop:plan reads
 this table and sequences those rows before the screen that consumes them — the
 obligation is written on its side too, not only asserted here.>
 
@@ -193,7 +193,7 @@ obligation is written on its side too, not only asserted here.>
 ## Chosen at the gate
 <which option the user picked, the graft they asked for, and whether they edited
 the canvas — or "front-runner retained as proposed". This line is what makes
-/review's "divergence from the validated design is a Major" an honest severity.>
+/loop:review's "divergence from the validated design is a Major" an honest severity.>
 
 ## Rejected
 - <angle> : <one-line reason>
@@ -206,21 +206,21 @@ the canvas — or "front-runner retained as proposed". This line is what makes
 
 - **The canvas is a mirror; `design.md` is the contract.** Past the gate the
   document is frozen for the feature and the canvas stays editable, watched by
-  nothing. `/review` compares the diff to `design.md` and scores a divergence as
+  nothing. `/loop:review` compares the diff to `design.md` and scores a divergence as
   **Major** — a canvas that moves afterwards moves the picture, never the
   reference. An edit made after the gate **reopens the gate**, or it is decoration.
-  Same relation `/design-system` already declares for a Claude Design project:
+  Same relation `/loop:design-system` already declares for a Claude Design project:
   downstream of the document, never its source.
 - **No implementation from the canvas.** The skill's own pitch ends with "then
   have Claude implement it" — not here. An artboard is a mockup: its markup is
   inline styles authored to render standalone, not a component, and it knows
-  nothing about the frozen tests. Code enters through `/plan` and EXECUTE, with
+  nothing about the frozen tests. Code enters through `/loop:plan` and EXECUTE, with
   its tests, or it does not enter.
 - **Compose, don't invent**: a new primitive must be argued against
   `docs/design-system.md`. Default answer is "reuse".
 - Mandatory states — a design that ignores empty/error is incomplete, not "minimal".
 - Semantic HTML per `.claude/rules/03-conventions.md`; icon ban per `09-icons.md`.
 - User copy in the project's user language, technical notes in English.
-- No code here: `/plan` sequences it, EXECUTE writes it.
+- No code here: `/loop:plan` sequences it, EXECUTE writes it.
 
 ## Task: $ARGUMENTS

@@ -1,0 +1,32 @@
+name: LoopKit CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install hook prerequisites
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Validate settings JSON
+        run: jq empty .claude/settings.json
+      - name: Replay hook fixtures
+        run: .claude/hooks/test-hooks.sh
+      - name: Exercise installer fixtures
+        run: .claude/hooks/test-install.sh
+      - name: Test version reporting
+        run: .claude/hooks/test-kit-doctor.sh
+      - name: Test loop attempt counter
+        run: .claude/hooks/test-attempts.sh
+      - name: Pin workflow contracts
+        run: .claude/hooks/test-workflow-contracts.sh
+      - name: Enforce hot rules floor
+        run: .claude/hooks/test-rules-floor.sh
+      - name: Detect kit divergence
+        run: python3 .claude/hooks/kit-doctor.py

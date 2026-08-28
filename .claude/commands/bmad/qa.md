@@ -13,7 +13,7 @@ gate; the Dev fixes.
 
 1. Read the story (`Status` must be `Review`): AC, Plan section, Dev Agent Record,
    file list.
-2. **Run the gate**: `/review docs/stories/<slug>/<n>.md`. It groups the applicable
+2. **Run the gate**: `/loop:review docs/stories/<slug>/<n>.md`. It groups the applicable
    dimensions and refutation batches according to the story's token profile. Pass it the traps from
    `docs/work/<slug>/research.md` if it exists.
 3. Independently of the reviewers, check yourself:
@@ -29,7 +29,7 @@ gate; the Dev fixes.
    <reason; FAIL if ≥1 Critical or an AC not covered; CONCERNS if only Major/Minor>
    ```
 5. Conclude:
-   - **PASS** → suggest `/ship docs/stories/<slug>/<n>.md` (gates, commit, board,
+   - **PASS** → suggest `/loop:ship docs/stories/<slug>/<n>.md` (gates, commit, board,
      next story). The story becomes `Done` at ship time, not here.
    - **CONCERNS / FAIL** → list the findings, suggest
      `/bmad:dev docs/stories/<slug>/<n>.md` for the fix, then re-run `/bmad:qa`.

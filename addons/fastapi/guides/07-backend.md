@@ -68,5 +68,5 @@ A floor that nobody applies is worse than no floor, because the number in the
 table reads as a promise.
 
 Enforcing the four numbers means a per-package run — `--cov=app/services
---cov-fail-under=90`, then a second pass for `api/` — inside `/ship`. That is a
+--cov-fail-under=90`, then a second pass for `api/` — inside `/loop:ship`. That is a
 decision about gate time, taken deliberately, not a config line to slip in.

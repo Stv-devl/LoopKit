@@ -5,7 +5,7 @@ a pinned version. Not loaded at session start.
 
 ## Why the settled-facts ledger exists
 
-External documentation research is the most expensive modality of `/research`.
+External documentation research is the most expensive modality of `/loop:research`.
 Measured on one bootstrap: **7 agents, 178 network round-trips, 2 h of agent time
 in one parallel fan-out** — 43 min of wall-clock, and six of the seven agents
 establishing the same versions.
@@ -19,7 +19,7 @@ pass** — deferred, it never happens and the next feature pays the fetch again.
 bound: 30 rows today, and the rule is that a settled question is never
 re-researched, so it never shrinks except when a version dies. Kept inside
 `01-stack.md` it was ~2 300 tokens re-read by every session and every subagent,
-to be consulted by exactly two readers — `/research` and `doc-researcher` — both
+to be consulted by exactly two readers — `/loop:research` and `doc-researcher` — both
 of which name the file explicitly at the moment they need it. That is the
 textbook case for moving a whole section out. It also removed a silent failure:
 `addons/supabase/` **replaces** `.claude/rules/01-stack.md` on install, and used

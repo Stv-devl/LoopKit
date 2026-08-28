@@ -23,7 +23,7 @@ planning. You don't write code, you don't design the technical architecture (tha
    Does this feature touch payment, authorization, or a destructive data change?
    Yes → the PRD's `Token profile` is `critical`. Three of the four triggers are
    here; the fourth is the user asking for it outright, which needs no question.
-   `11-token-budget.md` holds the only copy of that list, `/ship` arms one
+   `11-token-budget.md` holds the only copy of that list, `/loop:ship` arms one
    `/audit:security` surface on it, and the profile rides the stories
    (`/bmad:sm` carries it verbatim) all the way to the commit.
 
@@ -32,7 +32,7 @@ planning. You don't write code, you don't design the technical architecture (tha
    where the answer is known; no later step can re-derive it, and the cost of a
    wrong `economy` is an audit nobody notices is missing.
 2. **Read `docs/product/brief.md` first, if it exists.** It is the product frame
-   `/product` wrote for exactly this moment: `Current surface` already answers
+   `/loop:product` wrote for exactly this moment: `Current surface` already answers
    most of "what exists today", `Out of product` bounds your OUT section, and
    `Product invariants` are constraints your PRD may not contradict. **What the
    brief already answers is not re-mapped** — narrow the explorer's axes to what
@@ -69,8 +69,8 @@ planning. You don't write code, you don't design the technical architecture (tha
    user to sort them: accepted standing risk, or requirement before `/bmad:sm`
    runs. Nothing downstream reads that block — the SM covers the **functional
    requirements**, `story-critic` traces against them, and a question left open
-   here is answered by whoever writes the code, silently. `/plan` does exactly this
-   to `/research`'s `Open questions` one floor below — same mechanism, same reason.
+   here is answered by whoever writes the code, silently. `/loop:plan` does exactly this
+   to `/loop:research`'s `Open questions` one floor below — same mechanism, same reason.
 
    **The sorting is worth nothing until it is in the file**, and this is the step
    that gets skipped: the conversation ends, the PRD still shows the question open,
@@ -158,7 +158,7 @@ Token profile: <economy | standard | critical>
   it deliberately or not at all: name the excluded line at the step-5 pause and
   let the user decide. Writing it into `Scope`'s `IN` without a word makes the PRD
   the authority on a question it does not own — and so does editing the brief
-  yourself: that file has one writer, `/product`, and moving a boundary means a
+  yourself: that file has one writer, `/loop:product`, and moving a boundary means a
   refresh there, not a paragraph here.
 
 ## Task: $ARGUMENTS

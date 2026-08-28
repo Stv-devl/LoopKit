@@ -27,7 +27,7 @@ call, in this order:
    established, and the list of things known not to exist.
 2. `ls docs/research-cache/`, then read every topic file that touches your
    surface. Note each one's `checked` date and `stability`.
-3. `.claude/commands/research.md`, section **Extra modality — external docs** —
+3. `.claude/commands/loop/research.md`, section **Extra modality — external docs** —
    the cache protocol you write back into.
 
 A question answered by step 1 or by a fresh step-2 entry is **answered**. Report

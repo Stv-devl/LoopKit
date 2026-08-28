@@ -115,7 +115,7 @@ deny() {
 }
 
 if [[ -z "$TEST_PATH" ]]; then
-    deny "Test-first: '$FILE_PATH' is one of the three test-first layers (.claude/rules/05-testing.md) and '$BASE.test.ts' does not exist.\n\nWrite the test first, from the Test plan the user validated at the /plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this file.\n\nIf this write is a pure move of code that already exists elsewhere, that is the exception: add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>\n\n(the path first, the reason after it or behind a '#' — both are read), then write it."
+    deny "Test-first: '$FILE_PATH' is one of the three test-first layers (.claude/rules/05-testing.md) and '$BASE.test.ts' does not exist.\n\nWrite the test first, from the Test plan the user validated at the /loop:plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this file.\n\nIf this write is a pure move of code that already exists elsewhere, that is the exception: add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>\n\n(the path first, the reason after it or behind a '#' — both are read), then write it."
 fi
 
 MARKER="$(marker_path "$TEST_PATH")"

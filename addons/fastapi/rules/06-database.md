@@ -97,5 +97,5 @@ alembic current                                    # Applied revision
 ```
 
 <!-- FILL: if the DB is not reachable by psql from the dev machine, give the
-     real read-only path here (container exec, tunnel, admin UI). /research
+     real read-only path here (container exec, tunnel, admin UI). /loop:research
      counts rows instead of guessing — it needs a command that works. -->

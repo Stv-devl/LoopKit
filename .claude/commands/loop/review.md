@@ -3,9 +3,13 @@ description: Review gate — parallel adversarial reviewers, then a parallel ref
 argument-hint: [path docs/work/<slug>/plan.md, docs/specs/<x>.md or a story]
 ---
 
-# /review — adversarial review gate, two stages
+# /loop:review — adversarial review gate, two stages
 
 Confront the written code with the project rules and the acceptance criteria.
+
+This is gate `review` under `/loop:orchestrate`'s attempt protocol. A pass clears
+that key. Any surviving Critical/Major records one failed attempt; the third
+returns the board line as `BLOCKED` before another fix/review cycle begins.
 
 Two stages, because a reviewer's job is to be suspicious and a suspicious reviewer
 produces false positives. Stage 1 finds, stage 2 refutes. Only what survives
@@ -32,7 +36,7 @@ stage is the one place someone actually looks.
    user-facing copy. Divergence from the validated design is a **Major**
    (Critical if it drops an acceptance criterion). **The document is the
    reference, not the canvas it links to** — an artboard edited after the gate
-   was validated by nobody (`/interface`, "The canvas").
+   was validated by nobody (`/loop:interface`, "The canvas").
 4. Look for what only the eye catches: hierarchy, alignment, contrast, overflow,
    truncation, loading flicker, layout shift when data lands.
 
@@ -77,13 +81,13 @@ Pass each: the artifact path, **and the vigilance points** as targeted criteria 
 from `plan.md`'s `Vigilance` section when the artifact is a plan, since that is
 research's `Traps` already restated as something checkable against this diff.
 Falling back to research's raw `Traps` is correct only when there is no plan;
-doing it anyway throws away the restatement `/plan` was asked to produce.
+doing it anyway throws away the restatement `/loop:plan` was asked to produce.
 A skipped dimension is **announced with its reason**, never dropped silently.
 
 > **`tests` carries one extra check.** The test-first files — front:
 > `utils` / `mapper` / `repository`-`services`; backend, when this repo carries
 > the FastAPI addon: `tests/services/test_*.py` (`07-backend.md`) — were
-> validated at the `/plan` gate and frozen. So the dimension compares them
+> validated at the `/loop:plan` gate and frozen. So the dimension compares them
 > against `plan.md`'s `Test plan`
 > and reports any case that was **dropped, weakened or renamed** — an assertion
 > that migrated toward what the code happens to do is a **Major**, even with the
@@ -134,6 +138,21 @@ Minor findings skip stage 2 — refuting them costs more than reading them.
 > Don't run stage 2 on findings you already know are real (a missing test file, a
 > literal `any`). Refutation is for the arguable ones.
 
+### Stage 2.5 — SHADOW AREAS (standard and critical only)
+
+On `economy`, stay silent: no heading and no skipped report. On `standard` or
+`critical`, launch one final read-only `reviewer`. Ask which behaviour outside
+the changed files can break through a shared contract, generated consumer,
+configuration twin, cache/invalidation key, route registration, migration
+supersession, or caller the main dimensions did not inspect.
+
+Return at most **3** items ordered by plausible user impact. Each needs
+`path:line`, the changed dependency it shadows and a concrete failure scenario.
+Omit anything already covered by a normal finding. Refute Critical/Major items
+with `verifier`; report Minors. Zero items is `Shadow areas: none found.` This
+belongs to the same `review` attempt and never creates a sixth permanent review
+dimension.
+
 ### Stage 3 — SYNTHESIS
 
 1. Aggregate the **surviving** findings: Critical / Major / Minor.
@@ -144,7 +163,7 @@ Minor findings skip stage 2 — refuting them costs more than reading them.
 4. Report the refuted findings in one line each — they are the proof the gate
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller
-   (e.g. `/orchestrate` Phase 5) already asked for it.
+   (e.g. `/loop:orchestrate` Phase 5) already asked for it.
 
 ## Output
 

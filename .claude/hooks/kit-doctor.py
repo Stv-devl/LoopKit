@@ -7,7 +7,7 @@ NOT A HOOK. Nothing registers this file in settings.json; it is run by
     python3 .claude/hooks/kit-doctor.py [project_root]
 
 Read-only, and deliberately not a gate. Exit 0 = nothing diverged, exit 1 =
-something did. Wiring that exit code into `/ship` would be a mistake: a rule
+something did. Wiring that exit code into `/loop:ship` would be a mistake: a rule
 file and its enforced copy disagreeing is a decision to take, not a build to
 stop.
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -311,9 +312,9 @@ def check_tdd_layers() -> list[Finding]:
 
 
 def check_gate_allowlist() -> list[Finding]:
-    """Every command `/ship` runs in its gate batch is allowlisted, or it prompts.
+    """Every command `/loop:ship` runs in its gate batch is allowlisted, or it prompts.
 
-    The failure this catches is quiet and inverted: a gate added to `/ship`
+    The failure this catches is quiet and inverted: a gate added to `/loop:ship`
     without its `permissions.allow` entry does not fail — it *asks*. Somebody
     declines it by reflex mid-batch, the other five stay green, and the ship
     reports success without the gate that was just added.
@@ -322,13 +323,13 @@ def check_gate_allowlist() -> list[Finding]:
     those lines (`grep`, a repo script) is covered by a broader allow entry or
     by the user's own settings, and guessing at it would produce noise.
     """
-    ship, settings = read(".claude/commands/ship.md"), read(".claude/settings.json")
+    ship, settings = read(".claude/commands/loop/ship.md"), read(".claude/settings.json")
     if ship is None or settings is None:
         return skip("gate-allowlist", "commands/ship.md", "settings.json")
 
     fence = re.search(r"### 1\. Gates.*?```bash\n(.*?)```", ship, re.S)
     if not fence:
-        return [Finding("gate-allowlist", MISSING, "the gate fence no longer parses in /ship")]
+        return [Finding("gate-allowlist", MISSING, "the gate fence no longer parses in /loop:ship")]
 
     try:
         allow = json.loads(settings).get("permissions", {}).get("allow", [])
@@ -362,7 +363,7 @@ def check_gate_allowlist() -> list[Finding]:
             if f'Bash({pattern})' in local else ""
         evidence.append(f'.claude/settings.json  →  add "Bash({pattern})"{note}')
     return [Finding("gate-allowlist", DIVERGENCE,
-                    f"{len(missing)} gate(s) /ship runs but nothing allows — they will prompt",
+                    f"{len(missing)} gate(s) /loop:ship runs but nothing allows — they will prompt",
                     evidence)]
 
 
@@ -370,14 +371,14 @@ def check_ci_scripts() -> list[Finding]:
     """The CI workflow and the local gate fence run the same set. BOTH ways.
 
     The third copy of the same list. `00-project.md` declares the scripts,
-    `/ship` calls them locally, and `.github/workflows/ci.yml` calls them on the
+    `/loop:ship` calls them locally, and `.github/workflows/ci.yml` calls them on the
     runner — and only the first two had a check. The divergence is silent and
     it surfaces at the worst moment: the CI is red on `main`, for a script name
     nobody touched, on a diff that is fine.
 
     Two directions, and they catch opposite failures:
       * a script the CI runs that `00-project.md` does not declare — a rename;
-      * a gate `/ship` runs that the CI does NOT — a role deleted from the YAML,
+      * a gate `/loop:ship` runs that the CI does NOT — a role deleted from the YAML,
         which the one-directional version reported as `ok`.
 
     Scope: `run:` lines only, and only their `pnpm <script>` head. pnpm's own
@@ -454,14 +455,14 @@ def check_ci_scripts() -> list[Finding]:
     # Typecheck, Lint and Dependency-audit steps left this check printing
     # "No divergence." That is a green CI with no gate in it, reported healthy.
     #
-    # The reference is `/ship`'s gate fence, NOT every script 00-project.md
+    # The reference is `/loop:ship`'s gate fence, NOT every script 00-project.md
     # declares: the naive reverse (`declared - called`) flags `dev`, `test`,
     # `test:run` and `test:ui` on the pristine kit — four false positives, and a
     # check that cries wolf is a check nobody reads. The fence is already parsed
     # by check_gate_allowlist(); LOCAL_ONLY names the roles that legitimately
     # stop at the machine.
     LOCAL_ONLY = {"dev"}
-    ship = read(".claude/commands/ship.md")
+    ship = read(".claude/commands/loop/ship.md")
     fence_ship = re.search(r"### 1\. Gates.*?```bash\n(.*?)```", ship, re.S) if ship else None
     if fence_ship:
         gated = {m.group(1) for m in re.finditer(r"^\s*(?:pnpm)\s+([\w:.-]+)",
@@ -469,7 +470,7 @@ def check_ci_scripts() -> list[Finding]:
         gated -= PNPM_BUILTINS | LOCAL_ONLY
         uncovered = gated - called
         evidence += [f".github/workflows/ci.yml  →  MISSING `pnpm {s}`   "
-                     f"(/ship gates on it; the CI does not)"
+                     f"(/loop:ship gates on it; the CI does not)"
                      for s in sorted(uncovered)]
 
     if evidence:
@@ -598,14 +599,23 @@ RUNTIME_PATHS = {
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
 # one per language.
-NON_HOOKS = {"hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py"}
+NON_HOOKS = {
+    "hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
+    "kit-attempts.py", "test-attempts.sh", "test-hooks.sh", "test-install.sh",
+    "test-kit-doctor.sh", "test-rules-floor.sh", "test-workflow-contracts.sh",
+}
+REACT_HOOKS = {
+    "no-any-type.sh", "no-forbidden-icons.sh", "enforce-architecture.py",
+    "tdd-freeze-tests.sh", "tdd-require-red.sh", "tdd-prove-red.sh",
+    "format-on-save.sh", "eslint-check.sh", "eslint-batch.sh",
+}
 # Claude Code's own slash commands: referenced by the docs, shipped by nobody here.
 BUILTIN_COMMANDS = {
     "compact", "clear", "config", "context", "cost", "doctor", "help", "init", "ide",
     "agents", "memory", "model", "resume", "review", "code-review", "security-review",
     "simplify", "run", "loop", "schedule", "fewer-permission-prompts", "update-config",
     "rewind", "hooks", "mcp", "permissions", "statusline", "vim", "usage", "add-dir",
-    # The design canvas (research preview), called by `/interface`. The kit
+    # The design canvas (research preview), called by `/loop:interface`. The kit
     # deliberately owns no command of that name — a project command would shadow
     # the built-in one and `Skill("design")` would resolve back into the kit.
     "design",
@@ -662,7 +672,9 @@ def check_hook_wiring() -> list[Finding]:
     on_disk = {p.name for p in hooks_dir.iterdir() if p.suffix in (".sh", ".py")}
 
     findings: list[Finding] = []
-    mute = sorted(on_disk - registered - NON_HOOKS)
+    profile = read(".claude/INSTALL_PROFILE")
+    profile_standalone = REACT_HOOKS if profile and profile.strip() == "core" else set()
+    mute = sorted(on_disk - registered - NON_HOOKS - profile_standalone)
     if mute:
         findings.append(Finding("hook-wiring", MISSING, "on disk, registered nowhere — installed but mute",
                                 [f".claude/hooks/{name}" for name in mute]))
@@ -758,6 +770,78 @@ def check_command_references() -> list[Finding]:
     return findings
 
 
+def check_command_references_plain() -> list[Finding]:
+    """The same check, for command names written WITHOUT backticks.
+
+    `check_command_references` above scans only `` `/name` ``, and it is right to:
+    unbackticked, `/app` is a route and `/bin/sh` a path, so a loose scan would
+    report the whole addon documentation as broken.
+
+    But a command name is written plain in the three places nobody thinks to
+    grep — a title (`# /plan — the write order`), an ASCII diagram of the loop,
+    and a shell example (`/orchestrate docs/specs/x.md`). Measured while
+    namespacing the loop commands: 508 backticked references, and **50 plain
+    ones the backticked check could not see**. Renaming on a green
+    `command-refs` therefore leaves every diagram in the repo pointing at
+    commands that no longer exist, silently.
+
+    The precision comes from the candidate set rather than the delimiter: a
+    plain `/token` is only ever a *candidate* when it carries a namespace colon
+    or when its stem is the basename of a command this repo ships. `/tmp`,
+    `/app` and `/usr` match neither and are never looked at.
+    """
+    commands_dir = ROOT / ".claude/commands"
+    if not commands_dir.is_dir():
+        return skip("command-refs-plain", ".claude/commands/")
+
+    known = {p.relative_to(commands_dir).with_suffix("").as_posix().replace("/", ":")
+             for p in commands_dir.rglob("*.md")}
+    # A bare `/plan` is a candidate because `loop/plan.md` exists — that is
+    # exactly the reference a namespacing pass leaves behind.
+    basenames = {name.split(":")[-1] for name in known}
+
+    seen: dict[str, str] = {}
+    for doc in scanned_docs():
+        rel_doc = doc.relative_to(ROOT).as_posix()
+        for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+            # Unlike the backticked scan, a fenced block is NOT skipped: the loop
+            # diagram and every `/loop:orchestrate docs/...` example live inside
+            # one, and they are the whole reason this check exists. A fence line
+            # itself carries no command name, so it needs no special case.
+            if HTTP_VERBS.search(line):
+                continue
+            # The namespace segment must be non-empty. `/backend:*` is a glob over
+            # a command family, not a reference to a command called "backend:" —
+            # and with the lookahead below it is skipped whole, which is right.
+            for match in re.finditer(
+                    r"(?<![\w:/`-])/([a-z][a-z0-9-]*(?::[a-z0-9-]+)?)(?![\w:/.-])", line):
+                name = match.group(1)
+                if ":" not in name and name not in basenames:
+                    continue  # a path or a route, not a command name
+                if name in known or name in BUILTIN_COMMANDS:
+                    continue
+                seen.setdefault(name, f"{rel_doc}:{number}")
+
+    addon_commands = {name: site for name, site in seen.items()
+                      if name.startswith(ADDON_COMMAND_PREFIXES)
+                      or shipped_by_addon(name.split(":")[-1] + ".md")}
+    broken = {name: site for name, site in seen.items() if name not in addon_commands}
+
+    findings: list[Finding] = []
+    if broken:
+        findings.append(Finding("command-refs-plain", MISSING,
+                                f"{len(broken)} unbackticked command(s), no file behind them",
+                                [f"/{name}   ({site})" for name, site in sorted(broken.items())]))
+    if addon_commands:
+        findings.append(Finding("command-refs-plain", SKIP,
+                                f"{len(addon_commands)} addon command(s), not installed here",
+                                sorted("/" + name for name in addon_commands)))
+    if not findings:
+        findings.append(Finding("command-refs-plain", OK,
+                                f"{len(basenames)} basenames, every plain reference resolves"))
+    return findings
+
+
 def check_agent_references() -> list[Finding]:
     agents_dir = ROOT / ".claude/agents"
     if not agents_dir.is_dir():
@@ -843,7 +927,7 @@ def check_settled_ledger() -> list[Finding]:
     """The settled facts live in one cold file, and no rule grows a copy.
 
     They used to sit in `.claude/rules/01-stack.md`, which every session and
-    every subagent reads in full — ~2 300 tokens of cache that only `/research`
+    every subagent reads in full — ~2 300 tokens of cache that only `/loop:research`
     and `doc-researcher` ever consult — and which `addons/supabase/` REPLACES on
     install, silently deleting every answer the loop had paid to establish.
 
@@ -955,14 +1039,30 @@ CHECKS = [
                check_workflow_names, check_agent_models, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring]),
-    ("links", [check_shipped_paths, check_command_references, check_agent_references]),
+    ("links", [check_shipped_paths, check_command_references,
+               check_command_references_plain, check_agent_references]),
     ("placeholders", [check_fill_markers]),
 ]
 
 
 def main() -> int:
+    source_mode = is_kit_source()
+    version_file = ROOT / ".claude/VERSION"
+    version = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else "unknown"
+    if source_mode:
+        try:
+            tag = subprocess.run(
+                ["git", "-C", str(ROOT), "describe", "--tags", "--exact-match", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            tag = "unknown"
+    else:
+        tag = f"v{version}" if version != "unknown" else "unknown"
+
     print(f"kit-doctor · {ROOT}")
-    if is_kit_source():
+    print(f"  version: {version} (tag: {tag})")
+    if source_mode:
         print("  mode: kit source — FILL markers here are the template's own placeholders\n")
     else:
         print("  mode: installed project — a FILL left here is an unfinished adaptation\n")

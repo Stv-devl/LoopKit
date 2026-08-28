@@ -3,7 +3,7 @@ description: Computes which stories can run in parallel right now (3 max), verif
 argument-hint: [path docs/stories/<slug>/ — or nothing, inferred from the board]
 ---
 
-# /tracks — how many stories can run at once, and set them up
+# /loop:tracks — how many stories can run at once, and set them up
 
 Answers one question, against the state of the repo **at the moment you ask**:
 which stories can be built in parallel right now, and how many. Then it prepares
@@ -29,7 +29,7 @@ two fields, not the whole file.
 passed its gate. Drop them before computing anything, and name what
 you dropped and why — the whole point of this command is that no two sessions
 receive the same story, and `Status` is the only place that fact is written down.
-A story being built shows `InProgress` whichever path drives it (`/orchestrate`
+A story being built shows `InProgress` whichever path drives it (`/loop:orchestrate`
 Phase 0 step 2bis, `/bmad:dev` step 2). One that does not is a bug in that path,
 not a story you may fork.
 
@@ -41,7 +41,7 @@ drop every candidate whose line is `BLOCKED` **or `DROPPED`**, naming it and its
 reason among what you dropped. `DROPPED` is there as a belt: the story's `Status`
 should already say `Dropped`, and a candidate where the two disagree is a
 bookkeeping miss upstream — report it in one line rather than forking it. It comes back by a decision, not by a fork. States and transitions:
-`/product`, "The board's state machine" — the only copy.
+`/loop:product`, "The board's state machine" — the only copy.
 
 Architecture: `docs/architecture/<feature>.md` — the **PRD's** slug, which is the
 directory name of `docs/stories/<feature>/`, never a story's loop slug. The story
@@ -140,8 +140,8 @@ ends up forking onto one branch:
 | the argument, the story folder, the architecture file | the **feature** slug | `docs/stories/inbox/` → `inbox` |
 | the worktree, the branch, `docs/work/` | the **track** slug, one per story | `docs/stories/inbox/1.2.md` → `inbox-1.2` |
 
-The derivation is `/research`'s two-line rule (the only copy) and it is a pure
-function of the story's path, so you apply it here even though `/research` has
+The derivation is `/loop:research`'s two-line rule (the only copy) and it is a pure
+function of the story's path, so you apply it here even though `/loop:research` has
 not run yet — it is what records the slug, not what invents it. The commit type
 prefixes the branch (`feat/`, `fix/`, `chore/`).
 
@@ -162,7 +162,7 @@ One pasteable block per track the user will drive elsewhere:
 Track <track-slug> — .claude/worktrees/<track-slug> on feat/<track-slug>, from <sha>
   1. copy your env file into it — an agent cannot (`protect-files`)
   2. install: <the install command; a fresh checkout has no node_modules>
-  3. /orchestrate docs/stories/<feature-slug>/<n>.md
+  3. /loop:orchestrate docs/stories/<feature-slug>/<n>.md
 ```
 
 Line 1 and line 3 carry **different** slugs — `inbox-1.2` and `inbox`. Writing
@@ -186,7 +186,7 @@ rebase, gates re-run in the worktree, go-ahead, merge, remove, then the next.
   stash it away yourself.
 - Never drive more than one track from this session.
 - This command **reads and prepares**. It does not run a loop pass, does not
-  merge, and does not commit — `/orchestrate` and `/ship` own those, inside each
+  merge, and does not commit — `/loop:orchestrate` and `/loop:ship` own those, inside each
   worktree.
 
 ## Task: $ARGUMENTS

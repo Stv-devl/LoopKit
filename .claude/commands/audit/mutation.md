@@ -135,7 +135,7 @@ Rank by **what the surviving mutant would let ship**, not by file or by count.
 A survivor on a frozen file almost always means **a missing case**, and the
 freeze allows exactly that: appending a new `it()` is a pure insertion, permitted
 without ceremony (`tdd-freeze-tests.sh`). Say which behaviour it covers and why
-the `/plan` test plan missed it.
+the `/loop:plan` test plan missed it.
 
 Only a survivor caused by a **wrong** assertion needs `.claude/.tdd-unfrozen` —
 tell the user, with which case and why, before touching anything.
@@ -161,7 +161,7 @@ Propose. Apply nothing here.
 
 ## Rules
 
-- **Never a gate.** No `/ship` step, no `/review` dimension: a Stryker run cannot
+- **Never a gate.** No `/loop:ship` step, no `/loop:review` dimension: a Stryker run cannot
   report alongside the parallel reviewers, and its findings are not about a diff.
 - Read-only on the source. Stryker sandboxes its mutations; if you find a mutated
   file in the working tree, stop — something went wrong.

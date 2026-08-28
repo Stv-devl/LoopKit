@@ -40,7 +40,7 @@ alembic revision --autogenerate -m ""  # Generate a migration
 >
 > The audit role is per-ecosystem, not per-repo: a repo carrying this addon has
 > **two** dependency trees, and `pnpm audit` says nothing about the Python one.
-> Both run at `/ship`, or the gate covers half of what it claims.
+> Both run at `/loop:ship`, or the gate covers half of what it claims.
 >
 > **`ruff format` is scoped to `app/`, and that is a guardrail, not a habit.**
 > It REWRITES files from the shell, where no PreToolUse hook can see it: run on
@@ -59,7 +59,7 @@ alembic revision --autogenerate -m ""  # Generate a migration
 > and in every gate: the console script does not add the project root to
 > `sys.path`, so `from app.…` fails before a single test runs.
 >
-> **`ruff check` belongs in `/ship`, not only in the hook.** `ruff-on-save.sh` is
+> **`ruff check` belongs in `/loop:ship`, not only in the hook.** `ruff-on-save.sh` is
 > deliberately **non-blocking**. The gate is the only thing that catches an
 > unused import shadowing a real one, a mutable default argument, a bare
 > `except`, a missing `await` (`RUF006`) — `pytest` stays green on all of them.
@@ -134,7 +134,7 @@ matches it. Python has its own trio, wired by `install.sh --fastapi`:
 
 They share `.claude/.tdd-red/` and `.claude/.tdd-unfrozen` with the TypeScript
 cycle and derive marker names the same way, so one exception list covers both and
-`/review`'s `tests` dimension works on a backend diff without knowing the
+`/loop:review`'s `tests` dimension works on a backend diff without knowing the
 language. Writing them from the shell is denied like their TypeScript twins
 (`prevent-destructive-commands.sh`, `CWK_TDD_PY_TARGET_RE`).
 
@@ -187,11 +187,11 @@ Test-after is an ordering, not a discount. The gate is unchanged:
   (`05-testing.md`, "Required (gate)").
 - Every service taking an isolation key gets its **cross-tenant test**. Nothing
   else enforces isolation — no RLS, no error, no warning. It is frozen once
-  written, so it belongs in the `/plan` test plan, not in the review.
+  written, so it belongs in the `/loop:plan` test plan, not in the review.
 - Assert the **behaviour**: the returned value or an observable effect, not that
   a mock was called (`patterns/pytest-backend.md`, "Mocking external services").
 - **Outside `services/`, the test file is not frozen**, so nothing stops it being
-  adjusted into agreeing with a bug. That is `/review`'s `tests` dimension on
+  adjusted into agreeing with a bug. That is `/loop:review`'s `tests` dimension on
   `api/`, `core/` and `models/` — a heavier duty there than on the front end, so
   say it in the review request.
 
@@ -205,9 +205,9 @@ Test-after is an ordering, not a discount. The gate is unchanged:
 > **Four numbers are declared and one is enforced.** `--cov-fail-under` is a
 > single global threshold — coverage.py has no per-path floor, so the config
 > below fails the build at **85 % overall** and nothing mechanical distinguishes
-> `services/` from `api/`. The table is a **review criterion**: `/review`'s
+> `services/` from `api/`. The table is a **review criterion**: `/loop:review`'s
 > `tests` dimension reads the per-scope numbers off the `term-missing` report.
-> Enforcing them needs a per-package run in `/ship`, which is a decision about
+> Enforcing them needs a per-package run in `/loop:ship`, which is a decision about
 > gate time, not a config line.
 
 ```toml

@@ -250,7 +250,7 @@ const isLoggingOut = useIsMutating({ mutationKey: authKeys.logout() }) > 0;
 > **A shared component needs the flag? Do not import the feature — and do not
 > fall through to the store either.** Both roads are wrong, and only one of them
 > is blocked: the store import *passes* the hook, so the denial quietly steers
-> you into `04-state.md`'s first anti-pattern, which `/review` scores **Major**.
+> you into `04-state.md`'s first anti-pattern, which `/loop:review` scores **Major**.
 >
 > Do what `02-architecture.md` prescribes for every shared file that needs
 > feature behaviour: **take it as a parameter**. `src/routes/*` and

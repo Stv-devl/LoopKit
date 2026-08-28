@@ -58,7 +58,7 @@ written in two files — and it reports the pair the day they drift.
    `_shared/tests/shared.test.ts`, a **Deno** test importing `jsr:@std/assert`.
    Vitest's default `include` matches `**/*.test.ts` everywhere, so left alone it
    collects that file, fails on the `jsr:` specifier, and `pnpm test:run` — the
-   `/ship` gate — goes red on a file that is green under `deno task test`.
+   `/loop:ship` gate — goes red on a file that is green under `deno task test`.
 
 Then: `grep -rn "FILL" .claude/` — the patterns carry markers for the example
 function names, which are placeholders, not this repo's.
@@ -112,7 +112,7 @@ deno task gate     # check + lint + fmt --check + test, in that order
 
 Or one role at a time — `deno task check` · `lint` · `fmt` · `test`. The four are
 the backend half of the gate roles `00-project.md` asks for; wire `deno task gate`
-into `/ship` next to the front-end ones.
+into `/loop:ship` next to the front-end ones.
 
 > `deno lint` and `deno fmt --check` are in there for the same reason `pnpm lint`
 > is a ship gate: `deno test` stays green on an `async` test that never awaits, and

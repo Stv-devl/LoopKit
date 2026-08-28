@@ -1,13 +1,13 @@
 # Worktrees — isolating parallel tracks
 
-**This file is the only copy of the fork rule.** `/plan`, `/orchestrate`,
-`/bmad:flow`, `/ship` and the `github` agent read it here.
+**This file is the only copy of the fork rule.** `/loop:plan`, `/loop:orchestrate`,
+`/bmad:flow`, `/loop:ship` and the `github` agent read it here.
 
 ## The unit of isolation is a *track*, not a file
 
-A **track** = one full loop pass on one artifact (one `/spec`, one story). It
+A **track** = one full loop pass on one artifact (one `/loop:spec`, one story). It
 owns a branch and a worktree. Inside a track nothing changes: EXECUTE stays
-sequential on the main thread, and `/plan`'s parallel lots stay agents forking in
+sequential on the main thread, and `/loop:plan`'s parallel lots stay agents forking in
 the *same* tree on disjoint files.
 
 ```
@@ -26,7 +26,7 @@ Fork **only if all four hold**:
 | # | Condition |
 | --- | --- |
 | 1 | **≥ 2 tracks** are being advanced in the same session (or the user asks for one in the background) |
-| 2 | Their file sets are **disjoint** — declared by `/bmad:architect`'s story map, or by `/plan`'s `Files` table |
+| 2 | Their file sets are **disjoint** — declared by `/bmad:architect`'s story map, or by `/loop:plan`'s `Files` table |
 | 3 | Neither touches a **shared foundation** (list below) |
 | 4 | The repo is a git repo, the current tree is **clean**, and the base branch is known |
 
@@ -35,7 +35,7 @@ never gets a worktree: the setup cost buys nothing.
 
 ## How many tracks — count them, don't assume two
 
-`/tracks` runs everything in this section and prepares the worktrees; what
+`/loop:tracks` runs everything in this section and prepares the worktrees; what
 follows is the method it applies, and the authority when it is done by hand.
 
 The four conditions answer *whether* to fork. They do not answer **how many**,
@@ -87,7 +87,7 @@ in the same pass.
 | Migrations & the live database | A worktree isolates **files, not the DB**. Two tracks migrating in parallel = two timelines on one schema. |
 | `src/lib/*`, `shared/schemas/*` | Everything imports them; a change here is not disjoint by definition. |
 | Router, `src/providers/*`, composition root | Every feature wires into the same files. |
-| `docs/design-system.md`, `docs/product/backlog.md`, `docs/product/brief.md` | Single product-level files, written by every track. The brief joins the list because `/ship` step 5 refreshes its `Current surface` after the merge. |
+| `docs/design-system.md`, `docs/product/backlog.md`, `docs/product/brief.md` | Single product-level files, written by every track. The brief joins the list because `/loop:ship` step 5 refreshes its `Current surface` after the merge. |
 | `package.json` / lockfile | Two tracks adding deps = a lockfile conflict, every time. |
 
 **Shared foundations are done first, in the main tree, and committed — then the
@@ -99,12 +99,12 @@ stops, hands it back to the main tree, and rebases.
 - Path: `.claude/worktrees/<slug>` — the harness's own convention, so both
   mechanisms below land in the same place.
 - `<slug>` is the **track** slug — one per loop pass, derived from the entry
-  artifact's path by `/research`'s rule (the only copy), so `docs/work/<slug>/`,
+  artifact's path by `/loop:research`'s rule (the only copy), so `docs/work/<slug>/`,
   the worktree and the branch all match. On a story that is
   `<feature>-<epic>.<story>` (`inbox-1.2`), **not** the feature folder's name:
   forking several stories of one feature under `inbox` is three tracks in one
   worktree, which the Rules below forbid outright. The fork happens before
-  `/research` runs, so the rule is applied there rather than waited for.
+  `/loop:research` runs, so the rule is applied there rather than waited for.
 - Branch: `feat/<slug>` (`fix/`, `chore/` follow the commit type).
 - `.claude/worktrees/` **must be in `.gitignore`** before the first fork —
   `.claude/` itself is versioned, its worktrees are not.
@@ -151,10 +151,10 @@ git branch -d feat/<slug>
 ## Merge protocol (gated)
 
 1. The track runs its whole loop **inside its worktree**: EXECUTE, REVIEW, and
-   `/ship`'s gates (`typecheck`, `lint`, `test:run`, `build`, `audit`) — all
+   `/loop:ship`'s gates (`typecheck`, `lint`, `test:run`, `build`, `audit`) — all
    green **there**.
    Gates run in the main tree prove nothing about a worktree's code.
-2. `/ship` commits **in the worktree**, via the `github` agent.
+2. `/loop:ship` commits **in the worktree**, via the `github` agent.
 3. **Barrier** — integration is one at a time, never two merges in flight.
    Rebase the track on the current base branch, re-run the gates if the rebase
    moved anything, then merge.

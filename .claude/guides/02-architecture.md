@@ -10,7 +10,7 @@ Duplication is not decidable from an Edit delta, and `/refactor:clean` is the
 wrong tool — `knip` finds code that is **dead**, which is the opposite problem:
 a rule written twice is used twice.
 
-So it is a review checkbox on `/review`'s `correctness` dimension, and it is
+So it is a review checkbox on `/loop:review`'s `correctness` dimension, and it is
 worth the seat: of the two copies, only one ever gets fixed, and nothing fails
 until the day they disagree.
 

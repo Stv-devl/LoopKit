@@ -1,5 +1,9 @@
 # Adapter le kit à un projet
 
+Source ordonnée de `/kit:init`, section par section. L'utilisateur lance la
+commande ; il n'a plus à parcourir cette checklist à la main. Elle reste la
+référence détaillée pour maintenir ou auditer l'adaptation.
+
 Le kit est générique **par construction** : chaque endroit à adapter porte un
 commentaire `<!-- FILL: … -->`. Tant qu'un marqueur est là, la règle
 correspondante ne protège rien.
@@ -93,7 +97,7 @@ minuscules — sinon ils ne matchent jamais et tout ressort en message génériq
 `dev`, `build`, tests **run-once**, `typecheck`, `lint`, **audit de
 dépendances**. Un gate ne peut pas inventer un script absent — et s'il tombe sur
 le mode watch, il ne rend jamais la main. `lint` compte : le hook eslint est
-**non bloquant**, donc sans script de lint dans `/ship`, les règles que seul
+**non bloquant**, donc sans script de lint dans `/loop:ship`, les règles que seul
 ESLint voit (hooks conditionnels, exhaustive-deps) ne bloquent jamais rien.
 L'audit de dépendances compte pour la raison inverse : c'est le seul gate qui
 puisse virer au rouge **sans qu'un octet du dépôt ait changé**, donc le seul que
@@ -113,7 +117,7 @@ verdict `RED confirmed`, c'est `RUN_TESTS` qu'il faut regarder en premier.
 (`**/*.{test,spec}.?(c|m)[jt]s?(x)`) ramasse les specs Playwright de `e2e/` et,
 si tu as l'addon Supabase, les tests Deno de `supabase/functions/` — deux runners
 qui ne sont pas vitest. `pnpm test:run` échoue alors à la collecte, et le gate de
-`/ship` part rouge sur du code intact. Le bloc est dans
+`/loop:ship` part rouge sur du code intact. Le bloc est dans
 `.claude/skills/templates/tooling-config.md`, section `vite.config.ts` (le bloc
 `test` y est une clef de `vite.config.ts` — jamais un `vitest.config.ts` séparé,
 qui remplacerait la config au lieu de la fusionner).
@@ -152,7 +156,7 @@ d'accessibilité de `patterns/a11y.md` — optionnel, contrairement aux trois
 ci-dessus.
 
 **Le gate lint, et il ne démarre pas tout seul non plus.** `pnpm lint
---max-warnings=0` est un gate de `/ship` : sur ESLint 10 le parser par défaut
+--max-warnings=0` est un gate de `/loop:ship` : sur ESLint 10 le parser par défaut
 (espree) ne lit pas une annotation de type, donc sans `typescript-eslint` ce
 n'est pas une dégradation, c'est un `Parsing error` qui fait tomber le gate au
 premier `.ts`.
@@ -212,9 +216,9 @@ config Vitest avant, c'est la seule chose qui l'empêche de démarrer.
 
 **Pas de dépôt distant ? Cette section ne te concerne pas** : `--no-ci` (ou
 *non* à la première question de l'installeur) n'installe aucun workflow, et les
-six rôles de gate ne bougent pas d'un pouce — c'est `/ship` qui les tient, avant
+six rôles de gate ne bougent pas d'un pouce — c'est `/loop:ship` qui les tient, avant
 chaque commit, comme il l'a toujours fait. Le CI n'a jamais été qu'une seconde
-copie, pour la seule chose que `/ship` ne peut pas couvrir : une machine qui
+copie, pour la seule chose que `/loop:ship` ne peut pas couvrir : une machine qui
 n'est pas la tienne. Le jour où tu pousses, relance l'installeur avec
 `--deploy=<cible>`.
 
@@ -228,7 +232,7 @@ au premier push, pas plus tard.
   portent les noms de `00-project.md`. Sinon, aligne les `run:` — et tu n'as pas
   à le vérifier à l'œil : `/kit:doctor` compare les deux (`ci-scripts`), parce
   que c'est la **troisième** copie de la même liste (la règle la déclare,
-  `/ship` l'appelle en local, le CI l'appelle sur le runner). La divergence est
+  `/loop:ship` l'appelle en local, le CI l'appelle sur le runner). La divergence est
   silencieuse et sort au pire moment : CI rouge sur `main`, pour un nom de
   script que personne n'a touché, sur un diff qui va bien.
   **Le premier mur d'un projet neuf est ailleurs** : `pnpm/action-setup` exige
@@ -273,12 +277,12 @@ edge functions, `addons/fastapi/` pour un service FastAPI (qui ajoute aussi
 `07-backend.md`, les commandes `/backend:*` et trois hooks Python — câblés
 automatiquement sur une install neuve, à fusionner depuis le `.new` sinon :
 voir le README de l'addon, qui liste aussi les gates backend à ajouter dans
-`/ship` et `07-backend.md` à ajouter aux dimensions du `reviewer`).
+`/loop:ship` et `07-backend.md` à ajouter aux dimensions du `reviewer`).
 
 ## 6. `.claude/rules/06-database.md`
 
 Provider, dossier de migrations, et surtout les **commandes d'inspection
-read-only** : c'est ce qui permet à `/research` de compter les lignes au lieu de
+read-only** : c'est ce qui permet à `/loop:research` de compter les lignes au lieu de
 supposer ce que le schéma autorise.
 
 ## 7. `CLAUDE.md`
@@ -347,7 +351,7 @@ Utile seulement si tu mènes plusieurs features de front. Quatre choses à véri
 Si tu ne travailles jamais sur deux features en parallèle, la règle est inerte —
 la garder ne coûte rien, elle ne déclenche que sur ≥ 2 tracks.
 
-## 13. L'étage 0 de `/review` → un navigateur, ou l'aveu
+## 13. L'étage 0 de `/loop:review` → un navigateur, ou l'aveu
 
 Le seul étage de toute la boucle qui **regarde** l'écran. Il a besoin de deux
 choses sur la machine : de quoi lancer l'app (la skill `run`, donc les scripts du
@@ -437,5 +441,5 @@ crée `x.repository.ts` — il doit passer. Refais-le sans le test : la créatio
 doit être refusée. Si `tdd-prove-red` répond « could not run the test runner »,
 c'est `RUN_TESTS` qui ne correspond pas à ton script (point 4).
 
-Puis un tour à blanc : `/spec une petite feature` doit produire
+Puis un tour à blanc : `/loop:spec une petite feature` doit produire
 `docs/specs/<slug>.md` et s'arrêter là.

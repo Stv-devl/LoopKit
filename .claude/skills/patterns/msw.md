@@ -152,7 +152,7 @@ drift silently, so three rules hold it in place:
    returning an error makes every other test in the file lie.
 3. **Handlers are written from the API contract**, not from what makes the test
    pass — the same rule as an assertion. If the real response shape is unknown,
-   that is a `/research` question, not a guess.
+   that is a `/loop:research` question, not a guess.
 
 ## Not this
 

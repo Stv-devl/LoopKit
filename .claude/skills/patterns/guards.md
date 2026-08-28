@@ -197,7 +197,7 @@ and the unified state component `<State>` (see `feedback.md`).
 
 > **`redirectTo` is typed `LinkProps['to']`, not `string`.** TanStack Router
 > types `to` against the generated route tree, so a plain `string` does not
-> compile — and `pnpm typecheck` is a `/ship` gate. Taking the router's own type
+> compile — and `pnpm typecheck` is a `/loop:ship` gate. Taking the router's own type
 > also means a typo in a default value fails the build instead of producing a
 > 404 at runtime.
 

@@ -40,7 +40,7 @@ You write **what** and **why**, never **how**. Forbidden in your output:
 - repository signatures, query keys, Zod types, table or column names
 - pattern references, component names, library choices
 
-That context is injected later by `/plan`, sourced from real research. If you
+That context is injected later by `/loop:plan`, sourced from real research. If you
 invent it now, it will be wrong by the time anyone reads it — and a plausible
 wrong path costs more than an empty section. Leave `## Plan` empty.
 

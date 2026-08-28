@@ -1,7 +1,7 @@
 # CD — ce qui sort de la machine.
 #
 # `.claude/commands/ship.md` distingue deux familles de gates : celles qui
-# décident **ce qui est construit** (`/interface`, `/plan`) et celles qui
+# décident **ce qui est construit** (`/loop:interface`, `/loop:plan`) et celles qui
 # décident **ce qui sort** (push, PR, merge). Ce fichier est de la seconde
 # famille, et il en est le dernier maillon.
 #

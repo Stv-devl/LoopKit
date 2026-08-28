@@ -71,14 +71,14 @@ cannot invent a script that does not exist.
 > **Six, not five — the dependency audit is the one that used to be dropped
 > here.** `07-backend.md` states it in the same breath as the others ("a repo
 > carrying this addon has **two** dependency trees, and `pnpm audit` says
-> nothing about the Python one. **Both run at `/ship`, or the gate covers half
+> nothing about the Python one. **Both run at `/loop:ship`, or the gate covers half
 > of what it claims**"), and on a backend-only repo it is the *only* CVE check
 > that would run at all. `/backend:deps-audit` exists — what was missing is its
 > place in the gate.
 
-### 3. `.claude/commands/ship.md` → the gates
+### 3. `.claude/commands/loop/ship.md` → the gates
 
-**This is the edit everyone forgets, and it makes `/ship` useless on a Python
+**This is the edit everyone forgets, and it makes `/loop:ship` useless on a Python
 repo.** The gate block is written in `pnpm`: on a backend-only project none of
 those five commands exist. Add the backend ones alongside (the file already
 carries a `<!-- FILL -->` right there), or replace them outright if the repo has
@@ -202,9 +202,9 @@ docstrings are refused, same rule as in TS, nothing extra to declare.
 | `/database:migration` | Alembic revision — overrides the kit's SQL-file version |
 | `/refactor:clean-python` | Dead Python code, minus the side-effect imports |
 
-They slot into the existing loop: `/research` → `/interface` (skip, no UI) →
-`/plan` → EXECUTE → `/review` → `/ship`. The backend commands are the *build*
-tools EXECUTE reaches for; the audit ones are what `/review` findings turn into
+They slot into the existing loop: `/loop:research` → `/loop:interface` (skip, no UI) →
+`/loop:plan` → EXECUTE → `/loop:review` → `/loop:ship`. The backend commands are the *build*
+tools EXECUTE reaches for; the audit ones are what `/loop:review` findings turn into
 when a dimension needs depth.
 
 Two properties of `context: fork`, which all fifteen carry, are worth knowing

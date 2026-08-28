@@ -92,7 +92,7 @@ export function useCreateItem(): UseMutationResult<Item, Error, CreateItemInput>
     onSuccess: () => {
       // The key comes from the factory, never from a literal typed here — a
       // second `['items']` is an invalidation that silently does nothing
-      // (`patterns/react-query.md`, "Query keys"; `/review` scores it Major).
+      // (`patterns/react-query.md`, "Query keys"; `/loop:review` scores it Major).
       queryClient.invalidateQueries({ queryKey: itemKeys.lists() });
       toast({ title: 'Élément créé' });
     },

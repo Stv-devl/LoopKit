@@ -17,7 +17,7 @@ only thing worth memorising:
 | `<h2>`+ | never | yes, under its `<h1>` |
 
 > **Colours and spacing are tokens**, same as `templates/component.md` — the
-> classes below are placeholders until `/design-system` writes the real ones.
+> classes below are placeholders until `/loop:design-system` writes the real ones.
 
 ## The layout owns the landmarks
 
@@ -207,7 +207,7 @@ export function Panel({ title, headingLevel = 2, children }: PanelProps): React.
 heading as a slot. Both are fine; what is not fine is a `<h3>` frozen inside a
 component that two pages place at two depths.
 
-`/review`'s `ui` dimension owns this check, because it is the one reader that
+`/loop:review`'s `ui` dimension owns this check, because it is the one reader that
 sees the page assembled.
 
 ## Testing

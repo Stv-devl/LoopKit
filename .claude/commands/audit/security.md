@@ -8,12 +8,12 @@ argument-hint: [--economy|--standard|--critical] [surface or everything]
 Out of the loop, on the codebase **as it stands**. Not a diff review: the code
 nobody has touched in six months is exactly where this looks.
 
-> Not to be confused with `/review`'s `security` dimension, which judges a diff
+> Not to be confused with `/loop:review`'s `security` dimension, which judges a diff
 > inside the loop, nor with `/backend:security` (FastAPI addon), which owns the
 > Python backend in depth.
 
 **One caller invokes this command on its own.** On a `critical` token profile,
-`/ship` runs it before the commit, scoped to **one** surface chosen from what
+`/loop:ship` runs it before the commit, scoped to **one** surface chosen from what
 made the feature `critical` (step 1bis there; the trigger list is
 `11-token-budget.md`'s and is the only copy). Nothing changes for you: same
 single-auditor path as any single-surface request, same read-only contract, same

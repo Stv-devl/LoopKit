@@ -1,4 +1,4 @@
-# CI / CD — le miroir serveur de `/ship`
+# CI / CD — le miroir serveur de `/loop:ship`
 
 > Read this when **scaffolding the repo**, when a gate is added or removed, or
 > when the project gains a deployment target. The files themselves are
@@ -6,21 +6,21 @@
 > `install.sh` — **this file does not restate their content**. Two copies of a
 > pipeline is exactly the failure mode `/kit:doctor` exists to catch.
 
-## Why a CI at all, when `/ship` already runs the gates
+## Why a CI at all, when `/loop:ship` already runs the gates
 
-`/ship` runs typecheck, lint, tests, audit and build **on one machine** — the
+`/loop:ship` runs typecheck, lint, tests, audit and build **on one machine** — the
 one that happened to run it, with its hooks enabled, its `node_modules` and its
 cache. That is the right place for them: it is the fastest feedback, and it is
 before the commit.
 
 It is not a barrier. Nothing in this kit can stop a push that never went through
-`/ship` — a disabled hook, a `--no-verify`, another machine, an agent that
+`/loop:ship` — a disabled hook, a `--no-verify`, another machine, an agent that
 short-circuited the step, a human in a hurry. **The CI is the copy nobody can
 skip from their own machine**, and that is its whole job. It finds nothing
-`/ship` would not have found; it finds it when `/ship` did not run.
+`/loop:ship` would not have found; it finds it when `/loop:ship` did not run.
 
 The corollary matters as much: **a green CI is not a reason to stop running
-`/ship`.** The CI reports after the fact, on a diff already pushed. `/ship`
+`/loop:ship`.** The CI reports after the fact, on a diff already pushed. `/loop:ship`
 reports before the commit, when the fix is still free.
 
 ## What runs where
@@ -30,10 +30,10 @@ roles and belong in both places; the sixth is not a CI role at all.
 
 The table below has **eight rows for those six roles**, and the two extras are
 not roles: the coverage floor is a *property of the test run* and the bundle
-secret scan is `/ship`'s second deterministic security line. They are listed
+secret scan is `/loop:ship`'s second deterministic security line. They are listed
 because they are steps you can delete, not because `00-project.md` counts them.
 
-| Role | `/ship` | `ci.yml` | Note |
+| Role | `/loop:ship` | `ci.yml` | Note |
 | --- | --- | --- | --- |
 | run-once tests | ✓ | ✓ | its **own** step (`test:run`) — see the note below the table |
 | typecheck | ✓ | ✓ | |
@@ -42,7 +42,7 @@ because they are steps you can delete, not because `00-project.md` counts them.
 | build | ✓ | ✓ | CI uploads the result as the artefact the CD deploys |
 | dev server | ✓ | — | a local role. There is nothing to serve in CI |
 | *(not a role)* coverage floor | ✓ | ✓ | thresholds live in `vite.config.ts` (`tooling-config.md`), **not** in the YAML |
-| *(not a role)* bundle secret scan | ✓ | ✓ | the other half of `/ship`'s deterministic security pair |
+| *(not a role)* bundle secret scan | ✓ | ✓ | the other half of `/loop:ship`'s deterministic security pair |
 | `/audit:security` (one surface) | on a `critical` profile only | — | it needs an agent's judgement, not a runner's |
 
 > **Why the tests and the floor are two steps and not one.** `test:coverage`
@@ -58,14 +58,14 @@ because they are steps you can delete, not because `00-project.md` counts them.
 **No agent runs in CI.** Everything above is deterministic — `11-token-budget.md`
 is explicit that those cost compute, not model context, which is why they are
 free to duplicate. The reviewers, the verifier and the security auditor stay in
-`/review` and `/ship`: putting a model in a required check makes the gate
+`/loop:review` and `/loop:ship`: putting a model in a required check makes the gate
 non-reproducible and the bill unbounded.
 
 ## Working locally, with no remote
 
-**The gates do not depend on any of this.** They are `/ship`'s, they run before
+**The gates do not depend on any of this.** They are `/loop:ship`'s, they run before
 the commit, on your machine, and they ran there before this file existed. The CI
-was never the gate — it is a *second copy* of it, covering the one thing `/ship`
+was never the gate — it is a *second copy* of it, covering the one thing `/loop:ship`
 structurally cannot: a machine that is not yours.
 
 So a project with no GitHub remote installs **no workflow at all**
@@ -77,7 +77,7 @@ ever take.
 
 | | Solo, local, no remote | Remote, no production | Remote + production |
 | --- | --- | --- | --- |
-| Gates before the commit | `/ship` | `/ship` | `/ship` |
+| Gates before the commit | `/loop:ship` | `/loop:ship` | `/loop:ship` |
 | Gates after the push | — | `ci.yml` | `ci.yml` |
 | Deploy | — | `--deploy=none` (fails until named) | `--deploy=<host>` |
 | Install | `--no-ci` | `--deploy=none` | `--deploy=<host>` |
@@ -88,7 +88,7 @@ adapted since is touched.
 
 **Wanting to run `ci.yml` itself locally is a different question**, and usually
 the wrong one — `nektos/act` will do it, but it boots a container to run the
-five commands `/ship` already runs natively, on the same tree, faster. Reach for
+five commands `/loop:ship` already runs natively, on the same tree, faster. Reach for
 it to debug the *workflow file*, never to check the code.
 
 ## The two twins, and what checks them
@@ -96,7 +96,7 @@ it to debug the *workflow file*, never to check the code.
 The YAML is the only copy of the *pipeline*. Two other things are written
 twice, and both failures are silent.
 
-**The script names.** `00-project.md` declares them, `/ship` calls them locally,
+**The script names.** `00-project.md` declares them, `/loop:ship` calls them locally,
 `ci.yml` calls them on the runner — three copies of one list. `/kit:doctor`'s
 `ci-scripts` compares them **in both directions**, so a rename cannot land as a
 red `main` for a script nobody touched, and a gate role *deleted* from the YAML
@@ -107,7 +107,7 @@ The second direction is the one that was missing, and it is the dangerous one:
 `undeclared = called - declared` only ever noticed a script the workflow calls
 and `00-project.md` does not. Deleting the Typecheck, Lint and Dependency-audit
 steps outright left the check saying `No divergence.` — a green CI with no gate
-in it, reported as healthy. The comparison is against **`/ship`'s gate fence**,
+in it, reported as healthy. The comparison is against **`/loop:ship`'s gate fence**,
 minus the local-only roles, not against every script in `00-project.md`: the
 naive reverse flags `dev`, `test`, `test:run` and `test:ui`, which are not CI
 roles and never were.
@@ -214,16 +214,16 @@ because deleting one is easy and looks harmless:
 
 ## What is deliberately not here
 
-- **No release / version-bump job.** `/ship` owns the commit and the board;
+- **No release / version-bump job.** `/loop:ship` owns the commit and the board;
   a second thing writing to the repo on push is how two mechanisms start
   disagreeing about what shipped.
-- **No E2E in `ci.yml`.** `e2e-tester` runs at `/review`, against a real
+- **No E2E in `ci.yml`.** `e2e-tester` runs at `/loop:review`, against a real
   browser, on a bounded set of flows. Booting Playwright on every push buys
   minutes and a flake budget nobody is watching.
 - **No matrix over Node versions.** `01-stack.md` pins a floor (20.19+ / 22.12+,
   Vite 8's constraint), not a support range. One version, the one you deploy.
 - **No third-party secret scanner** (gitleaks, trufflehog). The `Bundle secrets`
-  step is deliberately the *same* grep `/ship` runs and nothing more: it answers
+  step is deliberately the *same* grep `/loop:ship` runs and nothing more: it answers
   one question — did a real secret get a `VITE_` prefix and therefore ship in
   the bundle — and it answers it with no action to trust and no allowlist to
   maintain. History scanning is GitHub's push protection's job, at the forge,

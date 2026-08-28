@@ -17,10 +17,10 @@
   if `none yet`, delete `.github/workflows/deploy.yml` rather than leaving it
   unfilled.
 
-The gates run **once or twice, never zero**. `/ship` runs them before every
+The gates run **once or twice, never zero**. `/loop:ship` runs them before every
 commit, on this machine — that copy exists whatever the answers above. When the
 project has a remote, `.github/workflows/ci.yml` runs them again where nobody
-can skip them; a green CI is then not a reason to stop running `/ship`, since it
+can skip them; a green CI is then not a reason to stop running `/loop:ship`, since it
 reports on a diff already pushed. No remote → no workflow installed at all, and
 the gates are unchanged · `.claude/skills/templates/ci.md`.
 
@@ -84,7 +84,7 @@ When deleting, always target specific files/subdirectories, not entire folders.
   layer at a time, then frozen** · `05-testing.md`
 - Assert the **behaviour**, never that a mock was called; never mock a pure
   function · `05-testing.md`
-- SOLID's O, L, I have **one** enforcer, `/review`'s `correctness` — no hook
+- SOLID's O, L, I have **one** enforcer, `/loop:review`'s `correctness` — no hook
   decides them from an Edit delta · `03-conventions.md`
 
 ## Routing
@@ -100,36 +100,37 @@ Two kinds of work have one entry point, and going around it is the failure mode:
 **One loop, two entries.** Use the lightest entry that does the job.
 
 ```
-frame (once) : /product   (the product frame + the backlog board)
-               /design-system   (extract from code, or --new to create it
-                                 with you, once, from zero)
-simple entry : /spec
+frame (once) : /loop:product   (the product frame + the backlog board)
+               /loop:design-system   (extract from code, or --new to create it
+                                      with you, once, from zero)
+simple entry : /loop:spec
 complex entry: /bmad:pm → /bmad:sm → /stories:review → /bmad:architect
-parallelism  : /tracks   (what can run at once right now — 3 max — and the
-                          worktrees for it; recomputed after every merge)
-loop (shared): /research → /interface → /plan → EXECUTE → /review → /ship → next
-               └── /orchestrate <artifact> runs the whole loop ──┘
+parallelism  : /loop:tracks   (what can run at once right now — 3 max — and
+                               the worktrees for it; recomputed after a merge)
+loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
+               → /loop:review → /loop:ship → next
+               └── /loop:orchestrate <artifact> runs the whole loop ──┘
 ```
 
 **The loop's gates come in two kinds, and only one of them defines the work.**
-`/interface` and `/plan` fix **what is to be built** — the retained proposal is
-what makes `/review` scoring a divergence as Major honest, and the printed test
+`/loop:interface` and `/loop:plan` fix **what is to be built** — the retained proposal is
+what makes `/loop:review` scoring a divergence as Major honest, and the printed test
 plan is the last point where changing "correct" is free, since those test files
 freeze right after. Neither substitutes for the other and **neither proceeds on
-silence**. `/ship`'s gates and `/tracks`' fork are the other kind: they decide
+silence**. `/loop:ship`'s gates and `/loop:tracks`' fork are the other kind: they decide
 **what leaves the machine**, never what it should be.
 
-- Stories are sliced **functional, before the architecture**; `/plan` injects the
+- Stories are sliced **functional, before the architecture**; `/loop:plan` injects the
   technical context per feature.
 - **External documentation is researched once** — `docs/research-cache/`, whose
-  `settled.md` ledger `/research` reads before it fetches anything.
+  `settled.md` ledger `/loop:research` reads before it fetches anything.
 - Parallelise independent information, never repeated reading of the same source
   · `11-token-budget.md`. **EXECUTE stays sequential** — one exception, the RED
   leg, one `test-writer` per test-first layer.
 - Separate tracks get separate worktrees; how many at once is **computed** ·
-  `/tracks`, `.claude/guides/10-worktrees.md`.
+  `/loop:tracks`, `.claude/guides/10-worktrees.md`.
 - Agents: `explorer`, `doc-researcher`, `story-writer`, `story-critic`,
-  `designer`, `test-writer`, `reviewer`, `verifier`, `e2e-tester`,
+  `plan-critic`, `designer`, `test-writer`, `reviewer`, `verifier`, `e2e-tester`,
   `security-auditor`, `github`.
 - Token profile: `economy` by default, persisted in work artifacts ·
   `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual fallback
@@ -139,8 +140,8 @@ silence**. `/ship`'s gates and `/tracks`' fork are the other kind: they decide
   a register in `docs/audits/<part>.md` so every run after the first is a diff)
   and `/kit:doctor`. They report; the fixes come back through the loop with their
   tests, never inline. **Never a gate** — with one exception: on a `critical`
-  profile `/ship` arms one surface of `/audit:security` before the commit, and a
-  Critical finding stops the ship (`/ship` step 1bis · `11-token-budget.md`).
+  profile `/loop:ship` arms one surface of `/audit:security` before the commit, and a
+  Critical finding stops the ship (`/loop:ship` step 1bis · `11-token-budget.md`).
 
 Full map: `docs/Claude_Workflows.md`. Everything respects `.claude/rules/` and
 the guardrail hooks.

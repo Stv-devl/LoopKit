@@ -9,7 +9,7 @@ Out of the loop, read-only, on the repository **as it stands**. Zero subagents:
 everything here is deterministic, so it costs compute and not context
 (`11-token-budget.md`).
 
-**Never a gate.** Do not wire the exit code into `/ship`. A rule and its enforced
+**Never a gate.** Do not wire the exit code into `/loop:ship`. A rule and its enforced
 copy disagreeing is a decision to take — which of the two is right — and a build
 is the wrong place to take it.
 
@@ -24,7 +24,7 @@ silently, while the table says the layer is covered.*
 | What already exists | What it proves |
 | --- | --- |
 | The hooks | the rule they carry is applied |
-| `/review`, `/audit:security` | the **code** obeys the rules |
+| `/loop:review`, `/audit:security` | the **code** obeys the rules |
 | **`/kit:doctor`** | **the rules and the hooks are still talking about the same thing** |
 
 Nothing else in the kit reads a rule file and a hook file in the same pass.
@@ -56,14 +56,14 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `coverage-holes` | `05-testing.md`, "three wiring files and only three" | the coverage `exclude` array in `tooling-config.md` |
 | `token-thresholds` | `11-token-budget.md`, the three markers | the `used >=` blocks in `token-statusline.py` |
 | `tdd-layers` | — | `CWK_TDD_LAYERS`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
-| `gate-allowlist` | the `pnpm` calls in `/ship`'s gate fence | `permissions.allow` in `settings.json` |
+| `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
 | `workflow-names` | `ci.yml`'s `name:` | the `workflow_run` trigger and `--workflow=` of `deploy.yml` |
 | `agent-models` | `11-token-budget.md`, the model-tier table | the `model:` line of every `.claude/agents/*.md` |
 | `settled-ledger` | `01-stack.md` names `docs/research-cache/settled.md` | that no rule file, core or addon, grew a dated table back |
 
 `gate-allowlist` is the only twin whose divergence is **not** silent — it
-interrupts. That is exactly why it belongs here: a gate added to `/ship` without
+interrupts. That is exactly why it belongs here: a gate added to `/loop:ship` without
 its allow entry does not fail, it **asks**, someone declines it by reflex in the
 middle of the batch, the other gates stay green and the ship reports success
 without the check that was just added. The form matters too: a call carrying
@@ -174,7 +174,7 @@ decision each one needs, and nothing else — a clean run is one line.
 ## What it deliberately does not check
 
 - **Prose that contradicts prose.** Two rules disagreeing in words is a
-  `/review` matter, not a parser's.
+  `/loop:review` matter, not a parser's.
 - **The addon wiring beyond file presence** — `EXTERNAL_CLIENTS`, the backend
   gates in `commands/ship.md`, `07-backend.md` in the reviewer's dimensions. The
   addon README lists them; they are prose edits inside larger files, and a false

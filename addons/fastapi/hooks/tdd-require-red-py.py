@@ -53,7 +53,7 @@ def main() -> None:
         lib.deny(
             "TDD: %s is a test-first layer and its test does not exist yet.\n\n"
             "Write %s first — the cases come from the `Test plan` block of "
-            "docs/work/<slug>/plan.md, validated at the /plan gate. Saving it runs "
+            "docs/work/<slug>/plan.md, validated at the /loop:plan gate. Saving it runs "
             "pytest; when the run is a genuine red, the marker is recorded and this "
             "module can be created.\n\n"
             "`tests/` mirrors `%s/` — that mapping is what makes this hook able to "

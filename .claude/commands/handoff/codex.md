@@ -57,7 +57,7 @@ Worktree/branch: <path + branch, or main tree>
 - Do not redo completed phases. Update this handoff when the phase changes.
 ```
 
-If no work directory exists, create it using the slug rules from `/research`.
+If no work directory exists, create it using the slug rules from `/loop:research`.
 The handoff is a checkpoint, not a second plan.
 
 ## Task: $ARGUMENTS

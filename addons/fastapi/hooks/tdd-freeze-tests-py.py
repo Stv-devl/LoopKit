@@ -103,7 +103,7 @@ SKIP_RE = re.compile(
 # declares: this matches a patch whose target is a STRING containing the dotted
 # module. `monkeypatch.setattr(project, "slugify", ...)` — the module object,
 # imported — is not matched, and neither is a target behind a variable.
-# `/review`'s `tests` dimension owns those.
+# `/loop:review`'s `tests` dimension owns those.
 PATCH_RE = re.compile(r"\b(?:mocker\.)?(?:patch|patch\.object)\s*\(|monkeypatch\.setattr\s*\(")
 
 
@@ -184,7 +184,7 @@ def main() -> None:
             )
             sys.exit(0)
         lib.deny(
-            "TDD: %s is frozen — it was validated at the /plan gate and proved red, "
+            "TDD: %s is frozen — it was validated at the /loop:plan gate and proved red, "
             "and a wholesale overwrite rewrites assertions with nothing watching.\n\n"
             "Adding a case is allowed, as an Edit that inserts after the last line of "
             "the previous case and carries its own assertion. Correcting a case is a "
@@ -304,7 +304,7 @@ def main() -> None:
         '{"systemMessage": %s}'
         % _json(
             "TDD: case appended to the frozen test %s — allowed as a pure insertion. "
-            "Say which behaviour it covers and why the /plan test plan missed it."
+            "Say which behaviour it covers and why the /loop:plan test plan missed it."
             % file_path
         )
     )
