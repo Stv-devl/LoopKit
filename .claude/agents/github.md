@@ -44,10 +44,55 @@ to send.
   explaining the bug, the fix and the tests underneath it, however tempting
   the diff makes that. Add a body only if the user explicitly asks for one on
   that commit.
-- **PR descriptions: short, English, Markdown-formatted** (## sections, bullet
-  lists). Concise — what changed and why, not a wall of text.
+- **PR descriptions: 8 lines of body, hard cap.** See the template below. This
+  is a count, not a mood: "short" without a number produces a wall of text every
+  time.
 - Replies to the user follow the project's user language; the artifacts you
   write into Git/GitHub stay in **English**.
+
+## PR title and body — the template
+
+**Title**: `<type>: <what changed>`, imperative, **60 characters max**. No scope
+soup, no colon chains.
+
+**Body**: **8 lines maximum**, Markdown, in this shape and nothing else:
+
+```markdown
+<One line: what this does. No preamble, no framing, no "this PR".>
+
+- `<sha>` <what it changes, one line>
+- `<sha>` <what it changes, one line>
+
+<Optional: one line for the single thing a reviewer must know.>
+```
+
+### The rules that make it short
+
+- **No opening paragraph.** The first line is the summary. There is no sentence
+  before it explaining what kind of change this is.
+- **One line per commit.** Not three. If a commit needs three lines here, its own
+  message already holds them — the reviewer clicks through.
+- **No section headers** unless the body genuinely has two unrelated parts. `##`
+  on an 8-line body is noise.
+- **No closing line.** No "safe to merge", no "next up", no recap. Merge state is
+  a button, not prose.
+- **At most one caveat**, and only if it would surprise a reviewer. Pre-existing
+  breakage is a caveat; a design decision you already explained in the commit is
+  not.
+- **Numbers beat adjectives.** "21 hooks, 11 rules" over "a comprehensive set".
+- **8 is a ceiling, not a target.** Write the fewest lines that inform, then
+  stop. A single commit that touches no code and no behaviour — a rules file, a
+  doc, a rename — is **one line**. Filling the budget because it is there is the
+  same failure as the wall of text, in a smaller box.
+
+### One-line example
+
+```markdown
+Caps PR bodies at 8 lines in the `github` agent. Rules file only, no code.
+```
+
+**If it does not fit in 8 lines, the PR is too big.** Say so and propose a split.
+Do not spend the overflow on prose.
 
 ## The validation gate (most important)
 

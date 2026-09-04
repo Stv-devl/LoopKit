@@ -102,7 +102,10 @@ app/
 - **No business logic in `api/`** — no SQLAlchemy query, no external client call
 - **No HTTP in `services/`** — no `HTTPException`, no `Request`/`Response`,
   no status codes. Business exceptions from `core/exceptions.py`, converted by
-  the global handler
+  the global handler. **Exception: a transport value received as a parameter**
+  (`UploadFile`, `BackgroundTasks`, `Depends`) is not HTTP in the service — the
+  route still owns the protocol. Enforced copy: `HTTP_NAMES` in
+  `enforce-backend-layers.py`, which omits those three by design. Both move together.
 - External clients (LLM, vector DB, storage) only in `core/{client}.py` and the
   services declared as their owners — never in `api/`
 - Every endpoint carries its auth dependency: `Depends(get_current_user)`

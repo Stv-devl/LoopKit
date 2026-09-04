@@ -120,7 +120,9 @@ research step — treat each one as a criterion you must explicitly clear.
       (`templates/component.md`). Minor, Major if it was added to a file the diff
       already rewrites.
 - [ ] Files within the size thresholds in `02-architecture.md` ("File size
-      thresholds" — read the table there, do not trust a copy); over threshold = Minor
+      thresholds" — read the table there, do not trust a copy); over threshold = Minor,
+      unless the exact path is listed in `.claude/.size-exempt`, which is read
+      before reporting
 - [ ] **The same logic written twice.** Two features, or two files, carrying the
       same rule — a duplicated date/price/permission computation, a second
       hand-rolled version of something in `src/lib/`, a validation restated in

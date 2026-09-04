@@ -12,7 +12,11 @@
 #
 #   1. French comment        : accented char, or 2+ French stopwords in a block
 #   2. Non-JSDoc comment     : `//` or `/* */` in the code (no implementation
-#                              comments), except tooling directives
+#                              comments), except tooling directives, JSX
+#                              comments and section banners. `{/* ... */}` is
+#                              the only way to comment inside JSX, and a banner
+#                              (`// --- Folders ---`) is structure, not prose;
+#                              both skip checks 2-4, and check 1 still applies.
 #   3. Floating JSDoc        : a /** */ block sitting on a statement (if, for,
 #                              return, ...) instead of a declaration
 #   4. Verbose JSDoc         : block longer than MAX_JSDOC_LINES lines
@@ -64,6 +68,19 @@ DIRECTIVE = re.compile(
     r"noinspection)"
 )
 
+# Section banners: structure, not prose about the code. The decoration IS the
+# test — a run of rule characters wrapping the label, or standing alone. An
+# undecorated label (`// Upload folders`) stays an implementation comment, so
+# this cannot be used to smuggle an explanation past check 2.
+SECTION_RULE = re.compile(
+    r"^\s*(?:[-=*#_─━—~]{2,}.*[-=*#_─━—~]{2,}|[-=*#_─━—~]{3,})\s*$"
+)
+
+# The middle line of a three-line banner carries no decoration of its own — the
+# rules above and below are the decoration. Without this, `// TYPES` between two
+# `// =====` lines reads as an implementation comment.
+RULE_ONLY = re.compile(r"^\s*[-=*#_─━—~]{3,}\s*$")
+
 # Generated or declaration files: never authored by hand.
 SKIPPED = re.compile(r"(\.d\.ts|\.gen\.ts|routeTree\.gen\.tsx?)$")
 
@@ -71,6 +88,18 @@ SKIPPED = re.compile(r"(\.d\.ts|\.gen\.ts|routeTree\.gen\.tsx?)$")
 LOOSE = re.compile(r"(\.test\.tsx?|\.spec\.tsx?)$|/(mocks|__mocks__|test)/")
 
 ACCENTED = re.compile(r"[àâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]")
+
+# Project-specific terms that carry no useful translation: trade vocabulary,
+# and the real titles of user-facing pages. Removed before the French test, so
+# an English sentence naming one is not read as French prose. An allowlist, not
+# a loosened heuristic: widening the stopword rule instead risks letting a
+# fully French comment through undetected. Empty until this project adds its
+# own terms below, pipe-separated.
+DOMAIN_TERMS_LIST: list[str] = []
+DOMAIN_TERMS = re.compile(
+    "|".join(re.escape(t) for t in DOMAIN_TERMS_LIST) or r"(?!)",
+    re.IGNORECASE,
+)
 
 # Python: tests and generated migrations keep their prose loose. A revision is
 # written by Alembic, not by hand.
@@ -182,7 +211,7 @@ def scan(content: str):
     """Split the delta into comments, skipping strings and template literals.
 
     Returns (line_comments, block_comments) where each entry is
-    (line_index, text) / (line_index, lines, is_jsdoc).
+    (line_index, text) / (line_index, lines, is_jsdoc, is_jsx).
     """
     lines = content.split("\n")
     line_comments = []
@@ -193,14 +222,16 @@ def scan(content: str):
     # Assumed JSDoc: the opener is not in the delta, so its kind is unknown, and
     # guessing `/*` would deny the block outright at check 2.
     if _starts_inside_block(lines):
-        block = {"start": 0, "lines": [], "jsdoc": True}
+        block = {"start": 0, "lines": [], "jsdoc": True, "jsx": False}
 
     for i, line in enumerate(lines):
         if block is not None:
             end = line.find("*/")
             block["lines"].append(line if end == -1 else line[:end])
             if end != -1:
-                block_comments.append((block["start"], block["lines"], block["jsdoc"]))
+                block_comments.append(
+                    (block["start"], block["lines"], block["jsdoc"], block["jsx"])
+                )
                 block = None
             continue
 
@@ -222,12 +253,18 @@ def scan(content: str):
                     break
                 if nxt == "*":
                     jsdoc = line[j:].startswith("/**")
+                    jsx = line[:j].rstrip().endswith("{")
                     end = line.find("*/", j + 2)
                     if end != -1:
-                        block_comments.append((i, [line[j:end]], jsdoc))
+                        block_comments.append((i, [line[j:end]], jsdoc, jsx))
                         j = end + 2
                         continue
-                    block = {"start": i, "lines": [line[j:]], "jsdoc": jsdoc}
+                    block = {
+                        "start": i,
+                        "lines": [line[j:]],
+                        "jsdoc": jsdoc,
+                        "jsx": jsx,
+                    }
                     break
                 if _regex_starts_at(line, j):
                     end = _skip_regex(line, j)
@@ -278,6 +315,7 @@ def scan_python(source: str) -> list[tuple[int, str]]:
 
 
 def is_french(text: str) -> bool:
+    text = DOMAIN_TERMS.sub(" ", text)
     if ACCENTED.search(text):
         return True
     words = re.findall(r"[A-Za-z]+", text.lower())
@@ -329,7 +367,7 @@ def main() -> None:
                 "(French is only for user-facing messages). "
                 "See .claude/rules/03-conventions.md."
             )
-    for start, blines, _ in block_comments:
+    for start, blines, _, _ in block_comments:
         body = " ".join(blines)
         if is_french(body):
             deny(
@@ -344,8 +382,11 @@ def main() -> None:
     if loose:
         sys.exit(0)
 
-    for _, text in line_comments:
-        if text.strip() and not DIRECTIVE.match(text):
+    ruled = {i for i, t in line_comments if RULE_ONLY.match(t)}
+
+    for i, text in line_comments:
+        banner = SECTION_RULE.match(text) or {i - 1, i + 1} & ruled
+        if text.strip() and not DIRECTIVE.match(text) and not banner:
             deny(
                 f"Implementation comment detected: //{text.strip()[:80]}\n\n"
                 "Only JSDoc is allowed, and only on a declaration "
@@ -353,8 +394,17 @@ def main() -> None:
                 "Explain the code by naming it better, not by commenting it. "
                 "See .claude/rules/03-conventions.md."
             )
-    for start, blines, jsdoc in block_comments:
-        if not jsdoc and " ".join(blines).strip("/* \t"):
+    block_text = {
+        start: " ".join(bl).strip("/* \t") for start, bl, _, _ in block_comments
+    }
+    ruled_blocks = {i for i, t in block_text.items() if RULE_ONLY.match(t)}
+
+    for start, blines, jsdoc, jsx in block_comments:
+        if jsx:
+            continue
+        text = block_text[start]
+        banner = SECTION_RULE.match(text) or {start - 1, start + 1} & ruled_blocks
+        if not jsdoc and text and not banner:
             deny(
                 f"Non-JSDoc block comment at line {start + 1}.\n\n"
                 "Use a /** ... */ JSDoc on the declaration, or no comment at all. "
@@ -362,8 +412,8 @@ def main() -> None:
             )
 
     # --- Checks 3 & 4: JSDoc placement and length --------------------------
-    for start, blines, jsdoc in block_comments:
-        if not jsdoc:
+    for start, blines, jsdoc, jsx in block_comments:
+        if not jsdoc or jsx:
             continue
 
         if len(blines) > MAX_JSDOC_LINES:

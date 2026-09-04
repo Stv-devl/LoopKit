@@ -45,6 +45,8 @@ route helpers, hooks and UI use repositories. Keep this line synchronized with
 | `hooks.ts` | 300 |
 | `services.ts` | 150, or split at 3 domains |
 
+Exemptions: `.claude/.size-exempt` — exact path plus reason, read before reporting.
+
 ## Dependency Flow and Import Rules
 
 Pages → components → hooks/stores → repository → gateway → client; mapper stays

@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/client/src/features/a/hooks.ts","content":"// ── Gestion des données ──\nexport const a = 1;"}}
