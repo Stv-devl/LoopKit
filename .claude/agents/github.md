@@ -44,9 +44,8 @@ to send.
   explaining the bug, the fix and the tests underneath it, however tempting
   the diff makes that. Add a body only if the user explicitly asks for one on
   that commit.
-- **PR descriptions: 8 lines of body, hard cap.** See the template below. This
-  is a count, not a mood: "short" without a number produces a wall of text every
-  time.
+- **PR descriptions: a one-line summary, then one line per commit.** No prose
+  padding, no restating what the diff already shows. See the template below.
 - Replies to the user follow the project's user language; the artifacts you
   write into Git/GitHub stay in **English**.
 
@@ -55,7 +54,8 @@ to send.
 **Title**: `<type>: <what changed>`, imperative, **60 characters max**. No scope
 soup, no colon chains.
 
-**Body**: **8 lines maximum**, Markdown, in this shape and nothing else:
+**Body**: a one-line summary, then one line per commit, in this shape and
+nothing else:
 
 ```markdown
 <One line: what this does. No preamble, no framing, no "this PR".>
@@ -70,33 +70,26 @@ soup, no colon chains.
 
 - **No opening paragraph.** The first line is the summary. There is no sentence
   before it explaining what kind of change this is.
-- **One line per commit, up to about five.** Not three lines each — if a commit
-  needs three lines here, its own message already holds them, the reviewer
-  clicks through. **Past five, stop listing shas and group by theme instead**
-  (`- three parser fixes`, `- test cleanup across the affected files`): the
-  point of the line is to map the PR, not to mirror `git log`, which stays the
-  full record either way.
+- **One line per commit, not three.** If a commit needs three lines here, its
+  own message already holds them — the reviewer clicks through. Length follows
+  the commit count: a PR with fifteen commits gets fifteen lines, that is the
+  map, not padding.
 - **No section headers** unless the body genuinely has two unrelated parts. `##`
-  on an 8-line body is noise.
+  on a short body is noise.
 - **No closing line.** No "safe to merge", no "next up", no recap. Merge state is
   a button, not prose.
 - **At most one caveat**, and only if it would surprise a reviewer. Pre-existing
   breakage is a caveat; a design decision you already explained in the commit is
   not.
 - **Numbers beat adjectives.** "21 hooks, 11 rules" over "a comprehensive set".
-- **8 is a ceiling, not a target.** Write the fewest lines that inform, then
-  stop. A single commit that touches no code and no behaviour — a rules file, a
-  doc, a rename — is **one line**. Filling the budget because it is there is the
-  same failure as the wall of text, in a smaller box.
+- **A single commit that touches no code and no behaviour** — a rules file, a
+  doc, a rename — gets a **one-line body**, the summary alone, no commit list.
 
 ### One-line example
 
 ```markdown
-Caps PR bodies at 8 lines in the `github` agent. Rules file only, no code.
+Fixes the race in token refresh — the retry now waits on the mutex.
 ```
-
-**If it does not fit in 8 lines, the PR is too big.** Say so and propose a split.
-Do not spend the overflow on prose.
 
 ## The validation gate (most important)
 
