@@ -66,7 +66,9 @@ Add the backend half of the **six** gate roles: `python -m pytest` (run-once, no
 watch trap — and `-m`, never the bare script: see `07-backend.md`),
 `mypy app` or `pyright` (typecheck), `ruff check .` (lint), **`pip-audit`
 (dependency audit)**, `docker build` (build), `uvicorn --reload` (dev). A gate
-cannot invent a script that does not exist.
+cannot invent a script that does not exist. If a format command is added
+alongside these, write `ruff format app/`, never `ruff format .` — the warning
+in `07-backend.md` explains why the scope matters.
 
 > **Six, not five — the dependency audit is the one that used to be dropped
 > here.** `07-backend.md` states it in the same breath as the others ("a repo
