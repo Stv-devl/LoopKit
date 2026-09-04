@@ -1,0 +1,13 @@
+# Size-threshold exemptions for `.claude/rules/02-architecture.md`.
+# One line = one exact path, then the reason. Read by the `correctness`
+# dimension of /loop:review, which does not report a file listed here.
+#
+# Raising the threshold instead of naming exemptions weakens the rule for
+# every file that already complies, to cover a handful of genuine outliers.
+# What the line count measures poorly is markup: a declarative SVG or a
+# static landing section is long by nature and has only one reason to
+# change — the S in SOLID is about reasons to change, not about lines.
+#
+# An entry is a decision, not a workaround. It is justified by "one reason
+# to change", never by "too long to split". A file that grows because it
+# does several things does not belong here: it gets split, at any length.
