@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/client/src/features/a/Panel.tsx","content":"export function Panel() {\n  return (\n    <div>\n      {/* Tabs */}\n      <span />\n    </div>\n  );\n}"}}

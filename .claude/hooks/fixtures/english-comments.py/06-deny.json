@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/client/src/features/a/Noise.tsx","content":"interface Props {\n  /** Couleur de flood pour le bruit (format rgba) */\n  noiseColor?: string;\n}"}}

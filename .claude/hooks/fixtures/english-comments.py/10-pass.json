@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/client/src/features/a/types.ts","content":"// ============================================================\n// TYPES\n// ============================================================\n\nexport type A = string;"}}
