@@ -70,8 +70,12 @@ soup, no colon chains.
 
 - **No opening paragraph.** The first line is the summary. There is no sentence
   before it explaining what kind of change this is.
-- **One line per commit.** Not three. If a commit needs three lines here, its own
-  message already holds them — the reviewer clicks through.
+- **One line per commit, up to about five.** Not three lines each — if a commit
+  needs three lines here, its own message already holds them, the reviewer
+  clicks through. **Past five, stop listing shas and group by theme instead**
+  (`- three parser fixes`, `- test cleanup across the affected files`): the
+  point of the line is to map the PR, not to mirror `git log`, which stays the
+  full record either way.
 - **No section headers** unless the body genuinely has two unrelated parts. `##`
   on an 8-line body is noise.
 - **No closing line.** No "safe to merge", no "next up", no recap. Merge state is
