@@ -61,26 +61,57 @@ PY
 
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
-    local tmp input stdout_file stderr_file code verdict
+    local tmp input stdout_file stderr_file code verdict fixture_name extra_marker=""
     tmp="$(mktemp -d)"
+    fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
     stderr_file="$tmp/stderr"
     input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g" "$fixture")"
 
-    case "$hook:$expected" in
-        tdd-freeze-tests.sh:deny)
-            mkdir -p "$tmp/src"
-            printf '%s\n' "it('keeps the contract', () => { expect(1).toBe(1) })" >"$tmp/src/item.utils.test.ts"
-            ;;
-        tdd-require-red.sh:pass)
+    case "$hook:$fixture_name" in
+        # Edits an EXISTING item.utils.ts to add a never-before-exported
+        # symbol. Deny case: no test file for it at all, so the symbol-level
+        # check in tdd-require-red.sh has nothing to read a proved red from.
+        tdd-require-red.sh:06-existing-new-export-deny.json)
             mkdir -p "$tmp/src"
             printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
             ;;
-        enforce-git-workflow.sh:deny)
-            git -C "$tmp" init -q -b main
-            git -C "$tmp" config user.email fixture@loopkit.invalid
-            git -C "$tmp" config user.name Fixture
-            git -C "$tmp" commit -q --allow-empty -m seed
+        # Same edit, pass case: a marker exists for item.utils.test.ts, its
+        # digest matches the test file on disk, and its `missing:` line names
+        # the symbol this edit adds — exactly what a real tdd-prove-red run
+        # would have left behind. The marker lives under the REAL project's
+        # .claude/.tdd-red/ (RED_DIR is derived from CLAUDE_PROJECT_DIR, which
+        # run_case pins to $PROJECT_ROOT, never $tmp) — same reason
+        # marker_path() is replicated below rather than sourcing hook-lib.sh.
+        tdd-require-red.sh:07-existing-new-export-pass.json)
+            mkdir -p "$tmp/src" "$PROJECT_ROOT/.claude/.tdd-red"
+            printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
+            printf '%s\n' "import { bonus } from './item.utils'; it('doubles', () => { expect(bonus()).toBe(2) })" \
+                >"$tmp/src/item.utils.test.ts"
+            extra_marker="$PROJECT_ROOT/.claude/.tdd-red/$(printf '%s' "$tmp/src/item.utils.test.ts" | tr -c 'A-Za-z0-9._-' '_')"
+            {
+                date -u +%Y-%m-%dT%H:%M:%SZ
+                printf 'sha256:%s\n' "$(sha256sum "$tmp/src/item.utils.test.ts" | cut -d' ' -f1)"
+                printf 'missing:%s\n' "bonus"
+            } >"$extra_marker"
+            ;;
+        *)
+            case "$hook:$expected" in
+                tdd-freeze-tests.sh:deny)
+                    mkdir -p "$tmp/src"
+                    printf '%s\n' "it('keeps the contract', () => { expect(1).toBe(1) })" >"$tmp/src/item.utils.test.ts"
+                    ;;
+                tdd-require-red.sh:pass)
+                    mkdir -p "$tmp/src"
+                    printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
+                    ;;
+                enforce-git-workflow.sh:deny)
+                    git -C "$tmp" init -q -b main
+                    git -C "$tmp" config user.email fixture@loopkit.invalid
+                    git -C "$tmp" config user.name Fixture
+                    git -C "$tmp" commit -q --allow-empty -m seed
+                    ;;
+            esac
             ;;
     esac
 
@@ -107,6 +138,7 @@ run_case() {
         fail "$hook" "$(basename "$fixture")" "deny has no actionable reason"
     fi
 
+    [[ -n "$extra_marker" ]] && rm -f "$extra_marker"
     rm -r "$tmp"
 }
 

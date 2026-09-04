@@ -301,9 +301,15 @@ if [[ "$STATE" == "RED" ]]; then
     mkdir -p "$RED_DIR"
     # Self-ignoring: the markers are session state, never versioned.
     [[ -f "$RED_DIR/.gitignore" ]] || printf '*\n' > "$RED_DIR/.gitignore"
+    # The `missing:` line is what lets tdd-require-red.sh gate a symbol added
+    # to a module that already exists, not only the module's first write — see
+    # that hook for why the file-exists case needed more than a marker's mere
+    # presence. Empty is a legitimate value: it means every symbol this test
+    # exercises already exists, i.e. this red is a new case on old behaviour.
     {
         date -u +%Y-%m-%dT%H:%M:%SZ
         printf 'sha256:%s\n' "$(file_digest "$FILE_PATH")"
+        printf 'missing:%s\n' "$MISSING_LIST"
     } > "$(marker_path "$FILE_PATH")"
 
     if [[ -z "$IMPL_PATH" ]]; then
