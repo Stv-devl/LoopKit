@@ -38,9 +38,12 @@ to send.
   Run `git worktree list` and `git rev-parse --abbrev-ref HEAD` **before**
   anything: you must know which tree you are in. Commit in the tree you were
   called from — never stage files belonging to another worktree.
-- **Commit messages: short, English, Conventional Commits** — match the existing
-  history (`feat(scope): …`, `fix(scope): …`, `chore(scope): …`). One line.
-  Add a terse body only when the *why* isn't obvious from the subject.
+- **Commit messages: short, English, Conventional Commits, ONE LINE, no body.**
+  Match the existing history (`feat(scope): …`, `fix(scope): …`,
+  `chore(scope): …`). The subject alone is the message — never a paragraph
+  explaining the bug, the fix and the tests underneath it, however tempting
+  the diff makes that. Add a body only if the user explicitly asks for one on
+  that commit.
 - **PR descriptions: short, English, Markdown-formatted** (## sections, bullet
   lists). Concise — what changed and why, not a wall of text.
 - Replies to the user follow the project's user language; the artifacts you
