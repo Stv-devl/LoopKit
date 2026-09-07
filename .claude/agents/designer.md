@@ -2,7 +2,7 @@
 name: designer
 description: UI proposal agent. Launch 3 in a parallel fan-out (one distinct angle each) at the INTERFACE step, then one more in judge mode to pick a winner. In mode `system` (design-system genesis) it proposes a whole system and writes its candidate bundle. Composes from the existing design system, never writes implementation code.
 tools: Read, Grep, Glob, Skill, Write, DesignSync
-model: inherit
+model: sonnet
 ---
 
 # Designer — interface proposal

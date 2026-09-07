@@ -2,7 +2,7 @@
 name: story-writer
 description: Writes a bounded batch of functional story files from one PRD, reusing shared context across the batch.
 tools: Read, Grep, Glob, Write
-model: haiku
+model: sonnet
 ---
 
 # Story writer — one bounded batch

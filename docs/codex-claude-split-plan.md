@@ -79,6 +79,15 @@ une erreur facile à retrouver plutôt que noyée dans un seul gros commit.
 5. **Réattribution des tiers Claude** — indépendant du POC. Vérification :
    `python3 .claude/hooks/kit-doctor.py` → `agent-models: OK`, décompte 5
    `inherit` / 6 `sonnet` / 1 `haiku`. Commit séparé.
+   **Fait, 2026-09-07.** Table de `11-token-budget.md` remplacée (37 lignes,
+   budget 55, rien à compenser) ; `model: inherit → sonnet` sur
+   `test-writer.md`/`e2e-tester.md`/`github.md`/`designer.md`,
+   `model: haiku → sonnet` sur `story-writer.md`. `kit-doctor.py` confirme
+   `agent-models 12 agents — haiku=1, inherit=5, sonnet=6` et `No divergence`
+   globalement. Les deux mesures "Après" du plan (allers-retours RED de
+   `test-writer`, findings `story-critic` sur les stories de `story-writer`)
+   restent à observer sur une feature réelle — aucune n'a encore tourné dans
+   ce repo, cf. §"Vérification".
 
 6. **Économie côté Codex** (effort par rôle dans le routeur + la table de
    relais dans `AGENTS.md`) — dépend du volet 3 (le routeur doit exister).

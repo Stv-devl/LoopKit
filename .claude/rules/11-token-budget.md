@@ -15,9 +15,9 @@ gates always run: compute is not model context.
 
 | Tier | For | Agents |
 | --- | --- | --- |
-| `inherit` | judges, proposals, refutations, test authorship, git gate | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor`, `test-writer`, `designer`, `e2e-tester`, `github` |
-| `haiku` | bounded extraction/transcription | `explorer`, `story-writer` |
-| `sonnet` | external-doc relevance under network budget | `doc-researcher` |
+| `inherit` | gates: judgement that can stop the loop | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor` |
+| `sonnet` | bounded production from a validated entry, and external-doc relevance | `doc-researcher`, `story-writer`, `test-writer`, `e2e-tester`, `designer`, `github` |
+| `haiku` | bounded extraction/transcription | `explorer` |
 
 A gate never runs below the session model. Agent `model:` lines are the enforced
 copy and must move with this table.
