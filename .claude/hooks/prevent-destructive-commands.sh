@@ -30,6 +30,7 @@ fi
 decide() {
     local decision="$1" reason
     reason="${2//\\n/$'\n'}"
+    [[ "$decision" == "deny" ]] && cwk_log_health_deny "$reason"
     jq -n --arg d "$decision" --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

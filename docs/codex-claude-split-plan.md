@@ -57,6 +57,24 @@ une erreur facile à retrouver plutôt que noyée dans un seul gros commit.
 4. **Sonde kit-health** — indépendant du POC. Vérification :
    `kit-doctor.py` rapporte une entrée `health` non vide après quelques
    événements réels (gate, refus de hook). Commit séparé.
+   **Fait, 2026-09-07.** `.claude/.kit-health.jsonl` (gitignoré), résumé dans
+   `check_kit_health()` (nouvelle catégorie `health` de `kit-doctor.py`,
+   statut `OK`/`skip` uniquement — jamais `DIVERGENCE`, ce n'est pas un jumeau,
+   cf. la nuance posée plus haut). Émetteurs branchés : `kit-attempts.py`
+   (`record()`/`clear()`), les six hooks de refus
+   (`tdd-require-red.sh`, `no-any-type.sh`, `no-forbidden-icons.sh`,
+   `enforce-architecture.py`, `english-comments.py`,
+   `prevent-destructive-commands.sh` — seulement sur une vraie décision `deny`,
+   pas `ask`), et `/loop:review` (une ligne par finding + verdict, étape 1bis
+   de SYNTHESIS, écrite par le fil principal puisque `reviewer`/`verifier` sont
+   read-only). Vérifié par des payloads réels sur `no-any-type.sh` (bash) et
+   `enforce-architecture.py` (python) — les deux ajoutent bien leur ligne au
+   refus réel. `python3 .claude/hooks/kit-doctor.py` reste `No divergence`
+   avec le fichier absent (`skip`) et rapporte un résumé correct testé avec un
+   fichier synthétique (gate le plus en échec, hook qui refuse le plus,
+   confirmé/réfuté par dimension REVIEW, lignes malformées comptées à part).
+   Aucune feature réelle n'a encore tourné dans ce repo pour peupler le
+   fichier en conditions réelles — cf. §"Vérification".
 
 5. **Réattribution des tiers Claude** — indépendant du POC. Vérification :
    `python3 .claude/hooks/kit-doctor.py` → `agent-models: OK`, décompte 5

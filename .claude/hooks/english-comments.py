@@ -59,6 +59,24 @@ if os.environ.get("CWK_HOOK_TIMING", "1") == "1":
 
     atexit.register(_record)
 
+
+def _log_health_deny(reason: str) -> None:
+    """One JSONL line per real refusal — schema: docs/codex-claude-split-plan.md,
+    "Sonde kit-health". Best-effort: never lets an observability write turn into
+    a second reason to fail a call already being denied."""
+    log = os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()), ".claude", ".kit-health.jsonl")
+    try:
+        with open(log, "a") as fh:
+            fh.write(json.dumps({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "source": "hook:english-comments",
+                "event": "deny",
+                "reason": reason,
+                "file": "",
+            }) + "\n")
+    except OSError:
+        pass
+
 MAX_JSDOC_LINES = 10
 
 # `//` comments that are tooling directives, not prose.
@@ -197,6 +215,7 @@ def _starts_inside_block(lines) -> bool:
 
 
 def deny(reason: str) -> None:
+    _log_health_deny(reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

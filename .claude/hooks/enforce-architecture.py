@@ -56,6 +56,24 @@ if os.environ.get("CWK_HOOK_TIMING", "1") == "1":
 
     atexit.register(_record)
 
+
+def _log_health_deny(reason: str, file_path: str = "") -> None:
+    """One JSONL line per real refusal — schema: docs/codex-claude-split-plan.md,
+    "Sonde kit-health". Best-effort: never lets an observability write turn into
+    a second reason to fail a call already being denied."""
+    log = os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()), ".claude", ".kit-health.jsonl")
+    try:
+        with open(log, "a") as fh:
+            fh.write(json.dumps({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "source": "hook:enforce-architecture",
+                "event": "deny",
+                "reason": reason,
+                "file": file_path,
+            }) + "\n")
+    except OSError:
+        pass
+
 # --- configuration -----------------------------------------------------------
 # Import specifier of the data client, as it appears in `from "..."`.
 # Example: "lib/supabase", "lib/apiClient", "lib/db". None disables check 2.
@@ -88,6 +106,7 @@ SPECIFIER_RE = re.compile(
 
 
 def deny(reason: str) -> None:
+    _log_health_deny(reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
