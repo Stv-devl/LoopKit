@@ -281,7 +281,9 @@ see `docs/codex-claude-split-plan.md`, "POC hooks"), then hand off once you
 reach the first step that isn't test-first: write
 `docs/work/<slug>/handoff-codex.md` (`/handoff:codex` template, frontmatter
 `phase: execute` / `execute_status: in-progress`), print
-`./codex-handoff.sh docs/work/<slug>/handoff-codex.md`, and stop. This keeps
+`./codex-handoff.sh docs/work/<slug>/handoff-codex.md execute-green` (the
+second argument names the role, so the script applies its `codex_effort`), and
+stop. This keeps
 the "one handoff per feature" cost real instead of ping-ponging per layer: the
 RED→GREEN alternation below still cannot be batched, so the earliest point
 where handing off doesn't fight that rule is right after `repository` goes
@@ -401,9 +403,9 @@ Claude keeps the verdict (`reviewer`/`verifier` already ran, findings already
 tranched — that judgment never moves), write/refresh
 `docs/work/<slug>/handoff-codex.md` with the Critical/Major findings to fix
 and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`,
-print `./codex-handoff.sh docs/work/<slug>/handoff-codex.md`, and stop. On
-resume (Phase 0's third branch), re-run only the dimensions those findings
-came from — never a fresh judgment pass.
+print `./codex-handoff.sh docs/work/<slug>/handoff-codex.md review-fixes`, and
+stop. On resume (Phase 0's third branch), re-run only the dimensions those
+findings came from — never a fresh judgment pass.
 
 Fix surviving Critical/Major findings **inline**, then re-run only the affected
 dimensions.

@@ -17,3 +17,31 @@ This project uses a disk-backed Claude/Codex workflow.
 - Never read or expose `.env*`, credentials, private keys, or secrets.
 - Respect `.claude/rules/05-testing.md` when touching test-first layers.
 - Run deterministic gates required by the plan before claiming completion.
+- **Only during a full relay** (Claude hit its limit, `workflow.py` handed you
+  the whole rest of the loop, not just `execute-green`/`review-fixes`): match
+  reasoning effort to what each task actually is, not one level for
+  everything. `docs/codex-claude-split-plan.md`, "Économie côté Codex" has the
+  full reasoning; the mapping (`inherit → high`, `sonnet → low`,
+  `haiku → minimal`, taken from that document's own Claude agent tiers):
+
+  | Task you're covering | Effort |
+  | --- | --- |
+  | Read-only mapping/cartography (`explorer`'s job) | `minimal` |
+  | External-doc research (`doc-researcher`'s job) | `low` |
+  | Interface proposal(s) (`designer`'s job) | `low` |
+  | Plan critique before EXECUTE (`plan-critic`'s job) | `high` |
+  | Finding + refuting REVIEW findings (`reviewer`/`verifier`'s job) | `high` |
+  | Playwright spec from acceptance criteria (`e2e-tester`'s job) | `low` |
+  | Git staging/commit/messages (`github`'s job) | `low` |
+  | Security audit, `critical` profile (`security-auditor`'s job) | `high` |
+  | Story critique (`story-critic`'s job) | `high` |
+  | Story writing from a PRD (`story-writer`'s job) | `low` |
+  | EXECUTE-GREEN implementation, REVIEW fix-up | `low` |
+  | Bookkeeping: checkpoint, board, running gates | `minimal` |
+
+  Values are a starting point, not settled — see that document's own caveat
+  before treating them as final. During a **deliberate** hand-off
+  (`execute-green`/`review-fixes` while Claude is still driving the rest), use
+  `codex_effort` from `.claude/workflow-routing.yml` instead — that one stays
+  fixed for the whole invocation, this table is for a relay that moves you
+  through several different roles in one session.

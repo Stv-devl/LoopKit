@@ -93,6 +93,21 @@ une erreur facile à retrouver plutôt que noyée dans un seul gros commit.
    relais dans `AGENTS.md`) — dépend du volet 3 (le routeur doit exister).
    Vérification : `codex-handoff.sh` ajoute bien le flag d'effort attendu sur
    un rôle `codex_effort: low`, rien sur fichier absent. Commit séparé.
+   **Fait, 2026-09-07.** `codex-handoff.sh` prend un second argument optionnel
+   (le rôle : `execute-green`, `review-fixes`…), lit sa ligne dans
+   `.claude/workflow-routing.yml` par `grep`/`sed` (pas de parseur YAML pour un
+   fichier à une ligne par rôle) et ajoute `-c model_reasoning_effort=<niveau>`
+   seulement si `provider: codex` et `codex_effort` sont présents sur cette
+   ligne. `orchestrate.md` passe désormais ce rôle aux deux commandes
+   imprimées (`execute-green`, `review-fixes`) ; `/handoff:codex` (bascule
+   manuelle, aucun rôle précis) continue d'imprimer la commande sans rôle,
+   comportement inchangé. `AGENTS.md` porte la table rôle→effort du relais
+   complet. Vérifié par exécution réelle du script (un `exec codex` remplacé
+   par un `echo` le temps du test, jamais commité) sur les trois cas : rôle
+   `execute-green` → `-c model_reasoning_effort=low` présent ; aucun rôle →
+   commande identique à avant ce volet ; `.claude/workflow-routing.yml`
+   temporairement absent avec un rôle passé quand même → aucun flag ajouté,
+   pas d'erreur.
 
 `docs/RATIONALE.md` et `docs/Claude_Workflows.md` se mettent à jour une fois
 que les volets qu'ils décrivent sont committés, pas avant — une doc
