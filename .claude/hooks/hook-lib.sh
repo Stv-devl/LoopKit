@@ -68,6 +68,24 @@ cwk_require_jq() {
     exit 2
 }
 
+# --------------------------------------------------------- cwk_log_health_deny
+# One JSON line per REAL refusal — never per invocation, an allowed call says
+# nothing a health summary needs. Feeds `.claude/.kit-health.jsonl`, gitignored,
+# the same local-only status as the timing log above. Best-effort: a failure to
+# append (missing jq, read-only disk) must never turn an observability probe
+# into a second reason to block the call the caller already decided to deny.
+# Schema and rationale: docs/codex-claude-split-plan.md, "Sonde kit-health".
+cwk_log_health_deny() {
+    local reason="$1" root="${CLAUDE_PROJECT_DIR:-$PWD}"
+    command -v jq &> /dev/null || return 0
+    jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+           --arg hook "$(basename "$0" .sh)" \
+           --arg reason "$reason" \
+           --arg file "${FILE_PATH:-}" \
+           '{ts: $ts, source: ("hook:" + $hook), event: "deny", reason: $reason, file: $file}' \
+        >> "$root/.claude/.kit-health.jsonl" 2>/dev/null || true
+}
+
 # ------------------------------------------------------------------ cwk_bin
 # `pnpm exec <tool>` costs a Node boot + a workspace resolution before the tool
 # even starts — 200-500ms, paid on every single Write. The local bin shim is

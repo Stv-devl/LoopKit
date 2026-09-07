@@ -156,6 +156,19 @@ dimension.
 ### Stage 3 — SYNTHESIS
 
 1. Aggregate the **surviving** findings: Critical / Major / Minor.
+1bis. **Log every finding, survivor or refuted**, one JSON line each, to
+   `.claude/.kit-health.jsonl` (gitignored, local-only —
+   `docs/codex-claude-split-plan.md`, "Sonde kit-health"). `reviewer`/`verifier`
+   are read-only, so this runs here, on the main thread, once their verdicts are
+   in — not inside either agent:
+   ```bash
+   jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg dim "<dimension>" \
+          --arg verdict "confirmed|refuted|minor" --arg summary "<one line>" \
+          '{ts: $ts, source: ("review:" + $dim), event: "finding", verdict: $verdict, summary: $summary}' \
+     >> .claude/.kit-health.jsonl
+   ```
+   One call per finding. A missing `.claude/` write permission is not a review
+   failure — best-effort, same as every other emitter of this probe.
 2. Walk the acceptance criteria — an uncovered criterion is a Critical regardless
    of what the reviewers said.
 3. Global verdict: **FAIL** if ≥1 Critical or an uncovered criterion, **CONCERNS**

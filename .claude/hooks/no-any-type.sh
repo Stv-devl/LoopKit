@@ -68,6 +68,7 @@ ANY_RE="$ANY_RE|[|&][[:space:]]*any\b"
 ANY_RE="$ANY_RE|=[[:space:]]*any[[:space:]]*[>,;]"
 
 if echo "$CODE" | grep -qE "$ANY_RE"; then
+    cwk_log_health_deny "Type 'any' detected"
     cat << 'EOF'
 {
   "hookSpecificOutput": {

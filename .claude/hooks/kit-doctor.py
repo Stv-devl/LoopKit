@@ -594,7 +594,8 @@ def check_agent_models() -> list[Finding]:
 RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
     ".claude/.token-stop-agents", ".claude/.codex-ready", ".claude/.quota-warning",
-    ".claude/.hook-timings.log", ".claude/settings.local.json", ".claude/worktrees",
+    ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
+    ".claude/settings.local.json", ".claude/worktrees",
 }
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
@@ -1031,6 +1032,72 @@ def check_rules_budget() -> list[Finding]:
     return findings
 
 
+def check_kit_health() -> list[Finding]:
+    """Not a twin comparison, unlike every check above — a summary of events
+    accumulated in `.claude/.kit-health.jsonl` (gate pass/fail, real hook
+    refusals, review findings + verdicts). Never fails the gate: informational
+    only, same footing as the FILL findings below.
+    docs/codex-claude-split-plan.md, "Sonde kit-health"."""
+    raw = read(".claude/.kit-health.jsonl")
+    if raw is None or not raw.strip():
+        return skip("health", ".claude/.kit-health.jsonl")
+
+    gate_fail: dict[str, int] = {}
+    gate_pass: dict[str, int] = {}
+    hook_deny: dict[str, int] = {}
+    review_confirmed: dict[str, int] = {}
+    review_refuted: dict[str, int] = {}
+    malformed = 0
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            malformed += 1
+            continue
+        source = event.get("source", "")
+        kind = event.get("event", "")
+        if source.startswith("gate:"):
+            gate = source[len("gate:"):]
+            bucket = gate_fail if kind == "fail" else gate_pass
+            bucket[gate] = bucket.get(gate, 0) + 1
+        elif source.startswith("hook:") and kind == "deny":
+            hook = source[len("hook:"):]
+            hook_deny[hook] = hook_deny.get(hook, 0) + 1
+        elif source.startswith("review:") and kind == "finding":
+            dim = source[len("review:"):]
+            verdict = event.get("verdict")
+            if verdict == "confirmed":
+                review_confirmed[dim] = review_confirmed.get(dim, 0) + 1
+            elif verdict == "refuted":
+                review_refuted[dim] = review_refuted.get(dim, 0) + 1
+
+    findings: list[Finding] = []
+    if gate_fail:
+        worst = max(gate_fail.items(), key=lambda kv: kv[1])
+        findings.append(Finding("health", OK,
+                                f"gate failing most often: {worst[0]} ({worst[1]}x)",
+                                [f"{g}: {n} fail(s)" for g, n in sorted(gate_fail.items())]))
+    if hook_deny:
+        worst = max(hook_deny.items(), key=lambda kv: kv[1])
+        findings.append(Finding("health", OK,
+                                f"hook refusing most often: {worst[0]} ({worst[1]}x)",
+                                [f"{h}: {n} deny(s)" for h, n in sorted(hook_deny.items())]))
+    if review_confirmed or review_refuted:
+        dims = sorted(set(review_confirmed) | set(review_refuted))
+        findings.append(Finding("health", OK, "review dimensions — confirmed vs refuted", [
+            f"{d}: {review_confirmed.get(d, 0)} confirmed / {review_refuted.get(d, 0)} refuted"
+            for d in dims
+        ]))
+    if malformed:
+        findings.append(Finding("health", OK, f"{malformed} malformed line(s) ignored"))
+    if not findings:
+        findings.append(Finding("health", OK, "log exists but records no recognised event yet"))
+    return findings
+
+
 CHECKS = [
     ("twins", [check_protected_dirs, check_data_client, check_composition_roots,
                check_shared_dirs,
@@ -1042,6 +1109,7 @@ CHECKS = [
     ("links", [check_shipped_paths, check_command_references,
                check_command_references_plain, check_agent_references]),
     ("placeholders", [check_fill_markers]),
+    ("health", [check_kit_health]),
 ]
 
 

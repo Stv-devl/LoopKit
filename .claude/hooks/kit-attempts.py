@@ -28,12 +28,27 @@ def write_atomic(path: Path, data: dict[str, dict[str, object]]) -> None:
     temporary.replace(path)
 
 
+def log_health(event: str, gate: str, reason: str, now: str) -> None:
+    """One JSONL line per gate result. Feeds `.claude/.kit-health.jsonl`,
+    gitignored, local-only — schema: docs/codex-claude-split-plan.md, "Sonde
+    kit-health". Best-effort: never lets this probe fail the gate it observes."""
+    root = Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
+    log = root / ".claude" / ".kit-health.jsonl"
+    try:
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": now, "source": f"gate:{gate}", "event": event,
+                                  "reason": reason}) + "\n")
+    except OSError:
+        pass
+
+
 def record(path: Path, gate: str, reason: str, now: str) -> int:
     data = load(path)
     previous = data.get(gate, {})
     count = int(previous.get("count", 0)) + 1
     data[gate] = {"count": count, "last": now, "reason": reason}
     write_atomic(path, data)
+    log_health("fail", gate, reason, now)
     return count
 
 
@@ -42,6 +57,7 @@ def clear(path: Path, gate: str) -> None:
     if gate in data:
         del data[gate]
         write_atomic(path, data)
+    log_health("pass", gate, "", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
 
 def block_board(path: Path, unit: str, gate: str, reason: str) -> None:

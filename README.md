@@ -67,6 +67,10 @@ Every step is callable on its own, so you can rejoin mid-loop.
 - **A handover when the quota runs out.** The status line watches the context
   window and the subscription; at the threshold it checkpoints to disk and hands
   the phase to Codex, which rebuilds from the artifacts and the Git state.
+  Some mechanical steps (`execute-green`, `review-fixes`) can also run on Codex
+  by declaration — one pilot preference per role in
+  `.claude/workflow-routing.yml` — always falling back to Claude when the CLI
+  isn't installed.
 
 ## What's in here
 

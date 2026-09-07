@@ -32,6 +32,7 @@ fi
 deny() {
     local reason
     reason="${1//\\n/$'\n'}"
+    cwk_log_health_deny "$reason"
     jq -n --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

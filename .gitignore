@@ -34,6 +34,11 @@ blob-report/
 # Written by hook-lib.sh / enforce-architecture.py (timing campaign)
 .claude/.hook-timings.log
 
+# Written by kit-attempts.py, the refusal hooks, and /loop:review — one JSON
+# line per gate result / hook refusal / review finding. Machine-local, same
+# status as the timing log above. docs/codex-claude-split-plan.md, "Sonde kit-health".
+.claude/.kit-health.jsonl
+
 # Written by eslint-check.sh, consumed by eslint-batch.sh
 .claude/.eslint-queue
 .claude/.eslint-queue.*
