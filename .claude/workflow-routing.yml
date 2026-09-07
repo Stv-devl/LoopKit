@@ -1,0 +1,20 @@
+# Pilot per role. Codex is only eligible for the two mechanical roles decided
+# in docs/codex-claude-split-plan.md ("Approche retenue") — everything else
+# stays on Claude by construction: the `.claude/agents/*.md` sub-agents are
+# invocable only from a Claude Code session (cf. "Qui fait quoi dans le
+# workflow" at the top of that document). `provider: codex` is a PREFERENCE,
+# not a guarantee — `orchestrate.md` always tests `command -v codex` before
+# switching and falls back to Claude if it is absent ("Repli dans les deux
+# sens", point 1, unchanged). `codex_effort` only matters when
+# `provider: codex` — cf. "Économie côté Codex" in the same document; present
+# on every role here so the file has one schema, not two shapes depending on
+# the pilot.
+roles:
+  research:        { provider: claude }
+  interface:        { provider: claude }
+  plan:              { provider: claude }
+  execute-red:      { provider: claude }
+  execute-green:    { provider: codex, codex_effort: low }
+  review-judgment:  { provider: claude }
+  review-fixes:      { provider: codex, codex_effort: low }
+  ship:              { provider: claude }

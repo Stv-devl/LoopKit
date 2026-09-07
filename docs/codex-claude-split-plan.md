@@ -46,6 +46,13 @@ une erreur facile à retrouver plutôt que noyée dans un seul gros commit.
    Vérification : les bullets correspondants de §"Vérification" (fichier
    absent → comportement inchangé ; Codex absent du `PATH` → même repli ;
    3 branches de reprise sur un handoff réel). Commit séparé.
+   **Fait, 2026-09-07.** Les quatre fichiers sont à jour ; vérification par
+   lecture croisée faite (fichier absent → chemins inchangés dans
+   `orchestrate.md`, la même commande `command -v codex` que
+   `codex-handoff.sh:7` est citée aux deux points de bascule). La vérification
+   "3 branches sur un handoff réel" reste à faire sur un vrai handoff produit
+   par une feature — aucun `docs/work/` n'existe encore dans ce repo pour la
+   tester en conditions réelles ; notée comme dette dans §"Vérification".
 
 4. **Sonde kit-health** — indépendant du POC. Vérification :
    `kit-doctor.py` rapporte une entrée `health` non vide après quelques

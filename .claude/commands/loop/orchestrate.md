@@ -1,6 +1,6 @@
 ---
 description: Runs the whole feature loop — research → interface → plan → execute → review → ship. Each step is also callable alone.
-argument-hint: [--economy|--standard|--critical] [path: spec, story, research/design/plan artifact]
+argument-hint: [--economy|--standard|--critical] [--inline-execute] [path: spec, story, research/design/plan artifact]
 ---
 
 # /loop:orchestrate — the feature loop, end to end
@@ -92,7 +92,21 @@ A new session does not reset the counter; a successful gate does.
 
 1. Parse an optional token-profile flag, defaulting to `economy`; if the entry
    already carries a profile, inherit it unless the user explicitly overrides.
-   Read the entry artifact in full. If it is a `plan.md`, jump to Phase 4.
+   Parse an optional `--inline-execute` flag: it keeps Phase 4 and the Phase 5
+   fix pass on Claude even when `.claude/workflow-routing.yml` names `codex`
+   and Codex is on the `PATH` — the escape hatch for a track you want to run
+   on one tool end to end.
+   Read the entry artifact in full. If it is a `plan.md`, jump to Phase 4 —
+   unless a sibling `docs/work/<slug>/handoff-codex.md` exists: read its
+   frontmatter instead of assuming EXECUTE is always where a `plan.md`
+   resumes. Three branches, from `phase`/`execute_status`/`review_status`
+   (`/handoff:codex` template): `phase: execute` with `execute_status:
+   in-progress` → Phase 4, pick up where Codex stopped; `execute_status: done`
+   (whether still under `phase: execute` or already `phase: review` with no
+   `review_status` yet) → Phase 5, judgment has not run or needs re-reading;
+   `review_status: fixes-handed-to-codex` → Phase 5, resume only the re-run of
+   the dimensions Codex was asked to fix, not a fresh judgment pass. No
+   handoff file → unchanged, jump straight to Phase 4 on any `plan.md`.
 
    > **Every entry artifact carries the line**, not only a resumed `plan.md`:
    > `/loop:spec` and `/bmad:pm` decide it at their interview, where the four triggers
@@ -258,9 +272,28 @@ Do not enter Phase 4 on silence.
 
 ## Phase 4 — EXECUTE (sequential, inline on the main thread)
 
+**Read the router first.** Check `.claude/workflow-routing.yml` for the
+`execute-green` role. File absent, `provider: claude`, `command -v codex`
+failing, or the user passed `--inline-execute` → nothing changes, keep reading
+below. `provider: codex` and Codex available → **you still run the test-first
+layers yourself** (RED legs have no Codex equivalent — POC tested and failed,
+see `docs/codex-claude-split-plan.md`, "POC hooks"), then hand off once you
+reach the first step that isn't test-first: write
+`docs/work/<slug>/handoff-codex.md` (`/handoff:codex` template, frontmatter
+`phase: execute` / `execute_status: in-progress`), print
+`./codex-handoff.sh docs/work/<slug>/handoff-codex.md`, and stop. This keeps
+the "one handoff per feature" cost real instead of ping-ponging per layer: the
+RED→GREEN alternation below still cannot be batched, so the earliest point
+where handing off doesn't fight that rule is right after `repository` goes
+green. **DB migrations never move**: `/database:migration` is a Claude Code
+slash command Codex cannot invoke (`.claude/rules/06-database.md`) — do it
+yourself regardless of `execute-green`'s provider.
+
 Implement **yourself**, in the plan's order. Do not delegate: the chain is
-coupled and the handoff costs more than the isolation gains. **One exception, the
-RED legs** — see below.
+coupled and the handoff costs more than the isolation gains — this is about
+Claude sub-agents (`.claude/agents/*.md`) mid-chain, a different question from
+the routing check above, which hands the *rest of the chain* to a separate
+Codex process, not a sub-agent. **One exception, the RED legs** — see below.
 
 ```
 1. DB       → /database:migration        (schema + authorization + triggers)
@@ -359,6 +392,18 @@ section — research's traps already restated as things checkable against this
 diff: "object redefined by migration X" became the criterion "does the diff
 revert X?". That restatement is what `/loop:plan` was asked to produce; going back to
 the raw `Traps` throws it away.
+
+**Routing check before fixing.** Same rule as Phase 4: read
+`.claude/workflow-routing.yml` for the `review-fixes` role. File absent,
+`provider: claude`, Codex unavailable, or `--inline-execute` set → fix
+**inline** as below, unchanged. `provider: codex` and Codex available →
+Claude keeps the verdict (`reviewer`/`verifier` already ran, findings already
+tranched — that judgment never moves), write/refresh
+`docs/work/<slug>/handoff-codex.md` with the Critical/Major findings to fix
+and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`,
+print `./codex-handoff.sh docs/work/<slug>/handoff-codex.md`, and stop. On
+resume (Phase 0's third branch), re-run only the dimensions those findings
+came from — never a fresh judgment pass.
 
 Fix surviving Critical/Major findings **inline**, then re-run only the affected
 dimensions.
