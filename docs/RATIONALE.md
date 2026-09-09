@@ -185,9 +185,7 @@ choice. `.claude/workflow-routing.yml` is a separate, deliberate split:
 judged) default to Codex at `codex_effort: low` — mechanical work only,
 judgement stays on Claude. `/loop:orchestrate` reads the file at each of those
 two boundaries, falls back to Claude unchanged if the file is absent,
-`command -v codex` fails, or `--inline-execute` was passed. Full writeup and
-the cost/benefit reasoning behind picking exactly these two boundaries:
-[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+`command -v codex` fails, or `--inline-execute` was passed.
 
 ### 2. Everything goes through disk
 

@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/app/task.py","content":"def foo(x):\n    if x:\n        \"\"\"not a real docstring\"\"\"\n        return 1\n"}}

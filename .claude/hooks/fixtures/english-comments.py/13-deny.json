@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/app/task.py","content":"def foo():\n    # explain what this line does\n    return 1\n"}}
