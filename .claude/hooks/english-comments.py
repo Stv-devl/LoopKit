@@ -3,23 +3,22 @@
 # Hook: english-comments
 # Event: PreToolUse (Write|Edit)
 # Purpose: Comments in TS/JS sources must be English, JSDoc-only, attached to a
-#          declaration, and short. See .claude/rules/03-conventions.md
+#          declaration, and short. Python sources are held to the same four
+#          checks, swapping `//`/JSDoc for `#`/docstring — a docstring IS the
+#          documented form there, so it plays the JSDoc role. See
+#          .claude/rules/03-conventions.md.
 #
-#          On .py the rule is narrower — check 1 only. "English" is a project
-#          rule whatever the language (03-conventions.md, and 07-backend.md when
-#          the FastAPI addon is installed); "JSDoc only" is a TS convention with
-#          no Python equivalent, since a docstring IS the documented form.
-#
-#   1. French comment        : accented char, or 2+ French stopwords in a block
-#   2. Non-JSDoc comment     : `//` or `/* */` in the code (no implementation
-#                              comments), except tooling directives, JSX
+#   1. French comment/docstring : accented char, or 2+ French stopwords in a block
+#   2. Non-docstring comment    : `//`/`/* */` (JS) or a bare `#` (Python)
+#                              explaining code, except tooling directives, JSX
 #                              comments and section banners. `{/* ... */}` is
 #                              the only way to comment inside JSX, and a banner
-#                              (`// --- Folders ---`) is structure, not prose;
-#                              both skip checks 2-4, and check 1 still applies.
-#   3. Floating JSDoc        : a /** */ block sitting on a statement (if, for,
-#                              return, ...) instead of a declaration
-#   4. Verbose JSDoc         : block longer than MAX_JSDOC_LINES lines
+#                              (`// --- Folders ---` / `# --- Folders ---`) is
+#                              structure, not prose; both skip checks 2-4, and
+#                              check 1 still applies.
+#   3. Floating doc block    : a JSDoc/docstring sitting on a statement (if,
+#                              for, while, try, ...) instead of a declaration
+#   4. Verbose doc block     : block longer than MAX_DOC_LINES lines
 #
 # NOTE: on Edit, only the inserted delta (new_string) is inspected, not the whole
 #       file. A French comment already present elsewhere passes through here —
@@ -77,7 +76,7 @@ def _log_health_deny(reason: str) -> None:
     except OSError:
         pass
 
-MAX_JSDOC_LINES = 10
+MAX_DOC_LINES = 10
 
 # `//` comments that are tooling directives, not prose.
 DIRECTIVE = re.compile(
@@ -122,6 +121,20 @@ DOMAIN_TERMS = re.compile(
 # Python: tests and generated migrations keep their prose loose. A revision is
 # written by Alembic, not by hand.
 LOOSE_PY = re.compile(r"(^|/)(test_[^/]*|conftest)\.py$|/(alembic|migrations)/versions/")
+
+# Python's tooling directives: never prose about the code.
+PY_DIRECTIVE = re.compile(
+    r"^\s*(!|-\*-|noqa|type:\s*ignore|pragma\s*:|pylint\s*:|nosec|ruff\s*:|"
+    r"mypy\s*:|fmt\s*:\s*(on|off)|isort\s*:)",
+    re.IGNORECASE,
+)
+
+# A block opener that is never a declaration: a docstring-shaped string right
+# after one of these lines is a floating note, not a module/function/class
+# docstring.
+PY_BLOCK_STATEMENT = re.compile(
+    r"^\s*(if|elif|else|for|while|try|except|finally|with)\b.*:\s*$"
+)
 
 FRENCH_WORDS = {
     "le", "la", "les", "un", "une", "des", "du", "de", "dans", "pour", "avec",
@@ -299,8 +312,12 @@ def scan(content: str):
     return line_comments, block_comments
 
 
-def scan_python(source: str) -> list[tuple[int, str]]:
-    """Every comment and docstring of a Python delta, as (line, text).
+def scan_python(source: str):
+    """Every comment and docstring of a Python delta.
+
+    Returns (line_comments, docstrings): line_comments as (line, text),
+    docstrings as (line, text, line_count) — the count feeds check 4, the same
+    way a JS block comment's line count does.
 
     `tokenize` rather than a regex, for the same reason as no-any-type-py.py: a
     `#` inside a string is not a comment, and a docstring is a triple-quoted
@@ -308,29 +325,31 @@ def scan_python(source: str) -> list[tuple[int, str]]:
     fragment, not a module, so failing to tokenize is the common case, not the
     exception — fall back to a cheap line scan rather than checking nothing.
     """
-    found: list[tuple[int, str]] = []
+    line_comments: list[tuple[int, str]] = []
+    docstrings: list[tuple[int, str, int]] = []
     quotes = ('"""', "'''")
     try:
         prev_type = tokenize.INDENT
         for tok in tokenize.generate_tokens(io.StringIO(source).readline):
             if tok.type == tokenize.COMMENT:
-                found.append((tok.start[0], tok.string.lstrip("#")))
+                line_comments.append((tok.start[0], tok.string.lstrip("#")))
             elif tok.type == tokenize.STRING and prev_type in (
                 tokenize.INDENT, tokenize.NEWLINE, tokenize.NL, tokenize.DEDENT,
             ):
                 # A string in statement position is a docstring: prose, not data.
-                found.append((tok.start[0], tok.string.strip("\"'")))
+                nlines = tok.end[0] - tok.start[0] + 1
+                docstrings.append((tok.start[0], tok.string.strip("\"'"), nlines))
             if tok.type not in (tokenize.NL, tokenize.COMMENT):
                 prev_type = tok.type
-        return found
+        return line_comments, docstrings
     except (tokenize.TokenError, IndentationError, SyntaxError):
         for i, line in enumerate(source.split("\n"), start=1):
             stripped = line.strip()
             if stripped.startswith("#"):
-                found.append((i, stripped.lstrip("#")))
+                line_comments.append((i, stripped.lstrip("#")))
             elif stripped.startswith(quotes):
-                found.append((i, stripped.strip("\"'")))
-        return found
+                docstrings.append((i, stripped.strip("\"'"), 1))
+        return line_comments, docstrings
 
 
 def is_french(text: str) -> bool:
@@ -353,19 +372,65 @@ def main() -> None:
     if not path or not content:
         sys.exit(0)
 
-    # --- Python: check 1 only ----------------------------------------------
+    # --- Python --------------------------------------------------------------
     if path.endswith(".py"):
         if LOOSE_PY.search(path):
             sys.exit(0)
-        for line_no, text in scan_python(content):
+
+        lines = content.split("\n")
+        line_comments, docstrings = scan_python(content)
+
+        # --- Check 1: French -------------------------------------------------
+        for line_no, text in line_comments:
             if is_french(text):
                 deny(
-                    f"French comment or docstring at line {line_no}: "
-                    f"{text.strip()[:80]}\n\n"
+                    f"French comment at line {line_no}: #{text.strip()[:80]}\n\n"
                     "Comments, docstrings, logs and errors are written in English "
                     "(French is only for user-facing messages). "
                     "See .claude/rules/03-conventions.md."
                 )
+        for line_no, text, _ in docstrings:
+            if is_french(text):
+                deny(
+                    f"French docstring at line {line_no}: {text.strip()[:80]}\n\n"
+                    "Comments, docstrings, logs and errors are written in English "
+                    "(French is only for user-facing messages). "
+                    "See .claude/rules/03-conventions.md."
+                )
+
+        # --- Check 2: docstring only, no implementation `#` -------------------
+        ruled = {i for i, t in line_comments if RULE_ONLY.match(t)}
+        for i, text in line_comments:
+            banner = SECTION_RULE.match(text) or {i - 1, i + 1} & ruled
+            if text.strip() and not PY_DIRECTIVE.match(text) and not banner:
+                deny(
+                    f"Implementation comment detected: #{text.strip()[:80]}\n\n"
+                    "Only a docstring is allowed, on a module, function or class. "
+                    "Explain the code by naming it better, not by commenting it. "
+                    "See .claude/rules/03-conventions.md."
+                )
+
+        # --- Checks 3 & 4: docstring placement and length ---------------------
+        for line_no, text, nlines in docstrings:
+            if nlines > MAX_DOC_LINES:
+                deny(
+                    f"Docstring at line {line_no} is {nlines} lines "
+                    f"(max {MAX_DOC_LINES}).\n\n"
+                    "Keep it to a one-line summary plus Args/Returns. "
+                    "Long explanations belong in docs/, not in the source."
+                )
+
+            prev_line = next(
+                (l for l in reversed(lines[: line_no - 1]) if l.strip()), None
+            )
+            if prev_line is not None and PY_BLOCK_STATEMENT.match(prev_line):
+                deny(
+                    f"Docstring at line {line_no} documents a statement, not a "
+                    f"declaration ({prev_line.strip()[:60]}).\n\n"
+                    "Docstrings go on modules, functions and classes — not inside "
+                    "a block body. See .claude/rules/03-conventions.md."
+                )
+
         sys.exit(0)
 
     if not re.search(r"\.(ts|tsx|js|jsx)$", path):
@@ -435,10 +500,10 @@ def main() -> None:
         if not jsdoc or jsx:
             continue
 
-        if len(blines) > MAX_JSDOC_LINES:
+        if len(blines) > MAX_DOC_LINES:
             deny(
                 f"JSDoc block at line {start + 1} is {len(blines)} lines "
-                f"(max {MAX_JSDOC_LINES}).\n\n"
+                f"(max {MAX_DOC_LINES}).\n\n"
                 "Keep it to a one-line summary plus @param/@returns. "
                 "Long explanations belong in docs/, not in the source."
             )

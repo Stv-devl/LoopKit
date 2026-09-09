@@ -330,6 +330,10 @@ copy — and apply these instead of the vitest-specific rows:
       (`menu`, `tablist`, `combobox`), a live region mounted at the same time as
       its content, heading levels skipping, and an accessible name that exists
       but says nothing (`aria-label="button"`). Shapes: `.claude/skills/patterns/a11y.md`.
+- [ ] **Forbidden icons** (`.claude/rules/09-icons.md`): no star, rocket or
+      lightning icon/emoji anywhere in the diff — UI, imports (`Star`, `Stars`,
+      `Sparkle`, `Sparkles`, `Rocket`, `RocketLaunch`, `Zap`, `Bolt`,
+      `LightningBolt`), user-facing text, labels, toasts. **Major.**
 
 ## Severity
 

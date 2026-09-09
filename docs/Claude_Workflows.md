@@ -234,6 +234,18 @@ approbations `on-request`. Il ne fixe aucun modèle : la configuration Codex de
 l'utilisateur reste l'autorité. `AGENTS.md` lui demande de lire le dernier
 artefact, de ne pas refaire les phases terminées et de respecter les règles TDD.
 
+**Bascule délibérée, distincte du relais de saturation.** Le relais ci-dessus se
+déclenche sur un signal externe (quota, contexte), jamais par choix.
+`.claude/workflow-routing.yml` porte une répartition séparée : les rôles
+`execute-green` (implémentation une fois plan et tests gelés) et `review-fixes`
+(correctif d'un finding Critical/Major déjà tranché par `reviewer`/`verifier`)
+partent par défaut sur Codex à `codex_effort: low` — du mécanique, jamais du
+jugement. `/loop:orchestrate` lit ce fichier aux deux frontières concernées et
+retombe sur Claude sans rien changer si le fichier est absent, si
+`command -v codex` échoue, ou si `--inline-execute` est passé. Détail et
+justification du choix de ces deux frontières précises :
+[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+
 ## Les étapes de la boucle
 
 | Commande    | Ce qu'elle fait                                                               | Produit                        |
