@@ -242,9 +242,7 @@ déclenche sur un signal externe (quota, contexte), jamais par choix.
 partent par défaut sur Codex à `codex_effort: low` — du mécanique, jamais du
 jugement. `/loop:orchestrate` lit ce fichier aux deux frontières concernées et
 retombe sur Claude sans rien changer si le fichier est absent, si
-`command -v codex` échoue, ou si `--inline-execute` est passé. Détail et
-justification du choix de ces deux frontières précises :
-[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+`command -v codex` échoue, ou si `--inline-execute` est passé.
 
 ## Les étapes de la boucle
 
