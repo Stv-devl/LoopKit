@@ -109,6 +109,35 @@ def rel_path(path: str) -> str:
 # ------------------------------------------------------------------ the layers
 
 
+def _split_root(rel: str, root: str):
+    """Locate `root` (e.g. "app") as a path SEGMENT — anchored at the start of
+    `rel` or right after a "/" — taking the LAST such occurrence, exactly like
+    `enforce-backend-layers.py`'s `MODULE_ROOT` match (`(?:^|/)app/`, last
+    match, `.claude/hooks/enforce-backend-layers.py:137-141`). On a monorepo
+    every path this library sees is prefixed by the module subdirectory (e.g.
+    `backend/`), and the two applicators diverged because this one tested
+    `rel.startswith("app/")` on a project-relative path, which is never true
+    for `backend/app/services/x.py`.
+
+    Returns (prefix, inner): `prefix` is what comes BEFORE the root segment,
+    without a trailing slash ("" when `root` sits at the project's own root —
+    a repo with no monorepo subdirectory), and `inner` is everything AFTER it.
+    (None, None) when `root` never occurs as a "/"-bounded segment.
+    """
+    match = None
+    for m in re.finditer(r"(?:^|/)%s/" % re.escape(root), rel):
+        match = m
+    if match is None:
+        return None, None
+    return rel[: match.start()].lstrip("/"), rel[match.end() :]
+
+
+def _join_root(prefix: str, root: str, inner: str) -> str:
+    """The inverse of `_split_root`: prefix + root + inner, monorepo-safe."""
+    head = (prefix + "/") if prefix else ""
+    return head + root + "/" + inner
+
+
 def is_test_first_impl(path: str) -> bool:
     """True for an implementation module the cycle applies to."""
     rel = rel_path(path)
@@ -116,10 +145,9 @@ def is_test_first_impl(path: str) -> bool:
         return False
     if posixpath.basename(rel) == "__init__.py":
         return False
-    prefix = MODULE_ROOT + "/"
-    if not rel.startswith(prefix):
+    _, inner = _split_root(rel, MODULE_ROOT)
+    if inner is None:
         return False
-    inner = rel[len(prefix) :]
     if inner.startswith(TEST_FIRST_DIRS):
         return True
     # A FLAT module spelled like the layer — `app/services.py` rather than the
@@ -146,33 +174,45 @@ def is_frozen_test(path: str) -> bool:
 
 
 def impl_for_test(path: str) -> str:
-    """tests/services/test_project.py -> app/services/project.py"""
+    """tests/services/test_project.py -> app/services/project.py
+    backend/tests/services/test_project.py -> backend/app/services/project.py
+    """
     rel = rel_path(path)
-    parts = rel.split("/")
+    prefix, inner = _split_root(rel, TESTS_ROOT)
+    if inner is None:
+        return ""
+    parts = inner.split("/")
     if not parts or not parts[-1].startswith("test_"):
         return ""
     parts[-1] = parts[-1][len("test_") :]
-    if parts[0] == TESTS_ROOT:
-        parts[0] = MODULE_ROOT
-    else:
-        return ""
-    return "/".join(parts)
+    return _join_root(prefix, MODULE_ROOT, "/".join(parts))
 
 
 def test_for_impl(path: str) -> str:
-    """app/services/project.py -> tests/services/test_project.py"""
+    """app/services/project.py -> tests/services/test_project.py
+    backend/app/services/project.py -> backend/tests/services/test_project.py
+    """
     rel = rel_path(path)
-    parts = rel.split("/")
-    if not parts or parts[0] != MODULE_ROOT:
+    prefix, inner = _split_root(rel, MODULE_ROOT)
+    if inner is None:
         return ""
-    parts[0] = TESTS_ROOT
+    parts = inner.split("/")
     parts[-1] = "test_" + parts[-1]
-    return "/".join(parts)
+    return _join_root(prefix, TESTS_ROOT, "/".join(parts))
 
 
 def dotted_module(rel_impl: str) -> str:
-    """app/services/project.py -> app.services.project"""
-    return rel_impl[: -len(".py")].replace("/", ".") if rel_impl.endswith(".py") else ""
+    """app/services/project.py -> app.services.project
+    backend/app/services/project.py -> app.services.project — the monorepo
+    prefix is stripped, because that is the name the test file actually
+    imports (`from app.services.project import …`), never `backend.…`.
+    """
+    if not rel_impl.endswith(".py"):
+        return ""
+    _, inner = _split_root(rel_impl, MODULE_ROOT)
+    if inner is None:
+        return ""
+    return (MODULE_ROOT + "/" + inner)[: -len(".py")].replace("/", ".")
 
 
 # ----------------------------------------------------------------- the markers
@@ -313,7 +353,32 @@ def is_unfrozen(path: str) -> bool:
 # ------------------------------------------------------------------ the runner
 
 
-def sanitized_addopts() -> str:
+def module_root_dir(path: str) -> str:
+    """Absolute directory holding `MODULE_ROOT` for this file.
+
+    `<project>/backend` when `path` is `backend/app/services/x.py` or
+    `backend/tests/services/test_x.py`; `<project>` itself on a repo with no
+    monorepo subdirectory. Tries `MODULE_ROOT` first (an impl path), then
+    `TESTS_ROOT` (a test path) — a caller only ever has one of the two.
+
+    THE MEASURED REASON THIS EXISTS: `pytest_cmd()` used to look for `.venv`
+    and `uv.lock` at `project_dir()`, which is the monorepo root here — they
+    live under `backend/`, so it always fell through to the bare `python3` of
+    whatever shell launched the hook. `run_pytest` then ran with
+    `cwd=project_dir()`, where `from app…` cannot resolve. Both are wrong for
+    the same reason: neither followed the file to the module root it actually
+    belongs to.
+    """
+    rel = rel_path(path)
+    prefix, inner = _split_root(rel, MODULE_ROOT)
+    if inner is None:
+        prefix, inner = _split_root(rel, TESTS_ROOT)
+    if inner is None or not prefix:
+        return project_dir()
+    return os.path.join(project_dir(), prefix)
+
+
+def sanitized_addopts(root: str) -> str:
     """The project's own addopts, minus every coverage flag.
 
     THE MEASURED REASON THIS EXISTS. The addon ships
@@ -336,9 +401,12 @@ def sanitized_addopts() -> str:
     Covering only pyproject.toml would have made the sentence above false on a
     repo configured through pytest.ini: nothing would be found, and the fallback
     blanks addopts entirely.
-    """
-    root = project_dir()
 
+    `root` is `module_root_dir()`'s answer, not `project_dir()` — on a monorepo
+    the project's own `pyproject.toml` (with the addopts above) lives under the
+    module subdirectory, and reading the repo root found none, silently
+    returning "" instead of the real config.
+    """
     pyproject = os.path.join(root, "pyproject.toml")
     if os.path.isfile(pyproject):
         try:
@@ -383,13 +451,19 @@ def _strip_cov(opts) -> str:
     return " ".join(t for t in tokens if not t.startswith("--cov"))
 
 
-def pytest_cmd() -> list:
+def pytest_cmd(root: str) -> list:
     """How to run pytest here, as a command prefix.
 
     ALWAYS `python -m pytest`, never the bare `pytest` console script. Measured
     on a tree laid out exactly as this addon prescribes: `pytest` exits 2 with
     `No module named 'app'`, `python -m pytest` exits 0 — `-m` puts the current
     directory on `sys.path`, the console script does not.
+
+    `root` is `module_root_dir()`'s answer. On a monorepo, searching `.venv`/
+    `uv.lock` at `project_dir()` found nothing — they live under the module
+    subdirectory (e.g. `backend/`) — and silently fell back to the bare
+    `python3` on `PATH`, running with whatever interpreter happened to be on
+    the shell instead of the project's own.
     """
     override = os.environ.get("CWK_PYTEST")
     if override:
@@ -397,7 +471,6 @@ def pytest_cmd() -> list:
 
         return shlex.split(override)
 
-    root = project_dir()
     for venv in (".venv", "venv"):
         candidate = os.path.join(root, venv, "bin", "python")
         if os.path.isfile(candidate):
@@ -414,16 +487,30 @@ def run_pytest(test_path: str, timeout: int) -> tuple:
 
     Exit code 124 is reserved for our own timeout, mirroring `timeout(1)` in the
     bash hook so both report the same way.
+
+    `cwd` is the module's own root (`module_root_dir()`), never
+    `project_dir()`: this is a monorepo, `from app…` only resolves from
+    `backend/`, and the test path handed to pytest must be relative to THAT
+    cwd — passing the project-relative `backend/tests/services/test_x.py` to a
+    pytest already running inside `backend/` is `file or directory not found`,
+    exit 4, before a single test is collected.
     """
-    cmd = pytest_cmd() + [
+    root = module_root_dir(test_path)
+    root_norm = root.rstrip("/")
+    test_abs = abs_path(test_path)
+    if test_abs.startswith(root_norm + "/"):
+        test_rel_to_root = test_abs[len(root_norm) + 1 :]
+    else:
+        test_rel_to_root = test_abs
+    cmd = pytest_cmd(root) + [
         "-q",
-        "--override-ini=addopts=" + sanitized_addopts(),
-        rel_path(test_path),
+        "--override-ini=addopts=" + sanitized_addopts(root),
+        test_rel_to_root,
     ]
     try:
         proc = subprocess.run(
             cmd,
-            cwd=project_dir(),
+            cwd=root,
             capture_output=True,
             text=True,
             timeout=timeout,
