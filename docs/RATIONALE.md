@@ -176,6 +176,19 @@ research, story file or spec directly. Codex rebuilds the phase from the
 artifacts and the Git state. The launcher stays external: a Claude that has
 already hit its limit cannot invoke anything.
 
+#### Deliberate routing, not just the saturation relay
+
+The handover above is a safety net, triggered by quota or context, never a
+choice. `.claude/workflow-routing.yml` is a separate, deliberate split:
+`execute-green` (implementation once plan and tests are frozen) and
+`review-fixes` (writing the fix for a Critical/Major finding Claude already
+judged) default to Codex at `codex_effort: low` — mechanical work only,
+judgement stays on Claude. `/loop:orchestrate` reads the file at each of those
+two boundaries, falls back to Claude unchanged if the file is absent,
+`command -v codex` fails, or `--inline-execute` was passed. Full writeup and
+the cost/benefit reasoning behind picking exactly these two boundaries:
+[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+
 ### 2. Everything goes through disk
 
 Subagents see neither the conversation nor each other. `docs/work/<slug>/` is the
