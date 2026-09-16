@@ -119,3 +119,7 @@ active `.claude/settings.json`, preserves user keys and never duplicates a hook.
   product layer, the three ideas, the guardrail catalogue, the security levels,
   the allowlist and what it does not excuse
 - [`docs/ADAPTATION.md`](docs/ADAPTATION.md) — `/kit:init`'s ordered reference
+
+## License
+
+[MIT](LICENSE)
