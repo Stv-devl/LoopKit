@@ -106,6 +106,7 @@ Token profile: <economy | standard | critical>
 
 ## Front surface
 <features/<x> : services, hooks, store, forms, pages, routes, guards>
+Motion: gsap - <reason>   (optional line; absent means CSS or Motion only)
 
 ## Acceptance criteria
 - [ ] <observable, testable>
@@ -130,6 +131,9 @@ hooks. Behaviours in plain words, not files and not cases. UI optional.>
   instead of defaulting to `economy`, and `/loop:ship` step 1bis arms its security
   audit on it. Write it even when the answer is `economy`.
 - Explicitly mark what is OUT (avoids agents' scope creep).
+- Animation: GSAP is on demand. Ask for it only with the `Motion:` line under
+  `Front surface`; without it, CSS or Motion (`.claude/skills/patterns/motion.md`).
+  A feature that animates copies the criteria block from that pattern.
 - Respect the repo conventions (`.claude/rules/`, `.claude/skills/templates/feature.md`).
 
 ## Task: $ARGUMENTS

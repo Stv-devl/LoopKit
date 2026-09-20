@@ -15,6 +15,7 @@ Read only the route matching the current write or decision:
 | Query, URL, store, local state, Context | one of `../patterns/react-query.md`, `url-state.md`, `zustand.md`, `local-state.md`, `context.md` |
 | Write unit/repository/hook/component tests | `../patterns/tests.md`; gateway query construction also `../patterns/msw.md` |
 | Create feedback/toast UI | `../patterns/feedback.md` |
+| Create an animation or transition | `../patterns/motion.md`; GSAP only when the spec declares it: `../patterns/gsap.md` |
 | Need a shared guard seam | `../patterns/guards.md` |
 | Argue about a rule or exception | matching cold guide in `../../guides/` |
 | Audit mutation strength | `../../commands/audit/mutation.md` and `../../guides/05-testing.md` |

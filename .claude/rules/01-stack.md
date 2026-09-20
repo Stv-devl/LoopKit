@@ -11,6 +11,11 @@
 | Routing/forms | TanStack Router v1 · React Hook Form v7 |
 | Validation/tests | Zod v4 · Vitest 4 + Testing Library |
 | Lint/compiler | ESLint 10 · React Compiler 1.0 on |
+| Animation | CSS or Motion by default · GSAP only when a spec asks |
+
+Motion is the default; GSAP needs a spec line `Motion: gsap - <reason>` and never
+shares a component with Motion. Versions and licences: `docs/research-cache/`
+(`motion.md`, `gsap.md`). Guides: `patterns/motion.md`, `patterns/gsap.md`.
 
 Version changes are decisions. Preserve Vite's Node floor and verify
 TypeScript against `typescript-eslint` before upgrading. React 19 takes `ref` as
