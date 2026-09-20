@@ -273,6 +273,14 @@ Impeccable juge la qualité du design, Playwright prouve les flux. Sans UI, rien
 n'est déclenché ; s'il manque, c'est un trou du gate annoncé. Installation :
 `docs/ADAPTATION.md`, §13.
 
+**Motion.** Par défaut CSS ou Motion ; GSAP seulement si le spec le demande avec la
+ligne `Motion: gsap - <raison>`, jamais dans le même composant que Motion. La
+review (`ui`, « Animation conformance ») compte comme Major un GSAP non demandé,
+les deux bibliothèques ensemble, ou une animation sans `prefers-reduced-motion`.
+Limite : l'étage 0 ne juge pas le mouvement (captures fixes) et le détecteur
+d'Impeccable ne voit que des motifs de code connus, pas la fluidité : il faut
+regarder la page. Guides : `patterns/motion.md`, `patterns/gsap.md`.
+
 Deux commandes bornées vivent autour de cette boucle : `/loop:spike` tranche une
 question fermée (ou retourne `indeterminate` avec la preuve manquante), et
 `/kit:recipe` transforme une procédure déjà prouvée en guide froid cité par un

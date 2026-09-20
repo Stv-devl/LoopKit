@@ -330,6 +330,18 @@ copy — and apply these instead of the vitest-specific rows:
       (`menu`, `tablist`, `combobox`), a live region mounted at the same time as
       its content, heading levels skipping, and an accessible name that exists
       but says nothing (`aria-label="button"`). Shapes: `.claude/skills/patterns/a11y.md`.
+- [ ] **Animation conformance** (only when the diff animates something; read the
+      spec's `Motion:` line and `docs/work/<slug>/design.md`; GSAP counts as
+      requested only by a `Motion: gsap` line, or a design.md that names GSAP with
+      its reason). Each of these is
+      **Major**:
+      GSAP not requested by the spec or design.md is Major,
+      both libraries in one component (Motion and GSAP) is Major,
+      and an animated feature without `prefers-reduced-motion` handling is Major.
+      Check the diff against the block "Acceptance criteria for animated
+      features" in `.claude/skills/patterns/motion.md`, and `patterns/gsap.md` when
+      GSAP is declared. Still captures cannot show animation feel: review the code,
+      say what was not observed.
 - [ ] **Forbidden icons** (`.claude/rules/09-icons.md`): no star, rocket or
       lightning icon/emoji anywhere in the diff — UI, imports (`Star`, `Stars`,
       `Sparkle`, `Sparkles`, `Rocket`, `RocketLaunch`, `Zap`, `Bolt`,

@@ -45,8 +45,8 @@ grep -Fq 'Impeccable findings bypass stage 2' "$REVIEW"
 grep -Fq 'any exit other than 0 or 2 is a gap' "$REVIEW"
 grep -Fq 'an exit 0 that scanned nothing is not' "$REVIEW"
 grep -Fq '22.18' "$REVIEW"
-! grep -Fq 'impeccable install' "$REVIEW"
-! grep -Fiq 'impeccable' "$ROOT/.claude/commands/loop/ship.md"
+if grep -Fq 'impeccable install' "$REVIEW"; then exit 1; fi
+if grep -Fiq 'impeccable' "$ROOT/.claude/commands/loop/ship.md"; then exit 1; fi
 grep -Fq 'Impeccable is never a ship gate' "$REVIEW"
 grep -Fq 'Playwright stays the flow proof' "$REVIEW"
 grep -Fq 'impeccable' "$DESIGNER"
@@ -63,5 +63,40 @@ grep -Fq 'docs/design-system.md' "$ROOT/DESIGN.md"
 grep -Fq 'Impeccable' "$ROOT/docs/Claude_Workflows.md"
 grep -Fq '22.18' "$ROOT/docs/ADAPTATION.md"
 grep -Fq 'impeccable init' "$ROOT/docs/ADAPTATION.md"
+
+PATTERNS="$ROOT/.claude/skills/patterns"
+MOTION="$PATTERNS/motion.md"
+GSAP="$PATTERNS/gsap.md"
+REVIEWER="$ROOT/.claude/agents/reviewer.md"
+STACK="$ROOT/.claude/rules/01-stack.md"
+SPEC="$ROOT/.claude/commands/loop/spec.md"
+[ -f "$MOTION" ] && [ -f "$GSAP" ]
+grep -Fq '../patterns/motion.md' "$ROOT/.claude/skills/project-rules/SKILL.md"
+grep -Fq '../patterns/gsap.md' "$ROOT/.claude/skills/project-rules/SKILL.md"
+grep -Fq 'Motion: gsap - <reason>' "$SPEC"
+grep -Fq 'Motion: gsap' "$STACK"
+grep -Fq 'Animation conformance' "$REVIEWER"
+grep -Fq 'GSAP not requested by the spec or design.md is Major' "$REVIEWER"
+grep -Fq 'both libraries in one component (Motion and GSAP) is Major' "$REVIEWER"
+grep -Fq 'an animated feature without `prefers-reduced-motion` handling is Major' "$REVIEWER"
+grep -Fq 'prefers-reduced-motion' "$REVIEWER"
+grep -Fq 'Acceptance criteria for animated features' "$MOTION"
+grep -Fq 'prefers-reduced-motion' "$MOTION"
+grep -Fq 'prefers-reduced-motion' "$PATTERNS/a11y.md"
+grep -Fq 'still animates opacity' "$MOTION"
+grep -Fq 'Standard no charge' "$GSAP"
+grep -Fq 'Webflow' "$GSAP"
+grep -Fq 'dynamic import' "$GSAP"
+grep -Fq 'never in the same component' "$GSAP"
+[ "$(wc -l < "$STACK")" -le 45 ]
+if grep -Fq 'patterns/motion' "$ROOT/CLAUDE.md"; then exit 1; fi
+grep -Fq 'ne juge pas le mouvement' "$ROOT/docs/Claude_Workflows.md"
+grep -Fq 'motifs de code connus' "$ROOT/docs/Claude_Workflows.md"
+grep -Fq 'patterns/motion.md' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'motifs de code connus' "$ROOT/docs/ADAPTATION.md"
+[ ! -e "$ROOT/package.json" ]
+for f in "$MOTION" "$GSAP" "$STACK"; do
+  if grep -Eq 'motion@|gsap@|[0-9]+\.[0-9]+\.[0-9]+' "$f"; then exit 1; fi
+done
 
 echo 'workflow contract fixtures: green.'

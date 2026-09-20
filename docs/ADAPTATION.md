@@ -380,6 +380,15 @@ trou du gate, jamais comme « propre ».
 `impeccable init` dessus. S'il les rejette, le repli est de les générer depuis le
 brief, dans un autre passage.
 
+### Motion (optionnel, UI uniquement)
+
+Le kit ne fournit aucune bibliothèque : ton app installe ce dont elle a besoin.
+Les conventions sont dans `.claude/skills/patterns/motion.md` (défaut : CSS ou
+Motion) et `patterns/gsap.md` (seulement si le spec déclare `Motion: gsap -
+<raison>`). Versions et licences : `docs/research-cache/motion.md` et `gsap.md`,
+à revérifier au-delà de 30 jours. Limite à connaître : l'étage 0 ne juge pas le
+mouvement, et Impeccable n'attrape que des motifs de code connus.
+
 ---
 
 ## Vérifier que le câblage tient
