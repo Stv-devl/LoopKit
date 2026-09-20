@@ -35,4 +35,33 @@ grep -Fq 'no board line' "$SPIKE"
 grep -Fq 'exactly one citation' "$RECIPE"
 grep -Fq 'automatic' "$RECIPE"
 
+INTERFACE="$ROOT/.claude/commands/loop/interface.md"
+DESIGNER="$ROOT/.claude/agents/designer.md"
+skip_line=$(grep -nF 'Skip first' "$REVIEW" | head -1 | cut -d: -f1)
+detect_line=$(grep -nF 'pnpm dlx impeccable detect' "$REVIEW" | head -1 | cut -d: -f1)
+[ -n "$skip_line" ] && [ -n "$detect_line" ] && [ "$skip_line" -lt "$detect_line" ]
+grep -Fq 'an Impeccable failure is a gap in the gate, never clean' "$REVIEW"
+grep -Fq 'Impeccable findings bypass stage 2' "$REVIEW"
+grep -Fq 'any exit other than 0 or 2 is a gap' "$REVIEW"
+grep -Fq 'an exit 0 that scanned nothing is not' "$REVIEW"
+grep -Fq '22.18' "$REVIEW"
+! grep -Fq 'impeccable install' "$REVIEW"
+! grep -Fiq 'impeccable' "$ROOT/.claude/commands/loop/ship.md"
+grep -Fq 'Impeccable is never a ship gate' "$REVIEW"
+grep -Fq 'Playwright stays the flow proof' "$REVIEW"
+grep -Fq 'impeccable' "$DESIGNER"
+grep -Fq 'frontend-design' "$DESIGNER"
+grep -Fq 'Impeccable, loaded by `designer`' "$INTERFACE"
+grep -Fq 'only on a UI feature' "$ORCHESTRATE"
+grep -Fq 'only on a UI feature' "$PLAN"
+[ "$(ls "$ROOT"/.claude/commands/loop/*.md | wc -l)" -eq 12 ]
+for f in PRODUCT.md DESIGN.md; do
+  [ "$(wc -l < "$ROOT/$f")" -le 10 ]
+done
+grep -Fq 'docs/product/brief.md' "$ROOT/PRODUCT.md"
+grep -Fq 'docs/design-system.md' "$ROOT/DESIGN.md"
+grep -Fq 'Impeccable' "$ROOT/docs/Claude_Workflows.md"
+grep -Fq '22.18' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'impeccable init' "$ROOT/docs/ADAPTATION.md"
+
 echo 'workflow contract fixtures: green.'

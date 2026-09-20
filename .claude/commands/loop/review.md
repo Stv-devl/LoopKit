@@ -25,8 +25,23 @@ stage is the one place someone actually looks.
 
 **You** do this — not a subagent: browser control lives on the main thread.
 
+**Skip first.** Decide the skip (paragraph below) before anything else: a diff
+with no user surface invokes nothing here, Impeccable included.
+
 1. Launch the app with the **`run` skill**. If it won't start, that is a
    **blocking finding**, not a reason to skip the stage.
+1bis. **Impeccable detector** (deterministic, before the eye pass). List the
+   diff's changed UI files (`.tsx`, `.jsx`, `.css`, `.html`) and run
+   `pnpm dlx impeccable detect --json` on those files, passed explicitly: an unknown
+   path exits 1, but a directory with nothing scannable exits 0 with `[]`.
+   Rule: an exit 0 that scanned nothing is not clean. Exit 0 on a non-empty file list is
+   clean, exit 2 is findings (file:line, mapped onto the severity scale below,
+   reported under `### Visual (stage 0)`). A URL target (the running app) is an
+   optional extra for rendered layout. Rule: any exit other than 0 or 2 is a gap.
+   Then run `/impeccable critique` on the captured screens (step 2), and
+   `/impeccable audit` when the diff touches layout or a11y. They read root
+   `PRODUCT.md` / `DESIGN.md`, which point at `docs/product/brief.md` and
+   `docs/design-system.md`; never run `impeccable init` over them.
 2. Navigate to the delivered screen and capture:
    - the **nominal** state, with real data
    - the **empty** state (no rows) and the **error** state, if reachable — these
@@ -43,7 +58,18 @@ stage is the one place someone actually looks.
 Skip only when the diff has no user surface — and **announce the skip with its
 reason**. Findings from this stage enter the same severity scale, and they
 **bypass stage 2**: a screenshot is stronger evidence than a refutation argued
-from code.
+from code. Impeccable findings bypass stage 2 for the same reason.
+
+> **Impeccable missing, or the detector cannot run?** Not installed, Node below
+> 22.18, an empty file list, or critique/audit not runnable without
+> a human: say exactly that in the verdict, because
+> an Impeccable failure is a gap in the gate, never clean, and never a silent skip.
+> Acceptance criteria that depended on that check come back as **not observed**,
+> never as met.
+>
+> Impeccable is never a ship gate.
+> It does not replace the a11y pattern (`patterns/a11y.md`).
+> Playwright stays the flow proof; Impeccable judges design quality.
 
 > **No browser tooling on this machine?** Then say exactly that, in the verdict,
 > as a gap in the gate — not as a skip. This stage is the only one with eyes, so

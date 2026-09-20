@@ -217,6 +217,9 @@ Delete the block when the work introduces new behaviour only.>
   is `/loop:orchestrate`'s Phase 0.5 call; the plan only records it.
 - No manual SQL: any migration goes through `/database:migration`.
 - Copy the acceptance criteria **verbatim**; do not rephrase them softer.
+- Impeccable applies only on a UI feature: note in the plan that EXECUTE fixes
+  the screen using the Impeccable findings from review stage 0. Nothing is added
+  for a feature with no UI.
 - The test plan's **test-first** block is the deliverable the user actually
   validates. Write its cases as `it()` sentences, ordered business-value first —
   not as a list of filenames. It is the spec the implementation is generated

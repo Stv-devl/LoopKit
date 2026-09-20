@@ -38,6 +38,10 @@ Load these before proposing anything:
 1. **The `frontend-design` skill** — invoke it first. It is your craft reference:
    it exists to keep proposals from collapsing into generic default-framework
    aesthetics. Load `dataviz` too if your design shows any chart or metric tile.
+   Then load the `impeccable` skill when it is installed (it reads root
+   `PRODUCT.md` / `DESIGN.md`, pointers to the brief and the design system): it
+   sharpens hierarchy, spacing, type and anti-slop checks. Absent, say so in the
+   proposal and continue on `frontend-design` alone.
 2. `docs/design-system.md` — the system in force. **This is your palette.**
 3. `.claude/rules/08-feedback.md` — loading / error / empty / refetch are mandatory
 4. `.claude/rules/03-conventions.md` — semantic HTML, and which language the
