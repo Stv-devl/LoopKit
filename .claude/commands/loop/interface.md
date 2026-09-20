@@ -14,6 +14,9 @@ step ends on a gate, like `/loop:plan`.
 surface (pure migration, cron, edge function, refactor). Then go straight to
 `/loop:plan`.
 
+Design craft comes from `frontend-design` and Impeccable, loaded by `designer`;
+nothing here calls Impeccable directly, and a skipped step invokes neither.
+
 > **Why this command is not called `/design`.** Claude Code ships its own
 > `/design` — the Claude Design canvas, in research preview — and this step
 > *calls* it (step 4). A project command of the same name shadows the built-in

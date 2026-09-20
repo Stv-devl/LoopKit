@@ -273,23 +273,55 @@ Do not enter Phase 4 on silence.
 ## Phase 4 — EXECUTE (sequential, inline on the main thread)
 
 **Read the router first.** Check `.claude/workflow-routing.yml` for the
-`execute-green` role. File absent, `provider: claude`, `command -v codex`
-failing, or the user passed `--inline-execute` → nothing changes, keep reading
-below. `provider: codex` and Codex available → **you still run the test-first
+`execute-green` role. File absent, `provider: claude`, Codex unavailable, or
+the user passed `--inline-execute` → nothing changes, keep reading below.
+
+> **"Codex available" means `codex --version` succeeds, not just
+> `command -v codex`.** With npm's `optionalDependencies`, the launcher script
+> can be on `PATH` and still crash on first real invocation because the
+> platform-specific native binary never installed — measured 2026-09-17: all
+> six `@openai/codex-<platform>` optional deps `UNMET`, `command -v codex`
+> green, `codex` itself throwing. `command -v` alone reads as "available" when
+> it is not.
+
+`provider: codex` and Codex available → **you still run the test-first
 layers yourself** (RED legs have no Codex equivalent — POC tested and failed,
 see `docs/codex-claude-split-plan.md`, "POC hooks"), then hand off once you
 reach the first step that isn't test-first: write
 `docs/work/<slug>/handoff-codex.md` (`/handoff:codex` template, frontmatter
-`phase: execute` / `execute_status: in-progress`), print
-`./codex-handoff.sh docs/work/<slug>/handoff-codex.md execute-green` (the
-second argument names the role, so the script applies its `codex_effort`), and
-stop. This keeps
+`phase: execute` / `execute_status: in-progress`), then **launch it yourself**:
+
+```bash
+./codex-handoff.sh docs/work/<slug>/handoff-codex.md execute-green --auto
+```
+
+via `Bash` with `run_in_background: true`. Do not poll — you get a
+task-notification when it finishes, same as any other background command.
+`--auto` runs Codex non-interactively (`codex exec`, `-a never` — must
+precede the `exec` subcommand, `codex exec -a never` errors — inside the
+`-s workspace-write` sandbox: writes stay confined to the project, only the
+per-step human-approval pause is skipped, never the sandbox). This is the
+**default**, not a per-feature choice re-asked each time: `provider: codex`
+in the routing file already is that decision, made once, when the file was
+configured — proven end-to-end on `eval-bourrage-contexte`, 2026-09-17.
+`-o` writes Codex's own final message to
+`docs/work/<slug>/codex-last-message.txt` — read it when the notification
+lands, alongside whatever `handoff-codex.md` update Codex made. This keeps
 the "one handoff per feature" cost real instead of ping-ponging per layer: the
 RED→GREEN alternation below still cannot be batched, so the earliest point
 where handing off doesn't fight that rule is right after `repository` goes
 green. **DB migrations never move**: `/database:migration` is a Claude Code
 slash command Codex cannot invoke (`.claude/rules/06-database.md`) — do it
 yourself regardless of `execute-green`'s provider.
+
+> **Codex stopping itself is not a failure to route around.** On a protected
+> boundary (`.claude/rules/` protected files, an ambiguous authorization call)
+> Codex should end its turn and ask, in its final message, rather than guess —
+> `-a never` removes the interactive approval block on ordinary sandboxed
+> writes, it does not and should not make Codex reckless about a boundary it
+> was told to respect. Read that message when the notification lands and
+> resolve it the same way you would a `test-writer` reporting `Blocked on` —
+> with the user, not by silently overriding it.
 
 Implement **yourself**, in the plan's order. Do not delegate: the chain is
 coupled and the handoff costs more than the isolation gains — this is about
@@ -339,6 +371,10 @@ judged "just enough", and a wrong assertion surfaces only after the freeze
 
 Load what you need from `.claude/skills/patterns/` and `templates/`. Respect
 `.claude/rules/`.
+
+Impeccable applies only on a UI feature: when fixing the screen, read its
+findings from review stage 0 (detector, critique) as input; they are advisory and
+never replace `design.md` or `patterns/a11y.md`. A feature with no UI never sees them.
 
 > **Both cycles, one procedure.** The hook names below are the TypeScript ones.
 > On a backend service layer that is test-first (`app/services/**` with the
@@ -395,16 +431,24 @@ diff: "object redefined by migration X" became the criterion "does the diff
 revert X?". That restatement is what `/loop:plan` was asked to produce; going back to
 the raw `Traps` throws it away.
 
-**Routing check before fixing.** Same rule as Phase 4: read
-`.claude/workflow-routing.yml` for the `review-fixes` role. File absent,
-`provider: claude`, Codex unavailable, or `--inline-execute` set → fix
-**inline** as below, unchanged. `provider: codex` and Codex available →
-Claude keeps the verdict (`reviewer`/`verifier` already ran, findings already
-tranched — that judgment never moves), write/refresh
+**Routing check before fixing.** Same rule as Phase 4, "Codex available"
+meaning the same thing (`codex --version` succeeding, not just
+`command -v`): read `.claude/workflow-routing.yml` for the `review-fixes`
+role. File absent, `provider: claude`, Codex unavailable, or
+`--inline-execute` set → fix **inline** as below, unchanged. `provider: codex`
+and Codex available → Claude keeps the verdict (`reviewer`/`verifier` already
+ran, findings already tranched — that judgment never moves), write/refresh
 `docs/work/<slug>/handoff-codex.md` with the Critical/Major findings to fix
-and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`,
-print `./codex-handoff.sh docs/work/<slug>/handoff-codex.md review-fixes`, and
-stop. On resume (Phase 0's third branch), re-run only the dimensions those
+and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`, then
+launch it yourself — same mechanics as Phase 4 (`--auto`,
+`run_in_background: true`, no polling, `codex-last-message.txt` alongside the
+handoff):
+
+```bash
+./codex-handoff.sh docs/work/<slug>/handoff-codex.md review-fixes --auto
+```
+
+On resume (Phase 0's third branch), re-run only the dimensions those
 findings came from — never a fresh judgment pass.
 
 Fix surviving Critical/Major findings **inline**, then re-run only the affected

@@ -241,8 +241,18 @@ déclenche sur un signal externe (quota, contexte), jamais par choix.
 (correctif d'un finding Critical/Major déjà tranché par `reviewer`/`verifier`)
 partent par défaut sur Codex à `codex_effort: low` — du mécanique, jamais du
 jugement. `/loop:orchestrate` lit ce fichier aux deux frontières concernées et
-retombe sur Claude sans rien changer si le fichier est absent, si
-`command -v codex` échoue, ou si `--inline-execute` est passé.
+retombe sur Claude sans rien changer si le fichier est absent, si Codex n'est
+pas disponible (`codex --version` réussit — pas seulement `command -v codex`,
+qui reste vert même quand le binaire natif n'a jamais fini de s'installer,
+observé le 2026-09-17), ou si `--inline-execute` est passé. Sinon, **la
+session lance elle-même** `./codex-handoff.sh <handoff> <rôle> --auto`
+(`Bash`, `run_in_background: true`, sans sondage) plutôt que d'imprimer la
+commande pour l'utilisateur — `--auto` bascule le script sur `codex exec
+-a never` dans le même sandbox `workspace-write`, non-interactif par
+construction. C'est le comportement par défaut, décidé une fois avec
+l'utilisateur, jamais redemandé feature par feature. Détail et justification
+du choix de ces deux frontières précises :
+[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
 
 ## Les étapes de la boucle
 
@@ -254,6 +264,14 @@ retombe sur Claude sans rien changer si le fichier est absent, si
 | EXECUTE     | Inline, séquentiel, dans l'ordre du plan (les écritures sont couplées)        | le code                        |
 | `/loop:review`   | Étage 0 : passe visuelle (UI) · Étage 1 : 5 dimensions · Étage 2 : réfutation | verdict PASS/CONCERNS/FAIL     |
 | `/loop:ship`     | Gates parallèles, commit via l'agent `github`, board à jour, feature suivante | le commit                      |
+
+**Impeccable, sur une feature UI seulement.** `designer` le charge avec
+`frontend-design` (`/loop:interface`), l'étage 0 de `/loop:review` lance son
+détecteur puis sa critique, et EXECUTE s'appuie sur ces findings pour corriger
+l'écran. Il n'est jamais un gate de `/loop:ship` et ne remplace pas `patterns/a11y.md` :
+Impeccable juge la qualité du design, Playwright prouve les flux. Sans UI, rien
+n'est déclenché ; s'il manque, c'est un trou du gate annoncé. Installation :
+`docs/ADAPTATION.md`, §13.
 
 Deux commandes bornées vivent autour de cette boucle : `/loop:spike` tranche une
 question fermée (ou retourne `indeterminate` avec la preuve manquante), et

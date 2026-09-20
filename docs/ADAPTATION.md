@@ -365,6 +365,21 @@ critères d'acceptation qui supposaient qu'on voie l'écran ressortent en « non
 observés ». Un contraste illisible, un débordement à 1280px et un état vide cassé
 passent tous les autres gates sans faire un bruit.
 
+### Impeccable (optionnel, UI uniquement)
+
+L'étage 0 et l'agent `designer` utilisent [Impeccable](https://github.com/pbakaus/impeccable)
+quand il est installé : détecteur déterministe (`pnpm dlx impeccable detect`), puis
+`/impeccable critique` et `audit`. Le kit ne le fournit pas : copie le skill
+seul dans le dossier `skills/` de ton `.claude/`, sans ses hooks, et ne lance pas
+`pnpm dlx impeccable install` (il écrit dans `settings.local.json`). Le détecteur
+demande **Node 22.18 ou plus**. Absent ou en échec, la review le déclare comme un
+trou du gate, jamais comme « propre ».
+
+`PRODUCT.md` et `DESIGN.md` à la racine sont des **pointeurs** vers
+`docs/product/brief.md` et `docs/design-system.md` : ne lance jamais
+`impeccable init` dessus. S'il les rejette, le repli est de les générer depuis le
+brief, dans un autre passage.
+
 ---
 
 ## Vérifier que le câblage tient
