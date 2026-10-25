@@ -159,6 +159,21 @@ git branch -d feat/<slug>
   tracks that would each pay this for ten minutes of work are not worth forking:
   say so instead.
 
+## Working remotely (Remote Control)
+
+One feature per session, even from the phone. A session that chains features
+rereads the previous ones at every turn: measured on EcoCrew, 277k tokens per
+turn during the first feature, 456k from the fourth on. `/loop:ship` ends by
+asking for `/clear`, which Remote Control accepts from mobile and web; the
+`SessionStart` hook on `clear` then names the next feature, and `go` starts it.
+
+For several features in parallel from the phone, run the server mode on the
+machine: `claude remote-control --spawn worktree` gives each session started
+remotely its own worktree. The rules of this guide still apply to each track
+(how many, what never forks). Rejected: chaining the next feature into a
+background `claude -p` — invisible from the phone, and nobody there to hold the
+interface and plan gates.
+
 ## Merge protocol (gated)
 
 1. The track runs its whole loop **inside its worktree**: EXECUTE, REVIEW, and

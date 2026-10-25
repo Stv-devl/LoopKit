@@ -221,7 +221,8 @@ install_settings() {
                         endswith("english-comments.py") or
                         endswith("prevent-destructive-commands.sh") or
                         endswith("enforce-git-workflow.sh") or
-                        endswith("auto-approve-config.sh"));
+                        endswith("auto-approve-config.sh") or
+                        endswith("next-feature-on-clear.py"));
           .hooks |= with_entries(
             .value |= [ .[] | .hooks |= map(select(core)) | select(.hooks | length > 0) ]
           )

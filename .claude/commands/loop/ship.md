@@ -197,6 +197,12 @@ is the line staying `READY` below, or `BLOCKED` with its reason.
 - Next: <feature> — <command>
 ```
 
+Then end the turn with one line to the user, in their language: the feature is
+shipped, type `/clear` then `go` to start the next one. A session that chains
+features rereads every previous one at each turn; `/clear` is the user's command
+(it works from Remote Control), and after it the SessionStart hook
+`next-feature-on-clear.py` hands the fresh session the feature `go` starts.
+
 ## Rules
 
 - Report faithfully: a skipped gate is announced, not implied.

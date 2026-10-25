@@ -216,4 +216,30 @@ grep -q 'handoff-codex.md`, its name before 0.2' "$ROOT/.claude/commands/loop/or
 TEMPLATE_PHASES="$(sed -nE 's/^phase: [a-z-]+ +# (.*)$/\1/p' "$ROOT/.claude/commands/handoff/codex.md")"
 [[ "$TEMPLATE_PHASES" == "research | interface | plan | execute | review | ship" ]]
 
+# After /clear, the SessionStart hook names the next feature: an interrupted one
+# first (IN LOOP with a handoff), else the topmost READY line. Only on `clear`.
+NX="$WS/next"
+rm -rf -- "$NX"; mkdir -p "$NX/docs/product" "$NX/docs/work/checkout-1.1"
+next_ctx() { printf '{"hook_event_name":"SessionStart","source":"%s"}' "$1" | CLAUDE_PROJECT_DIR="$NX" python3 "$ROOT/.claude/hooks/next-feature-on-clear.py"; }
+cat > "$NX/docs/product/backlog.md" <<'BOARD'
+| Feature / story | Entry artifact | Pipeline | State | Shipped |
+| --- | --- | --- | --- | --- |
+| auth | docs/specs/auth.md | light | SHIPPED | 2026-10-01 |
+| billing | docs/specs/billing.md | light | READY | — |
+| checkout 1.2 — payment | docs/stories/checkout/1.2.md | full | READY | — |
+BOARD
+next_ctx clear | grep -q '/loop:orchestrate docs/specs/billing.md'
+if next_ctx clear | grep -q 'checkout/1.2'; then exit 1; fi
+next_ctx clear | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"'
+[[ -z "$(next_ctx startup)" ]]
+[[ -z "$(next_ctx resume)" ]]
+printf '| checkout 1.1 — cart | docs/stories/checkout/1.1.md | full | IN LOOP | — |\n' >> "$NX/docs/product/backlog.md"
+printf -- '---\nphase: review\n---\n' > "$NX/docs/work/checkout-1.1/handoff.md"
+next_ctx clear | grep -q '/loop:orchestrate docs/work/checkout-1.1/handoff.md'
+sed -i 's/| READY |/| SHIPPED |/; s/| IN LOOP |/| SHIPPED |/' "$NX/docs/product/backlog.md"
+sed -i 's/| READY |/| SHIPPED |/' "$NX/docs/product/backlog.md"
+next_ctx clear | grep -q 'No READY line'
+rm "$NX/docs/product/backlog.md"
+next_ctx clear | grep -q 'No board'
+
 echo 'workflow contract fixtures: green.'
