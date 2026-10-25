@@ -19,6 +19,7 @@ jq -e '[.hooks[][]?.hooks[]?.command] | all(
     contains("format-on-save.sh") | not
 )' "$TARGET/.claude/settings.json" >/dev/null
 python3 "$TARGET/.claude/hooks/kit-doctor.py" | grep -Fq 'No divergence.'
+jq -e '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[].command] | any(endswith("next-feature-on-clear.py"))' "$TARGET/.claude/settings.json" >/dev/null
 
 # A second install re-merges the selected layer into active settings.
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1

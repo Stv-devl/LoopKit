@@ -1,6 +1,7 @@
 ---
 description: Creates SQL migrations (DDL, indexes, rollback) — the only way schema changes enter the repo
 context: fork
+model: opus
 argument-hint: [migration description]
 ---
 

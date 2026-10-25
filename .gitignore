@@ -43,7 +43,8 @@ blob-report/
 .claude/.eslint-queue
 .claude/.eslint-queue.*
 
-# Written by token-statusline.py at the 90 / 95 / 97 % context thresholds
+# Written by token-statusline.py at the 70 / 90 / 95 / 97 % context thresholds
+.claude/.token-delegate
 .claude/.token-warning
 .claude/.token-stop-agents
 .claude/.restart-ready

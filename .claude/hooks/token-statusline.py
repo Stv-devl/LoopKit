@@ -50,9 +50,15 @@ if used is None:
     print("ctx ?")
     raise SystemExit(0)
 
+delegate = marker(project, ".token-delegate")
 warning = marker(project, ".token-warning")
 stop_agents = marker(project, ".token-stop-agents")
 ready = marker(project, ".restart-ready")
+
+if used >= 70:
+    delegate.write_text(f"{used:.1f}\n")
+else:
+    delegate.unlink(missing_ok=True)
 
 if used >= 90:
     warning.write_text(f"{used:.1f}\n")
@@ -99,4 +105,6 @@ elif used >= 95:
     suffix = " · stop agents"
 elif used >= 90:
     suffix = " · checkpoint"
+elif used >= 70:
+    suffix = " · delegate"
 print(f"ctx {used:.0f}%{suffix}")

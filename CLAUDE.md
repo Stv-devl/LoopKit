@@ -105,8 +105,9 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
   silence; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
 - Stories are sliced **functional, before the architecture**. External docs are
   researched once: `docs/research-cache/settled.md` is read before any fetch.
-- **EXECUTE stays sequential**, except the RED leg (one `test-writer` per
-  feature, continued layer by layer). Separate tracks get separate worktrees, their number
+- **EXECUTE stays sequential** on the main thread; the RED legs go to one
+  `test-writer` per feature, GREEN past 70% and every fix batch to `implementer`.
+  Agents: `.claude/agents/` (13). Separate tracks get separate worktrees, their number
   computed · `/loop:tracks`.
 - Token profile `economy` by default, persisted in work artifacts ·
   `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual Codex

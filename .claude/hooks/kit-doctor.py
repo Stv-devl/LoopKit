@@ -304,7 +304,7 @@ def check_token_thresholds() -> list[Finding]:
     declared = {name: pct for name, pct in re.findall(r"`\.([a-z-]+)` at (\d+)%", rule)}
 
     # Each marker is written inside the `if used >= N` block above its write_text.
-    variables = {"token-warning": "warning", "token-stop-agents": "stop_agents", "restart-ready": "ready"}
+    variables = {"token-delegate": "delegate", "token-warning": "warning", "token-stop-agents": "stop_agents", "restart-ready": "ready"}
     actual: dict[str, str] = {}
     current: str | None = None
     for line in status.splitlines():
@@ -741,7 +741,7 @@ def check_agent_efforts() -> list[Finding]:
 # Written at runtime, or created by a command — absent is the normal state.
 RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
-    ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
+    ".claude/.token-delegate", ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees",
 }

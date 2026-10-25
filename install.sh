@@ -431,7 +431,7 @@ ensure_gitignore() {
         # A block written by an older kit lacks the names added since: append
         # only the missing lines, never the block twice.
         local line
-        for line in .claude/.restart-ready 'docs/work/*/handoff.md' handoff-codex.md; do
+        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_TOUCHED=1
@@ -449,6 +449,7 @@ $GITIGNORE_MARK
 .claude/.hook-timings.log
 .claude/.eslint-queue
 .claude/.eslint-queue.*
+.claude/.token-delegate
 .claude/.token-warning
 .claude/.token-stop-agents
 .claude/.restart-ready

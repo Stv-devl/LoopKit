@@ -136,11 +136,11 @@ separate) or the ceiling blocks. **Human gate**: it prints the `Test plan` and
 waits for an explicit go — the go freezes the test-first files
 (`.claude/rules/05-testing.md`). Do not enter Phase 4 on silence.
 
-## Phase 4 — EXECUTE (sequential, inline on the main thread)
+## Phase 4 — EXECUTE (sequential, on the main thread)
 
 **Routing first.** Read `.claude/workflow-routing.yml`, role `execute-green`.
 Absent, `provider: claude`, `codex --version` failing, or `--inline-execute` →
-everything stays inline. `provider: codex` and Codex runs → you still do the
+everything stays on Claude (inline, or `implementer` past 70%). `provider: codex` and Codex runs → you still do the
 test-first layers, then at the first step that is not test-first (right after
 `repository` or `services` goes green) write the handoff
 (`phase: execute`, `execute_status: in-progress`, `codex_safe`), and **once the
@@ -156,8 +156,9 @@ or the last commit). Read `docs/work/<slug>/codex-last-message.txt` when it land
 a question Codex stopped on goes to the user. Migrations never move:
 `/database:migration` is yours whatever the provider.
 
-Implement **yourself**, in the plan's order — no sub-agent mid-chain, except the
-RED legs and the plan's parallel lots:
+Implement **yourself**, in the plan's order. Three exceptions, and only these: the
+RED legs (`test-writer`), GREEN past 70% (`implementer`), and the plan's parallel
+lots:
 
 ```
 1. DB       → /database:migration        (schema + authorization + triggers)
@@ -169,7 +170,8 @@ RED legs and the plan's parallel lots:
               ├─ repository   RED → GREEN
               └─ then  : hooks → store → components → forms
 4. Wiring   → router + guards
-5. Tests    → hooks.ts + the rest of the test plan (gateway, UI) — MANDATORY
+5. Tests    → hooks.ts + the rest of the test plan (gateway, UI) — MANDATORY,
+              one `test-writer` launched in its mode "after the code" per file
 6. REFACTOR → clean the logic with the suite green. No new behaviour, no test
               edited. This is the third leg of the cycle, not an optional tidy-up.
 ```
@@ -182,7 +184,9 @@ For each test-first layer the plan has:
   and never reads the module under test. `Blocked on` a contract ambiguity → the
   user decides, never you writing the test.
 - **GREEN** — you, inline: just enough code in that one module. The test does not
-  move.
+  move. When `.claude/.token-delegate` exists (context past 70%), hand the layer to
+  one `implementer` instead — test path, module path, plan — and check its proof
+  run yourself.
 
 Then the next layer. **Never batch the REDs then the GREENs.** `errors.ts` and
 `gateway.ts` come right after the schemas, before the first RED: the repository
@@ -211,12 +215,13 @@ this track's tree, never as extra worktrees.
 ## Phase 5 — REVIEW
 
 `/loop:review docs/work/<slug>/plan.md`, handing it the plan's **`Vigilance`**
-section. Routing as in Phase 4, role `review-fixes`: inline, or — Codex routed and
-running — Claude keeps the verdict and hands the surviving Critical/Major findings
-over in the handoff (`phase: review`, `review_status: fixes-handed-to-codex`,
-`codex_safe`), same guards, `./codex-handoff.sh docs/work/<slug>/handoff.md
-review-fixes --auto`. Inline: fix surviving Critical/Major, re-run only the
-affected dimensions.
+section. Claude keeps the verdict; the fixes of the surviving Critical/Major always
+leave the main thread. Codex routed for `review-fixes` and running → the handoff
+(`phase: review`, `review_status: fixes-handed-to-codex`, `codex_safe`), same
+guards, `./codex-handoff.sh docs/work/<slug>/handoff.md review-fixes --auto`.
+Otherwise → one `implementer`, the findings as its fix batch. An e2e spec the
+change broke → `e2e-tester` in repair mode. Then re-run only the affected
+dimensions.
 
 ## Phase 6 — SHIP
 

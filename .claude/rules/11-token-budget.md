@@ -17,10 +17,11 @@ gates always run: compute is not model context.
 | --- | --- | --- | --- |
 | `inherit` | gates: judgement that can stop the loop | set at the call | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor` |
 | `sonnet` | tests from a validated plan | `high` | `test-writer` |
-| `sonnet` | bounded production from a validated entry, and external-doc relevance | `medium` | `doc-researcher`, `story-writer`, `e2e-tester`, `designer`, `github` |
+| `sonnet` | bounded production from a validated entry, and external-doc relevance | `medium` | `doc-researcher`, `story-writer`, `e2e-tester`, `designer`, `github`, `implementer` |
 | `haiku` | bounded extraction/transcription | default | `explorer` |
 
-A gate never runs below the session model. Launch a gate with `effort: medium`,
+`/database:migration` forks on `opus`: destructive data changes are `critical`
+work. A gate never runs below the session model. Launch a gate with `effort: medium`,
 `high` on a `critical` profile; a Claude Code without the call parameter runs it
 at its default. The session runs Opus medium (`./workflow.sh`, `--critical` for
 high). Agent `model:`/`effort:` lines are the enforced copy of this table.
@@ -32,7 +33,8 @@ command and use its exit. Waiting on a human or external system ends the turn.
 
 ## Automatic thresholds
 
-`.token-warning` at 90%, `.token-stop-agents` at 95%, `.restart-ready` at 97%.
+`.token-delegate` at 70%, `.token-warning` at 90%, `.token-stop-agents` at 95%,
+`.restart-ready` at 97%. At 70 hand GREEN layers to `implementer`.
 At 95 start no agent; finish the atomic operation and checkpoint. At 97 start no
 phase; the supervisor restarts Claude on the handoff (twice per feature at most). These measure context, unlike `.quota-warning`.
 Keep the thresholds synchronized with `token-statusline.py`.

@@ -18,6 +18,7 @@ PROJECT = Path(__file__).resolve().parent
 READY = PROJECT / ".claude" / ".restart-ready"
 STOP_AGENTS = PROJECT / ".claude" / ".token-stop-agents"
 WARNING = PROJECT / ".claude" / ".token-warning"
+DELEGATE = PROJECT / ".claude" / ".token-delegate"
 QUOTA_WARNING = PROJECT / ".claude" / ".quota-warning"
 # `handoff-codex.md` is the name before 0.2, still read for one version.
 HANDOFF_NAMES = ("handoff.md", "handoff-codex.md")
@@ -210,6 +211,7 @@ def run_claude(arguments: list[str]) -> tuple[int, bool, bool, bool]:
     READY.unlink(missing_ok=True)
     STOP_AGENTS.unlink(missing_ok=True)
     WARNING.unlink(missing_ok=True)
+    DELEGATE.unlink(missing_ok=True)
     QUOTA_WARNING.unlink(missing_ok=True)
 
     pid, master = pty.fork()

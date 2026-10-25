@@ -241,5 +241,36 @@ sed -i 's/| READY |/| SHIPPED |/' "$NX/docs/product/backlog.md"
 next_ctx clear | grep -q 'No READY line'
 rm "$NX/docs/product/backlog.md"
 next_ctx clear | grep -q 'No board'
+# Escaped pipes, an indented board, backticked paths, a stuck IN LOOP line,
+# bytes that are not UTF-8 and a non-object payload never derail the hook.
+printf '  | Feature / story | Entry artifact | Pipeline | State | Shipped |\n  | --- | --- | --- | --- | --- |\n  | a \\| b | `docs/specs/ab.md` | light | READY | — |\n  | c | docs/specs/c.md | light | READY | — |\n' > "$NX/docs/product/backlog.md"
+next_ctx clear | grep -q '/loop:orchestrate docs/specs/ab.md'
+printf '| Feature / story | Entry artifact | Pipeline | State | Shipped |\n| --- | --- | --- | --- | --- |\n| cart | docs/stories/shop/1.1.md | full | IN LOOP | — |\n| c | docs/specs/c.md | light | READY | — |\n' > "$NX/docs/product/backlog.md"
+next_ctx clear | grep -q 'cart'
+next_ctx clear | grep -q '/loop:orchestrate docs/specs/c.md'
+mkdir -p "$NX/.claude/worktrees/shop-1.1"
+if next_ctx clear | grep -q 'cart'; then exit 1; fi
+next_ctx clear | grep -q '/loop:orchestrate docs/specs/c.md'
+rm -r "$NX/.claude/worktrees"
+printf '| Feature / story | Entry artifact | Pipeline | State | Shipped |\n| --- | --- | --- | --- | --- |\n| caf\xe9 | docs/specs/cafe.md | light | READY | — |\n' > "$NX/docs/product/backlog.md"
+next_ctx clear | grep -q 'docs/specs/cafe.md'
+[[ -z "$(printf '[]' | CLAUDE_PROJECT_DIR="$NX" python3 "$ROOT/.claude/hooks/next-feature-on-clear.py")" ]]
+
+# Work that had no attributed agent (1.8): implementer, test-writer after the
+# code, e2e repair, migrations on Opus.
+grep -Fq 'name: implementer' "$ROOT/.claude/agents/implementer.md"
+grep -Fq '.token-delegate' "$ROOT/.claude/commands/loop/orchestrate.md"
+grep -Fq '`implementer`' "$ROOT/.claude/commands/loop/orchestrate.md"
+grep -Fq 'after the code' "$ROOT/.claude/agents/test-writer.md"
+grep -Fq 'after the code' "$ROOT/.claude/commands/loop/orchestrate.md"
+grep -Fq 'repair' "$ROOT/.claude/agents/e2e-tester.md"
+grep -Fxq 'model: opus' "$ROOT/.claude/commands/database/migration.md"
+
+# The 70 % delegate marker: written at 70, removed below it.
+SL="$WS/sl"; mkdir -p "$SL/.claude"
+sl() { printf '{"context_window":{"used_percentage":%s},"workspace":{"project_dir":"%s"}}' "$1" "$SL" | python3 "$ROOT/.claude/hooks/token-statusline.py" >/dev/null; }
+sl 69.9; [[ ! -e "$SL/.claude/.token-delegate" ]]
+sl 70; [[ -e "$SL/.claude/.token-delegate" ]]
+sl 40; [[ ! -e "$SL/.claude/.token-delegate" ]]
 
 echo 'workflow contract fixtures: green.'
