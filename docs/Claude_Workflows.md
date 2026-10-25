@@ -208,7 +208,7 @@ Le chemin recommandé lance Claude sous supervision :
 
 La status line crée trois seuils : checkpoint à 90 %, aucun nouveau sous-agent
 à 95 %, puis relais Codex à 97 %. Le superviseur interrompt Claude à la frontière
-atomique suivante et lance Codex sur `handoff-codex.md`. Il déclenche aussi le
+atomique suivante et lance Codex sur `handoff.md`. Il déclenche aussi le
 relais quand la sortie Claude annonce une limite d'usage.
 
 Pour le quota d'abonnement affiché par le CLI : 90–94 % arme le checkpoint sans
@@ -219,7 +219,7 @@ Relais manuel avant une limite :
 
 ```bash
 /handoff:codex docs/work/<slug>/plan.md
-./codex-handoff.sh docs/work/<slug>/handoff-codex.md
+./codex-handoff.sh docs/work/<slug>/handoff.md
 ```
 
 Après une coupure brutale, le checkpoint est optionnel :
@@ -250,9 +250,8 @@ session lance elle-même** `./codex-handoff.sh <handoff> <rôle> --auto`
 commande pour l'utilisateur — `--auto` bascule le script sur `codex exec
 -a never` dans le même sandbox `workspace-write`, non-interactif par
 construction. C'est le comportement par défaut, décidé une fois avec
-l'utilisateur, jamais redemandé feature par feature. Détail et justification
-du choix de ces deux frontières précises :
-[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+l'utilisateur, jamais redemandé feature par feature. Le choix de ces deux
+frontières est justifié dans `docs/RATIONALE.md`.
 
 ## Les étapes de la boucle
 

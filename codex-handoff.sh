@@ -34,8 +34,7 @@ if ! codex --version >/dev/null 2>&1; then
 fi
 
 # Optional second arg: the workflow-routing.yml role this handoff is for
-# (execute-green, review-fixes — cf. docs/codex-claude-split-plan.md, "Économie
-# côté Codex"). Absent role, absent file, or a role not routed to codex →
+# (execute-green, review-fixes). Absent role, absent file, or a role not routed to codex →
 # no flag added, identical to today's command. The file's one-role-per-line
 # shape is simple enough for grep/sed — no YAML parser pulled in for this.
 EFFORT_FLAG=()

@@ -63,8 +63,8 @@ CURRENT_PATH = ""
 
 
 def _log_health_deny(reason: str) -> None:
-    """One JSONL line per real refusal — schema: docs/codex-claude-split-plan.md,
-    "Sonde kit-health". Best-effort: never lets an observability write turn into
+    """One JSONL line per real refusal — read back by
+    kit-doctor.py check_kit_health. Best-effort: never lets an observability write turn into
     a second reason to fail a call already being denied."""
     if os.environ.get("CWK_HEALTH_LOG") == "0":
         return

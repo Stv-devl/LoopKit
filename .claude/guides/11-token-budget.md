@@ -38,12 +38,12 @@ things — which is exactly how a report ends up claiming the context is full wh
 the quota is.
 
 The supervisor clears all four markers at the start of every `claude` launch and
-reads `.codex-ready` alone. `.token-warning` and `.token-stop-agents` are
+reads `.restart-ready` alone. `.token-warning` and `.token-stop-agents` are
 advisory: "start no new subagent at 95%" is a rule you honour, not one a process
 enforces.
 
 One hook detail worth keeping out of the rule: `token-statusline.py` clears
-`.codex-ready` on a **hysteresis at 90**, not at its own 97, so a `/compact` does
+`.restart-ready` on a **hysteresis at 90**, not at its own 97, so a `/compact` does
 not leave a stale handoff order behind.
 
 ## Why effort is set per agent, and at the call for gates

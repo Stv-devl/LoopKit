@@ -52,7 +52,7 @@ the profile. Mechanical shell gates do not consume model fan-out and always run.
 
 ## Automatic checkpoints
 
-Maintain `docs/work/<slug>/handoff-codex.md` inline, without a subagent:
+Maintain `docs/work/<slug>/handoff.md` inline, without a subagent:
 
 - create it once research has recorded the slug (i.e. once `docs/work/<slug>/`
   exists — before that there is no folder to put it in, even though the slug
@@ -65,7 +65,7 @@ Maintain `docs/work/<slug>/handoff-codex.md` inline, without a subagent:
 
 Before launching any agent, check `.claude/.token-stop-agents`. If present,
 launch no new agent: finish the current atomic write/test, refresh the checkpoint,
-and yield. When `.claude/.codex-ready` exists, do not start another phase. The
+and yield. When `.claude/.restart-ready` exists, do not start another phase. The
 external `workflow.sh` supervisor will stop Claude and continue with Codex.
 
 ## Gate attempt ceiling
@@ -97,7 +97,7 @@ A new session does not reset the counter; a successful gate does.
    and Codex is on the `PATH` — the escape hatch for a track you want to run
    on one tool end to end.
    Read the entry artifact in full. If it is a `plan.md`, jump to Phase 4 —
-   unless a sibling `docs/work/<slug>/handoff-codex.md` exists: read its
+   unless a sibling `docs/work/<slug>/handoff.md` exists: read its
    frontmatter instead of assuming EXECUTE is always where a `plan.md`
    resumes. Three branches, from `phase`/`execute_status`/`review_status`
    (`/handoff:codex` template): `phase: execute` with `execute_status:
@@ -286,13 +286,13 @@ the user passed `--inline-execute` → nothing changes, keep reading below.
 
 `provider: codex` and Codex available → **you still run the test-first
 layers yourself** (RED legs have no Codex equivalent — POC tested and failed,
-see `docs/codex-claude-split-plan.md`, "POC hooks"), then hand off once you
+see `docs/RATIONALE.md`), then hand off once you
 reach the first step that isn't test-first: write
-`docs/work/<slug>/handoff-codex.md` (`/handoff:codex` template, frontmatter
+`docs/work/<slug>/handoff.md` (`/handoff:codex` template, frontmatter
 `phase: execute` / `execute_status: in-progress`), then **launch it yourself**:
 
 ```bash
-./codex-handoff.sh docs/work/<slug>/handoff-codex.md execute-green --auto
+./codex-handoff.sh docs/work/<slug>/handoff.md execute-green --auto
 ```
 
 via `Bash` with `run_in_background: true`. Do not poll — you get a
@@ -306,7 +306,7 @@ in the routing file already is that decision, made once, when the file was
 configured — proven end-to-end on `eval-bourrage-contexte`, 2026-09-17.
 `-o` writes Codex's own final message to
 `docs/work/<slug>/codex-last-message.txt` — read it when the notification
-lands, alongside whatever `handoff-codex.md` update Codex made. This keeps
+lands, alongside whatever `handoff.md` update Codex made. This keeps
 the "one handoff per feature" cost real instead of ping-ponging per layer: the
 RED→GREEN alternation below still cannot be batched, so the earliest point
 where handing off doesn't fight that rule is right after `repository` goes
@@ -438,14 +438,14 @@ role. File absent, `provider: claude`, Codex unavailable, or
 `--inline-execute` set → fix **inline** as below, unchanged. `provider: codex`
 and Codex available → Claude keeps the verdict (`reviewer`/`verifier` already
 ran, findings already tranched — that judgment never moves), write/refresh
-`docs/work/<slug>/handoff-codex.md` with the Critical/Major findings to fix
+`docs/work/<slug>/handoff.md` with the Critical/Major findings to fix
 and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`, then
 launch it yourself — same mechanics as Phase 4 (`--auto`,
 `run_in_background: true`, no polling, `codex-last-message.txt` alongside the
 handoff):
 
 ```bash
-./codex-handoff.sh docs/work/<slug>/handoff-codex.md review-fixes --auto
+./codex-handoff.sh docs/work/<slug>/handoff.md review-fixes --auto
 ```
 
 On resume (Phase 0's third branch), re-run only the dimensions those

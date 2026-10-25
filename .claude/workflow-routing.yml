@@ -1,5 +1,4 @@
-# Pilot per role. Codex is only eligible for the two mechanical roles decided
-# in docs/codex-claude-split-plan.md ("Approche retenue") — everything else
+# Pilot per role. Codex is only eligible for the two mechanical roles — everything else
 # stays on Claude by construction: the `.claude/agents/*.md` sub-agents are
 # invocable only from a Claude Code session (cf. "Qui fait quoi dans le
 # workflow" at the top of that document). `provider: codex` is a PREFERENCE,

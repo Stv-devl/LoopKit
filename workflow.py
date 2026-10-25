@@ -15,10 +15,12 @@ import time
 import tty
 
 PROJECT = Path(__file__).resolve().parent
-READY = PROJECT / ".claude" / ".codex-ready"
+READY = PROJECT / ".claude" / ".restart-ready"
 STOP_AGENTS = PROJECT / ".claude" / ".token-stop-agents"
 WARNING = PROJECT / ".claude" / ".token-warning"
 QUOTA_WARNING = PROJECT / ".claude" / ".quota-warning"
+# `handoff-codex.md` is the name before 0.2, still read for one version.
+HANDOFF_NAMES = ("handoff.md", "handoff-codex.md")
 ANSI_RE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 # The number and the keyword must be ADJACENT — 15 characters of slack, not the
 # 100/50 this used to allow.
@@ -31,7 +33,7 @@ ANSI_RE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 # DISPLAYING that file in the terminal (a cat, a git diff, a grep with context)
 # interrupted the session and relayed it to Codex. Proven end to end: the kit's
 # constitution killed the supervisor that ships with it, and wrote a fabricated
-# handoff-codex.md on the way out. docs/Claude_Workflows.md did the same at 94%.
+# handoff.md on the way out. docs/Claude_Workflows.md did the same at 94%.
 #
 # A real CLI notice keeps the two together: "usage limit: 92%", "92% of your
 # weekly quota". Prose does not.
@@ -76,7 +78,7 @@ def fallback_artifact() -> str:
     ]
     if not files:
         raise RuntimeError("aucun artefact de workflow trouvé pour Codex")
-    handoffs = [path for path in files if path.name == "handoff-codex.md"]
+    handoffs = [path for path in files if path.name in HANDOFF_NAMES]
     chosen = max(handoffs or files, key=lambda path: path.stat().st_mtime)
     return str(chosen.relative_to(PROJECT))
 
@@ -109,13 +111,13 @@ def write_handoff_checkpoint(title: str, progress_line: str) -> None:
         return
     source = PROJECT / artifact
     relative = source.relative_to(PROJECT)
-    if source.name == "handoff-codex.md" or relative.parts[:2] != ("docs", "work"):
+    if source.name in HANDOFF_NAMES or relative.parts[:2] != ("docs", "work"):
         return
-    handoff = source.parent / "handoff-codex.md"
+    handoff = source.parent / "handoff.md"
     if handoff.exists():
         return
     handoff.write_text(
-        f"# Codex handoff: {title}\n"
+        f"# Handoff: {title}\n"
         "Token profile: economy\n"
         f"Entry: {artifact}\n"
         "Current phase: infer from the entry and adjacent artifacts\n\n"

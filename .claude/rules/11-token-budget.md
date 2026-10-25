@@ -32,7 +32,7 @@ command and use its exit. Waiting on a human or external system ends the turn.
 
 ## Automatic thresholds
 
-`.token-warning` at 90%, `.token-stop-agents` at 95%, `.codex-ready` at 97%.
+`.token-warning` at 90%, `.token-stop-agents` at 95%, `.restart-ready` at 97%.
 At 95 start no agent; finish the atomic operation and checkpoint. At 97 start no
 phase; the supervisor hands off. These measure context, unlike `.quota-warning`.
 Keep the thresholds synchronized with `token-statusline.py`.

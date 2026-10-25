@@ -36,7 +36,7 @@ blob-report/
 
 # Written by kit-attempts.py, the refusal hooks, and /loop:review — one JSON
 # line per gate result / hook refusal / review finding. Machine-local, same
-# status as the timing log above. docs/codex-claude-split-plan.md, "Sonde kit-health".
+# status as the timing log above. Read back by kit-doctor.py check_kit_health.
 .claude/.kit-health.jsonl
 
 # Written by eslint-check.sh, consumed by eslint-batch.sh
@@ -46,6 +46,7 @@ blob-report/
 # Written by token-statusline.py at the 90 / 95 / 97 % context thresholds
 .claude/.token-warning
 .claude/.token-stop-agents
+.claude/.restart-ready
 .claude/.codex-ready
 
 # Written by workflow.py when the CLI reports subscription usage. A different
@@ -99,8 +100,10 @@ pnpm-debug.log*
 # run on this machine, it just stops being shared (.claude/commands/audit/part.md).
 docs/audits/
 
-# Written by /handoff:codex, per session and per machine: the context of one
-# interrupted run, obsolete the moment it is consumed by ./codex-handoff.sh.
+# Written by /handoff:codex and workflow.py, per session and per machine: the
+# context of one interrupted run, obsolete once a session resumes from it.
+# handoff-codex.md and .codex-ready are the names before 0.2, kept one version.
 # The rest of docs/work/<slug>/ stays versioned — it is the loop's memory, and a
 # fresh worktree gets no untracked file (.claude/guides/10-worktrees.md).
+docs/work/*/handoff.md
 handoff-codex.md

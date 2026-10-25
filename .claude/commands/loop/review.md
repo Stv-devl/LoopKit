@@ -184,7 +184,7 @@ dimension.
 1. Aggregate the **surviving** findings: Critical / Major / Minor.
 1bis. **Log every finding, survivor or refuted**, one JSON line each, to
    `.claude/.kit-health.jsonl` (gitignored, local-only —
-   `docs/codex-claude-split-plan.md`, "Sonde kit-health"). `reviewer`/`verifier`
+   its reader is `kit-doctor.py` `check_kit_health`). `reviewer`/`verifier`
    are read-only, so this runs here, on the main thread, once their verdicts are
    in — not inside either agent:
    ```bash

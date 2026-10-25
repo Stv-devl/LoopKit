@@ -441,6 +441,7 @@ $GITIGNORE_MARK
 .claude/.eslint-queue.*
 .claude/.token-warning
 .claude/.token-stop-agents
+.claude/.restart-ready
 .claude/.codex-ready
 .claude/.quota-warning
 .claude/.tdd-red/

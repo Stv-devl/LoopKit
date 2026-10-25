@@ -21,10 +21,10 @@ is not only a manual saturation fallback any more.
 1. Resolve the artifact and its `docs/work/<slug>/` directory. Read only the
    entry, latest workflow artifacts, current story record, `git status --short`,
    `git diff --stat`, and deterministic results already recorded on disk.
-2. Write `docs/work/<slug>/handoff-codex.md` using the template below. Never
+2. Write `docs/work/<slug>/handoff.md` using the template below. Never
    paste source code, full diffs, conversation, secrets, or complete rule files.
 3. Stop and print:
-   `./codex-handoff.sh docs/work/<slug>/handoff-codex.md`
+   `./codex-handoff.sh docs/work/<slug>/handoff.md`
 
 ## Template
 
@@ -36,7 +36,7 @@ review_status: judgment       # judgment | fixes-handed-to-codex | fixes-done â€
 token_profile: economy
 ---
 
-# Codex handoff: <feature>
+# Handoff: <feature>
 Token profile: economy | standard | critical
 Entry: <path>
 Current phase: research | interface | plan-gate | execute | review | ship

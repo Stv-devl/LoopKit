@@ -168,7 +168,7 @@ that was supposed to be armed by the feature's own nature.
 ```bash
 /loop:orchestrate --economy docs/stories/<slug>/1.1.md
 /handoff:codex docs/work/<slug>/plan.md
-./codex-handoff.sh docs/work/<slug>/handoff-codex.md
+./codex-handoff.sh docs/work/<slug>/handoff.md
 ```
 
 If Claude is cut off before the checkpoint, hand the launcher the last plan,

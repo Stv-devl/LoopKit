@@ -304,7 +304,7 @@ def check_token_thresholds() -> list[Finding]:
     declared = {name: pct for name, pct in re.findall(r"`\.([a-z-]+)` at (\d+)%", rule)}
 
     # Each marker is written inside the `if used >= N` block above its write_text.
-    variables = {"token-warning": "warning", "token-stop-agents": "stop_agents", "codex-ready": "ready"}
+    variables = {"token-warning": "warning", "token-stop-agents": "stop_agents", "restart-ready": "ready"}
     actual: dict[str, str] = {}
     current: str | None = None
     for line in status.splitlines():
@@ -741,7 +741,7 @@ def check_agent_efforts() -> list[Finding]:
 # Written at runtime, or created by a command — absent is the normal state.
 RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
-    ".claude/.token-stop-agents", ".claude/.codex-ready", ".claude/.quota-warning",
+    ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees",
 }
@@ -1185,8 +1185,8 @@ def check_kit_health() -> list[Finding]:
     """Not a twin comparison, unlike every check above — a summary of events
     accumulated in `.claude/.kit-health.jsonl` (gate pass/fail, real hook
     refusals, review findings + verdicts). Never fails the gate: informational
-    only, same footing as the FILL findings below.
-    docs/codex-claude-split-plan.md, "Sonde kit-health"."""
+    only, same footing as the FILL findings below. The writers are
+    hook-lib.sh cwk_log_health_deny, kit-attempts.py and /loop:review."""
     raw = read(".claude/.kit-health.jsonl")
     if raw is None or not raw.strip():
         return skip("health", ".claude/.kit-health.jsonl")

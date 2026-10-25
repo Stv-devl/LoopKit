@@ -15,9 +15,12 @@ def newest_artifact(project: Path) -> Path | None:
         if root.is_dir():
             candidates.extend(
                 path for path in root.rglob("*.md")
-                if path.name != "handoff-codex.md"
+                if path.name not in ("handoff.md", "handoff-codex.md")
             )
-    handoffs = list((project / "docs/work").rglob("handoff-codex.md")) if (project / "docs/work").is_dir() else []
+    handoffs = [
+        path for name in ("handoff.md", "handoff-codex.md")
+        for path in ((project / "docs/work").rglob(name) if (project / "docs/work").is_dir() else [])
+    ]
     pool = handoffs or candidates
     return max(pool, key=lambda path: path.stat().st_mtime) if pool else None
 
@@ -46,16 +49,16 @@ if used is None:
 
 warning = marker(project, ".token-warning")
 stop_agents = marker(project, ".token-stop-agents")
-ready = marker(project, ".codex-ready")
+ready = marker(project, ".restart-ready")
 
 if used >= 90:
     warning.write_text(f"{used:.1f}\n")
     current = newest_artifact(project)
     if current and "docs/work/" in str(current.relative_to(project)):
-        handoff = current.parent / "handoff-codex.md"
+        handoff = current.parent / "handoff.md"
         if not handoff.exists():
             handoff.write_text(
-                "# Codex handoff: automatic context checkpoint\n"
+                "# Handoff: automatic context checkpoint\n"
                 f"Token profile: economy\n"
                 f"Entry: {current.relative_to(project)}\n"
                 "Current phase: infer from the entry and adjacent artifacts\n\n"
@@ -81,7 +84,7 @@ if used >= 97 and not ready.exists():
     ready.write_text((str(artifact.relative_to(project)) if artifact else "") + "\n")
 elif used < 90:
     # Cleared like the other two markers, but on a hysteresis rather than on its
-    # own threshold: /compact drops usage back down, and a .codex-ready left
+    # own threshold: /compact drops usage back down, and a .restart-ready left
     # behind keeps telling the external supervisor to switch to Codex for a
     # context that has room again. 90 is far enough below 97 not to flap.
     ready.unlink(missing_ok=True)

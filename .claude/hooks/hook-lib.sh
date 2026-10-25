@@ -74,7 +74,7 @@ cwk_require_jq() {
 # the same local-only status as the timing log above. Best-effort: a failure to
 # append (missing jq, read-only disk) must never turn an observability probe
 # into a second reason to block the call the caller already decided to deny.
-# Schema and rationale: docs/codex-claude-split-plan.md, "Sonde kit-health".
+# Read back, and its schema implied, by kit-doctor.py check_kit_health.
 # CWK_HEALTH_LOG=0 turns it off: test-hooks.sh sets it, so fixture denies are
 # not recorded as real refusals.
 cwk_log_health_deny() {

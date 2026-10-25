@@ -6,7 +6,7 @@ This project uses a disk-backed Claude/Codex workflow.
   templates relevant to the current task.
 - When a handoff is supplied, read it first and resume its `Current phase`.
   Do not repeat completed research, design, planning, or verification.
-- Refresh `docs/work/<slug>/handoff-codex.md` after each completed step or
+- Refresh `docs/work/<slug>/handoff.md` after each completed step or
   test-first layer, the same way Claude's own "Automatic checkpoints" do —
   including its frontmatter (`phase`/`execute_status`/`review_status`), not
   only the prose: that block is what a resuming Claude session parses to pick
@@ -20,9 +20,9 @@ This project uses a disk-backed Claude/Codex workflow.
 - **Only during a full relay** (Claude hit its limit, `workflow.py` handed you
   the whole rest of the loop, not just `execute-green`/`review-fixes`): match
   reasoning effort to what each task actually is, not one level for
-  everything. `docs/codex-claude-split-plan.md`, "Économie côté Codex" has the
-  full reasoning; the mapping (`inherit → high`, `sonnet → low`,
-  `haiku → minimal`, taken from that document's own Claude agent tiers):
+  everything. The mapping follows the Claude agent tiers of
+  `.claude/rules/11-token-budget.md` (`inherit → high`, `sonnet → low`,
+  `haiku → minimal`):
 
   | Task you're covering | Effort |
   | --- | --- |
