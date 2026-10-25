@@ -205,11 +205,11 @@ def check_shared_dirs() -> list[Finding]:
     while the structure diagram carried it).
 
     Four copies, not two: the tuple, `02-architecture.md`'s forbidden bullet,
-    `CLAUDE.md`'s non-negotiable, and `reviewer.md` — which restates the list AND
+    `CLAUDE.md`'s non-negotiable, and the reviewer's correctness checklist — which restates the list AND
     its count, the cheapest of the four to let rot.
     """
     arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
-    doc, rev = read("CLAUDE.md"), read(".claude/agents/reviewer.md")
+    doc, rev = read("CLAUDE.md"), read(".claude/guides/review/correctness.md")
     if hook is None:
         return skip("shared-dirs", "enforce-architecture.py")
 
@@ -227,7 +227,7 @@ def check_shared_dirs() -> list[Finding]:
          r"\*\*Forbidden:\*\*(.*?)→ `features/\*`", r"`src/([a-z]+)/\*`", arch),
         ("shared-dirs (CLAUDE.md)", "CLAUDE.md",
          r"shared leaf code \((.*?)\) never imports a feature", r"`([a-z]+)/`", doc),
-        ("shared-dirs (reviewer)", ".claude/agents/reviewer.md",
+        ("shared-dirs (reviewer)", ".claude/guides/review/correctness.md",
          r"No shared \*\*leaf\*\* code depending on a feature:(.*?)— the full", r"`src/([a-z]+)`", rev),
     )
 
@@ -246,16 +246,16 @@ def check_shared_dirs() -> list[Finding]:
         out += compare(name, (fname, set(re.findall(item_re, block.group(1)))),
                        (".claude/hooks/enforce-architecture.py", actual))
 
-    # reviewer.md also states the COUNT in prose — a number nothing else compares.
+    # The correctness checklist also states the COUNT in prose — a number nothing else compares.
     words = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
     n = re.search(r"of `enforce-architecture\.py`, (\w+) entries", rev) if rev else None
     if rev is None:
-        out += skip("shared-dirs (count)", ".claude/agents/reviewer.md")
+        out += skip("shared-dirs (count)", ".claude/guides/review/correctness.md")
     elif not n:
-        out.append(Finding("shared-dirs (count)", MISSING, "reviewer.md no longer states the entry count"))
+        out.append(Finding("shared-dirs (count)", MISSING, "the correctness checklist no longer states the entry count"))
     elif words.get(n.group(1)) != len(actual):
         out.append(Finding("shared-dirs (count)", DIVERGENCE, "the stated count is wrong", [
-            f".claude/agents/reviewer.md  →  {n.group(1)} entries",
+            f".claude/guides/review/correctness.md  →  {n.group(1)} entries",
             f".claude/hooks/enforce-architecture.py  →  {len(actual)} entries",
         ]))
     else:

@@ -106,12 +106,12 @@ An older uv answers `uv audit` with `unrecognized subcommand`: fall back to
 uvx pip-audit --disable-pip --no-deps -r "$TMP/req.txt"`. Never a bare
 `uvx pip-audit`: it audits its own throwaway environment, not the project.
 
-### 4. `.claude/agents/reviewer.md` → the backend dimension
+### 4. `.claude/guides/review/` → the backend checklists
 
-The reviewer reads "only the rule files tied to your assigned dimensions", and
-that list names front-end rules only. Add `07-backend.md` to the `architecture`,
-`tests` and `security` dimensions, or a backend diff is reviewed against the
-rules of a React app.
+Each reviewer reads only its dimension's checklist under `.claude/guides/review/`.
+`tests-python.md` already sends a Python diff to `07-backend.md`; add a line naming
+`07-backend.md` to `correctness.md` and `security.md` too, or a backend diff is
+reviewed against the rules of a React app.
 
 ### 5. `.claude/rules/02-architecture.md` → the Backend section
 

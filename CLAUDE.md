@@ -106,10 +106,11 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
 - Stories are sliced **functional, before the architecture**. External docs are
   researched once: `docs/research-cache/settled.md` is read before any fetch.
 - **EXECUTE stays sequential**, except the RED leg (one `test-writer` per
-  test-first layer). Separate tracks get separate worktrees, their number
+  feature, continued layer by layer). Separate tracks get separate worktrees, their number
   computed · `/loop:tracks`.
 - Token profile `economy` by default, persisted in work artifacts ·
-  `11-token-budget.md`. Launch sessions with `./workflow.sh`.
+  `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual Codex
+  fallback `/handoff:codex` then `./codex-handoff.sh`.
 - Out of the loop, read-only, never a gate: `/audit:security`, `/audit:mutation`,
   `/audit:part <name>`, `/kit:doctor`. Their fixes come back through the loop.
   Exception: a `critical` profile arms one `/audit:security` surface at ship.

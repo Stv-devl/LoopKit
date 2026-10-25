@@ -6,7 +6,7 @@ argument-hint: [path docs/work/<slug>/plan.md or the entry artifact]
 # /loop:ship — close the loop
 
 Last step. Nothing ships on a green review alone: the review reads code, the
-gates run it.
+gates run it. Reasons for every rule below: `.claude/guides/ship.md`.
 
 Each mechanical gate uses its own `attempts.json` key under
 `/loop:orchestrate`'s attempt protocol. Record a failure before fixing, clear
@@ -59,68 +59,25 @@ grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
      (`e2e-playwright` skill, "When it runs"). -->
 
 All green is the condition to continue. **Red = stop and fix** — never ship
-"green except one".
+"green except one", and never skip this batch because CI repeats it.
+`pnpm test:run` green is not enough: the diff must **add** the tests for its new
+business logic (`.claude/rules/05-testing.md`). Coverage is a floor, not an
+argument against a review finding.
 
-> **The CI re-runs every one of these, and that changes nothing here.**
-> `.github/workflows/ci.yml` is the copy nobody can skip from their own machine
-> (`00-project.md`); this one is the copy that runs while the fix is still free,
-> before the commit exists. Skipping this batch because "the CI will catch it"
-> inverts the two: it turns a local red into a pushed red, a force-push and a
-> broken `main` for everyone else. The CI is the backstop, never the gate you
-> aimed for.
-
-> `pnpm test:run` must be green **and** the diff must **add** the tests for the new
-> business logic (`.claude/rules/05-testing.md`). A green suite that tests nothing
-> new is a FAIL.
->
-> The coverage gate is a **floor, not a verdict**: it makes an unwalked branch
-> impossible to ship silently. It says nothing about whether the assertions bite —
-> that is `/loop:review`'s `tests` dimension. Passing it is not an argument against a
-> review finding.
-
-**The security lines read differently from the other four.** `pnpm audit --prod` red
-with a fix available = bump and re-run; red with **no published fix** = not a
-wall, but announced with the package, the advisory and whether the vulnerable
-path is even reachable, and the user decides (`00-project.md`). A hit on the
-`grep` is never negotiable: **anything named `VITE_*` is compiled into the
-bundle** and readable by every visitor, so a secret-shaped name there is either a
-misnamed public value — rename it — or a leak that shipping would publish. No
-network, no agent, no tokens: both lines are the deterministic half of
-`/audit:security`'s `supply-chain` and `secrets` surfaces, run on every ship
-precisely because nobody has to remember them.
-
-> **Read the grep's exit code, not just its silence.** No output with **exit 1**
-> is the clean result. **Exit 2** means grep could not read one of the paths and
-> that is not a pass: name the missing path and say the check did not run. A gate
-> that reports green because its target was absent is the failure mode this whole
-> file exists to prevent.
->
-> **Which is why the pipeline is written the way it is above, and why the
-> previous spelling could never report that 2.** A `2>/dev/null` on the first
-> grep threw away the only signal it had, and with no `pipefail` the pipeline
-> returns the *second* grep's status — measured on an empty tree: the piped form
-> exits **1** (the value this paragraph calls "the clean result") where the bare
-> first grep exits **2**. So the diagnostic above had never fired once, on any
-> repo: `install.sh` scaffolds no `.env.example`, so grep #1 exited 2 on
-> essentially every run and the pipeline reported clean. `set -o pipefail`
-> restores the exit code, dropping `2>/dev/null` lets the stderr line be the
-> message, and `$( [ -f .env.example ] && … )` stops an absent template file
-> from being an error at all — the missing `src/` still is one, and is named.
->
-> And the pattern is a **name** heuristic, not a value scanner: it catches
-> `VITE_STRIPE_SECRET`, it cannot catch a real key hidden behind a bland name.
-> It is a floor.
+**The security lines read differently.** `pnpm audit --prod` red with a fix →
+bump and re-run; with **no published fix** → announce the package, the advisory
+and whether the path is reachable, and the user decides (`00-project.md`). A hit
+on the `grep` is never negotiable: `VITE_*` ships in the bundle, so rename a
+public value or stop on a leak. **Read the grep's exit code, not its silence**:
+exit 1 with no output is clean; exit 2 means a path could not be read — name it
+and say the check did not run. Do not change a character of that pipeline without
+reading the guide.
 
 ### 1bis. Security audit — armed by the token profile, not by memory
 
 Read the profile carried by the artifact. **On `critical` only**, one
-`/audit:security` runs before the commit, scoped to **one surface**.
-
-`11-token-budget.md` reserves `critical` for payment, authorization, destructive
-data changes, or explicit user request — that list is the only copy, and it is
-also the list of features where a missing server-side barrier is not a Minor.
-The same condition therefore arms both: the profile is not only a budget, it is
-the repo's statement that this feature is one of the dangerous ones.
+`/audit:security` runs before the commit, scoped to **one surface** — one
+`security-auditor`:
 
 | What made it `critical` | The surface to audit |
 | --- | --- |
@@ -130,19 +87,9 @@ the repo's statement that this feature is one of the dangerous ones.
 | session, login, logout, token handling | `session` |
 | explicit user request | ask which surface, or run `everything` if they said so |
 
-**One surface = one `security-auditor` agent**, whatever the profile says about
-arity — `/audit:security` is explicit that a single requested surface launches a
-single auditor. That is the whole cost of this step, and it is zero on every
-feature that is not `critical`.
-
-A Critical finding stops the ship exactly like a red gate: the track stays in its
-worktree and the fix comes back through the loop, **with its reproduction test**
-(`05-testing.md`). Do not fix it inline here — `/audit:security` writes nothing
-by contract, and this step does not change that.
-
-> Not `critical` and you still feel the diff deserves it? Say so in one line and
-> ask. Running it unasked on every feature is exactly the token cost the audit
-> was put out of the loop to avoid.
+A Critical finding stops the ship like a red gate: the track stays in its
+worktree and the fix comes back through the loop with its reproduction test, never inline here. Not `critical` but the diff
+seems to deserve it → say so in one line and ask.
 
 ### 2. Acceptance criteria
 
@@ -191,25 +138,13 @@ track ran in a worktree.
    uncommitted work: report it, don't override it.
 
 A red gate or a failed review means the track stays in its worktree and loops on
-the fix. It does not merge.
-
-**If the fix is not happening today, give the line back.** A track that stops
-without shipping leaves its board line on `IN LOOP`, which asserts that a session
-holds it right now — `/loop:tracks` will not fork it and step 6 below will not name
-it, so the unit vanishes from the loop while looking healthy. Move it to
-**`BLOCKED`** with the reason in one line, from the main tree, and put the story's
-`Status` back to `Approved` — no session holds it any more (`/loop:product`, "The
-board's state machine"). Still fixing it in this session → leave it `IN LOOP` and
-say nothing; that is what the state is for.
+the fix. It does not merge. **Not fixing it today → give the line back**: board
+line → `BLOCKED` with its reason, from the main tree, story `Status` →
+`Approved`. Still fixing it in this session → leave it `IN LOOP`.
 
 ### 5. Advance the state
 
-> **This step runs in the main tree, and that is why it comes after 4bis.**
-> Step 0 sent everything into the worktree; 4bis merged and removed it, so you
-> are back. `docs/product/backlog.md` is on `10-worktrees.md`'s "never in a
-> worktree" list — one file, every track, and `docs/product/brief.md` below is on
-> it for the same reason. Moving this step before the merge puts a conflict on the
-> shared product files at every integration.
+In the main tree, after 4bis — the product files never change in a worktree.
 
 - Full pipeline: story `Status` → `Done`, fill the Change Log.
 - `docs/product/backlog.md`: the line moves to `SHIPPED` and its `Shipped`
@@ -223,14 +158,8 @@ say nothing; that is what the state is for.
   `Current surface` and the `(mapped <date>)` next to it. Never touch `Out of
   product` or `Product invariants` — those are the user's decisions, which is why
   `/loop:product` itself carries them over unchanged on a refresh. No brief → one line,
-  move on.
+  move on. Nothing else writes `Current surface`.
 
-  > **Why the board is not enough.** `/bmad:pm` *narrows its exploration* on
-  > `Current surface` and `/loop:spec` leans on it to avoid re-deriving the existing
-  > product. Nothing else in the loop writes that section, so without this line it
-  > freezes at the day `/loop:product` ran while the code moves under it — and the next
-  > feature is framed against a description that is wrong with authority. Two
-  > lines here, or a re-run of `/loop:product` nobody schedules.
 - Write nothing to `docs/work/<slug>/` — it stays as the trace of the loop.
 
 ### 6. Next feature
@@ -242,33 +171,16 @@ Read the board and name the **topmost** `READY` line + the command that opens it
 /loop:orchestrate docs/stories/<slug>/<n>.md    (full)
 ```
 
-**Topmost, not "a" `READY`.** The order of the rows *is* the priority — the only
-place the kit writes one down (`/loop:product`, "The board's state machine"). With five
-`READY` lines, picking the one you noticed first hands a product decision to an
-accident of parsing, and it is invisible: the answer looks exactly like a
-priority. If the top line is wrong for today, say which one you would take and
-**why**, and let the user answer — do not silently take the second.
+**Topmost**, not "a" `READY`: row order is the priority. If the top line is wrong
+for today, say which one you would take and **why**, and let the user answer.
+No `READY` line → say so, never invent one. `BLOCKED` is not a candidate: list
+those with their reason and let the user decide.
 
-If no line is `READY`, say so instead of inventing one. **`BLOCKED` is not a
-candidate** — it is a line somebody put down on purpose, waiting for a person.
-List the `BLOCKED` ones with their reason, and let the user decide whether one
-comes back; naming one as "the next feature" re-opens a decision in silence.
-
-**If the user answers "not that one, and not later", write `DROPPED`.** You are
-one of the three commands allowed to (`/loop:product`, "The board's state machine"),
-and only for a decision the user takes here, in this turn, in front of you. Never
-for a line that merely looks stale — that is `/loop:product`'s conversation, not this
-one — and never by deleting the row: a deleted line reads as a unit nobody ever
-thought of, which is the one thing the board exists to prevent. "Not now" is not
-`DROPPED`; it is the line staying `READY`, below the one you take next, or
-`BLOCKED` with the reason if it is waiting on something.
-
-**And on the full pipeline, the story file goes with it**: `Status` → `Dropped`,
-the reason on one line in the Change Log. Step 5 above already writes that twin
-for `SHIPPED` (`Status` → `Done`); this state has one too, and it is the half
-`/loop:tracks` reads. Drop the row alone and the story stays `Approved`, so the next
-`/loop:tracks` forks a unit the user just killed — `/loop:orchestrate` will stop on the
-terminal row, but the worktree and the branch exist by then.
+The user answers "not that one, and not later" → write `DROPPED` (you are one of
+the three commands allowed to), only for that decision taken here, never for a
+line that looks stale and never by deleting the row. On the full pipeline the
+story goes with it: `Status` → `Dropped`, the reason in its Change Log. "Not now"
+is the line staying `READY` below, or `BLOCKED` with its reason.
 
 ## Output
 

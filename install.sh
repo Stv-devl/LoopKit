@@ -700,7 +700,7 @@ Addon installé ? Son câblage n'est PAS automatique :
   PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent à
   faire : 01-stack.md, 00-project.md, 02-architecture.md, EXTERNAL_CLIENTS,
   et surtout les gates backend dans commands/ship.md + 07-backend.md dans
-  agents/reviewer.md)
+  guides/review/correctness.md et security.md)
 
 Lanceur supervisé recommandé :
   ./workflow.sh

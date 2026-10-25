@@ -447,7 +447,7 @@ C'est `/kit:doctor` qui vérifie qu'elles n'ont pas divergé depuis.
 `enforce-backend-layers.py`, la table du client dans `01-stack.md`, les scripts
 de `00-project.md`, et les deux que personne ne pense à faire — **les gates
 backend dans `commands/ship.md`** (le bloc est en `pnpm`, il ne teste rien sur un
-repo Python) et **`07-backend.md` dans les dimensions de `agents/reviewer.md`**.
+repo Python) et **`07-backend.md` dans la checklist `guides/review/tests-python.md`**.
 Non câblé = installé mais muet.
 
 Côté boucle, rien ne change : `/loop:interface` se saute quand il n'y a pas d'UI, les

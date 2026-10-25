@@ -1,6 +1,6 @@
 ---
 description: Runs the whole feature loop — research → interface → plan → execute → review → ship. Each step is also callable alone.
-argument-hint: [--economy|--standard|--critical] [--inline-execute] [path: spec, story, research/design/plan artifact]
+argument-hint: [--economy|--standard|--critical] [--inline-execute] [path: spec, story, handoff, research/design/plan artifact]
 ---
 
 # /loop:orchestrate — the feature loop, end to end
@@ -11,65 +11,36 @@ You receive an **entry artifact** and drive it to shipped:
 RESEARCH → INTERFACE → PLAN → EXECUTE → REVIEW → SHIP → next feature
 ```
 
-Both pipelines converge here: a `/loop:spec` contract (light) and a reviewed story
-(full) enter the same loop. **You decide** what to skip, sequence or parallelise
-from the real dependencies — not from a frozen script.
-
-> Parallelisation principle: parallelise what **reads** the same thing without
-> depending on each other (research, interface, review). Sequence what **writes**
-> what the next step reads (execute). Never run subagents writing concurrently on
-> coupled files.
->
-> **Two levels, don't confuse them.** *Inside* one loop pass, the writes are
-> coupled and stay sequential in one tree. *Between* loop passes — several
-> features, several stories, unrelated work — each pass is a **track** and gets
-> its own worktree. See Phase 0.5.
+A `/loop:spec` contract (light) and a reviewed story (full) enter the same loop.
+**You decide** what to skip, sequence or parallelise from the real dependencies:
+parallelise reads, sequence writes. Reasons for every rule below:
+`.claude/guides/orchestrate.md`.
 
 The loop's artifacts live in `docs/work/<slug>/`. The slug is **derived from the
-entry artifact's path** by the two-line rule in `/loop:research` — the only copy.
-`/loop:research` is where it gets **recorded** (it creates the folder), and every phase
-after that reads it out of the path it was handed rather than re-deriving it.
-
-**Phase 0.5 is the one exception, and it is not optional**: it names the worktree
-and the branch before Phase 1 has run, so it applies the derivation rule itself.
-Same rule, same spelling — that is the whole point of the rule being a function of
-the path. A second spelling means `/loop:plan` silently reads no research at all, and a
-worktree nobody can match to a `docs/work/` folder.
-
+entry artifact's path** by the rule in `/loop:research` — the only copy. Every
+phase reads it out of the path it was handed; Phase 0.5 applies the same rule
+itself, before research has run.
 
 ## Token profile
 
-Select once in Phase 0 and persist it as `Token profile: <value>` in every
-`docs/work/<slug>/` artifact so a fresh session or Codex handoff keeps it.
-
-- `economy` — default: grouped probes/reviews, main-thread synthesis, bounded E2E.
-- `standard` — more independent checks for ambiguous cross-surface work.
-- `critical` — maximum separation, for the cases `11-token-budget.md` reserves
-  `critical` for — that list is the only copy.
-
-A downstream command inherits the artifact profile. It must not silently upgrade
-the profile. Mechanical shell gates do not consume model fan-out and always run.
+Select once in Phase 0 and persist `Token profile: <value>` in every
+`docs/work/<slug>/` artifact. `economy` (default), `standard`, or `critical` for
+the cases `11-token-budget.md` lists. A downstream command inherits it and never
+silently upgrades it. Mechanical shell gates always run.
 
 ## Automatic checkpoints
 
-Maintain `docs/work/<slug>/handoff.md` inline, without a subagent:
+Maintain `docs/work/<slug>/handoff.md` inline, without a subagent, from the
+`/handoff:codex` template (its frontmatter `phase:` is what a restart resumes):
+create it once `docs/work/<slug>/` exists; refresh it after interface, plan, each
+RED→GREEN layer, review fixes and ship gates; store only state, changed paths,
+decisions/traps and last deterministic results; link, never copy.
 
-- create it once research has recorded the slug (i.e. once `docs/work/<slug>/`
-  exists — before that there is no folder to put it in, even though the slug
-  itself is already known from the entry path);
-- refresh it after interface, plan, each completed RED→GREEN layer, review fixes,
-  and ship gates;
-- store only current phase, completed/in-progress/remaining work, changed paths,
-  decisions/traps, and last deterministic results;
-- link to source artifacts instead of copying their bodies.
-
-Before launching any agent, check `.claude/.token-stop-agents`. If present,
-launch no new agent: finish the current atomic write/test, refresh the checkpoint,
-and yield. When `.claude/.restart-ready` exists, do not start another phase. The
-external `workflow.sh` supervisor stops Claude and starts a fresh Claude session
-on `/loop:orchestrate docs/work/<slug>/handoff.md` — so the `phase:` you record
-is the one Phase 0 resumes. Two restarts per feature, then it stops: the phase is
-too big and goes back to the plan to be split.
+Before launching any agent, check `.claude/.token-stop-agents`: if present,
+launch none, finish the atomic write/test, refresh the checkpoint, yield. When
+`.claude/.restart-ready` exists, start no phase: `workflow.sh` stops Claude and
+starts a fresh session on `/loop:orchestrate docs/work/<slug>/handoff.md`. Two
+restarts per feature, then it stops: the phase goes back to the plan to be split.
 
 ## Gate attempt ceiling
 
@@ -93,247 +64,100 @@ A new session does not reset the counter; a successful gate does.
 
 ## Phase 0 — Read & decide
 
-1. Parse an optional token-profile flag, defaulting to `economy`; if the entry
-   already carries a profile, inherit it unless the user explicitly overrides.
-   Parse an optional `--inline-execute` flag: it keeps Phase 4 and the Phase 5
-   fix pass on Claude even when `.claude/workflow-routing.yml` names `codex`
-   and Codex is on the `PATH` — the escape hatch for a track you want to run
-   on one tool end to end.
-   Read the entry artifact in full. **A `docs/work/<slug>/handoff.md`** (or
-   `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter,
-   then the artifacts it links, and branch on `phase:`. `research` → Phase 1,
-   keeping whatever `research.md` already holds; `interface` → Phase 2;
-   `plan` → Phase 3; `execute` → Phase 4, from the layer `## In progress` names
-   (`execute_status: done` → Phase 5); `review` → Phase 5 (`review_status:
-   fixes-handed-to-codex` → re-run only the dimensions those fixes came from,
-   never a fresh judgment pass); `ship` → Phase 6. Nothing completed is redone.
-   A `plan.md` with no sibling handoff jumps to Phase 4; with one, the handoff
-   decides.
+1. Parse the optional profile flag (default `economy`; an entry that carries a
+   profile is inherited unless the user overrides) and `--inline-execute` (keeps
+   EXECUTE and review fixes on Claude whatever the routing file says). Read the
+   entry in full. A spec or story without its `Token profile:` line: say so.
 
-   > **Every entry artifact carries the line**, not only a resumed `plan.md`:
-   > `/loop:spec` and `/bmad:pm` decide it at their interview, where the four triggers
-   > of `critical` are known, and `/bmad:sm` copies it onto every story. Reaching
-   > the default here on a spec or a story means the line is missing — say so
-   > rather than silently shipping `economy`, because `/loop:ship` step 1bis arms its
-   > security audit on this value and nothing downstream can re-derive it.
-2. **FEATURE READY check** — if `docs/product/backlog.md` exists, the entry must
-   be a `READY` line. Not listed → add the line **as `READY`**, at the end of the
-   table, `Entry artifact` = the path you were handed and `Pipeline` = `light` for
-   a spec / `full` for a story / `BUG` for `debug.md`, and say so: the artifact exists and you just read
-   it in full, which is exactly what the state means (2bis then moves it, under
-   the same main-tree rule). At the end, never inserted: the row order is the
-   priority `/loop:ship` reads, and a line that jumps the queue because a session
-   happened to open it is a priority nobody set. Listed as
-   `DRAFT` → stop and ask: a feature that hasn't been framed isn't ready to build.
-   That state is `/loop:product`'s — it is what that command writes for a feature it
-   merely noticed — and it is the only thing this gate can refuse. Listed as
-   `BLOCKED` → say so and take it back: the line is one somebody put down on
-   purpose, so name the reason it carries before moving it, and stop if that
-   reason is still open. `DROPPED` or `SHIPPED` → stop: those two are terminal,
-   and building on one of them means someone handed you the wrong artifact.
-   No board at all → skip this check in one line (the light path doesn't require one).
-   Columns, states and transitions: `/loop:product`, "The board's state machine" — the
-   only copy.
-2bis. **Take the entry** — mark it in flight and say so in one line:
-   - the entry is a **story** → `Status` to `InProgress`. Always: the story file
-     belongs to this track and to no other.
-   - the board line → `IN LOOP`, **only if this session is in the main tree**. A
-     worktree must never write `docs/product/backlog.md`
-     (`.claude/guides/10-worktrees.md`, "Never in a worktree" — one file, every
-     track, a conflict at every merge). Inside one, say so in one line and leave
-     the board alone: `Status` is the authority `/loop:tracks` reads, and `/loop:ship` moves
-     the line at step 5, after the merge, from the main tree.
-
-   > **This is not bookkeeping, it is the anti-collision.** `/loop:tracks` reads
-   > `Status` to decide what may fork right now, and `/loop:ship` reads the board to
-   > name the next feature. Leave them on `Approved` / `READY` and the work you
-   > are doing reads as available: two sessions on one story, or `/loop:ship` naming
-   > the story it just built as the next one. The `/bmad:dev` path already does
-   > this (`Status` → `InProgress` at step 2) — this line is what makes the
-   > one-shot path keep the same promise.
-
-   > **What you take, you give back.** `IN LOOP` asserts that a session holds the
-   > work *right now*; only `/loop:ship` step 5 clears it by shipping. Any other exit —
-   > a gate you cannot make green today, a track abandoned, a product question
-   > sent back to the user, a session that simply ends the pass — moves the line
-   > to **`BLOCKED`** with the reason in one line, from the main tree, and puts
-   > the story's `Status` back to `Approved` — no session holds it any more, and
-   > that field says exactly that. The **board line**, not `Status`, is what
-   > records that it is on hold; `/loop:tracks` reads both, and drops a `BLOCKED` line
-   > from its candidates. Skip that and the board claims a session is on it
-   > forever: `/loop:tracks` will not fork it and `/loop:ship` will not name it, so the unit
-   > disappears from the loop while looking perfectly healthy. That is the failure
-   > mode this state exists for.
-3. Announce in one line each: which phases are **SKIP** and why.
-   - No user surface (migration, scheduled job, backend-only, refactor) → **INTERFACE SKIP**
-   - RESEARCH is **never** skipped. Reading a file in this conversation is not
-     research: it tells you what the code says, not what a later migration
-     redefined, nor who consumes the symbol, nor what the rows actually contain.
+   **A `docs/work/<slug>/handoff.md`**
+   (or `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter, then the artifacts it links, and
+   branch on `phase:`. `research` → Phase 1, keeping whatever `research.md`
+   already holds; `interface` → Phase 2; `plan` → Phase 3; `execute` → Phase 4,
+   from the layer `## In progress` names (`execute_status: done` → Phase 5);
+   `review` → Phase 5 (`review_status: fixes-handed-to-codex` → re-run only the
+   dimensions those fixes came from, never a fresh judgment pass);
+   `ship` → Phase 6. Nothing completed is redone. A `plan.md` with no sibling handoff
+   jumps to Phase 4; with one, the handoff decides.
+2. **FEATURE READY check**, if `docs/product/backlog.md` exists. Not listed → add
+   the line as `READY` **at the end** of the table (`Entry artifact` = the path,
+   `Pipeline` = `light` for a spec, `full` for a story, `BUG` for `debug.md`) and
+   say so. `DRAFT` → stop and ask. `BLOCKED` → name its reason, stop if it still
+   holds, else take it back. `DROPPED` or `SHIPPED` → stop. No board → skip in one
+   line. States and transitions: `/loop:product`, "The board's state machine".
+3. **Take the entry**, in one line: a story's `Status` → `InProgress`, always; the
+   board line → `IN LOOP`, **only from the main tree**. In a worktree, say so and
+   leave the board alone: `/loop:ship` moves the line after the merge. Any exit other than `/loop:ship` step 5 gives it
+   back: the line → `BLOCKED` with its reason, from the main tree, and the story's
+   `Status` → `Approved`.
+4. Announce each **SKIP** and why. No user surface (migration, job, backend-only,
+   refactor) → INTERFACE SKIP. RESEARCH is **never** skipped.
 
 ## Phase 0.5 — Track isolation (worktree or not)
 
-Decide **once**, announce in one line, then never revisit mid-loop.
+Decide **once**, announce in one line, never revisit mid-loop. Fork only if all hold
+(`.claude/guides/10-worktrees.md` is the authority — read it before forking):
+another pass is in flight or the user asked for this one in the background; the
+file sets are disjoint; neither touches a shared foundation (migrations & DB,
+`src/lib/*`, `shared/*`, router, providers, composition root, design system,
+backlog, lockfile); clean tree, known base branch. How many fork is computed,
+three at most: `/loop:tracks` in a story pipeline, otherwise the four steps of
+`10-worktrees.md`, "How many tracks", announced with the named set. Shared
+foundations are not a reason to fork finer: they are done first in the main
+tree, committed, and the tracks fork from that commit.
 
-**Fork a worktree only if all of these hold** (`.claude/guides/10-worktrees.md` is
-the authority — read it before forking):
+`<slug>` is this pass's loop slug (`docs/stories/inbox/1.2.md` → `inbox-1.2`,
+never `inbox`). This session drives it → `EnterWorktree` with `name: "<slug>"`;
+another session will → `git worktree add .claude/worktrees/<slug> -b feat/<slug>`
+and hand over the path. Then every phase runs inside it, said in the opening
+line. **A loop pass is never an `isolation: "worktree"` subagent**: the loop has
+human gates and a subagent cannot hold them. One session drives one worktree; N
+tracks means N sessions. Announce the empty
+`node_modules` and ask the user for the env file (`.env*` is not copyable by an
+agent). Otherwise: "single track, no worktree".
 
-1. this pass is **not the only one in flight** — the user is advancing several
-   features / stories / distinct pieces of work, or asked for this one in the
-   background;
-2. the file sets are disjoint (architecture story map, or the other pass's
-   `plan.md` `Files` table);
-3. neither touches a **shared foundation** — migrations & DB, `src/lib/*`,
-   `shared/*`, router, providers, composition root, design system, backlog,
-   lockfile;
-4. clean tree, known base branch.
+## Phase 1 — RESEARCH
 
-When several passes qualify, **how many fork is computed, not assumed**, and
-**three is the ceiling**. In a story pipeline, `/loop:tracks` does it and prepares the
-worktrees; standalone, run the four steps of `10-worktrees.md`, "How many
-tracks", yourself and announce the number with the named set. One session drives
-one worktree: N tracks means N sessions.
+`/loop:research <entry>` → `docs/work/<slug>/research.md`. Barrier: the file
+exists before designing. Retain its `Traps`: Phase 3 restates them as `Vigilance`.
 
-**How** (the table in `10-worktrees.md` is the reference). `<slug>` here is the
-**loop slug of this pass**, derived from the entry artifact by `/loop:research`'s rule
-— `docs/stories/inbox/1.2.md` gives `inbox-1.2`, never `inbox`. Forking a story
-under its feature's name puts every story of that feature on one branch:
+## Phase 2 — INTERFACE (skippable)
 
-- this session drives the track → `EnterWorktree` with `name: "<slug>"`;
-- another session will drive it → create it without moving:
-  `git worktree add .claude/worktrees/<slug> -b feat/<slug>`, then hand over the
-  path and the branch.
-
-Then run every phase below **inside that worktree**, and say so in the opening
-line. Otherwise: main tree, one line — "single track, no worktree".
-
-> Shared foundations are **not** a reason to fork more finely: they are done
-> first, in the main tree, committed, and the tracks fork from that commit.
-> The worktree is empty of `node_modules`, and `.env*` cannot be copied by an
-> agent (`protect-files`) — announce both costs when you fork, ask the user for
-> the env file.
->
-> A loop pass is **never** an `isolation: "worktree"` subagent: the loop has human
-> gates, and a subagent cannot hold them. Several tracks truly in flight means
-> several sessions — one per worktree. Create the sibling, name it, hand it over.
-
-## Phase 1 — RESEARCH (parallel)
-
-Run `/loop:research <entry artifact>` → `docs/work/<slug>/research.md`.
-Multi-modal fan-out: code pattern, wiring, reuse, blast radius, live DB state,
-external API contract. Barrier: the file exists before designing.
-
-**Retain the `Traps` section** — Phase 3 restates it as the plan's `Vigilance`,
-and that restatement is what Phase 5 hands the reviewers.
-
-## Phase 2 — INTERFACE (parallel, skippable)
-
-Run `/loop:interface docs/work/<slug>/research.md` → `docs/work/<slug>/design.md`.
-Competing proposals, judged into one — **how many is the token profile's call,
-declared in `/loop:interface`, not here**. On the default (`economy`) that is one
-designer producing two concise alternatives, judged on the main thread with no
-judge agent; three angles plus a separate judge is the `critical` arity. Skip
-announced in Phase 0 if there's no UI.
-
-**The retained proposal is rendered before the gate**, on an editable canvas
-published as an Artifact — Claude Code's built-in `/design`, invoked from the main
-thread. Arity and fallback are `/loop:interface`'s call, not this file's; what matters
-here is that the extra main-thread context is the canvas, not the agents.
-
-**This phase ends on a human gate too.** `/loop:interface` presents the options and waits
-for the user to pick — retained as proposed, edited on the canvas, or grafted —
-same shape as `/loop:design-system`, capped at 3 rounds. Do not enter Phase 3 on
-silence. A canvas edited **after** the gate reopens the gate: `design.md` is what
-Phase 5 reviews against, and it does not follow the canvas on its own.
-
-> Two gates, two different questions, and neither substitutes for the other: this
-> one fixes **what the screen is**, Phase 3's fixes **what "correct" means for the
-> logic**. Skipping this one and letting `/loop:review` enforce `design.md` anyway
-> means enforcing a choice nobody made.
+`/loop:interface docs/work/<slug>/research.md` → `docs/work/<slug>/design.md`.
+Arity is the profile's call, declared in `/loop:interface`. The retained proposal
+is rendered on the `/design` canvas before the gate. **Human gate**: the user
+picks, edits or grafts, 3 rounds at most; do not enter Phase 3 on silence. A
+canvas edited after the gate reopens it.
 
 ## Phase 3 — PLAN
 
-Run `/loop:plan …` → `docs/work/<slug>/plan.md`: write chain, parallel lots, files,
-contracts, test plan, acceptance criteria carried verbatim.
-
-Before the human test-plan gate, `/loop:plan` launches `plan-critic`, refutes its
-Critical/Major claims, and rewrites until both completeness and quality are clear
-or the attempt ceiling blocks the line. The two scores remain separate.
-
-**This phase ends on a human gate, and it is the loop's most load-bearing one.**
-`/loop:plan` prints its `Test plan` and waits for the user's explicit go. What is
-being validated is the definition of "correct" for the three test-first layers,
-**before any implementation exists** — the last point where changing it is free,
-since the go freezes those files (`.claude/rules/05-testing.md`).
-
-> Why here and nowhere else: `typecheck`, `lint`, `test:run` and `build` are
-> automatable because they verify a property. "Does this case actually describe
-> the business rule" only verifies against the user's intent. Every other gate in
-> this loop judges code that already exists; this one judges the target.
-
-Do not enter Phase 4 on silence.
+`/loop:plan …` → `docs/work/<slug>/plan.md`. It runs `plan-critic`, refutes its
+Critical/Major claims, rewrites until completeness and quality clear (scores kept
+separate) or the ceiling blocks. **Human gate**: it prints the `Test plan` and
+waits for an explicit go — the go freezes the test-first files
+(`.claude/rules/05-testing.md`). Do not enter Phase 4 on silence.
 
 ## Phase 4 — EXECUTE (sequential, inline on the main thread)
 
-**Read the router first.** Check `.claude/workflow-routing.yml` for the
-`execute-green` role. File absent, `provider: claude`, Codex unavailable, or
-the user passed `--inline-execute` → nothing changes, keep reading below.
-
-> **"Codex available" means `codex --version` succeeds, not just
-> `command -v codex`.** With npm's `optionalDependencies`, the launcher script
-> can be on `PATH` and still crash on first real invocation because the
-> platform-specific native binary never installed — measured 2026-09-17: all
-> six `@openai/codex-<platform>` optional deps `UNMET`, `command -v codex`
-> green, `codex` itself throwing. `command -v` alone reads as "available" when
-> it is not.
-
-`provider: codex` and Codex available → **you still run the test-first
-layers yourself** (RED legs have no Codex equivalent — POC tested and failed,
-see `docs/RATIONALE.md`), then hand off once you
-reach the first step that isn't test-first: write
-`docs/work/<slug>/handoff.md` (`/handoff:codex` template, frontmatter
-`phase: execute` / `execute_status: in-progress` / `codex_safe`), then, **once
-the Write has returned, in a later message**, launch it yourself. A step whose
-gates need the network (backend tests on a database, e2e) gets `codex_safe: no`
-and stays inline: the launcher refuses it, and refuses a handoff older than the
-plan or the last commit.
+**Routing first.** Read `.claude/workflow-routing.yml`, role `execute-green`.
+Absent, `provider: claude`, `codex --version` failing, or `--inline-execute` →
+everything stays inline. `provider: codex` and Codex runs → you still do the
+test-first layers, then at the first step that is not test-first (right after
+`repository` or `services` goes green) write the handoff
+(`phase: execute`, `execute_status: in-progress`, `codex_safe`), and **once the
+Write has returned, in a later message**, run in the background, without polling:
 
 ```bash
 ./codex-handoff.sh docs/work/<slug>/handoff.md execute-green --auto
 ```
 
-via `Bash` with `run_in_background: true`. Do not poll — you get a
-task-notification when it finishes, same as any other background command.
-`--auto` runs Codex non-interactively (`codex exec`, `-a never` — must
-precede the `exec` subcommand, `codex exec -a never` errors — inside the
-`-s workspace-write` sandbox: writes stay confined to the project, only the
-per-step human-approval pause is skipped, never the sandbox). This is the
-**default**, not a per-feature choice re-asked each time: `provider: codex`
-in the routing file already is that decision, made once, when the file was
-configured — proven end-to-end on `eval-bourrage-contexte`, 2026-09-17.
-`-o` writes Codex's own final message to
-`docs/work/<slug>/codex-last-message.txt` — read it when the notification
-lands, alongside whatever `handoff.md` update Codex made. This keeps
-the "one handoff per feature" cost real instead of ping-ponging per layer: the
-RED→GREEN alternation below still cannot be batched, so the earliest point
-where handing off doesn't fight that rule is right after `repository` goes
-green. **DB migrations never move**: `/database:migration` is a Claude Code
-slash command Codex cannot invoke (`.claude/rules/06-database.md`) — do it
-yourself regardless of `execute-green`'s provider.
+`codex_safe: yes` only when every remaining gate runs offline; a database test or
+e2e step stays inline (the launcher refuses it, and a handoff older than the plan
+or the last commit). Read `docs/work/<slug>/codex-last-message.txt` when it lands;
+a question Codex stopped on goes to the user. Migrations never move:
+`/database:migration` is yours whatever the provider.
 
-> **Codex stopping itself is not a failure to route around.** On a protected
-> boundary (`.claude/rules/` protected files, an ambiguous authorization call)
-> Codex should end its turn and ask, in its final message, rather than guess —
-> `-a never` removes the interactive approval block on ordinary sandboxed
-> writes, it does not and should not make Codex reckless about a boundary it
-> was told to respect. Read that message when the notification lands and
-> resolve it the same way you would a `test-writer` reporting `Blocked on` —
-> with the user, not by silently overriding it.
-
-Implement **yourself**, in the plan's order. Do not delegate: the chain is
-coupled and the handoff costs more than the isolation gains — this is about
-Claude sub-agents (`.claude/agents/*.md`) mid-chain, a different question from
-the routing check above, which hands the *rest of the chain* to a separate
-Codex process, not a sub-agent. **One exception, the RED legs** — see below.
+Implement **yourself**, in the plan's order — no sub-agent mid-chain, except the
+RED legs and the plan's parallel lots:
 
 ```
 1. DB       → /database:migration        (schema + authorization + triggers)
@@ -350,131 +174,57 @@ Codex process, not a sub-agent. **One exception, the RED legs** — see below.
               edited. This is the third leg of the cycle, not an optional tidy-up.
 ```
 
-For each test-first layer the plan actually has:
+For each test-first layer the plan has:
 
-- **RED** — launch one `Agent` (subagent_type: `test-writer`), giving it its test
-  file path, the plan path and its layer. It writes that one file, runs it, and
-  returns the failure output. It is forbidden from reading the module under test:
-  in a single context the assertions drift toward the implementation you are
-  about to write, and the suite ends up confirming the code instead of the
-  requirement. If it comes back `Blocked on` a contract ambiguity, resolve it
-  with the user — do not resolve it by writing the test yourself.
-- **GREEN** — you, inline: just enough code in that one module to pass. The test
-  does not move.
+- **RED** — one `test-writer` per feature: launch it on the first layer (test file
+  path, plan path, layer), then continue the same agent with `SendMessage` for
+  each next layer (no `SendMessage` in this Claude Code → launch it per layer). It writes that one file, runs it, returns the failure output,
+  and never reads the module under test. `Blocked on` a contract ambiguity → the
+  user decides, never you writing the test.
+- **GREEN** — you, inline: just enough code in that one module. The test does not
+  move.
 
-Then the next layer. **Never batch the three REDs then the three GREENs**: an
-implementation generated against a dozen simultaneous red assertions cannot be
-judged "just enough", and a wrong assertion surfaces only after the freeze
-(`.claude/rules/05-testing.md`).
+Then the next layer. **Never batch the REDs then the GREENs.** `errors.ts` and
+`gateway.ts` come right after the schemas, before the first RED: the repository
+test imports them.
 
-> **Why `errors.ts` and `gateway.ts` come before the first RED.** They are
-> test-after layers, but the repository **imports** them (`templates/feature.md`),
-> so its test file cannot resolve without them. Written later, the repository's
-> RED leg fails on a missing gateway rather than on the behaviour it names — and
-> `tdd-prove-red.sh` classes that as `unresolved-other` and records **no marker**,
-> which then blocks the module it was supposed to unlock. Write them right after
-> the schemas; their own tests still come in step 5.
+The RED is proved, not declared: `tdd-prove-red.sh` leaves a marker on a genuine
+red, and `tdd-require-red.sh` denies the module until it exists. Denied → the test
+came after the code or never failed; never work around it. One benign case: the
+`test-writer` reported a real red but no marker landed — re-save the test file
+**byte for byte identical** and read the verdict; anything but `RED confirmed`
+means the denial was right. Once green, adding a case to a frozen file is a pure
+insertion (say what it covers); correcting one goes through `.claude/.tdd-unfrozen`
+with a reason, after telling the user. On a Python service layer the `-py` hooks
+play the same roles (`.claude/rules/07-backend.md`); hand the `test-writer` the
+`.py` path.
 
-Load what you need from `.claude/skills/patterns/` and `templates/`. Respect
-`.claude/rules/`.
+Load what you need from `.claude/skills/patterns/` and `templates/`.
 
-Impeccable applies only on a UI feature: when fixing the screen, read its
-findings from review stage 0 (detector, critique) as input; they are advisory and
-never replace `design.md` or `patterns/a11y.md`. A feature with no UI never sees them.
+Impeccable applies only on a UI feature: its review stage 0 findings are advisory
+input when fixing the screen, never a replacement for `design.md` or
+`patterns/a11y.md`.
 
-> **Both cycles, one procedure.** The hook names below are the TypeScript ones.
-> On a backend service layer that is test-first (`app/services/**` with the
-> FastAPI addon) the same three roles are played by `tdd-prove-red-py.py`,
-> `tdd-require-red-py.py` and `tdd-freeze-tests-py.py`, against `python -m
-> pytest`. Same markers, same `.claude/.tdd-unfrozen`, same verdicts — read
-> `.claude/rules/07-backend.md` for what differs, and hand the `test-writer` the
-> `.py` path: it reads the runtime off the path it was given.
->
-> **The RED phase is proved, not declared, and it blocks.** `tdd-prove-red.sh`
-> runs the test file that was just written and judges the run against the symbols
-> the test exercises — a pass while the named behaviour does not exist is
-> reported as asserting nothing, even when the module file already exists. On a
-> genuine red it leaves a marker, and `tdd-require-red.sh` **denies the creation**
-> of the implementation module until that marker exists. If you are denied, the
-> answer is never to work around it: the test came after the code, or it never
-> failed.
->
-> One benign case of that denial: the `test-writer` reported a real red but no
-> marker landed (the hook did not fire in its context). Re-save the test file
-> **byte for byte identical** — the freeze lets an unchanged re-save through for
-> exactly this — and read the verdict yourself. Anything other than
-> `RED confirmed` means the red was not real and the denial was right.
->
-> Once green, `tdd-freeze-tests.sh` holds the other side. **Adding** a case to a
-> frozen file is allowed as a pure insertion — say which behaviour it covers and
-> why the plan missed it. **Correcting** one is denied: list the path in
-> `.claude/.tdd-unfrozen` with a reason, visibly, after telling the user.
->
-> Scope is `utils` / `mapper` / `repository`-`services` only
-> (`.claude/rules/05-testing.md`). Hooks, gateway and UI are written first and
-> tested after, as before — their contract is still moving at this point.
+**Parallel lots** may fork only when their file sets are disjoint, as agents in
+this track's tree, never as extra worktrees.
 
-> **Parallelism exception**: only the plan's **parallel lots** may fork, and only
-> if their file sets are disjoint. Two lots touching the same file stay sequential.
-> Lots fork as agents **in this track's tree** — never as extra worktrees: they
-> share types, contracts and one test suite, and merging them costs more than the
-> wait. The worktree boundary is the track (Phase 0.5), not the lot.
-> The guardrail hooks (`no-any`, `protect-files`, `format`, `eslint`,
-> `enforce-architecture`) fire on every write. `enforce-architecture` blocks
-> cross-feature imports, shared code depending on a feature, and the data client
-> outside the data layer / composition root. What it deliberately does **not**
-> cover — business logic in components, `as` casts, an over-threshold file — is
-> the `reviewer` agent's job, and `eslint` here is only informational: the real
-> lint gate is `pnpm lint` in `/loop:ship`.
+## Phase 5 — REVIEW
 
-## Phase 5 — REVIEW (parallel, two stages)
-
-Run `/loop:review docs/work/<slug>/plan.md`. On a UI feature it opens with a
-**visual pass on the main thread**, then groups review dimensions and verifier
-batches according to the token profile. Pass it the plan's **`Vigilance`**
-section — research's traps already restated as things checkable against this
-diff: "object redefined by migration X" became the criterion "does the diff
-revert X?". That restatement is what `/loop:plan` was asked to produce; going back to
-the raw `Traps` throws it away.
-
-**Routing check before fixing.** Same rule as Phase 4, "Codex available"
-meaning the same thing (`codex --version` succeeding, not just
-`command -v`): read `.claude/workflow-routing.yml` for the `review-fixes`
-role. File absent, `provider: claude`, Codex unavailable, or
-`--inline-execute` set → fix **inline** as below, unchanged. `provider: codex`
-and Codex available → Claude keeps the verdict (`reviewer`/`verifier` already
-ran, findings already tranched — that judgment never moves), write/refresh
-`docs/work/<slug>/handoff.md` with the Critical/Major findings to fix
-and frontmatter `phase: review` / `review_status: fixes-handed-to-codex` /
-`codex_safe`, then launch it yourself — same mechanics and guards as Phase 4 (`--auto`,
-`run_in_background: true`, no polling, `codex-last-message.txt` alongside the
-handoff):
-
-```bash
-./codex-handoff.sh docs/work/<slug>/handoff.md review-fixes --auto
-```
-
-On resume (Phase 0's third branch), re-run only the dimensions those
-findings came from — never a fresh judgment pass.
-
-Fix surviving Critical/Major findings **inline**, then re-run only the affected
-dimensions.
+`/loop:review docs/work/<slug>/plan.md`, handing it the plan's **`Vigilance`**
+section. Routing as in Phase 4, role `review-fixes`: inline, or — Codex routed and
+running — Claude keeps the verdict and hands the surviving Critical/Major findings
+over in the handoff (`phase: review`, `review_status: fixes-handed-to-codex`,
+`codex_safe`), same guards, `./codex-handoff.sh docs/work/<slug>/handoff.md
+review-fixes --auto`. Inline: fix surviving Critical/Major, re-run only the
+affected dimensions.
 
 ## Phase 6 — SHIP
 
-Run `/loop:ship docs/work/<slug>/plan.md`: parallel gates (`typecheck`, `lint`,
-`test:run`, `test:coverage`, `build`, `audit`), acceptance criteria walked one by
-one, commit via the `github` agent, board advanced, next feature named.
-
-**On a `critical` profile it also runs one `/audit:security` surface** before the
-commit (`/loop:ship`, step 1bis) — the profile you resolved in Phase 0 is what arms
-it, so a feature you upgraded for the review arity is a feature you also
-committed to auditing. Zero cost on the other two profiles.
-
-On a track that forked, the gates run **in its worktree** and the merge back is
-`/loop:ship`'s last, user-gated step — one track integrated at a time.
-
----
+`/loop:ship docs/work/<slug>/plan.md`: gates, acceptance criteria one by one,
+commit via the `github` agent, board advanced, next feature named. A `critical`
+profile also arms one `/audit:security` surface before the commit (step 1bis). On
+a forked track the gates run in its worktree and the merge is `/loop:ship`'s last,
+user-gated step.
 
 ## Conclusion (mandatory)
 
