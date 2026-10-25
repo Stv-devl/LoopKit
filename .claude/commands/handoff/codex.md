@@ -23,7 +23,11 @@ is not only a manual saturation fallback any more.
    `git diff --stat`, and deterministic results already recorded on disk.
 2. Write `docs/work/<slug>/handoff.md` using the template below. Never
    paste source code, full diffs, conversation, secrets, or complete rule files.
-3. Stop and print:
+3. Set `codex_safe: yes` only if every gate of the current step runs without
+   network (front layers, unit tests); a backend test on a database or an e2e
+   run makes it `no`. Codex's sandbox has no sockets, and `./codex-handoff.sh`
+   refuses anything but `yes`.
+4. Once the Write has returned, never in the same message, stop and print:
    `./codex-handoff.sh docs/work/<slug>/handoff.md`
 
 ## Template
@@ -34,6 +38,7 @@ phase: execute        # research | interface | plan-gate | execute | review | sh
 execute_status: in-progress   # in-progress | done — only meaningful when phase: execute
 review_status: judgment       # judgment | fixes-handed-to-codex | fixes-done — only meaningful when phase: review
 token_profile: economy
+codex_safe: no                # yes only when every gate of this step runs offline
 ---
 
 # Handoff: <feature>

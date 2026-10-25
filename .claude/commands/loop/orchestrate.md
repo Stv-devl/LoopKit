@@ -289,7 +289,11 @@ layers yourself** (RED legs have no Codex equivalent — POC tested and failed,
 see `docs/RATIONALE.md`), then hand off once you
 reach the first step that isn't test-first: write
 `docs/work/<slug>/handoff.md` (`/handoff:codex` template, frontmatter
-`phase: execute` / `execute_status: in-progress`), then **launch it yourself**:
+`phase: execute` / `execute_status: in-progress` / `codex_safe`), then, **once
+the Write has returned, in a later message**, launch it yourself. A step whose
+gates need the network (backend tests on a database, e2e) gets `codex_safe: no`
+and stays inline: the launcher refuses it, and refuses a handoff older than the
+plan or the last commit.
 
 ```bash
 ./codex-handoff.sh docs/work/<slug>/handoff.md execute-green --auto
@@ -439,8 +443,8 @@ role. File absent, `provider: claude`, Codex unavailable, or
 and Codex available → Claude keeps the verdict (`reviewer`/`verifier` already
 ran, findings already tranched — that judgment never moves), write/refresh
 `docs/work/<slug>/handoff.md` with the Critical/Major findings to fix
-and frontmatter `phase: review` / `review_status: fixes-handed-to-codex`, then
-launch it yourself — same mechanics as Phase 4 (`--auto`,
+and frontmatter `phase: review` / `review_status: fixes-handed-to-codex` /
+`codex_safe`, then launch it yourself — same mechanics and guards as Phase 4 (`--auto`,
 `run_in_background: true`, no polling, `codex-last-message.txt` alongside the
 handoff):
 

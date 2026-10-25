@@ -13,7 +13,7 @@ roles:
   interface:        { provider: claude }
   plan:              { provider: claude }
   execute-red:      { provider: claude }
-  execute-green:    { provider: codex, codex_effort: low }
+  execute-green:    { provider: codex, codex_model: gpt-5.6-terra, codex_effort: low }
   review-judgment:  { provider: claude }
-  review-fixes:      { provider: codex, codex_effort: low }
+  review-fixes:      { provider: codex, codex_model: gpt-5.6-terra, codex_effort: low }
   ship:              { provider: claude }

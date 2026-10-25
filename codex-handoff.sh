@@ -44,6 +44,8 @@ if [[ -n "$ROLE" && -f "$ROUTING_FILE" ]]; then
     if [[ "$ROLE_LINE" == *"provider: codex"* ]]; then
         EFFORT="$(printf '%s' "$ROLE_LINE" | sed -nE 's/.*codex_effort:[[:space:]]*([A-Za-z]+).*/\1/p')"
         [[ -n "$EFFORT" ]] && EFFORT_FLAG=(-c "model_reasoning_effort=$EFFORT")
+        MODEL="$(printf '%s' "$ROLE_LINE" | sed -nE 's/.*codex_model:[[:space:]]*([A-Za-z0-9._-]+).*/\1/p')"
+        [[ -n "$MODEL" ]] && EFFORT_FLAG+=(-m "$MODEL")
     fi
 fi
 
@@ -66,6 +68,33 @@ case "$(realpath "$ARTIFACT")" in
 esac
 
 RELATIVE_ARTIFACT="$(realpath --relative-to="$PROJECT_DIR" "$ARTIFACT")"
+
+# A handoff is the one artifact that says where the work stands, so it is checked
+# before Codex sees it. `codex_safe: yes` is written only when every gate of the
+# current step runs without network: Codex's workspace-write sandbox has no
+# sockets, so pytest on PostgreSQL and Playwright cannot run there. And a handoff
+# older than its plan or the last commit describes a state that no longer exists
+# (a failed Write followed by this script, in the same message).
+case "$(basename "$ARTIFACT")" in
+    handoff.md|handoff-codex.md)
+        if ! sed -n '1,/^---$/{/^---$/!p}' "$ARTIFACT" | sed -n '1,20p' | grep -Eq '^codex_safe:[[:space:]]*yes[[:space:]]*$'; then
+            echo "erreur: $RELATIVE_ARTIFACT ne porte pas 'codex_safe: yes' : les gates de cette étape" >&2
+            echo "ont besoin du réseau (backend, e2e) ou ne sont pas déclarées. Elle reste sur Claude." >&2
+            exit 1
+        fi
+        HANDOFF_TIME="$(stat -c %Y "$ARTIFACT")"
+        PLAN="$(dirname "$ARTIFACT")/plan.md"
+        if [[ -f "$PLAN" && "$(stat -c %Y "$PLAN")" -gt "$HANDOFF_TIME" ]]; then
+            echo "erreur: $RELATIVE_ARTIFACT est plus ancien que plan.md : réécris-le d'abord." >&2
+            exit 1
+        fi
+        LAST_COMMIT="$(git -C "$PROJECT_DIR" log -1 --format=%ct 2>/dev/null || echo 0)"
+        if [[ "$LAST_COMMIT" -gt "$HANDOFF_TIME" ]]; then
+            echo "erreur: $RELATIVE_ARTIFACT est plus ancien que le dernier commit : réécris-le d'abord." >&2
+            exit 1
+        fi
+        ;;
+esac
 PROMPT="Resume the project workflow from $RELATIVE_ARTIFACT. Read AGENTS.md, CLAUDE.md, and that artifact first. If it is not a prepared handoff, infer the current phase from adjacent docs/work artifacts, story status, and git status; do not redo completed phases. Preserve the recorded token profile (economy by default), existing user changes, security boundaries, TDD markers, and frozen tests. Continue the next concrete action through its next human gate. Keep durable progress in the existing workflow artifacts."
 
 if [[ "$AUTO" -eq 1 ]]; then

@@ -268,6 +268,13 @@ def run_claude(arguments: list[str]) -> tuple[int, bool, bool, bool]:
 
 
 def run_codex(artifact: str) -> int:
+    if Path(artifact).name not in HANDOFF_NAMES:
+        print(
+            f"\n[workflow] Pas de handoff pour {artifact} : Codex ne reçoit qu'une étape "
+            "déclarée sûre hors réseau. Reprends avec Claude.\n",
+            file=sys.stderr,
+        )
+        return 1
     launcher = PROJECT / "codex-handoff.sh"
     print(f"\n[workflow] Relais vers Codex depuis {artifact}\n", flush=True)
     return subprocess.call([str(launcher), artifact], cwd=PROJECT)

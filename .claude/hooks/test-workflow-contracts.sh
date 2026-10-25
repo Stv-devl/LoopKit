@@ -111,4 +111,29 @@ wf_args() { CLAUDE_WORKFLOW_CLAUDE_BIN="$WF_SCRATCH/claude" python3 "$ROOT/workf
 [[ "$(wf_args --effort low)" == "--model opus --effort low " ]]
 rm -r "$WF_SCRATCH"
 
+# codex-handoff.sh: the routed model reaches Codex, a step whose gates need the
+# network never does (E16), and a handoff older than its plan is refused (E17).
+CX_SCRATCH="$(mktemp -d)"
+CX_WORK="$ROOT/docs/work/zz-contract-test"
+mkdir -p "$CX_WORK"
+trap 'rm -rf -- "$CX_SCRATCH" "$CX_WORK"' EXIT
+printf '#!/usr/bin/env bash\n[[ "$1" == --version ]] && exit 0\nprintf "%%s\\n" "$@" > "%s/args"\n' "$CX_SCRATCH" > "$CX_SCRATCH/codex"
+chmod +x "$CX_SCRATCH/codex"
+cx() { rm -f "$CX_SCRATCH/args"; PATH="$CX_SCRATCH:$PATH" "$ROOT/codex-handoff.sh" "$@" </dev/null >/dev/null 2>&1; }
+printf '# plan\n' > "$CX_WORK/plan.md"
+touch -d '1 hour ago' "$CX_WORK/plan.md"
+printf -- '---\nphase: execute\ncodex_safe: yes\n---\n# Handoff\n' > "$CX_WORK/handoff.md"
+cx docs/work/zz-contract-test/handoff.md execute-green
+tr '\n' ' ' < "$CX_SCRATCH/args" | grep -q -- '-m gpt-5.6-terra'
+tr '\n' ' ' < "$CX_SCRATCH/args" | grep -q -- 'model_reasoning_effort=low'
+printf -- '---\nphase: execute\ncodex_safe: no\n---\n# Handoff\n' > "$CX_WORK/handoff.md"
+if cx docs/work/zz-contract-test/handoff.md execute-green; then exit 1; fi
+[[ ! -e "$CX_SCRATCH/args" ]]
+printf -- '---\nphase: execute\n---\n# Handoff\n' > "$CX_WORK/handoff.md"
+if cx docs/work/zz-contract-test/handoff.md execute-green; then exit 1; fi
+printf -- '---\nphase: execute\ncodex_safe: yes\n---\n# Handoff\n' > "$CX_WORK/handoff.md"
+touch -d '2 hours ago' "$CX_WORK/handoff.md"
+if cx docs/work/zz-contract-test/handoff.md execute-green; then exit 1; fi
+[[ ! -e "$CX_SCRATCH/args" ]]
+
 echo 'workflow contract fixtures: green.'
