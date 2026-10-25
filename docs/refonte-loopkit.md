@@ -33,6 +33,12 @@ Branche : `audit/slim`, un commit par étape (section « Ordre de mise en œuvre
   phase : execute 36 %, review 35 %, plan 13 %, research 7 %, ship 6 %,
   interface 4 %. Levier non traité par ce plan : la longueur des sessions (une
   session enchaîne plusieurs features). À décider après la mesure de l'étape 0.
+- **Efficacité mesurée des agents** (journal de santé d'EcoCrew) : `reviewer`
+  239 findings confirmés ; `plan-critic` bloque 66 % des plans (118 sur 179) ;
+  `verifier` a réfuté 27 findings ; `test-writer` 7 % de relances, aucun
+  blocage ; `e2e-tester` 3 bugs confirmés en 35 lancements. Aucun agent du kit
+  n'est une perte de temps : on allège, on ne supprime pas. Le seul gaspillage
+  mesuré est le travail fait sans agent attitré (`general-purpose`, 1.8).
 - Répartition mesurée du coût des sous-agents (équivalent API, $722) :
   `reviewer` 40 %, `general-purpose` 22 % (travail sans agent attitré, voir
   1.8), `plan-critic` 16 %, `test-writer` 7 %, le reste ≤ 3 % chacun. Remplacer
@@ -95,7 +101,7 @@ Sortie (décidé) : `docs/measurements/token-baseline.md`, versionné. Pas sous
 | --- | --- | --- |
 | Validation | reviewer, verifier, plan-critic, story-critic, security-auditor | `model: inherit` conservé, pas d'`effort` en frontmatter ; effort passé à l'appel : medium en economy/standard, high en critical |
 | Tests | test-writer | sonnet + high |
-| Production | designer, story-writer, doc-researcher, e2e-tester, github (jusqu'à l'étape 10) | sonnet + medium |
+| Production | designer, story-writer, doc-researcher, e2e-tester, github | sonnet + medium |
 | Exploration | explorer | haiku |
 | Session principale | | Opus medium, high en critical |
 
@@ -105,8 +111,6 @@ Sortie (décidé) : `docs/measurements/token-baseline.md`, versionné. Pas sous
   (`check_agent_models`, l.543-552) : 1re colonne `` `tier` ``, agents en
   **dernière** colonne. L'effort va dans une colonne placée avant celle des
   agents.
-- `github` reste dans le tableau jusqu'à sa suppression (étape 10) ; sinon
-  `agent-models` le signale « untiered » de l'étape 6 à l'étape 10.
 - Session principale : aujourd'hui rien ne la règle (`workflow.py:146-157`
   transmet `sys.argv` tel quel, `workflow.sh` et `.claude/settings*.json` ne
   fixent ni modèle ni effort). `workflow.py` passe `--model opus` et
@@ -200,30 +204,19 @@ mis à jour dans le même commit.
     `.claude/agents/test-writer.md:3`, et les contrats de
     `test-workflow-contracts.sh` qui les citent.
 
-### 1.5 Agent `github`
+### 1.5 Agent `github` : conservé
 
-1. Déplacer la convention git (format des commits et des PR, validation avant
-   push, refus des trailers — voir 2.C11) dans un fichier lu par `/loop:ship`
-   **et** cité par la section Routing de `CLAUDE.md`, pour un commit demandé
-   hors de `/loop:ship`. La validation avant push passe au thread principal :
-   elle est déplacée, pas retirée.
-2. Déplacer le bloc de nettoyage de worktree (`github.md:133`), avec la
-   vérification ajoutée par D13, dans ce fichier ou dans `ship.md`. Nommé
-   explicitement : il ne doit pas disparaître avec l'agent.
-3. Faire pointer les refus de `enforce-git-workflow.sh` (l.10, 112, 121, 124)
-   vers ce fichier.
-4. Retirer `github` partout où il est cité, `kit-doctor.py` les détecte
-   (`check_agent_references`, l.858-863) :
-   - `CLAUDE.md:94` (Routing) et `CLAUDE.md:133-134` (liste des agents) ;
-   - le tableau de `.claude/rules/11-token-budget.md:19` (sinon agent fantôme,
-     `kit-doctor.py:579`) ;
-   - `ship.md`, `orchestrate.md:461`, `.claude/guides/10-worktrees.md:4,157` ;
-   - `README.md:50`, `AGENTS.md:35`, `docs/ADAPTATION.md`,
-     `docs/RATIONALE.md`, `docs/Claude_Workflows.md`.
-5. Supprimer l'agent. **Ce n'est pas une économie** : sur EcoCrew, 102
-   lancements ont coûté environ $10 en tout, soit $0,13 par lancement. La raison
-   est la simplicité : une convention lue au moment où elle s'applique, au lieu
-   d'un agent de plus à tenir à jour.
+Principe retenu pour toute la partie 1 : **un agent efficace est allégé, jamais
+supprimé ; seul un agent qui fait perdre du temps est retiré.** Mesuré sur
+EcoCrew, `github` est efficace : 105 commits et merges sans échec, $9 au total
+($0,09 par lancement), et il isole la convention git et la validation avant
+push. Le supprimer ne rapportait rien de mesurable. Il reste ; seuls deux points
+le touchent :
+
+- C11 (commits d'une ligne, pas de trailer, le rappel d'attribution du harness
+  ne s'applique pas) s'écrit dans `github.md`, qui porte déjà la convention.
+- D13 (vérification avant `git worktree remove`) s'écrit dans son bloc de
+  nettoyage (`github.md:133`), là où la commande s'exécute.
 
 ### 1.6 Skills et cache
 
@@ -294,6 +287,34 @@ effort ni limite.
 - Mesure : `general-purpose` doit tomber près de zéro sur la feature de
   référence. Ce qui reste est un nouveau trou à attribuer.
 
+### 1.9 Une session par feature : `/clear` après le ship
+
+La session principale pèse 68 % du coût, et une session qui enchaîne les
+features relit l'historique des précédentes à chaque tour (mesuré sur EcoCrew :
+277k tokens par tour pendant la 1re feature, 456k à partir de la 4e ; jusqu'à 15
+features dans une même session). Cause : le travail à distance en Remote
+Control, qui garde une seule session ouverte.
+
+Ni le modèle ni un hook ne peuvent vider le contexte : `/clear` est une commande
+de l'utilisateur, et elle fonctionne depuis le mobile et le web (doc Remote
+Control). Un hook peut seulement réagir à un `/clear`. D'où :
+
+- **Fin de `/loop:ship`** : « Feature livrée. Tape `/clear` pour passer à la
+  suivante. » au lieu de nommer seulement la suivante.
+- **Hook `SessionStart`, déclenché seulement sur `clear`** (`source: "clear"`) :
+  lit le board et `docs/work/`, et injecte la feature suivante avec sa commande
+  (`/loop:orchestrate <artefact>`) en `additionalContext`. L'utilisateur tape
+  `/clear` puis `go`. `initialUserMessage`, qui lancerait le tour seul, ne
+  marche qu'en mode `-p`. Fixtures : board avec une feature suivante, board
+  vide, pas de board.
+- **`.claude/guides/10-worktrees.md`**, section « travailler à distance » :
+  `/clear` entre deux features dans une même session RC, et le mode serveur
+  `claude remote-control --spawn worktree` pour lancer depuis le téléphone une
+  session et un worktree par feature, en parallèle.
+- Écarté : relancer la feature suivante dans un `claude -p` en arrière-plan.
+  Invisible depuis le téléphone, et personne pour valider interface et plan.
+- Mesure : le contexte relu par tour reste stable d'une feature à l'autre.
+
 ---
 
 ## Partie 2 — Défauts terrain (EcoCrew)
@@ -326,7 +347,7 @@ le dit déjà), **Refusé**.
 
 | # | Verdict | Constat vérifié | Modification |
 | --- | --- | --- | --- |
-| 11 | Trou | Le hook refuse déjà les trailers et son texte dit que la convention l'emporte sur toute instruction de base. Le rappel système de Claude Code demande le contraire. | Trancher pour la convention du kit (commits d'une ligne, pas de trailer). L'écrire dans le fichier de convention créé en 1.5, avec la mention explicite que le rappel d'attribution du harness ne s'applique pas. |
+| 11 | Trou | Le hook refuse déjà les trailers et son texte dit que la convention l'emporte sur toute instruction de base. Le rappel système de Claude Code demande le contraire. | Trancher pour la convention du kit (commits d'une ligne, pas de trailer). L'écrire dans `github.md` (1.5), avec la mention explicite que le rappel d'attribution du harness ne s'applique pas. |
 | 12 | Bug | `03-conventions.md` exige un commentaire d'une ligne pour justifier une exception de mémoïsation ; `english-comments.py` n'autorise que la JSDoc. | Le hook accepte une forme unique et reconnaissable juste au-dessus d'un `useMemo`/`useCallback`/`memo` : `// memo: <raison>`. La rule nomme cette forme. Fixture. |
 | 13 | Bug | `english-comments` est le hook qui refuse le plus (181 refus sur EcoCrew). Une fois les répétitions de fixtures retirées, **aucun vrai commentaire français** n'a été écrit. Environ 110 refus visent des JSDoc anglaises qui citent le texte de l'interface en français (« Mesures non classées », « Confirmer l'unité ») ou un terme métier (Métré, Calques). C'est légitime : la langue de l'interface est le français (`03-conventions.md`). Ensuite, 18 refus visent des consignes d'insertion laissées dans le code (`// IMPORT: add …`, `// Append at the END …`). Enfin, le journal écrit toujours `"file": ""` (`english-comments.py:73`). | Le détecteur de français ignore ce qui est cité : `« … »`, guillemets droits et backticks. Fixtures : une JSDoc anglaise citant « Mesures non classées » passe, « Vérifie la valeur » est refusé. Le texte de refus des consignes d'insertion dit d'appliquer la consigne au lieu de l'écrire. Le journal reçoit le chemin du fichier. Pas de ligne dans `CLAUDE.md` : le modèle écrit déjà en anglais, l'erreur vient du hook. |
 
@@ -334,7 +355,7 @@ le dit déjà), **Refusé**.
 
 | # | Verdict | Constat vérifié | Modification |
 | --- | --- | --- | --- |
-| 13 | Local + Trou | Dans le kit, `docs/work/<slug>/` est versionné (seul `handoff-codex.md` est ignoré, `.gitignore:106`). EcoCrew l'ignorait : `git worktree remove` a supprimé plan, design et recherche. | `/kit:doctor` : nouveau check, `docs/work/` et les parties livrées de `.claude/` ne doivent pas être ignorées ; cas dans `test-kit-doctor.sh`. Avant `git worktree remove`, vérifier que `docs/work/<slug>/` est suivi et commité (`git status --ignored --porcelain docs/work/<slug>`) ; sinon le copier dans l'arbre principal et vérifier la copie. Le handoff ignoré est copié aussi s'il n'a pas été consommé. **Emplacement** : là où la commande s'exécute, c'est-à-dire le nettoyage de `github.md:133` (`ship.md:182` ne couvre que le worktree d'une autre piste). L'étape 10 le déplace avec la convention (1.5, point 2). |
+| 13 | Local + Trou | Dans le kit, `docs/work/<slug>/` est versionné (seul `handoff-codex.md` est ignoré, `.gitignore:106`). EcoCrew l'ignorait : `git worktree remove` a supprimé plan, design et recherche. | `/kit:doctor` : nouveau check, `docs/work/` et les parties livrées de `.claude/` ne doivent pas être ignorées ; cas dans `test-kit-doctor.sh`. Avant `git worktree remove`, vérifier que `docs/work/<slug>/` est suivi et commité (`git status --ignored --porcelain docs/work/<slug>`) ; sinon le copier dans l'arbre principal et vérifier la copie. Le handoff ignoré est copié aussi s'il n'a pas été consommé. **Emplacement** : là où la commande s'exécute, c'est-à-dire le nettoyage de `github.md:133` (`ship.md:182` ne couvre que le worktree d'une autre piste). L'agent est conservé (1.5) : la vérification y reste. |
 | 14 | Local + Trou | Le kit n'ignore pas `.claude/` ; EcoCrew oui. Les hooks tournent via `$CLAUDE_PROJECT_DIR`, mais `kit-attempts.py` doit être appelé par chemin absolu, et une session isolée ne peut pas écrire à travers. | Même check `/kit:doctor` que 13. `.claude/guides/10-worktrees.md` : section « Ce qui vit dans l'arbre principal » (hooks, `kit-attempts.py`, marqueurs). |
 | 15 | Trou | Addon FastAPI : la base de test par worktree devient périmée si un rebase change la chaîne Alembic sous un id inchangé. | `addons/fastapi/guides/` : supprimer `<db>_test_<worktree>` après un rebase qui touche les migrations, `conftest` la recrée. |
 | — | Trou | `prettier --write` sur un dossier entier : 99 fichiers reformatés, 12 conflits de rebase. | `10-worktrees.md` : formater les seuls fichiers modifiés (le hook `format-on-save.sh` le fait déjà). `prevent-destructive-commands.sh` : demander confirmation sur un formateur en écriture appliqué à un dossier. Fixture. |
@@ -373,14 +394,14 @@ réel aujourd'hui. Chaque correction de hook arrive avec sa fixture ou son test.
    `github.md`), D14, D15, garde formateur.
 4. Install et init : F18, F19.
 5. Commentaires : C12, C13 (faux positifs du détecteur de français, priorité : c'est le hook qui refuse le plus).
-6. Effort et modèles (1.1) ; `github` reste dans le tableau.
+6. Effort et modèles (1.1).
 7. Codex et 97 % (1.2), avec E16 et E17 et la reprise de la phase 0.
    Mesure.
 8. CLAUDE.md et rules allégés (1.3). Mesure.
 9. `reviewer` découpé, `orchestrate` et `ship` allégés, test-writer continué
    (1.4). Mesure.
-10. Convention git et nettoyage de worktree déplacés avec C11, agent `github`
-    supprimé partout (1.5). Mesure.
+10. C11 dans `github.md` (1.5). `/clear` entre deux features : fin de
+    `/loop:ship`, hook `SessionStart` sur `clear`, guide (1.9). Mesure.
 10b. Agent `implementer`, `test-writer` après le code, `e2e-tester` élargi,
     modèle de `/database:migration` (1.8). Mesure.
 11. Skills, cache, addons réduits (1.6).
@@ -392,7 +413,7 @@ réel aujourd'hui. Chaque correction de hook arrive avec sa fixture ou son test.
 
 - Hooks : changent seulement les points de la partie 2 (bugs, et les nouveaux
   refus A6 et garde formateur), les textes de refus, les checks ajoutés à
-  `kit-doctor.py` (B8, D13), le renommage de 1.2 et le marqueur `.token-delegate` de 1.8 dans
+  `kit-doctor.py` (B8, D13), le renommage de 1.2 et le marqueur `.token-delegate` de 1.8, le nouveau hook `SessionStart` de 1.9 dans
   `token-statusline.py` et `kit-doctor.py`, et les commentaires qui citaient
   `docs/codex-claude-split-plan.md`. Aucune autre logique de hook ne bouge.
 - `product.md` : une fois par produit, sans effet sur le coût d'une feature.
