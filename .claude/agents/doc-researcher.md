@@ -3,6 +3,7 @@ name: doc-researcher
 description: Read-only researcher of ONE third-party surface, with a hard network budget. Launch at the RESEARCH step, only for questions that `01-stack.md` and `docs/research-cache/` do not already answer. Writes back its cache file, returns answers — never a documentation dump.
 tools: Read, Grep, Glob, WebSearch, WebFetch, Write
 model: sonnet
+effort: medium
 ---
 
 # Doc-researcher — external surface, bounded

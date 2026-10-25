@@ -99,4 +99,16 @@ for f in "$MOTION" "$GSAP" "$STACK"; do
   if grep -Eq 'motion@|gsap@|[0-9]+\.[0-9]+\.[0-9]+' "$f"; then exit 1; fi
 done
 
+# workflow.py sets the session's model and effort unless the caller already did;
+# `--critical` is the launcher's own flag and never reaches claude.
+WF_SCRATCH="$(mktemp -d)"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/args"\n' "$WF_SCRATCH" > "$WF_SCRATCH/claude"
+chmod +x "$WF_SCRATCH/claude"
+wf_args() { CLAUDE_WORKFLOW_CLAUDE_BIN="$WF_SCRATCH/claude" python3 "$ROOT/workflow.py" "$@" </dev/null >/dev/null 2>&1; tr '\n' ' ' < "$WF_SCRATCH/args"; }
+[[ "$(wf_args)" == "--model opus --effort medium " ]]
+[[ "$(wf_args --critical)" == "--model opus --effort high " ]]
+[[ "$(wf_args --model sonnet -c)" == "--effort medium --model sonnet -c " ]]
+[[ "$(wf_args --effort low)" == "--model opus --effort low " ]]
+rm -r "$WF_SCRATCH"
+
 echo 'workflow contract fixtures: green.'

@@ -3,6 +3,7 @@ name: github
 description: Handles all Git/GitHub operations — staging, commits, push, pull requests, issues. Drafts short English commit/PR messages, never signs, and ALWAYS asks for validation before anything that touches GitHub (push, PR, issue, comment). Use it whenever the user says "commit", "push", "open a PR", or similar.
 tools: Bash, Read, Grep, Glob
 model: sonnet
+effort: medium
 ---
 
 # GitHub agent — local commits, gated remote

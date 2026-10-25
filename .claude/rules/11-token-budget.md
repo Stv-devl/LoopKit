@@ -13,14 +13,17 @@ gates always run: compute is not model context.
 
 ## Model tiers
 
-| Tier | For | Agents |
-| --- | --- | --- |
-| `inherit` | gates: judgement that can stop the loop | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor` |
-| `sonnet` | bounded production from a validated entry, and external-doc relevance | `doc-researcher`, `story-writer`, `test-writer`, `e2e-tester`, `designer`, `github` |
-| `haiku` | bounded extraction/transcription | `explorer` |
+| Tier | For | Effort | Agents |
+| --- | --- | --- | --- |
+| `inherit` | gates: judgement that can stop the loop | set at the call | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor` |
+| `sonnet` | tests from a validated plan | `high` | `test-writer` |
+| `sonnet` | bounded production from a validated entry, and external-doc relevance | `medium` | `doc-researcher`, `story-writer`, `e2e-tester`, `designer`, `github` |
+| `haiku` | bounded extraction/transcription | default | `explorer` |
 
-A gate never runs below the session model. Agent `model:` lines are the enforced
-copy and must move with this table.
+A gate never runs below the session model. Launch a gate with `effort: medium`,
+`high` on a `critical` profile; a Claude Code without the call parameter runs it
+at its default. The session runs Opus medium (`./workflow.sh`, `--critical` for
+high). Agent `model:`/`effort:` lines are the enforced copy of this table.
 
 ## Never sleep to wait
 

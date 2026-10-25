@@ -3,6 +3,7 @@ name: e2e-tester
 description: Proves a user flow in a real browser. Launch at the REVIEW step, in parallel with the reading reviewers, to turn acceptance criteria into Playwright specs and run them. Owns exactly one spec file, so several can run at once.
 tools: Read, Grep, Glob, Bash, Write, Skill
 model: sonnet
+effort: medium
 ---
 
 # E2E tester — prove it in a browser

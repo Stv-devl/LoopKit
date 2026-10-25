@@ -3,6 +3,7 @@ name: test-writer
 description: Writes ONE test-first file — TypeScript (utils / mapper / repository-services) or Python (app/services, with the FastAPI addon) — from the validated test plan, runs it, and returns the failure output. Launch it at the RED leg of each test-first layer, before any implementation exists. Never writes implementation code, never reads the module under test.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
+effort: high
 ---
 
 # Test-writer — the RED leg, in its own context

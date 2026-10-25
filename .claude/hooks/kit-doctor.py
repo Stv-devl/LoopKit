@@ -697,6 +697,45 @@ def check_agent_models() -> list[Finding]:
     return findings
 
 
+def check_agent_efforts() -> list[Finding]:
+    """Every agent's `effort:` is the one its row of the tier table gives it.
+
+    A row's Effort cell is a backticked level the frontmatter must carry, or plain
+    words (a gate's effort is set at the call, by profile) meaning the agent
+    carries none: a fixed effort on a gate would override the call.
+    """
+    rule = read(".claude/rules/11-token-budget.md")
+    agents_dir = ROOT / ".claude/agents"
+    if rule is None or not agents_dir.is_dir() or not re.search(r"^\|[^\n]*\bEffort\b", rule, re.M):
+        return skip("agent-efforts", "an Effort column in 11-token-budget.md", ".claude/agents/")
+
+    declared: dict[str, str | None] = {}
+    for line in rule.splitlines():
+        row = re.match(r"\|\s*`([a-z][a-z0-9.-]+)`\s*\|(.*)\|\s*$", line)
+        if not row:
+            continue
+        cells = row.group(2).split("|")
+        if len(cells) < 3:
+            continue
+        level = re.search(r"`([a-z]+)`", cells[-2])
+        for name in re.findall(r"`([a-z][a-z0-9-]+)`", cells[-1]):
+            declared[name] = level.group(1) if level else None
+
+    wrong: list[str] = []
+    for path in sorted(agents_dir.glob("*.md")):
+        if path.stem not in declared:
+            continue
+        found = re.search(r"^effort:\s*(\S+)\s*$", path.read_text(encoding="utf-8"), re.M)
+        got = found.group(1) if found else None
+        if got != declared[path.stem]:
+            wrong.append(f"{path.stem}: .claude/rules/11-token-budget.md → {declared[path.stem] or 'none (set at the call)'}"
+                         f"   |   .claude/agents/{path.stem}.md → {got or 'none'}")
+    if wrong:
+        return [Finding("agent-efforts", DIVERGENCE,
+                        f"{len(wrong)} agent(s) carry an effort the rule does not give them", wrong)]
+    return [Finding("agent-efforts", OK, f"{len(declared)} agents match the Effort column")]
+
+
 # --------------------------------------------------------------- wiring & links
 
 # Written at runtime, or created by a command — absent is the normal state.
@@ -1214,7 +1253,7 @@ CHECKS = [
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
                check_ignored_loop_paths,
-               check_workflow_names, check_agent_models, check_settled_ledger]),
+               check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring]),
     ("links", [check_shipped_paths, check_command_references,

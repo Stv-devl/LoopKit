@@ -55,4 +55,23 @@ printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',
 CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
 
+mkdir -p "$SCRATCH/.claude/agents"
+printf '| Tier | For | Effort | Agents |\n| --- | --- | --- | --- |\n| `inherit` | gates | set at the call | `reviewer` |\n| `sonnet` | tests | `high` | `test-writer` |\n| `sonnet` | production | `medium` | `github` |\n' \
+    > "$SCRATCH/.claude/rules/11-token-budget.md"
+printf -- '---\nname: reviewer\nmodel: inherit\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+printf -- '---\nname: test-writer\nmodel: sonnet\neffort: high\n---\n' > "$SCRATCH/.claude/agents/test-writer.md"
+printf -- '---\nname: github\nmodel: sonnet\neffort: high\n---\n' > "$SCRATCH/.claude/agents/github.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  agent-efforts' <<<"$EFFORT_OUTPUT"
+grep -q 'github' <<<"$(grep -A3 'agent-efforts' <<<"$EFFORT_OUTPUT")"
+grep -q 'ok          agent-models' <<<"$EFFORT_OUTPUT"
+printf -- '---\nname: github\nmodel: sonnet\neffort: medium\n---\n' > "$SCRATCH/.claude/agents/github.md"
+printf -- '---\nname: reviewer\nmodel: inherit\neffort: low\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'reviewer' <<<"$(grep -A3 'agent-efforts' <<<"$EFFORT_OUTPUT")"
+printf -- '---\nname: reviewer\nmodel: inherit\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          agent-efforts' <<<"$EFFORT_OUTPUT"
+rm -r "$SCRATCH/.claude/agents" "$SCRATCH/.claude/rules/11-token-budget.md"
+
 echo 'kit-doctor version fixtures: green.'

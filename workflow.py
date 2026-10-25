@@ -271,8 +271,26 @@ def run_codex(artifact: str) -> int:
     return subprocess.call([str(launcher), artifact], cwd=PROJECT)
 
 
+def session_arguments(arguments: list[str]) -> list[str]:
+    """Pin the session to Opus at medium effort, high under `--critical`.
+
+    Nothing else sets the main session's model or effort, and it carries most of
+    the spend. A `--model` or `--effort` the caller passed wins; `--critical` is
+    this launcher's flag and is not forwarded.
+    """
+    critical = "--critical" in arguments
+    rest = [a for a in arguments if a != "--critical"]
+    given = {a.split("=", 1)[0] for a in rest}
+    pinned: list[str] = []
+    if "--model" not in given:
+        pinned += ["--model", "opus"]
+    if "--effort" not in given:
+        pinned += ["--effort", "high" if critical else "medium"]
+    return [*pinned, *rest]
+
+
 def main() -> int:
-    status, threshold, quota, error = run_claude(sys.argv[1:])
+    status, threshold, quota, error = run_claude(session_arguments(sys.argv[1:]))
     if threshold or quota or error:
         try:
             artifact = fallback_artifact()
