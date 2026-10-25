@@ -518,6 +518,37 @@ def check_audit_flags() -> list[Finding]:
     return [Finding("audit-flags", OK, "pnpm audit " + next(iter(seen.values())))]
 
 
+def check_ignored_loop_paths() -> list[Finding]:
+    """Nothing the loop needs across worktrees is gitignored.
+
+    `git worktree remove` deletes ignored files without a word. A project that
+    ignored `docs/work/` lost a track's research, design and plan on merge; one
+    that ignores `.claude/` gives every fresh worktree no rules, no hooks and no
+    agents. Only the per-session handoff is meant to be ignored.
+    """
+    probes = {
+        "docs/work/probe/plan.md": "docs/work/", ".claude/rules/probe.md": ".claude/rules/",
+        ".claude/agents/probe.md": ".claude/agents/", ".claude/commands/probe.md": ".claude/commands/",
+        ".claude/hooks/probe.sh": ".claude/hooks/", ".claude/skills/probe.md": ".claude/skills/",
+        ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
+    }
+    try:
+        result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", *probes],
+                                capture_output=True, text=True)
+    except FileNotFoundError:
+        return skip("ignored-loop-paths", "git")
+    if result.returncode not in (0, 1):
+        return skip("ignored-loop-paths", "a git repository")
+    ignored = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not ignored:
+        return [Finding("ignored-loop-paths", OK, "docs/work/ and the shipped .claude/ folders are tracked")]
+    folders = sorted({probes[path] for path in ignored if path in probes})
+    return [Finding("ignored-loop-paths", DIVERGENCE,
+                    "gitignored, so a worktree never gets it and `git worktree remove` deletes it",
+                    [f"{folder}  →  remove its .gitignore entry (only the per-session handoff file is meant to be ignored)"
+                     for folder in folders])]
+
+
 def check_workflow_names() -> list[Finding]:
     """The CD names the CI workflow, and it must name the one that exists.
 
@@ -1142,6 +1173,7 @@ CHECKS = [
                check_shared_dirs,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
+               check_ignored_loop_paths,
                check_workflow_names, check_agent_models, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring]),

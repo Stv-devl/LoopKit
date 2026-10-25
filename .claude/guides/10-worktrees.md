@@ -135,8 +135,19 @@ git branch -d feat/<slug>
 
 ### Three things to know before the first fork
 
-- **The guardrails follow.** `.claude/` is versioned, so a worktree checkout
-  carries its own hooks, rules and commands. Nothing to copy.
+- **The guardrails follow — if `.claude/` is versioned.** A worktree checkout
+  then carries its own hooks, rules and commands. A project that gitignores
+  `.claude/` (or `docs/work/`) gets an empty one, and `git worktree remove`
+  deletes ignored files on merge: `/kit:doctor`'s `ignored-loop-paths` says so.
+- **What lives in the main tree only.** The hooks run from
+  `$CLAUDE_PROJECT_DIR`, so they follow the session. Anything ignored does not:
+  `.claude/.tdd-red/` markers, `.claude/.kit-health.jsonl`, the token markers,
+  and `kit-attempts.py`'s writes. Call `kit-attempts.py` by its absolute path from
+  the worktree, and expect a fresh worktree to start with no RED marker.
+- **Format the diff, not the folder.** `format-on-save.sh` formats each file as
+  it is written. A `prettier --write .` on a track rewrites files nobody touched
+  and turns into rebase conflicts; `prevent-destructive-commands.sh` asks first.
+  To format by hand: the files of `git diff --name-only`.
 - **The base ref is a setting.** `worktree.baseRef` in `settings.json` decides
   what `EnterWorktree` branches from: `head` (current local HEAD) or `fresh`
   (`origin/<default>`). This kit ships `head` — a local-only repo has no origin

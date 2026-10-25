@@ -28,4 +28,14 @@ printf '### 1. Gates\n```bash\npnpm audit --prod --audit-level=high\npnpm audit 
 AUDIT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          audit-flags' <<<"$AUDIT_OUTPUT"
 
+git -C "$SCRATCH" init -q
+printf 'docs/work/\n.claude/agents/\n' > "$SCRATCH/.gitignore"
+IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  ignored-loop-paths' <<<"$IGNORED_OUTPUT"
+grep -q 'docs/work/' <<<"$IGNORED_OUTPUT"
+grep -q '.claude/agents/' <<<"$IGNORED_OUTPUT"
+printf 'docs/work/*/handoff.md\n' > "$SCRATCH/.gitignore"
+IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          ignored-loop-paths' <<<"$IGNORED_OUTPUT"
+
 echo 'kit-doctor version fixtures: green.'

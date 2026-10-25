@@ -153,7 +153,8 @@ run_fixture_sweep() {
             case "$(basename "$fixture")" in
                 *-pass.json) expected=pass ;;
                 *-deny.json) expected=deny ;;
-                *) fail "$hook" "$(basename "$fixture")" "name must end in -pass.json or -deny.json"; continue ;;
+                *-ask.json) expected=ask ;;
+                *) fail "$hook" "$(basename "$fixture")" "name must end in -pass.json, -deny.json or -ask.json"; continue ;;
             esac
             run_case "$hook" "$fixture" "$expected"
         done < <(find "$directory" -maxdepth 1 -type f -name '*.json' | sort)

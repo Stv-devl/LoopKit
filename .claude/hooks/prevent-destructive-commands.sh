@@ -190,7 +190,7 @@ fi
 # section rather than below it. `decide` exits on the first match, so an `ask`
 # emitted early wins over every `deny` that would have fired later:
 # `echo x > a.ts && mkfs.ext4 /dev/sdb` came back as a permission prompt instead
-# of a block. Every deny in this file now precedes the only `ask` it contains.
+# of a block. Every deny in this file now precedes every `ask` it contains.
 # =============================================================================
 
 # Disk operations
@@ -294,7 +294,37 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
 done < <(cwk_segments "$COMMAND")
 
 # =============================================================================
-# SOURCE WRITES VIA THE SHELL  —  the only `ask` in this file, so it comes LAST
+# FORMATTER WRITING A WHOLE FOLDER  —  an `ask`, so after every deny
+#
+# `prettier --write .` on a track reformatted 99 files nobody touched and left 12
+# rebase conflicts. format-on-save.sh already formats each written file; a
+# formatter in write mode is only ever needed on the files of the diff. A target
+# that is a folder, `.`, a glob, or nothing at all (eslint's default) is asked.
+# =============================================================================
+while IFS= read -r SEG; do
+    TOOL_ARGS=$(echo "$SEG" | grep -oE '\b(prettier|eslint|ruff[[:space:]]+format|biome[[:space:]]+(format|check))\b.*' || true)
+    [[ -z "$TOOL_ARGS" ]] && continue
+    [[ "$TOOL_ARGS" == *'$('* || "$TOOL_ARGS" == *'`'* ]] && continue
+    case "$TOOL_ARGS" in
+        prettier*) [[ "$TOOL_ARGS" =~ [[:space:]](--write|-w)([[:space:]]|$) ]] || continue ;;
+        eslint*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
+        ruff*) [[ "$TOOL_ARGS" =~ [[:space:]](--check|--diff)([[:space:]]|$) ]] && continue ;;
+        biome*) [[ "$TOOL_ARGS" =~ [[:space:]]--write([[:space:]]|$) ]] || continue ;;
+    esac
+    WIDE=""
+    TARGETS=0
+    for word in $(echo "$TOOL_ARGS" | sed -E 's/^(ruff[[:space:]]+format|biome[[:space:]]+(format|check)|prettier|eslint)//'); do
+        [[ "$word" == -* ]] && continue
+        TARGETS=$((TARGETS + 1))
+        [[ "$word" == "." || "$word" == */ || "$word" == *"*"* || ! "$word" =~ \.[A-Za-z0-9]+$ ]] && WIDE="$word"
+    done
+    if [[ -n "$WIDE" || "$TARGETS" -eq 0 ]]; then
+        ask "This runs a formatter in write mode on a whole folder (${WIDE:-the default, every file}).\\n\\nOn a track it rewrites files the diff never touched and turns into rebase conflicts later (.claude/guides/10-worktrees.md). format-on-save.sh already formats each file as it is written; to format by hand, name the changed files: git diff --name-only.\\n\\nIf the whole-folder pass is deliberate (a one-off formatting commit on its own), say so and let the user decide."
+    fi
+done < <(cwk_segments "$COMMAND")
+
+# =============================================================================
+# SOURCE WRITES VIA THE SHELL  —  an `ask`, so it comes after every deny
 #
 # Every other guardrail in this kit (no-any, no-forbidden-icons,
 # enforce-architecture, tdd-require-red, tdd-freeze-tests) is registered on the

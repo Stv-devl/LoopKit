@@ -130,7 +130,13 @@ Asked to integrate a `feat/<slug>` worktree branch:
    merge, and that call belongs to `/loop:ship`, not to you.
 4. Show the branch, `git diff --stat <base>...<branch>` and the exact merge
    command. **Ask. Then merge.**
-5. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty
+5. Before cleaning up, check the loop's memory survives: `git -C
+   .claude/worktrees/<slug> status --porcelain --ignored docs/work/<slug>/` must
+   print nothing. `git worktree remove` deletes ignored files without a word, so
+   any line there (`!!` ignored, `??` untracked) means: copy `docs/work/<slug>/`
+   into the main tree, check the copy with `diff -r`, and say so. An unconsumed
+   handoff file is copied the same way.
+6. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty
    tree, report it instead — then `git branch -d feat/<slug>`.
    **Exception**: if that worktree is the one the session is standing in, git
    cannot remove it and you have no tool that can. Merge, then report
