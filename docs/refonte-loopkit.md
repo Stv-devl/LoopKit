@@ -88,9 +88,11 @@ successifs d'un même agent.
 départ, même profil), nommée dans le fichier de sortie. Toutes les mesures la
 rejouent ; sans elle, un gain peut venir d'une feature plus petite.
 
-**Points de mesure** : référence (étape 0), puis après les étapes 7, 8, 9 et 10,
-chacune comparée à la précédente. Une seule mesure finale ne dit pas lequel des
-changements a rapporté.
+**Points de mesure** : référence (étape 0) et mesure finale (étape 13).
+Décidé le 2026-10-25 : pas de rejeu intermédiaire après les étapes 7 à 10, chaque
+rejeu étant une vraie passe de boucle dans EcoCrew. Le prix : la mesure finale
+donne le gain total, pas la part de chaque étape. La story de référence est
+choisie à l'étape 13, avant le rejeu.
 
 Sortie (décidé) : `docs/measurements/token-baseline.md`, versionné. Pas sous
 `docs/audits/`, ignoré par git (`.gitignore:101`).

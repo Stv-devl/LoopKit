@@ -1,4 +1,4 @@
-<!-- budget: 20 lines · /kit:doctor rules-budget -->
+<!-- budget: 12 lines · /kit:doctor rules-budget -->
 # Forbidden Icons
 
 **Never** use star, rocket or lightning icons/emojis **anywhere** — UI, icon

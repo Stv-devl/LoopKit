@@ -1,4 +1,4 @@
-<!-- budget: 55 lines · /kit:doctor rules-budget -->
+<!-- budget: 50 lines · /kit:doctor rules-budget -->
 # Code Conventions
 
 ## TypeScript

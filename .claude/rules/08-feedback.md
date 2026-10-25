@@ -1,4 +1,4 @@
-<!-- budget: 30 lines · /kit:doctor rules-budget -->
+<!-- budget: 18 lines · /kit:doctor rules-budget -->
 # Feedback States
 
 - Initial pending: full loading state.

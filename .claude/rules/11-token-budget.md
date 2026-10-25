@@ -1,4 +1,4 @@
-<!-- budget: 55 lines · /kit:doctor rules-budget -->
+<!-- budget: 42 lines · /kit:doctor rules-budget -->
 # Token budget
 
 Persist one profile in every work artifact:

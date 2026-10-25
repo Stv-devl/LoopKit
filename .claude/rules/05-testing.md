@@ -1,4 +1,4 @@
-<!-- budget: 95 lines · /kit:doctor rules-budget -->
+<!-- budget: 70 lines · /kit:doctor rules-budget -->
 # Testing
 
 ## Required gate

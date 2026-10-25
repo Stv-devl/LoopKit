@@ -1,4 +1,4 @@
-<!-- budget: 35 lines · /kit:doctor rules-budget -->
+<!-- budget: 22 lines · /kit:doctor rules-budget -->
 # State Management
 
 | Origin/behaviour | Owner |
