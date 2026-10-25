@@ -50,6 +50,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | --- | --- | --- |
 | `protected-dirs` | `CLAUDE.md`, "Recursive delete on" | `PROTECTED_DIRS` in `prevent-destructive-commands.sh` |
 | `data-client` | `01-stack.md`, "Where does the client live?" | `DATA_CLIENT_MODULE` / `DATA_CLIENT_OWN_PATH` in `enforce-architecture.py` |
+| `client-copies` | `DATA_CLIENT_MODULE` in `enforce-architecture.py` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
 | `composition-roots` | `02-architecture.md`, the composition-root row | `COMPOSITION_ROOTS` in `enforce-architecture.py` |
 | `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `reviewer.md` — which restates the list *and* its count | `SHARED_DIRS` in `enforce-architecture.py`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |

@@ -71,6 +71,11 @@ For every section, re-read that section immediately before editing it:
 1. `01-stack.md`: data-client table and stack/scripts facts.
 2. `enforce-architecture.py`: `DATA_CLIENT_MODULE`, `DATA_CLIENT_OWN_PATH`,
    `COMPOSITION_ROOTS`, `SHARED_DIRS`; then section 2 bis secret-template twins.
+   When the client is not `lib/client`, rewrite its copies in the same step: the
+   `@/lib/client` imports and mocks of `templates/feature.md`,
+   `templates/fixtures.md`, `patterns/react-query.md`, and the instance file in
+   the coverage `exclude` of `templates/tooling-config.md` with its twin in
+   `05-testing.md`. Probe: `/kit:doctor` `client-copies` and `coverage-holes`.
 3. Scaffold `src/lib/result.ts`, `errors.ts`, `queryClient.ts` only when the
    detected stack matches the shipped template and the files do not exist.
 4. `00-project.md`: exact run-once gates and the same script names in every twin;

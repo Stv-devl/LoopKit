@@ -298,6 +298,10 @@ add_py_hooks() {
                                command: "$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-prove-red-py.py",
                                timeout: 180}]) | unique_by(.command))
               else . end)
+          | .permissions.allow = (((.permissions.allow // []) + [
+              "Bash(python -m pytest)", "Bash(python -m pytest *)",
+              "Bash(uv run pytest)", "Bash(uv run pytest *)",
+              "Bash(mypy *)", "Bash(ruff check *)", "Bash(uv audit *)"]) | unique)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 
@@ -312,7 +316,7 @@ wire_fastapi() {
         echo "  ! jq absent : déclare les 6 hooks Python à la main (README, § 6. Hooks)." >&2
     elif [[ -e "$t/.claude/settings.json" ]]; then
         add_py_hooks "$t/.claude/settings.json" \
-            && echo "  câblé : les 6 hooks Python dans .claude/settings.json" \
+            && echo "  câblé : les 6 hooks Python et les autorisations des gates backend dans .claude/settings.json" \
             || echo "  ! échec du câblage jq : déclare les 6 hooks à la main (README, § 6)." >&2
     fi
 

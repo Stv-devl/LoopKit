@@ -59,4 +59,12 @@ PY_COUNT="$(jq '[.hooks[][]?.hooks[]?.command | select(endswith("-py.py") or end
 "$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
 [[ "$PY_COUNT" -eq "$(jq '[.hooks[][]?.hooks[]?.command | select(endswith("-py.py") or endswith("ruff-on-save.sh") or endswith("enforce-backend-layers.py") or endswith("no-any-type-py.py"))] | length' "$PY_TARGET/.claude/settings.json")" ]]
 
+# The backend gates are allowlisted, or /loop:ship prompts on each of them and a
+# reflex "no" drops one silently. Merged, never duplicated by a second install.
+for gate in 'Bash(python -m pytest *)' 'Bash(uv run pytest *)' 'Bash(mypy *)' \
+            'Bash(ruff check *)' 'Bash(uv audit *)'; do
+    jq -e --arg gate "$gate" '.permissions.allow | index($gate)' "$PY_TARGET/.claude/settings.json" >/dev/null
+done
+jq -e '.permissions.allow | length == (unique | length)' "$PY_TARGET/.claude/settings.json" >/dev/null
+
 echo 'install fixtures: green.'

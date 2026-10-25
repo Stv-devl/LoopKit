@@ -143,6 +143,45 @@ def check_data_client() -> list[Finding]:
     return findings
 
 
+def check_client_copies() -> list[Finding]:
+    """Every template that names the data client names the declared one.
+
+    The templates show a gateway importing the client, a test mocking it, and the
+    coverage floor excluding its instance file. `/kit:init` declares the client in
+    `enforce-architecture.py`; a template still on `@/lib/client` then teaches a
+    path that does not exist, and an exclusion on the wrong file leaves the real
+    client counted against the floor.
+    """
+    hook = read(".claude/hooks/enforce-architecture.py")
+    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook or "", re.M)
+    if not module:
+        return skip("client-copies", "enforce-architecture.py")
+    declared = module.group(1)
+
+    seen: dict[str, set[str]] = {}
+    for path in (".claude/skills/templates/feature.md", ".claude/skills/templates/fixtures.md",
+                 ".claude/skills/patterns/react-query.md"):
+        text = read(path)
+        if text is None:
+            continue
+        found = set(re.findall(r'import\s*\{\s*client\s*\}\s*from\s*["\']@/([^"\']+)["\']', text))
+        found |= set(re.findall(r'vi\.mock\(\s*["\']@/(lib/[^"\']+)["\']', text))
+        if found:
+            seen[path] = found
+    cfg = read(".claude/skills/templates/tooling-config.md")
+    if cfg:
+        instance = re.search(r"'src/(lib/[^']+)\.ts',\s*//\s*FILL: the data client INSTANCE", cfg)
+        if instance:
+            seen[".claude/skills/templates/tooling-config.md"] = {instance.group(1)}
+
+    wrong = {path: names for path, names in seen.items() if names != {declared}}
+    if not wrong:
+        return [Finding("client-copies", OK, f"@/{declared} in {len(seen)} template(s)")]
+    return [Finding("client-copies", DIVERGENCE,
+                    f"the declared client is @/{declared}; these templates name another",
+                    [f"{path}  →  {', '.join(sorted(names))}" for path, names in sorted(wrong.items())])]
+
+
 def check_composition_roots() -> list[Finding]:
     arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
     if arch is None or hook is None:
@@ -1169,7 +1208,7 @@ def check_kit_health() -> list[Finding]:
 
 
 CHECKS = [
-    ("twins", [check_protected_dirs, check_data_client, check_composition_roots,
+    ("twins", [check_protected_dirs, check_data_client, check_client_copies, check_composition_roots,
                check_shared_dirs,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
