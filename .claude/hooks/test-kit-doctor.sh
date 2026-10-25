@@ -50,5 +50,9 @@ grep -q 'DIVERGENCE  client-copies' <<<"$CLIENT_OUTPUT"
 grep -q 'templates/feature.md' <<<"$CLIENT_OUTPUT"
 grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
 if grep -q 'patterns/react-query.md' <<<"$CLIENT_OUTPUT"; then exit 1; fi
+printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',\n]\n" \
+    > "$SCRATCH/.claude/skills/templates/tooling-config.md"
+CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
 
 echo 'kit-doctor version fixtures: green.'

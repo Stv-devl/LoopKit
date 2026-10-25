@@ -59,6 +59,9 @@ if os.environ.get("CWK_HOOK_TIMING", "1") == "1":
     atexit.register(_record)
 
 
+CURRENT_PATH = ""
+
+
 def _log_health_deny(reason: str) -> None:
     """One JSONL line per real refusal — schema: docs/codex-claude-split-plan.md,
     "Sonde kit-health". Best-effort: never lets an observability write turn into
@@ -73,7 +76,7 @@ def _log_health_deny(reason: str) -> None:
                 "source": "hook:english-comments",
                 "event": "deny",
                 "reason": reason,
-                "file": "",
+                "file": CURRENT_PATH,
             }) + "\n")
     except OSError:
         pass
@@ -354,8 +357,51 @@ def scan_python(source: str):
         return line_comments, docstrings
 
 
+# Quoted text is the interface's own copy, in the user's language by design
+# (03-conventions.md): an English comment naming « Mesures non classées » is not
+# French prose. Quotes are set aside only when the words left outside them read
+# as English, so French prose wrapped whole in quotes is still French.
+QUOTED = re.compile(r"«[^»]*»|“[^”]*”|\"[^\"]*\"|`[^`]*`")
+ENGLISH_WORDS = {
+    "the", "a", "an", "of", "to", "is", "are", "and", "or", "for", "with", "in",
+    "on", "when", "this", "that", "it", "its", "from", "by", "as", "at", "be",
+    "row", "label", "group", "button", "shows", "returns", "renders", "named",
+}
+
+# The one implementation comment the rules ask for: the reason a memoization is
+# kept despite React Compiler (03-conventions.md), right above it, a lint
+# directive aside.
+MEMO_REASON = re.compile(r"^\s*memo:\s+\S")
+MEMOIZED = re.compile(
+    r"(^\s*|[=(:,]\s*|export\s+default\s+)(React\.)?(useMemo|useCallback|memo)\s*[(<]"
+)
+
+# A note on how to apply a change, left in the code instead of applied.
+INSERTION_NOTE = re.compile(
+    r"^\s*(import lines?\b|imports? to add\b|add (this|these|the following|at the top|after|before)\b|"
+    r"append (this|these|to|after)\b|insert (this|these|here|after|before|at)\b|"
+    r"full replacement\b|no new imports?\b|extra imports?\b)",
+    re.IGNORECASE,
+)
+
+
+# In a JSDoc, "Insert at the cursor" describes the API. Only the phrasings that
+# can never describe behaviour are notes left behind there.
+INSERTION_NOTE_DOC = re.compile(
+    r"^\s*(import lines?\b|imports? to add\b|full replacement\b|no new imports?\b|extra imports?\b)",
+    re.IGNORECASE,
+)
+
+
+def _english_outside_quotes(text: str) -> bool:
+    outside = re.findall(r"[A-Za-z]+", QUOTED.sub(" ", text).lower())
+    return len({w for w in outside if w in ENGLISH_WORDS}) >= 2
+
+
 def is_french(text: str) -> bool:
     text = DOMAIN_TERMS.sub(" ", text)
+    if _english_outside_quotes(text):
+        text = QUOTED.sub(" ", text)
     if ACCENTED.search(text):
         return True
     words = re.findall(r"[A-Za-z]+", text.lower())
@@ -370,6 +416,8 @@ def main() -> None:
 
     tool_input = data.get("tool_input", {}) or {}
     path = (tool_input.get("file_path") or "").replace("\\", "/")
+    global CURRENT_PATH
+    CURRENT_PATH = path
     content = tool_input.get("content") or tool_input.get("new_string") or ""
     if not path or not content:
         sys.exit(0)
@@ -404,6 +452,12 @@ def main() -> None:
         ruled = {i for i, t in line_comments if RULE_ONLY.match(t)}
         for i, text in line_comments:
             banner = SECTION_RULE.match(text) or {i - 1, i + 1} & ruled
+            if INSERTION_NOTE.match(text) and not banner:
+                deny(
+                    f"Instruction left in the code: #{text.strip()[:80]}\n\n"
+                    "This tells someone how to edit the file. Apply it instead and "
+                    "drop the note. See .claude/rules/03-conventions.md."
+                )
             if text.strip() and not PY_DIRECTIVE.match(text) and not banner:
                 deny(
                     f"Implementation comment detected: #{text.strip()[:80]}\n\n"
@@ -472,6 +526,18 @@ def main() -> None:
 
     for i, text in line_comments:
         banner = SECTION_RULE.match(text) or {i - 1, i + 1} & ruled
+        following = next(
+            (l for l in lines[i + 1:] if not re.match(r"^\s*//\s*eslint-", l)), ""
+        )
+        if MEMO_REASON.match(text) and MEMOIZED.search(following):
+            continue
+        if INSERTION_NOTE.match(text) and not banner:
+            deny(
+                f"Instruction left in the code: //{text.strip()[:80]}\n\n"
+                "This tells someone how to edit the file. Apply it instead: make "
+                "the import, the insertion or the replacement it describes, and "
+                "drop the note. See .claude/rules/03-conventions.md."
+            )
         if text.strip() and not DIRECTIVE.match(text) and not banner:
             deny(
                 f"Implementation comment detected: //{text.strip()[:80]}\n\n"
@@ -489,6 +555,12 @@ def main() -> None:
         if jsx:
             continue
         text = block_text[start]
+        if (INSERTION_NOTE_DOC if jsdoc else INSERTION_NOTE).match(text.lstrip("* ")):
+            deny(
+                f"Instruction left in the code at line {start + 1}: {text[:80]}\n\n"
+                "This tells someone how to edit the file. Apply it instead and "
+                "drop the note. See .claude/rules/03-conventions.md."
+            )
         banner = SECTION_RULE.match(text) or {start - 1, start + 1} & ruled_blocks
         if not jsdoc and text and not banner:
             deny(

@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/hooks/useStore.ts", "content": "export function useStore(): void {\n  // memo: identity is the external contract of useSyncExternalStore\n  // eslint-disable-next-line react-hooks/exhaustive-deps\n  const subscribe = useCallback(() => () => {}, []);\n  useSyncExternalStore(subscribe, get);\n}\n"}}

@@ -294,36 +294,6 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
 done < <(cwk_segments "$COMMAND")
 
 # =============================================================================
-# FORMATTER WRITING A WHOLE FOLDER  —  an `ask`, so after every deny
-#
-# `prettier --write .` on a track reformatted 99 files nobody touched and left 12
-# rebase conflicts. format-on-save.sh already formats each written file; a
-# formatter in write mode is only ever needed on the files of the diff. A target
-# that is a folder, `.`, a glob, or nothing at all (eslint's default) is asked.
-# =============================================================================
-while IFS= read -r SEG; do
-    TOOL_ARGS=$(echo "$SEG" | grep -oE '\b(prettier|eslint|ruff[[:space:]]+format|biome[[:space:]]+(format|check))\b.*' || true)
-    [[ -z "$TOOL_ARGS" ]] && continue
-    [[ "$TOOL_ARGS" == *'$('* || "$TOOL_ARGS" == *'`'* ]] && continue
-    case "$TOOL_ARGS" in
-        prettier*) [[ "$TOOL_ARGS" =~ [[:space:]](--write|-w)([[:space:]]|$) ]] || continue ;;
-        eslint*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
-        ruff*) [[ "$TOOL_ARGS" =~ [[:space:]](--check|--diff)([[:space:]]|$) ]] && continue ;;
-        biome*) [[ "$TOOL_ARGS" =~ [[:space:]]--write([[:space:]]|$) ]] || continue ;;
-    esac
-    WIDE=""
-    TARGETS=0
-    for word in $(echo "$TOOL_ARGS" | sed -E 's/^(ruff[[:space:]]+format|biome[[:space:]]+(format|check)|prettier|eslint)//'); do
-        [[ "$word" == -* ]] && continue
-        TARGETS=$((TARGETS + 1))
-        [[ "$word" == "." || "$word" == */ || "$word" == *"*"* || ! "$word" =~ \.[A-Za-z0-9]+$ ]] && WIDE="$word"
-    done
-    if [[ -n "$WIDE" || "$TARGETS" -eq 0 ]]; then
-        ask "This runs a formatter in write mode on a whole folder (${WIDE:-the default, every file}).\\n\\nOn a track it rewrites files the diff never touched and turns into rebase conflicts later (.claude/guides/10-worktrees.md). format-on-save.sh already formats each file as it is written; to format by hand, name the changed files: git diff --name-only.\\n\\nIf the whole-folder pass is deliberate (a one-off formatting commit on its own), say so and let the user decide."
-    fi
-done < <(cwk_segments "$COMMAND")
-
-# =============================================================================
 # SOURCE WRITES VIA THE SHELL  —  an `ask`, so it comes after every deny
 #
 # Every other guardrail in this kit (no-any, no-forbidden-icons,
@@ -399,6 +369,60 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
         deny "BLOCKED: writing a test-first layer or a test file from the shell.\\n\\nThe TDD hooks (tdd-require-red, tdd-freeze-tests, tdd-prove-red) only see the Write and Edit tools. A redirection bypasses all three: the RED phase is never observed and a frozen test can be rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed and nothing will block you. If you genuinely need to correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/05-testing.md)."
     fi
 done < <(cwk_segments "$COMMAND")
+
+# =============================================================================
+# FORMATTER WRITING A WHOLE FOLDER  —  an `ask`, so after every deny
+#
+# `prettier --write .` on a track reformatted 99 files nobody touched and left 12
+# rebase conflicts. The on-save hooks already format each written file; by hand,
+# a formatter in write mode is only needed on the files of the diff. A target
+# that is a folder, `.`, a glob, or nothing at all (eslint's default) is asked.
+# `ruff` is the exception for a named folder: the FastAPI addon prescribes
+# `ruff format app/`, scoped away from the frozen `tests/services/`; a ruff
+# target under `tests/` is asked like a folder.
+# =============================================================================
+FORMAT_WIDE=""
+set -f
+while IFS= read -r SEG; do
+    [[ "$SEG" =~ ^[[:space:]]*(git|echo|printf)[[:space:]] ]] && continue
+    [[ "$SEG" =~ (^|[[:space:]])xargs[[:space:]] ]] && continue
+    [[ "$SEG" == *'$('* || "$SEG" == *'`'* ]] && continue
+    TOOL_ARGS=$(echo "$SEG" | grep -oE '\b(prettier|eslint|ruff[[:space:]]+(format|check)|biome[[:space:]]+(format|check|lint))\b.*' || true)
+    [[ -z "$TOOL_ARGS" ]] && continue
+    case "$TOOL_ARGS" in
+        prettier*) [[ "$TOOL_ARGS" =~ [[:space:]](--write|-w)([[:space:]]|$) ]] || continue ;;
+        eslint*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
+        ruff*check*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
+        ruff*) [[ "$TOOL_ARGS" =~ [[:space:]](--check|--diff)([[:space:]]|$) ]] && continue ;;
+        biome*) [[ "$TOOL_ARGS" =~ [[:space:]]--write([[:space:]]|$) ]] || continue ;;
+    esac
+    TOOL="${TOOL_ARGS%% *}"
+    TARGETS=0
+    SKIP_NEXT=0
+    for word in $(echo "$TOOL_ARGS" | sed -E 's/^(ruff[[:space:]]+(format|check)|biome[[:space:]]+(format|check|lint)|prettier|eslint)//'); do
+        if [[ "$SKIP_NEXT" == 1 ]]; then SKIP_NEXT=0; continue; fi
+        case "$word" in
+            --max-warnings|--log-level|--config|-c|--cache-location|--ignore-path|--plugin|--rule|--ext|--format|-f|--parser|--output-file|-o|--resolve-plugins-relative-to|--select|--ignore|--line-length|--target-version)
+                SKIP_NEXT=1; continue ;;
+            -*) continue ;;
+        esac
+        TARGETS=$((TARGETS + 1))
+        if [[ "$word" == "." || "$word" == "./" || "$word" == *"*"* ]]; then
+            FORMAT_WIDE="$word"
+        elif [[ "$TOOL" == ruff && "$word" =~ ^(\./)?tests(/|$) ]]; then
+            FORMAT_WIDE="$word"
+        elif [[ "$TOOL" != ruff && ( "$word" == */ || ! "$word" =~ \.[A-Za-z0-9]+$ ) ]]; then
+            FORMAT_WIDE="$word"
+        fi
+    done
+    [[ "$TARGETS" -eq 0 ]] && FORMAT_WIDE="the default, every file"
+    [[ -n "$FORMAT_WIDE" ]] && break
+done < <(cwk_segments "$COMMAND")
+set +f
+
+if [[ -n "$FORMAT_WIDE" ]]; then
+    ask "This runs a formatter in write mode on a whole folder ($FORMAT_WIDE).\n\nOn a track it rewrites files the diff never touched and turns into rebase conflicts later (.claude/guides/10-worktrees.md); in Python it can rewrite the frozen tests/services/ past the freeze. The on-save hooks (format-on-save.sh, ruff-on-save.sh) already format each file as it is written; to format by hand, name the changed files: git diff --name-only.\n\nIf the whole-folder pass is deliberate (a one-off formatting commit on its own), say so and let the user decide."
+fi
 
 if [[ "$SRC_WRITE_SEEN" == "1" ]]; then
     ask "This writes a TypeScript source from the shell, so no PreToolUse guardrail sees it (no-any, forbidden icons, architecture layering all run on Write|Edit only).\\n\\nIf this is authored code, write it with the Write/Edit tool instead. If it is genuine codegen (generated DB types), say what it generates and where — then let the user decide."

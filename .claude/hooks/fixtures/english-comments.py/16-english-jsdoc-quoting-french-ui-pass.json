@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/components/Header.tsx", "content": "/** The header row of the « Mesures non classées » group, labelled \"Confirmer l'unité\". */\nexport function Header(): JSX.Element {\n  return <div />;\n}\n"}}

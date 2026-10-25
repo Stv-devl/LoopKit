@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/components/Header.tsx", "content": "/** \"Affiche la ligne sélectionnée pour le groupe\" */\nexport function Header(): JSX.Element {\n  return <div />;\n}\n"}}

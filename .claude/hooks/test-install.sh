@@ -62,9 +62,21 @@ PY_COUNT="$(jq '[.hooks[][]?.hooks[]?.command | select(endswith("-py.py") or end
 # The backend gates are allowlisted, or /loop:ship prompts on each of them and a
 # reflex "no" drops one silently. Merged, never duplicated by a second install.
 for gate in 'Bash(python -m pytest *)' 'Bash(uv run pytest *)' 'Bash(mypy *)' \
-            'Bash(ruff check *)' 'Bash(uv audit *)'; do
+            'Bash(ruff check .)' 'Bash(uv audit *)' 'Bash(pyright *)'; do
     jq -e --arg gate "$gate" '.permissions.allow | index($gate)' "$PY_TARGET/.claude/settings.json" >/dev/null
 done
 jq -e '.permissions.allow | length == (unique | length)' "$PY_TARGET/.claude/settings.json" >/dev/null
+if jq -e '.permissions.allow | index("Bash(ruff check *)")' "$PY_TARGET/.claude/settings.json" >/dev/null; then exit 1; fi
+
+# A fresh Supabase install declares lib/supabase and rewrites its template copies,
+# or /kit:doctor reports the installer's own divergence on day one.
+SB_TARGET="$SCRATCH/supabase-target"
+mkdir -p "$SB_TARGET"
+"$ROOT/install.sh" "$SB_TARGET" --supabase --no-ci >/dev/null 2>&1
+SB_DOCTOR="$(python3 "$SB_TARGET/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          client-copies' <<<"$SB_DOCTOR"
+grep -q 'ok          coverage-holes' <<<"$SB_DOCTOR"
+grep -Fq 'import { supabase as client } from "@/lib/supabase";' "$SB_TARGET/.claude/skills/templates/feature.md"
+grep -Fq 'supabase: createMockClient(),' "$SB_TARGET/.claude/skills/templates/fixtures.md"
 
 echo 'install fixtures: green.'

@@ -301,7 +301,8 @@ add_py_hooks() {
           | .permissions.allow = (((.permissions.allow // []) + [
               "Bash(python -m pytest)", "Bash(python -m pytest *)",
               "Bash(uv run pytest)", "Bash(uv run pytest *)",
-              "Bash(mypy *)", "Bash(ruff check *)", "Bash(uv audit *)"]) | unique)
+              "Bash(mypy *)", "Bash(pyright *)", "Bash(ruff check .)", "Bash(ruff check app)",
+              "Bash(ruff check app/)", "Bash(uv audit *)"]) | unique)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 
@@ -371,6 +372,19 @@ wire_supabase() {
                       s{DATA_CLIENT_OWN_PATH = "lib/client\.ts"}{DATA_CLIENT_OWN_PATH = "lib/supabase.ts"}' \
             "$t/.claude/hooks/enforce-architecture.py"
         echo "  câblé : lib/supabase dans DATA_CLIENT_MODULE / DATA_CLIENT_OWN_PATH"
+        # Les templates nomment le client : le module change, l'export aussi
+        # (`supabase`, pas `client`). Un alias garde les corps des exemples
+        # intacts ; /kit:doctor client-copies vérifie les copies.
+        for f in "$t/.claude/skills/templates/feature.md" "$t/.claude/skills/patterns/react-query.md"; do
+            [[ -f "$f" ]] && perl -pi -e 's{import \{ client \} from "\@/lib/client";}{import { supabase as client } from "\@/lib/supabase";}g' "$f"
+        done
+        [[ -f "$t/.claude/skills/templates/fixtures.md" ]] && perl -0pi -e \
+            's#vi\.mock\("\@/lib/client", \(\) => \(\{\n  client: createMockClient\(\),#vi.mock("\@/lib/supabase", () => ({\n  supabase: createMockClient(),#g' \
+            "$t/.claude/skills/templates/fixtures.md"
+        [[ -f "$t/.claude/skills/templates/tooling-config.md" ]] && perl -pi -e \
+            "s{'src/lib/client\.ts',}{'src/lib/supabase.ts',}" "$t/.claude/skills/templates/tooling-config.md"
+        [[ -f "$t/.claude/rules/05-testing.md" ]] && perl -pi -e \
+            's{`lib/client\.ts`}{`lib/supabase.ts`}' "$t/.claude/rules/05-testing.md"
     elif ! $installed_arch && ! grep -q 'DATA_CLIENT_MODULE = "lib/supabase"' \
                                    "$t/.claude/hooks/enforce-architecture.py"; then
         echo "  ! enforce-architecture.py préexistant : mets DATA_CLIENT_MODULE à" >&2

@@ -164,15 +164,16 @@ def check_client_copies() -> list[Finding]:
         text = read(path)
         if text is None:
             continue
-        found = set(re.findall(r'import\s*\{\s*client\s*\}\s*from\s*["\']@/([^"\']+)["\']', text))
-        found |= set(re.findall(r'vi\.mock\(\s*["\']@/(lib/[^"\']+)["\']', text))
+        found = set(re.findall(r'import\s*\{\s*(?:\w+\s+as\s+)?client\s*\}\s*from\s*["\']@/(lib/[^"\']+)["\']', text))
+        found |= set(re.findall(r'vi\.mock\(\s*["\']@/(lib/[^"\']+)["\'],\s*\(\)\s*=>\s*\(\{\s*\w+:\s*createMockClient', text))
         if found:
             seen[path] = found
     cfg = read(".claude/skills/templates/tooling-config.md")
-    if cfg:
-        instance = re.search(r"'src/(lib/[^']+)\.ts',\s*//\s*FILL: the data client INSTANCE", cfg)
-        if instance:
-            seen[".claude/skills/templates/tooling-config.md"] = {instance.group(1)}
+    block = re.search(r"exclude:\s*\[\s*\.\.\.coverageConfigDefaults\.exclude,(.*?)\]", cfg or "", re.S)
+    if block:
+        wiring = {"lib/queryClient", "lib/utils/cn"}
+        instance = set(re.findall(r"'src/(lib/[^']+)\.ts'", block.group(1))) - wiring
+        seen[".claude/skills/templates/tooling-config.md"] = instance
 
     wrong = {path: names for path, names in seen.items() if names != {declared}}
     if not wrong:
