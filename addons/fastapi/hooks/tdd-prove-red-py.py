@@ -38,9 +38,11 @@
 #
 # CONFIGURE: the layers, the module root and the runner live in tdd_py_lib.py.
 
+import io
 import os
 import re
 import sys
+import tokenize
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -53,6 +55,25 @@ RUN_TIMEOUT = 150
 lib.register_timing("tdd-prove-red-py")
 
 
+def without_comments(source: str) -> str:
+    """The source with its `#` comments removed, strings left intact.
+
+    Read with the tokenizer so a `#` inside a string literal is not a comment;
+    a file it cannot tokenize falls back to cutting every `#` to end of line.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return re.sub(r"#[^\n]*", "", source)
+    lines = source.splitlines(keepends=True)
+    for token in reversed(tokens):
+        if token.type == tokenize.COMMENT:
+            row, col = token.start
+            line = lines[row - 1]
+            lines[row - 1] = line[:col] + line[token.end[1]:]
+    return "".join(lines)
+
+
 def imported_symbols(source: str, dotted: str) -> set:
     """The names this test file exercises from the module under test.
 
@@ -61,9 +82,12 @@ def imported_symbols(source: str, dotted: str) -> set:
         from app.services.project import slugify, total as t
         from app.services import project        -> project.<name>
         import app.services.project as svc      -> svc.<name>
+
+    Comments are dropped first: in `import f  # isort: skip` or inside a
+    parenthesised list, a comment is neither a name nor a separator.
     """
     symbols = set()
-    flat = re.sub(r"\s*\\\n\s*", " ", source)
+    flat = re.sub(r"\s*\\\n\s*", " ", without_comments(source))
     escaped = re.escape(dotted)
 
     for match in re.finditer(

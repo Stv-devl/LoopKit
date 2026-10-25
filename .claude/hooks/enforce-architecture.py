@@ -61,6 +61,8 @@ def _log_health_deny(reason: str, file_path: str = "") -> None:
     """One JSONL line per real refusal — schema: docs/codex-claude-split-plan.md,
     "Sonde kit-health". Best-effort: never lets an observability write turn into
     a second reason to fail a call already being denied."""
+    if os.environ.get("CWK_HEALTH_LOG") == "0":
+        return
     log = os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()), ".claude", ".kit-health.jsonl")
     try:
         with open(log, "a") as fh:

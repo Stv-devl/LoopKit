@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/src/components/Price.test.tsx","content":"it(\"formats\", () => { expect(text).toBe(\"1 200 €\") })"}}

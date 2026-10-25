@@ -1,0 +1,1 @@
+{"tool_name":"Write","agent_type":"test-writer","agent_id":"a1","tool_input":{"file_path":"__FIXTURE_ROOT__/src/item.utils.test.ts","content":"it(\"a\", () => { expect(1).toBe(1) })"}}

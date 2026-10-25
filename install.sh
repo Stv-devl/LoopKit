@@ -588,6 +588,8 @@ if $WITH_FASTAPI; then
     # là laisse le projet à moitié câblé.
     for f in "$ADDON/hooks/"*.py "$ADDON/hooks/"*.sh; do
         [[ -f "$f" ]] || continue
+        # Les tests des hooks de l'addon tournent dans le kit, pas dans le projet.
+        [[ "$(basename "$f")" == test_* ]] && continue
         copy_file "$f" "$TARGET/.claude/hooks/$(basename "$f")"
     done
     copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/FASTAPI-ADDON.md"

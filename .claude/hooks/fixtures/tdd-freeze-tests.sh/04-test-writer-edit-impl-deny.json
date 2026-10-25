@@ -1,0 +1,1 @@
+{"tool_name":"Edit","agent_type":"test-writer","agent_id":"a1","tool_input":{"file_path":"__FIXTURE_ROOT__/src/components/Item.tsx","old_string":"a","new_string":"b"}}

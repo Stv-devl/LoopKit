@@ -1,0 +1,14 @@
+static named	import { toEntity, fromEntity as from } from './item.mapper'	fromEntity toEntity
+namespace	import * as mapper from './item.mapper'; mapper.toEntity(x)	toEntity
+await import destructured	const { toEntity, fromEntity: from } = await import('./item.mapper')	fromEntity toEntity
+await import member	const row = (await import('./item.mapper')).toEntity(x)	toEntity
+await import module alias	const mod = await import('./item.mapper'); mod.fromEntity(y)	fromEntity
+importActual destructured	const { toEntity } = await vi.importActual<typeof import('./item.mapper')>('./item.mapper')	toEntity
+importActual alias	const actual = await vi.importActual('./item.mapper'); actual.fromEntity(y)	fromEntity
+other module ignored	const { other } = await import('./other.mapper')
+member of another object	const m = await import('./item.mapper'); expect(result.m.length).toBe(1)	
+default export ignored	const { default: mapper, toEntity } = await import('./item.mapper')	toEntity
+assigned in beforeEach	let mod; beforeEach(async () => { mod = await import('./item.mapper') }); mod.toEntity(x)	toEntity
+nested generic	const { toEntity } = await vi.importActual<Record<string, unknown>>('./item.mapper')	toEntity
+commented import ignored	// const { ghost } = await import('./item.mapper')	
+prettier multi-line destructuring	const {\n  toEntity,\n  fromEntity,\n} = await import('./item.mapper')	fromEntity toEntity

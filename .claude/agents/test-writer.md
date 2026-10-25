@@ -1,7 +1,7 @@
 ---
 name: test-writer
 description: Writes ONE test-first file — TypeScript (utils / mapper / repository-services) or Python (app/services, with the FastAPI addon) — from the validated test plan, runs it, and returns the failure output. Launch it at the RED leg of each test-first layer, before any implementation exists. Never writes implementation code, never reads the module under test.
-tools: Read, Grep, Glob, Write, Bash
+tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---
 
@@ -72,6 +72,13 @@ pytest file no hook will ever prove.
    first, edge cases last. The block was validated by the user: **do not add
    cases, do not drop any, do not soften one**. A case you believe is wrong goes
    in your return, not in a silent edit.
+
+   `Edit` exists for one thing: when the session hands you a new case for a
+   file already frozen (a bug reproduction, or a case the plan gained after the
+   freeze), you append it as a pure insertion outside every existing case. `tdd-freeze-tests.sh`
+   refuses anything else, and refuses any path that is not a test or a fixture.
+   An expected string holding a no-break space (fr-FR `Intl` output) is written
+   with its escape, `\u202f` or `\u00a0`, never the raw character.
 
    > On Python, one more thing has to be true before anything runs:
    > `asyncio_mode = "auto"` under `[tool.pytest.ini_options]`, or an explicit

@@ -116,7 +116,7 @@ run_case() {
     esac
 
     set +e
-    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 \
+    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
         "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
     code=$?
     set -e
@@ -224,7 +224,7 @@ run_missing_jq_cases() {
                 tdd-freeze-tests.sh tdd-require-red.sh tdd-prove-red.sh \
                 prevent-destructive-commands.sh enforce-git-workflow.sh; do
         set +e
-        output="$(printf '{}' | PATH="$tmp" CWK_HOOK_TIMING=0 "$HOOKS_DIR/$hook" 2>&1)"
+        output="$(printf '{}' | PATH="$tmp" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/$hook" 2>&1)"
         code=$?
         set -e
         CASES=$((CASES + 1))
@@ -237,12 +237,35 @@ run_missing_jq_cases() {
     rm -r "$tmp"
 }
 
+# tdd-prove-red.sh runs the real suite, so its import reader is driven alone:
+# one tab-separated case per line, title, test file content (`\\n` for a line
+# break), expected symbols.
+run_prove_red_symbols() {
+    local tmp title content expected actual
+    tmp="$(mktemp -d)"
+    while IFS=$'\t' read -r title content expected; do
+        [[ -z "$title" ]] && continue
+        CASES=$((CASES + 1))
+        printf '%b\n' "$content" > "$tmp/item.mapper.test.ts"
+        actual="$("$HOOKS_DIR/tdd-prove-red.sh" --symbols "$tmp/item.mapper.test.ts" | tr '\n' ' ' | sed 's/ $//')"
+        [[ "$actual" == "$expected" ]] \
+            || fail tdd-prove-red.sh "symbols: $title" "expected '$expected', got '$actual'"
+    done < "$FIXTURES_DIR/_harness/prove-red-symbols.tsv"
+    rm -r "$tmp"
+}
+
 set -e
 run_fixture_sweep
 if [[ "${1:-}" != --fixtures-only ]]; then
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases
+    run_prove_red_symbols
+    ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"
+    if [[ -f "$ADDON_TEST" ]]; then
+        CASES=$((CASES + 1))
+        python3 "$ADDON_TEST" || fail tdd-prove-red-py imported_symbols "parser cases failed"
+    fi
 fi
 
 if [[ "$FAILURES" -gt 0 ]]; then
