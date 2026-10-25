@@ -129,7 +129,7 @@ named **surfaces** and cover each exhaustively, with separate report headings. Y
       accounts, a mock/bypass flag reachable in production.
 
 ### `supply-chain`
-- [ ] Dependency audit (`pnpm audit`, or the project's runner). Report the real
+- [ ] Dependency audit (`pnpm audit --prod --audit-level=high`, or the project's runner; dev-only CVEs reported apart). Report the real
       output, and separate "vulnerable and reachable from our code" from "flagged
       in a transitive dev dependency" — they are not the same finding.
 - [ ] Lockfile present, committed, and consistent with `package.json`.

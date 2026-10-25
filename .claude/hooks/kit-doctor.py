@@ -480,6 +480,44 @@ def check_ci_scripts() -> list[Finding]:
     return [Finding("ci-scripts", OK, fmt(called))]
 
 
+def check_audit_flags() -> list[Finding]:
+    """The dependency audit runs with the same flags in its three copies.
+
+    `/loop:ship`, the CI workflow and `00-project.md` each spelled it their own
+    way (`--audit-level=high` with dev dependencies, bare `pnpm audit`, a project
+    script with `--prod`): three gates under one name. The blocking line audits
+    production dependencies only; a dev-only CVE never reaches a user and is
+    reported apart, without blocking.
+    """
+    ship, project = read(".claude/commands/loop/ship.md"), read(".claude/rules/00-project.md")
+    ci = read("templates/github/ci.yml") or read(".github/workflows/ci.yml")
+    if ship is None or project is None or ci is None:
+        return skip("audit-flags", "commands/ship.md", "rules/00-project.md", "ci.yml")
+
+    def flags(text: str) -> str | None:
+        for line in text.splitlines():
+            line = re.sub(r"^\s*(?:-\s*)?(?:run:\s*)?", "", line.split("#")[0]).strip()
+            if re.match(r"pnpm audit(\s|$)", line) and "--dev" not in line:
+                return " ".join(sorted(line.split()[2:]))
+        return None
+
+    fence = re.search(r"### 1\. Gates.*?```bash\n(.*?)```", ship, re.S)
+    rule_fence = re.search(r"```bash\n(.*?)```", project, re.S)
+    seen = {
+        ".claude/commands/loop/ship.md": flags(fence.group(1)) if fence else None,
+        ".claude/rules/00-project.md": flags(rule_fence.group(1)) if rule_fence else None,
+        "ci.yml": flags(ci),
+    }
+    if any(value is None for value in seen.values()):
+        return [Finding("audit-flags", MISSING, "a copy no longer carries a `pnpm audit` line",
+                        [path for path, value in seen.items() if value is None])]
+    if len(set(seen.values())) > 1 or "--prod" not in next(iter(seen.values())):
+        return [Finding("audit-flags", DIVERGENCE,
+                        "the blocking audit must read `pnpm audit --prod --audit-level=high` in all three copies",
+                        [f"{path}  →  pnpm audit {value}".rstrip() for path, value in seen.items()])]
+    return [Finding("audit-flags", OK, "pnpm audit " + next(iter(seen.values())))]
+
+
 def check_workflow_names() -> list[Finding]:
     """The CD names the CI workflow, and it must name the one that exists.
 
@@ -1103,7 +1141,7 @@ CHECKS = [
     ("twins", [check_protected_dirs, check_data_client, check_composition_roots,
                check_shared_dirs,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
-               check_tdd_layers, check_gate_allowlist, check_ci_scripts,
+               check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
                check_workflow_names, check_agent_models, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring]),

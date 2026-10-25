@@ -37,8 +37,10 @@ pnpm test:run           # run-once — NEVER watch mode, it hangs
 pnpm test:coverage      # thresholds on the logic layers (05-testing.md) — skip
                         # in one line if the repo has no coverage config yet
 pnpm build              # production build
-pnpm audit --audit-level=high   # known CVEs — the one security surface a
-                        # machine reads better than a reviewer (00-project.md)
+pnpm audit --prod --audit-level=high   # known CVEs in what ships — the one
+                        # security surface a machine reads better than a reviewer
+pnpm audit --dev --audit-level=high || true   # dev-only CVEs: reported, never
+                        # blocking — a build tool never reaches a user
 # Bundle secrets. Read the comment under this block before changing a character
 # of it: the `set -o pipefail` and the `test -f` are the check, not decoration.
 set -o pipefail
@@ -50,8 +52,11 @@ grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
                         # public by design, or this line cries wolf every run
 ```
 
-<!-- FILL: if this repo has a second test runner (backend, e2e), add it to the
-     same batch when the diff touches its surface. -->
+<!-- FILL: if this repo has a second unit runner (backend), add it to the same
+     batch when the diff touches its surface. E2E is NOT added here: it runs in its
+     own command AFTER this batch is green, never alongside vitest and coverage —
+     sharing the machine with them is what makes a browser suite flaky
+     (`e2e-playwright` skill, "When it runs"). -->
 
 All green is the condition to continue. **Red = stop and fix** — never ship
 "green except one".
@@ -73,7 +78,7 @@ All green is the condition to continue. **Red = stop and fix** — never ship
 > that is `/loop:review`'s `tests` dimension. Passing it is not an argument against a
 > review finding.
 
-**The two security lines read differently from the other four.** `pnpm audit` red
+**The security lines read differently from the other four.** `pnpm audit --prod` red
 with a fix available = bump and re-run; red with **no published fix** = not a
 wall, but announced with the package, the advisory and whether the vulnerable
 path is even reachable, and the user decides (`00-project.md`). A hit on the

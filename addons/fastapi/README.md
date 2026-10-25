@@ -64,8 +64,8 @@ route paths and you are done.
 
 Add the backend half of the **six** gate roles: `python -m pytest` (run-once, no
 watch trap — and `-m`, never the bare script: see `07-backend.md`),
-`mypy app` or `pyright` (typecheck), `ruff check .` (lint), **`pip-audit`
-(dependency audit)**, `docker build` (build), `uvicorn --reload` (dev). A gate
+`mypy app` or `pyright` (typecheck), `ruff check .` (lint), **`uv audit --frozen
+--no-dev` (dependency audit)**, `docker build` (build), `uvicorn --reload` (dev). A gate
 cannot invent a script that does not exist. If a format command is added
 alongside these, write `ruff format app/`, never `ruff format .` — the warning
 in `07-backend.md` explains why the scope matters.
@@ -90,15 +90,21 @@ no front end:
 python -m pytest        # run-once, no watch mode. `-m` puts the root on sys.path
 mypy app                # typecheck
 ruff check .            # lint — the hook does not block; this does
-pip-audit               # known CVEs in the Python tree (uv: `uv pip audit`)
+uv audit --frozen --no-dev            # known CVEs in what ships (reads uv.lock)
+uv audit --frozen --only-dev || true  # dev-only CVEs: reported, never blocking
 docker build .          # build
 ```
 
-`pip-audit` follows `00-project.md`'s decision rule, unchanged: a high/critical
+The audit follows `00-project.md`'s decision rule, unchanged: a high/critical
 advisory **with a fix available** is a red gate — bump it. One with **no fix
 published** is not a wall — announce the package, the advisory and whether the
 vulnerable path is even reachable, and let the user decide. Swallowing it
 silently is the one forbidden answer.
+
+An older uv answers `uv audit` with `unrecognized subcommand`: fall back to
+`uv export --frozen --no-hashes --no-emit-project --no-dev > "$TMP/req.txt" &&
+uvx pip-audit --disable-pip --no-deps -r "$TMP/req.txt"`. Never a bare
+`uvx pip-audit`: it audits its own throwaway environment, not the project.
 
 ### 4. `.claude/agents/reviewer.md` → the backend dimension
 

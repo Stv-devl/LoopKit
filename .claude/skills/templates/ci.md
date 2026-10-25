@@ -123,7 +123,7 @@ The thresholds are not a twin here: the coverage floor lives in
 
 ## The one gate a runner cannot decide
 
-`pnpm audit --audit-level=high` red, **with no fix published**, is the case
+`pnpm audit --prod --audit-level=high` red, **with no fix published**, is the case
 `00-project.md` says cannot be a wall — and a CI step is, structurally, a wall.
 The escape is not `--audit-level=critical`; it is
 `pnpm.auditConfig.ignoreCves` in `package.json`, carrying the advisory id and a

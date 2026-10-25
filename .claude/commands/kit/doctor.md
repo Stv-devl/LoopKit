@@ -58,6 +58,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `tdd-layers` | — | `CWK_TDD_LAYERS`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
 | `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
+| `audit-flags` | the `pnpm audit` line of `/loop:ship`'s gate fence | the same line in `00-project.md` and `ci.yml`, all `--prod --audit-level=high` (dev CVEs are reported apart) |
 | `workflow-names` | `ci.yml`'s `name:` | the `workflow_run` trigger and `--workflow=` of `deploy.yml` |
 | `agent-models` | `11-token-budget.md`, the model-tier table | the `model:` line of every `.claude/agents/*.md` |
 | `settled-ledger` | `01-stack.md` names `docs/research-cache/settled.md` | that no rule file, core or addon, grew a dated table back |
@@ -67,7 +68,7 @@ interrupts. That is exactly why it belongs here: a gate added to `/loop:ship` wi
 its allow entry does not fail, it **asks**, someone declines it by reflex in the
 middle of the batch, the other gates stay green and the ship reports success
 without the check that was just added. The form matters too: a call carrying
-flags (`pnpm audit --audit-level=high`) needs the `Bash(pnpm audit *)` entry, and
+flags (`pnpm audit --prod --audit-level=high`) needs the `Bash(pnpm audit *)` entry, and
 the bare one does not cover it. A grant living only in `settings.local.json` is
 reported as missing, with a note — that file does not ship, so the next checkout
 has the gap back.

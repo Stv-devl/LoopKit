@@ -34,8 +34,9 @@ alembic revision --autogenerate -m ""  # Generate a migration
 
 > **The six roles a gate needs** — the same six as `00-project.md`: run-once
 > tests (`python -m pytest`), typecheck (`mypy` or `pyright`), **lint**
-> (`ruff check .`), **dependency audit** (`pip-audit`, or `uv pip audit`), build,
-> dev server. pytest is already run-once — no watch trap here. If a role has no
+> (`ruff check .`), **dependency audit** (`uv audit --frozen --no-dev`), build,
+> dev server. Never `uvx pip-audit` bare: it audits its own throwaway environment
+> and reports green whatever the project pins. pytest is already run-once — no watch trap here. If a role has no
 > command, say so; a gate cannot invent one.
 >
 > The audit role is per-ecosystem, not per-repo: a repo carrying this addon has

@@ -279,7 +279,7 @@ including a wrong one. Details: `.claude/rules/05-testing.md`.
 | Level | What runs | When |
 | --- | --- | --- |
 | On the diff | `/loop:review`'s `security` dimension — the server-side barrier, exposed keys, Zod at the boundaries, leaks between users | every review; a Critical means FAIL |
-| At ship | `pnpm audit --audit-level=high` + a grep for secret-shaped `VITE_*` names | every ship, deterministic, zero tokens |
+| At ship | `pnpm audit --prod --audit-level=high` (dev-only CVEs reported, not blocking) + a grep for secret-shaped `VITE_*` names | every ship, deterministic, zero tokens |
 | On the repository | `/audit:security` — 6 surfaces, `security-auditor` fan-out, then refutation | on demand; **and automatically on a `critical` profile**, one surface, before the commit |
 
 The last row is the one that matters. An audit that only runs when someone
