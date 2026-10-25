@@ -1,44 +1,25 @@
 # Settled external facts — the ledger
 
-**One purpose: stop the loop re-learning what it already knows.** The first time
-a probe settles a question about a version pinned in `.claude/rules/01-stack.md`,
-the answer is written **here**, and never researched again.
+A question about a version pinned in `.claude/rules/01-stack.md`, once settled by
+a probe, is answered **here** and never researched again. The file is cold: not
+loaded at session start, read only before any fetch by `/loop:research` (main
+thread; a question this file answers is not researched) and by `doc-researcher`
+(before its first network call, with the topic files next to it). Facts that fire
+silently while code is written stay hot in `01-stack.md`'s *Traps that stay
+loaded*.
 
-**This file is cold on purpose.** It is not loaded at session start — it grows
-without bound, and a cache nobody is reading costs the same as one everybody is.
-It is read at exactly one moment, by exactly two readers, both of which name it:
+**Writing a row:** only the main thread, at the synthesis step of
+`/loop:research`, in the same pass. `doc-researcher` never edits a rule or this
+ledger; it returns a `Promote to the ledger` block.
 
-| Reader | When |
-| --- | --- |
-| `/loop:research` (main thread) | before any fetch. A question this file answers is **not** researched — not "researched quickly", not researched |
-| `doc-researcher` | before its **first** network call, together with the topic files next to it |
-
-The three or four facts that fire **silently while code is being written**, with
-no pattern file open at that moment, are the exception: they stay hot, in
-`01-stack.md`'s short *Traps that stay loaded* table. Everything else lives here.
-
-**Who writes a row:** the main thread, at the synthesis step of `/loop:research`, in
-the same pass. The `doc-researcher` agent never does — it is forbidden from
-editing a rule or this ledger, and returns a `Promote to the ledger` block
-instead. Deferred, it never happens.
-
-- **One row per version-pinned behaviour**, not per library. "zod v4" is not a
-  fact; "`z.string().email()` is deprecated in v4 but still works" is one.
-- **A row dies with its version.** Bumping a dependency means deleting or
-  rewriting its rows in the same commit — a stale row is worse than no row.
-- **What moves on its own does not belong here.** A vendor API with its own
-  breaking-change schedule goes to a topic file in this directory with
-  `stability: volatile` and a re-check window.
-- **A row is never promoted back into a rule to make it easier to find.** The
-  rule names this file; that is the whole mechanism, and it is what keeps the
-  session floor flat as the ledger grows.
-
-> This file survives an addon install by construction. `addons/supabase/` and
-> `addons/fastapi/` overwrite `.claude/rules/01-stack.md`; they do not touch
-> `docs/`. Before this ledger existed, installing the Supabase addon silently
-> deleted every answer the loop had paid to establish. `/kit:doctor`'s
-> `settled-ledger` check now refuses any rule file that grows a dated table
-> again.
+- One row per version-pinned behaviour, not per library.
+- A row dies with its version: bumping a dependency deletes or rewrites its rows
+  in the same commit.
+- What moves on its own (a vendor API with its own breaking-change schedule) goes
+  to a topic file here with `stability: volatile` and a re-check window.
+- A row is never promoted back into a rule; the rule names this file.
+- Addon installs overwrite `.claude/rules/01-stack.md` but never `docs/`;
+  `/kit:doctor`'s `settled-ledger` refuses any rule file that grows a dated table.
 
 | Fact | Answer in effect | Established |
 | --- | --- | --- |

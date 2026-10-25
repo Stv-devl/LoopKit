@@ -8,6 +8,9 @@
 > `services.ts` may import it** (`.claude/rules/02-architecture.md`, enforced by
 > the `enforce-architecture` hook). Route protection lives in `guards.md`.
 
+> SDK shapes (auth listener cleanup, `removeAllChannels` result type):
+> `docs/research-cache/supabase.md`.
+
 ## The client — created once
 
 ```typescript
@@ -54,11 +57,7 @@ Regenerate it **in the same change as the migration**. Without it the gateway
 types its rows by hand, drifts from the schema, and `any` comes back in through
 the one door `03-conventions.md` closed.
 
-```typescript
-// Row shapes come from the generated types, never re-declared by hand.
-type ItemRow = Database['public']['Tables']['items']['Row'];
-type ItemInsert = Database['public']['Tables']['items']['Insert'];
-```
+Gateway row types are `Database['public']['Tables']['<t>']['Row' | 'Insert']`, never re-declared by hand.
 
 The **domain entity** (`types/types.ts`) stays pure and framework-agnostic; the
 mapper is what bridges `ItemRow` → `Item`.
@@ -137,43 +136,12 @@ exact file as the counter-example — *"an `AuthProvider` reads the session via 
 `main.tsx` / `routes/__root.tsx`. Auth is a feature like any other: its raw calls
 live in its gateway, its `Result` in its repository.
 
-```typescript
-// features/auth/services/auth.gateway.ts — raw I/O, the only layer that sees the client
-import { supabase } from '@/lib/supabase';
-
-/** Reads the session stored in this tab. Verifies nothing — see the rules below. */
-export async function fetchSession() {
-  return supabase.auth.getSession();
-}
-
-/**
- * Emits on every auth state change, payload untouched — the event name and the
- * raw session, exactly as Supabase hands them over.
- * @returns Unsubscribe function.
- */
-export function subscribeToAuthState(
-  onChange: (event: string, session: unknown) => void,
-): () => void {
-  const { data } = supabase.auth.onAuthStateChange((event, session) =>
-    onChange(event, session),
-  );
-  return () => data.subscription.unsubscribe();
-}
-
-/** Ends the session. */
-export async function signOut() {
-  return supabase.auth.signOut();
-}
-
-/**
- * Tears down every realtime channel. Lives here because it is a client call:
- * anywhere above the data layer `enforce-architecture.py` denies the write
- * (`realtime.md`, "What goes wrong"). Returns the per-channel promises.
- */
-export async function removeAllChannels(): Promise<('ok' | 'timed out' | 'error')[]> {
-  return supabase.removeAllChannels();
-}
-```
+The auth gateway is thin raw I/O, the only layer that sees the client:
+`fetchSession()` (`auth.getSession()`), `subscribeToAuthState(onChange)` (wraps
+`auth.onAuthStateChange`, payload untouched, returns an unsubscribe function),
+`signOut()` and `removeAllChannels()`. The last one lives here because it is a
+client call: anywhere above the data layer `enforce-architecture.py` denies it
+(`realtime.md`, "What goes wrong").
 
 ```typescript
 // features/auth/services/auth.repository.ts — validates, maps, hides the transport

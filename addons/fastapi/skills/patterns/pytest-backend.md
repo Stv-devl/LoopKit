@@ -21,18 +21,9 @@ pythonpath = ["."]
 With `asyncio_mode = "auto"`, drop the markers. Without it, every async test
 file needs `pytestmark = pytest.mark.asyncio` at the top.
 
-**What a missing marker actually does: the test FAILS**, with `async def
-functions are not natively supported`. Measured on pytest 9.1.1, twice — with
-pytest-asyncio 1.4.0 installed in its default strict mode, and with no async
-plugin at all. Same message, same exit code: not installing the plugin is not a
-way around it.
-
-Earlier versions of this file said the test "silently skips" instead. Whether
-that was ever true of some pytest release is **not** something the note above
-claims — it was not measured, and the toolchain here cannot run a pytest old
-enough to check. What matters is that on any version you would ship today it
-fails, loudly, with a message that points at plugins rather than at your code,
-and that every async test in the repo shows it at once.
+**A missing async marker makes the test FAIL** (`async def functions are not
+natively supported`), loudly, with or without an async plugin installed
+(measured, `docs/research-cache/fastapi.md`).
 
 The consequence for `tests/services/`, which is frozen: not one assertion runs,
 so `tdd-prove-red-py.py` refuses the red and records no marker. That is the
@@ -263,17 +254,11 @@ read back and no return value that carries it. Asserting the call **is** the
 only observation available — and the thing being asserted is a security barrier,
 not a plumbing detail. Everywhere else, read the outcome.
 
-**Assert the VALUE, and bring a second tenant in to prove it.** The shorter form
-this snippet used to ship —
-`assert any("tenant_id" in str(c) for c in payload_filter.must)` — never reads
-what the filter is scoped *to*. A service passing the wrong variable
-(`uploader_tenant`, the tenant from the document rather than from the caller)
-satisfies it completely, and the only implementation change that fails it is
-renaming the column: the change detector `05-testing.md` defines, on the one
-assertion the whole tenant barrier rests on. Seeding a row for a *second* tenant
-first is what makes the last line able to fail: with only one tenant in the
-database, every id in sight is the same one and the equality cannot disagree
-with anything.
+**Assert the VALUE, and bring a second tenant in to prove it.** Asserting only
+that a `tenant_id` key exists passes when the service scopes to the wrong
+variable (the document's tenant instead of the caller's); only the value check
+fails it. Seeding a second tenant first is what lets the last line disagree with
+something.
 
 Patch **where the name is looked up**, not where it is defined:
 `app.services.search.vector_client`, not `qdrant_client.QdrantClient`. A

@@ -391,6 +391,14 @@ mouvement, et Impeccable n'attrape que des motifs de code connus.
 
 ---
 
+### Context7 (optionnel, priorité basse)
+
+`doc-researcher` pèse peu (environ 0,3 % du coût mesuré). Si le serveur MCP
+Context7 est installé, relève le nom exact de ses outils avec `/mcp` et ajoute-les
+au `tools:` de `.claude/agents/doc-researcher.md` (le commentaire FILL en tête du
+fichier). Sans lui, l'agent saute cette étape de son ordre de recherche ; rien
+d'autre ne change. `install.sh` ne le câble pas.
+
 ## Vérifier que le câblage tient
 
 Un hook qui refuse doit imprimer un JSON `permissionDecision: deny` ; un hook qui
