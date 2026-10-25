@@ -602,8 +602,9 @@ RUNTIME_PATHS = {
 # one per language.
 NON_HOOKS = {
     "hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "test-attempts.sh", "test-hooks.sh", "test-install.sh",
-    "test-kit-doctor.sh", "test-rules-floor.sh", "test-workflow-contracts.sh",
+    "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
+    "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
+    "test-workflow-contracts.sh",
 }
 REACT_HOOKS = {
     "no-any-type.sh", "no-forbidden-icons.sh", "enforce-architecture.py",

@@ -26,6 +26,13 @@ Branche : `audit/slim`, un commit par étape (section « Ordre de mise en œuvre
   vérifiée** : un élément propre à chaque lancement placé avant les rules par le
   harnais, hors de portée du kit. Conséquence : un token retiré d'une rule ou
   d'une définition d'agent est économisé plein tarif à chaque lancement.
+- **La session principale coûte plus que tous les sous-agents réunis** :
+  68 % de $2 256 sur l'historique EcoCrew (`docs/measurements/token-baseline.md`,
+  35 sessions, 337 tours médians par session). L'essentiel est la relecture en
+  cache d'un contexte qui grossit à chaque tour (5 milliards de tokens lus). Par
+  phase : execute 36 %, review 35 %, plan 13 %, research 7 %, ship 6 %,
+  interface 4 %. Levier non traité par ce plan : la longueur des sessions (une
+  session enchaîne plusieurs features). À décider après la mesure de l'étape 0.
 - Répartition mesurée du coût des sous-agents (équivalent API, $722) :
   `reviewer` 40 %, `general-purpose` 22 % (travail sans agent attitré, voir
   1.8), `plan-critic` 16 %, `test-writer` 7 %, le reste ≤ 3 % chacun. Remplacer
@@ -355,7 +362,7 @@ réel aujourd'hui. Chaque correction de hook arrive avec sa fixture ou son test.
 
 **À chaque commit**, pas seulement à la fin : `/kit:doctor`, `test-hooks.sh`,
 `test-install.sh`, `test-kit-doctor.sh`, `test-rules-floor.sh`,
-`test-attempts.sh`, `test-workflow-contracts.sh` au vert.
+`test-attempts.sh`, `test-measure.sh`, `test-workflow-contracts.sh` au vert.
 
 0. `kit-measure.py` avec son test, et mesure de référence sur la feature figée
    (1.0).

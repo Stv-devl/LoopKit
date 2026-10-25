@@ -16,6 +16,15 @@ unapproved `Write`.
 - **Hook cost**: `.claude/hooks/hook-timings-report.sh` (`--reset` before a run).
   Every hook records its own duration in `.claude/.hook-timings.log`;
   `CWK_HOOK_TIMING=0` turns the recording off.
+- **Token cost**: `.claude/hooks/kit-measure.py` reads the project's transcripts
+  (Claude Code's per-project transcript folder under the home directory, or
+  `--root`) and reports, per agent and per loop phase, the
+  four counters (fresh input, cache write, cache read, output), the first-turn
+  cache hit, the effort actually sent, and an API-price equivalent.
+  `--session <prefix>` and `--since <ISO>` select a run; `--out
+  docs/measurements/<name>.md` keeps the report. Phases are inferred from loop
+  markers (artifact writes, agent launches, commits), so a turn before the first
+  marker counts as research. Fixtures: `test-measure.sh`.
 - **Everything else**: the session transcript is timestamped, per turn and per
   agent. Gaps between a `tool_use` and its `tool_result` separate real work from
   blocking, and the per-agent files separate work from waiting on children.
