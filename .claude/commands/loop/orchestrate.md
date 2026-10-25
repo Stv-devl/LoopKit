@@ -66,7 +66,10 @@ Maintain `docs/work/<slug>/handoff.md` inline, without a subagent:
 Before launching any agent, check `.claude/.token-stop-agents`. If present,
 launch no new agent: finish the current atomic write/test, refresh the checkpoint,
 and yield. When `.claude/.restart-ready` exists, do not start another phase. The
-external `workflow.sh` supervisor will stop Claude and continue with Codex.
+external `workflow.sh` supervisor stops Claude and starts a fresh Claude session
+on `/loop:orchestrate docs/work/<slug>/handoff.md` — so the `phase:` you record
+is the one Phase 0 resumes. Two restarts per feature, then it stops: the phase is
+too big and goes back to the plan to be split.
 
 ## Gate attempt ceiling
 
@@ -96,17 +99,16 @@ A new session does not reset the counter; a successful gate does.
    fix pass on Claude even when `.claude/workflow-routing.yml` names `codex`
    and Codex is on the `PATH` — the escape hatch for a track you want to run
    on one tool end to end.
-   Read the entry artifact in full. If it is a `plan.md`, jump to Phase 4 —
-   unless a sibling `docs/work/<slug>/handoff.md` exists: read its
-   frontmatter instead of assuming EXECUTE is always where a `plan.md`
-   resumes. Three branches, from `phase`/`execute_status`/`review_status`
-   (`/handoff:codex` template): `phase: execute` with `execute_status:
-   in-progress` → Phase 4, pick up where Codex stopped; `execute_status: done`
-   (whether still under `phase: execute` or already `phase: review` with no
-   `review_status` yet) → Phase 5, judgment has not run or needs re-reading;
-   `review_status: fixes-handed-to-codex` → Phase 5, resume only the re-run of
-   the dimensions Codex was asked to fix, not a fresh judgment pass. No
-   handoff file → unchanged, jump straight to Phase 4 on any `plan.md`.
+   Read the entry artifact in full. **A `docs/work/<slug>/handoff.md`** (or
+   `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter,
+   then the artifacts it links, and branch on `phase:`. `research` → Phase 1,
+   keeping whatever `research.md` already holds; `interface` → Phase 2;
+   `plan` → Phase 3; `execute` → Phase 4, from the layer `## In progress` names
+   (`execute_status: done` → Phase 5); `review` → Phase 5 (`review_status:
+   fixes-handed-to-codex` → re-run only the dimensions those fixes came from,
+   never a fresh judgment pass); `ship` → Phase 6. Nothing completed is redone.
+   A `plan.md` with no sibling handoff jumps to Phase 4; with one, the handoff
+   decides.
 
    > **Every entry artifact carries the line**, not only a resumed `plan.md`:
    > `/loop:spec` and `/bmad:pm` decide it at their interview, where the four triggers

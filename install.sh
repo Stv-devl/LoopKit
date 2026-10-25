@@ -427,6 +427,15 @@ GITIGNORE_MARK_LEGACY="# === Claude Workflow Kit — état de session ==="
 ensure_gitignore() {
     local gi="$1/.gitignore"
     if [[ -f "$gi" ]] && grep -qF -e "$GITIGNORE_MARK" -e "$GITIGNORE_MARK_LEGACY" "$gi"; then
+        # A block written by an older kit lacks the names added since: append
+        # only the missing lines, never the block twice.
+        local line
+        for line in .claude/.restart-ready 'docs/work/*/handoff.md' handoff-codex.md; do
+            if ! grep -qxF "$line" "$gi"; then
+                printf '%s\n' "$line" >> "$gi"
+                GITIGNORE_TOUCHED=1
+            fi
+        done
         return
     fi
     [[ -f "$gi" ]] && printf '\n' >> "$gi"
@@ -445,6 +454,10 @@ $GITIGNORE_MARK
 .claude/.codex-ready
 .claude/.quota-warning
 .claude/.tdd-red/
+# Le handoff d'une session interrompue : local, périmé dès qu'on reprend.
+# handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
+docs/work/*/handoff.md
+handoff-codex.md
 # .claude/.tdd-unfrozen n'est délibérément PAS ignoré : toute la raison d'être de
 # la liste d'exceptions TDD est d'être visible en review (.claude/rules/05-testing.md).
 EOF
@@ -691,8 +704,9 @@ Addon installé ? Son câblage n'est PAS automatique :
 
 Lanceur supervisé recommandé :
   ./workflow.sh
-  À 90% il checkpoint, à 95% il arrête les nouveaux agents, à 97% il passe à
-  Codex. Une limite d'usage détectée dans la sortie déclenche le même relais.
+  À 90% il checkpoint, à 95% il arrête les nouveaux agents, à 97% il relance
+  Claude sur le handoff. Une limite d'usage passe à Codex si l'étape est sûre
+  hors réseau (codex_safe: yes), sinon il s'arrête sur le checkpoint.
 
 Relais manuel :
   /handoff:codex <artefact> puis ./codex-handoff.sh <handoff>

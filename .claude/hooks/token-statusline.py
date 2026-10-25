@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code status line: display context usage and request a Codex handoff."""
+"""Claude Code status line: display context usage and request a restart on the handoff."""
 from __future__ import annotations
 
 import json
@@ -9,20 +9,23 @@ import sys
 
 
 def newest_artifact(project: Path) -> Path | None:
+    """The newest workflow artifact, or its folder's handoff when there is one.
+
+    Same choice as workflow.py's fallback_artifact: a shipped feature's leftover
+    handoff must not outrank the feature in progress.
+    """
     candidates: list[Path] = []
     for relative in ("docs/work", "docs/stories", "docs/specs", "docs/prd"):
         root = project / relative
         if root.is_dir():
-            candidates.extend(
-                path for path in root.rglob("*.md")
-                if path.name not in ("handoff.md", "handoff-codex.md")
-            )
-    handoffs = [
-        path for name in ("handoff.md", "handoff-codex.md")
-        for path in ((project / "docs/work").rglob(name) if (project / "docs/work").is_dir() else [])
-    ]
-    pool = handoffs or candidates
-    return max(pool, key=lambda path: path.stat().st_mtime) if pool else None
+            candidates.extend(root.rglob("*.md"))
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda path: path.stat().st_mtime)
+    for name in ("handoff.md", "handoff-codex.md"):
+        if (newest.parent / name).is_file():
+            return newest.parent / name
+    return newest
 
 
 def marker(project: Path, name: str) -> Path:
@@ -85,13 +88,13 @@ if used >= 97 and not ready.exists():
 elif used < 90:
     # Cleared like the other two markers, but on a hysteresis rather than on its
     # own threshold: /compact drops usage back down, and a .restart-ready left
-    # behind keeps telling the external supervisor to switch to Codex for a
+    # behind keeps telling the external supervisor to restart Claude for a
     # context that has room again. 90 is far enough below 97 not to flap.
     ready.unlink(missing_ok=True)
 
 suffix = ""
 if used >= 97:
-    suffix = " · CODEX HANDOFF"
+    suffix = " · RESTART"
 elif used >= 95:
     suffix = " · stop agents"
 elif used >= 90:

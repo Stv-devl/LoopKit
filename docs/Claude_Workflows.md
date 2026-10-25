@@ -207,9 +207,11 @@ Le chemin recommandé lance Claude sous supervision :
 ```
 
 La status line crée trois seuils : checkpoint à 90 %, aucun nouveau sous-agent
-à 95 %, puis relais Codex à 97 %. Le superviseur interrompt Claude à la frontière
-atomique suivante et lance Codex sur `handoff.md`. Il déclenche aussi le
-relais quand la sortie Claude annonce une limite d'usage.
+à 95 %, puis reprise à 97 %. Le superviseur interrompt Claude à la frontière
+atomique suivante et relance une session Claude neuve sur
+`/loop:orchestrate docs/work/<slug>/handoff.md`, deux fois au plus par feature.
+Codex ne reçoit le relais que sur une limite d'usage annoncée, et seulement pour
+une étape dont le handoff porte `codex_safe: yes`.
 
 Pour le quota d'abonnement affiché par le CLI : 90–94 % arme le checkpoint sans
 couper Claude ; 95 % déclenche le relais. Le motif est configurable avec

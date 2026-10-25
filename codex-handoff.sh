@@ -77,7 +77,8 @@ RELATIVE_ARTIFACT="$(realpath --relative-to="$PROJECT_DIR" "$ARTIFACT")"
 # (a failed Write followed by this script, in the same message).
 case "$(basename "$ARTIFACT")" in
     handoff.md|handoff-codex.md)
-        if ! sed -n '1,/^---$/{/^---$/!p}' "$ARTIFACT" | sed -n '1,20p' | grep -Eq '^codex_safe:[[:space:]]*yes[[:space:]]*$'; then
+        FRONTMATTER="$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit } NR > 1 { print }' "$ARTIFACT")"
+        if ! grep -Eq '^codex_safe:[[:space:]]*yes[[:space:]]*(#.*)?$' <<<"$FRONTMATTER"; then
             echo "erreur: $RELATIVE_ARTIFACT ne porte pas 'codex_safe: yes' : les gates de cette étape" >&2
             echo "ont besoin du réseau (backend, e2e) ou ne sont pas déclarées. Elle reste sur Claude." >&2
             exit 1

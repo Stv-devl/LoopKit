@@ -139,8 +139,10 @@ Use the wrapper instead of `claude`:
 ```
 
 The status line watches the context window: checkpoint at 90%, no new subagent at
-95%, controlled interruption and Codex launch at 97%. The supervisor also detects
-usage-limit messages in Claude's output. Checkpoints are refreshed after every
+95%, controlled interruption at 97% and a fresh Claude session resumed on the
+handoff (two per feature, then the phase goes back to the plan). Codex takes over
+only on a usage limit detected in Claude's output, and only for a step whose
+handoff says `codex_safe: yes`. Checkpoints are refreshed after every
 phase and every TDD layer.
 
 For the subscription quota, the supervisor reads the CLI's warnings: 90–94%

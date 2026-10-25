@@ -79,4 +79,11 @@ grep -q 'ok          coverage-holes' <<<"$SB_DOCTOR"
 grep -Fq 'import { supabase as client } from "@/lib/supabase";' "$SB_TARGET/.claude/skills/templates/feature.md"
 grep -Fq 'supabase: createMockClient(),' "$SB_TARGET/.claude/skills/templates/fixtures.md"
 
+# The handoff is ignored on a fresh install and added to an older kit's block.
+grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
+sed -i '/^docs\/work\/\*\/handoff.md$/d; /^\.claude\/\.restart-ready$/d' "$PY_TARGET/.gitignore"
+"$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
+grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
+[[ "$(grep -cxF '.claude/.restart-ready' "$PY_TARGET/.gitignore")" -eq 1 ]]
+
 echo 'install fixtures: green.'

@@ -34,7 +34,7 @@ is not only a manual saturation fallback any more.
 
 ```markdown
 ---
-phase: execute        # research | interface | plan-gate | execute | review | ship
+phase: execute        # research | interface | plan | execute | review | ship
 execute_status: in-progress   # in-progress | done — only meaningful when phase: execute
 review_status: judgment       # judgment | fixes-handed-to-codex | fixes-done — only meaningful when phase: review
 token_profile: economy
@@ -44,7 +44,7 @@ codex_safe: no                # yes only when every gate of this step runs offli
 # Handoff: <feature>
 Token profile: economy | standard | critical
 Entry: <path>
-Current phase: research | interface | plan-gate | execute | review | ship
+Current phase: research | interface | plan | execute | review | ship
 Worktree/branch: <path + branch, or main tree>
 
 ## Objective and acceptance criteria
