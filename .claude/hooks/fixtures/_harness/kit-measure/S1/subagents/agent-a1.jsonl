@@ -1,0 +1,3 @@
+{"type":"api-request-blob","agentId":"a1","message":{"output_config":{"effort":"medium"}}}
+{"type":"assistant","timestamp":"2026-10-20T10:06:00Z","message":{"id":"r1","model":"claude-opus-5-5","content":[{"type":"text","text":"Looking."}],"usage":{"input_tokens":5,"cache_creation_input_tokens":2000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":2000},"cache_read_input_tokens":3000,"output_tokens":200}}}
+{"type":"assistant","timestamp":"2026-10-20T10:07:00Z","message":{"id":"r2","model":"claude-opus-5-5","content":[{"type":"text","text":"Findings."}],"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":4000,"output_tokens":100}}}

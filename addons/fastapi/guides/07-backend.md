@@ -70,3 +70,11 @@ table reads as a promise.
 Enforcing the four numbers means a per-package run — `--cov=app/services
 --cov-fail-under=90`, then a second pass for `api/` — inside `/loop:ship`. That is a
 decision about gate time, taken deliberately, not a config line to slip in.
+
+## Test database per worktree
+
+A worktree gets its own test database, `<db>_test_<worktree>`, created by
+`conftest`. A rebase that changes the Alembic chain under an unchanged revision id
+leaves it stale: tests then run against a schema the code no longer has. After any
+rebase that touches `alembic/versions/`, drop that database; `conftest` recreates it
+at the next run.

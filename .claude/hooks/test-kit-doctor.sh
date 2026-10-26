@@ -17,4 +17,61 @@ rm "$SCRATCH/.claude/VERSION"
 UNKNOWN_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'version: unknown (tag: unknown)' <<<"$UNKNOWN_OUTPUT"
 
+mkdir -p "$SCRATCH/.claude/commands/loop" "$SCRATCH/.claude/rules" "$SCRATCH/templates/github"
+printf '### 1. Gates\n```bash\npnpm audit --audit-level=high\n```\n' > "$SCRATCH/.claude/commands/loop/ship.md"
+printf '```bash\npnpm audit --prod --audit-level=high\n```\n' > "$SCRATCH/.claude/rules/00-project.md"
+printf '      - run: pnpm audit --prod --audit-level=high\n' > "$SCRATCH/templates/github/ci.yml"
+AUDIT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  audit-flags' <<<"$AUDIT_OUTPUT"
+printf '### 1. Gates\n```bash\npnpm audit --prod --audit-level=high\npnpm audit --dev --audit-level=high || true\n```\n' \
+    > "$SCRATCH/.claude/commands/loop/ship.md"
+AUDIT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          audit-flags' <<<"$AUDIT_OUTPUT"
+
+git -C "$SCRATCH" init -q
+printf 'docs/work/\n.claude/agents/\n' > "$SCRATCH/.gitignore"
+IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  ignored-loop-paths' <<<"$IGNORED_OUTPUT"
+grep -q 'docs/work/' <<<"$IGNORED_OUTPUT"
+grep -q '.claude/agents/' <<<"$IGNORED_OUTPUT"
+printf 'docs/work/*/handoff.md\n' > "$SCRATCH/.gitignore"
+IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          ignored-loop-paths' <<<"$IGNORED_OUTPUT"
+
+mkdir -p "$SCRATCH/.claude/skills/templates" "$SCRATCH/.claude/skills/patterns"
+printf 'DATA_CLIENT_MODULE = "lib/api"\nDATA_CLIENT_OWN_PATH = "lib/api.ts"\n' > "$SCRATCH/.claude/hooks/enforce-architecture.py"
+printf 'import { client } from "@/lib/client";\n' > "$SCRATCH/.claude/skills/templates/feature.md"
+printf 'vi.mock("@/lib/client", () => ({}));\n' > "$SCRATCH/.claude/skills/templates/fixtures.md"
+printf 'import { client } from "@/lib/api";\n' > "$SCRATCH/.claude/skills/patterns/react-query.md"
+printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',      // FILL: the data client INSTANCE\n]\n" \
+    > "$SCRATCH/.claude/skills/templates/tooling-config.md"
+CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  client-copies' <<<"$CLIENT_OUTPUT"
+grep -q 'templates/feature.md' <<<"$CLIENT_OUTPUT"
+grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
+if grep -q 'patterns/react-query.md' <<<"$CLIENT_OUTPUT"; then exit 1; fi
+printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',\n]\n" \
+    > "$SCRATCH/.claude/skills/templates/tooling-config.md"
+CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
+
+mkdir -p "$SCRATCH/.claude/agents"
+printf '| Tier | For | Effort | Agents |\n| --- | --- | --- | --- |\n| `inherit` | gates | set at the call | `reviewer` |\n| `sonnet` | tests | `high` | `test-writer` |\n| `sonnet` | production | `medium` | `github` |\n' \
+    > "$SCRATCH/.claude/rules/11-token-budget.md"
+printf -- '---\nname: reviewer\nmodel: inherit\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+printf -- '---\nname: test-writer\nmodel: sonnet\neffort: high\n---\n' > "$SCRATCH/.claude/agents/test-writer.md"
+printf -- '---\nname: github\nmodel: sonnet\neffort: high\n---\n' > "$SCRATCH/.claude/agents/github.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  agent-efforts' <<<"$EFFORT_OUTPUT"
+grep -q 'github' <<<"$(grep -A3 'agent-efforts' <<<"$EFFORT_OUTPUT")"
+grep -q 'ok          agent-models' <<<"$EFFORT_OUTPUT"
+printf -- '---\nname: github\nmodel: sonnet\neffort: medium\n---\n' > "$SCRATCH/.claude/agents/github.md"
+printf -- '---\nname: reviewer\nmodel: inherit\neffort: low\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'reviewer' <<<"$(grep -A3 'agent-efforts' <<<"$EFFORT_OUTPUT")"
+printf -- '---\nname: reviewer\nmodel: inherit\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          agent-efforts' <<<"$EFFORT_OUTPUT"
+rm -r "$SCRATCH/.claude/agents" "$SCRATCH/.claude/rules/11-token-budget.md"
+
 echo 'kit-doctor version fixtures: green.'

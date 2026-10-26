@@ -1,0 +1,1 @@
+{"tool_name":"Write","agent_type":"test-writer","agent_id":"a1","tool_input":{"file_path":"__FIXTURE_ROOT__/backend/tests/fixtures/rows.py","content":"ROWS = []"}}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive Claude supervisor with automatic Codex continuation."""
+"""Interactive Claude supervisor: restarts on a saturated context, Codex on a usage limit."""
 from __future__ import annotations
 
 import os
@@ -15,10 +15,13 @@ import time
 import tty
 
 PROJECT = Path(__file__).resolve().parent
-READY = PROJECT / ".claude" / ".codex-ready"
+READY = PROJECT / ".claude" / ".restart-ready"
 STOP_AGENTS = PROJECT / ".claude" / ".token-stop-agents"
 WARNING = PROJECT / ".claude" / ".token-warning"
+DELEGATE = PROJECT / ".claude" / ".token-delegate"
 QUOTA_WARNING = PROJECT / ".claude" / ".quota-warning"
+# `handoff-codex.md` is the name before 0.2, still read for one version.
+HANDOFF_NAMES = ("handoff.md", "handoff-codex.md")
 ANSI_RE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 # The number and the keyword must be ADJACENT — 15 characters of slack, not the
 # 100/50 this used to allow.
@@ -31,7 +34,7 @@ ANSI_RE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 # DISPLAYING that file in the terminal (a cat, a git diff, a grep with context)
 # interrupted the session and relayed it to Codex. Proven end to end: the kit's
 # constitution killed the supervisor that ships with it, and wrote a fabricated
-# handoff-codex.md on the way out. docs/Claude_Workflows.md did the same at 94%.
+# handoff.md on the way out. docs/Claude_Workflows.md did the same at 94%.
 #
 # A real CLI notice keeps the two together: "usage limit: 92%", "92% of your
 # weekly quota". Prose does not.
@@ -65,6 +68,12 @@ RETRY_EXHAUSTED_RE = re.compile(
 
 
 def fallback_artifact() -> str:
+    """The artifact to resume: the one `.restart-ready` names, else the newest.
+
+    The newest artifact of any kind decides the feature, and that folder's
+    handoff stands for it when there is one. Preferring any handoff anywhere
+    would resume a shipped feature whose handoff was left behind.
+    """
     if READY.exists():
         value = READY.read_text().strip()
         if value and (PROJECT / value).is_file():
@@ -75,11 +84,10 @@ def fallback_artifact() -> str:
         for path in root.rglob("*.md")
     ]
     if not files:
-        raise RuntimeError("aucun artefact de workflow trouvé pour Codex")
-    handoffs = [path for path in files if path.name == "handoff-codex.md"]
-    chosen = max(handoffs or files, key=lambda path: path.stat().st_mtime)
-    return str(chosen.relative_to(PROJECT))
-
+        raise RuntimeError("aucun artefact de workflow trouvé")
+    newest = max(files, key=lambda path: path.stat().st_mtime)
+    sibling = next((newest.parent / name for name in HANDOFF_NAMES if (newest.parent / name).is_file()), None)
+    return str((sibling or newest).relative_to(PROJECT))
 
 
 def quota_percentage(output: bytes) -> int | None:
@@ -102,30 +110,85 @@ def quota_percentage(output: bytes) -> int | None:
     return value if 0 <= value <= 100 else None
 
 
-def write_handoff_checkpoint(title: str, progress_line: str) -> None:
+MAX_RESTARTS = 2
+FRONTMATTER_RE = re.compile(r"\A---\n((?:(?!---\n).*\n)*?)---\n")
+
+
+def infer_phase(work: Path) -> str:
+    """The phase a work folder stands in, from the artifacts it already has."""
+    # plan.md alone does not say the plan gate was passed: resume at the gate,
+    # which re-asks if the test plan was never approved.
+    for name, phase in (("plan.md", "plan"), ("design.md", "plan"), ("research.md", "interface")):
+        if (work / name).is_file():
+            return phase
+    return "research"
+
+
+def read_frontmatter(text: str) -> dict[str, str]:
+    block = FRONTMATTER_RE.match(text)
+    fields: dict[str, str] = {}
+    for line in (block.group(1).splitlines() if block else []):
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip()] = value.split("#", 1)[0].strip()
+    return fields
+
+
+def update_frontmatter(path: Path, updates: dict[str, str]) -> None:
+    """Set fields in a handoff's frontmatter, adding the block if it has none."""
+    text = path.read_text()
+    block = FRONTMATTER_RE.match(text)
+    lines = block.group(1).splitlines() if block else []
+    times = path.stat()
+    body = text[block.end():] if block else text
+    for key, value in updates.items():
+        found = [n for n, line in enumerate(lines) if line.split(":", 1)[0].strip() == key]
+        if found:
+            lines[found[0]] = f"{key}: {value}"
+        else:
+            lines.append(f"{key}: {value}")
+    path.write_text("---\n" + "\n".join(lines) + "\n---\n" + body)
+    # The age is the author's, not this rewrite's: codex-handoff.sh refuses a
+    # handoff older than its plan or the last commit (E17).
+    os.utime(path, ns=(times.st_atime_ns, times.st_mtime_ns))
+
+
+def handoff_for(artifact: str) -> Path | None:
+    source = PROJECT / artifact
+    if source.relative_to(PROJECT).parts[:2] != ("docs", "work"):
+        return None
+    if source.name in HANDOFF_NAMES:
+        return source
+    return source.parent / "handoff.md"
+
+
+def write_handoff_checkpoint(title: str, progress_line: str) -> Path | None:
+    """Create the work folder's handoff, or refresh the fields of an existing one."""
     try:
         artifact = fallback_artifact()
     except RuntimeError:
-        return
-    source = PROJECT / artifact
-    relative = source.relative_to(PROJECT)
-    if source.name == "handoff-codex.md" or relative.parts[:2] != ("docs", "work"):
-        return
-    handoff = source.parent / "handoff-codex.md"
-    if handoff.exists():
-        return
-    handoff.write_text(
-        f"# Codex handoff: {title}\n"
-        "Token profile: economy\n"
-        f"Entry: {artifact}\n"
-        "Current phase: infer from the entry and adjacent artifacts\n\n"
-        "## In progress\n"
-        f"- {progress_line}\n\n"
-        "## Remaining\n"
-        "1. Infer the next concrete action from artifacts, story status, and git status.\n\n"
-        "## Verification\n"
-        "- Treat unrecorded gates as NOT RUN.\n"
-    )
+        return None
+    handoff = handoff_for(artifact)
+    if handoff is None:
+        return None
+    if not handoff.exists():
+        handoff.write_text(
+            f"# Handoff: {title}\n"
+            "Token profile: economy\n"
+            f"Entry: {artifact}\n\n"
+            "## In progress\n"
+            f"- {progress_line}\n\n"
+            "## Remaining\n"
+            "1. Infer the next concrete action from artifacts, story status, and git status.\n\n"
+            "## Verification\n"
+            "- Treat unrecorded gates as NOT RUN.\n"
+        )
+    fields = read_frontmatter(handoff.read_text())
+    updates = {"restarts": fields.get("restarts", "0"), "codex_safe": fields.get("codex_safe", "no")}
+    if not fields.get("phase"):
+        updates["phase"] = infer_phase(handoff.parent)
+    update_frontmatter(handoff, {**{k: v for k, v in fields.items() if k not in updates}, **updates})
+    return handoff
 
 
 def ensure_quota_checkpoint(percent: int) -> None:
@@ -148,6 +211,7 @@ def run_claude(arguments: list[str]) -> tuple[int, bool, bool, bool]:
     READY.unlink(missing_ok=True)
     STOP_AGENTS.unlink(missing_ok=True)
     WARNING.unlink(missing_ok=True)
+    DELEGATE.unlink(missing_ok=True)
     QUOTA_WARNING.unlink(missing_ok=True)
 
     pid, master = pty.fork()
@@ -266,14 +330,95 @@ def run_claude(arguments: list[str]) -> tuple[int, bool, bool, bool]:
 
 
 def run_codex(artifact: str) -> int:
+    if Path(artifact).name not in HANDOFF_NAMES:
+        print(
+            f"\n[workflow] Pas de handoff pour {artifact} : Codex ne reçoit qu'une étape "
+            "déclarée sûre hors réseau. Reprends avec Claude.\n",
+            file=sys.stderr,
+        )
+        return 1
     launcher = PROJECT / "codex-handoff.sh"
     print(f"\n[workflow] Relais vers Codex depuis {artifact}\n", flush=True)
     return subprocess.call([str(launcher), artifact], cwd=PROJECT)
 
 
+def session_arguments(arguments: list[str]) -> list[str]:
+    """Pin the session to Opus at medium effort, high under `--critical`.
+
+    Nothing else sets the main session's model or effort, and it carries most of
+    the spend. A `--model` or `--effort` the caller passed wins; `--critical` is
+    this launcher's flag and is not forwarded.
+    """
+    critical = "--critical" in arguments
+    rest = [a for a in arguments if a != "--critical"]
+    given = {a.split("=", 1)[0] for a in rest}
+    pinned: list[str] = []
+    if "--model" not in given:
+        pinned += ["--model", "opus"]
+    if "--effort" not in given:
+        pinned += ["--effort", "high" if critical else "medium"]
+    return [*pinned, *rest]
+
+
+# Carried into a restart: what shapes the session's environment. A prompt,
+# `-c`/`--resume` and anything unknown are not: the restart is a fresh session
+# whose only input is the handoff.
+RESTART_VALUE_FLAGS = ("--model", "--effort", "--add-dir", "--mcp-config", "--settings",
+                       "--permission-mode", "--allowedTools", "--disallowedTools")
+RESTART_SWITCHES = ("--dangerously-skip-permissions", "--verbose")
+
+
+def restart_arguments(arguments: list[str], handoff: Path) -> list[str]:
+    """The saturated session's environment, resumed on its handoff."""
+    kept: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        name = argument.split("=", 1)[0]
+        if argument in RESTART_SWITCHES or (name in RESTART_VALUE_FLAGS and "=" in argument):
+            kept.append(argument)
+        elif name in RESTART_VALUE_FLAGS and index + 1 < len(arguments):
+            kept += [argument, arguments[index + 1]]
+            index += 1
+        index += 1
+    return [*kept, f"/loop:orchestrate {handoff.relative_to(PROJECT)}"]
+
+
+def restart_after_saturation() -> Path | None:
+    """Count one restart on the handoff, or None once the feature used its two."""
+    handoff = write_handoff_checkpoint(
+        "automatic context checkpoint",
+        "The context window reached its threshold; resume from this handoff.",
+    )
+    if handoff is None:
+        print("\n[workflow] Contexte saturé hors de docs/work : pas de reprise automatique.\n",
+              file=sys.stderr)
+        return None
+    recorded = read_frontmatter(handoff.read_text()).get("restarts", "0") or "0"
+    restarts = int(recorded) if recorded.isdigit() else MAX_RESTARTS
+    if restarts >= MAX_RESTARTS:
+        print(
+            f"\n[workflow] {handoff.relative_to(PROJECT)} : {restarts} reprises déjà, "
+            "phase trop grosse, à redécouper dans le plan.\n",
+            file=sys.stderr,
+        )
+        return None
+    update_frontmatter(handoff, {"restarts": str(restarts + 1)})
+    return handoff
+
+
 def main() -> int:
-    status, threshold, quota, error = run_claude(sys.argv[1:])
-    if threshold or quota or error:
+    arguments = session_arguments(sys.argv[1:])
+    status, threshold, quota, error = run_claude(arguments)
+    while threshold and not (quota or error):
+        handoff = restart_after_saturation()
+        if handoff is None:
+            return status or 1
+        print(f"\n[workflow] Contexte saturé : nouvelle session Claude sur {handoff.relative_to(PROJECT)}\n",
+              flush=True)
+        arguments = restart_arguments(arguments, handoff)
+        status, threshold, quota, error = run_claude(arguments)
+    if quota or error:
         try:
             artifact = fallback_artifact()
         except RuntimeError as exc:

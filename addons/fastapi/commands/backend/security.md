@@ -89,7 +89,7 @@ Then the patterns that say what "correct" looks like here:
 
 ### Dependencies
 
-- [ ] `pip-audit` clean of CRITICAL/HIGH (see `/backend:deps-audit`)
+- [ ] `uv audit --frozen --no-dev` clean of CRITICAL/HIGH (see `/backend:deps-audit`)
 
 ## Severity
 

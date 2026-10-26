@@ -50,6 +50,52 @@ if [[ -z "$FILE_PATH" ]]; then
     exit 0
 fi
 
+# jq, never a heredoc: these reasons interpolate $FILE_PATH, and a path holding a
+# `"` produced unparseable JSON — which the harness DROPS, so the deny vanished
+# with no message at all. Only the authored `\n` is expanded; every other backslash is left alone.
+deny() {
+    local reason
+    reason="${1//\\n/$'\n'}"
+    cwk_log_health_deny "$reason"
+    jq -n --arg r "$reason" '{
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: $r
+      }
+    }'
+    exit 0
+}
+
+# A test file or one of its fixtures, read on the path relative to the project
+# root and normalised: a project that itself sits under a `tests/` folder, or a
+# `src/tests/../x.ts`, must not pass for test support.
+TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_test|conftest)\.py$'
+TEST_SUPPORT_RE='(^|/)(tests?|__tests__|__mocks__|__fixtures__|fixtures|e2e)/|\.fixtures?\.[cm]?[jt]sx?$'
+
+# The test-writer holds Edit to append a case to a frozen file, and nothing else:
+# a test written next to the code it is about to pass is no longer independent.
+# `agent_type` is set by Claude Code when the call comes from a sub-agent.
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+if [[ "$AGENT_TYPE" == test-writer && ! "$FILE_PATH" =~ $TEST_FILE_RE ]]; then
+    REL_PATH=$(python3 -c 'import os, sys; p, r = (os.path.normpath(a) for a in sys.argv[1:]); print(os.path.relpath(p, r) if p.startswith(r + os.sep) else p)' \
+        "$FILE_PATH" "${CLAUDE_PROJECT_DIR:-$PWD}") \
+        || deny "test-writer write to '$FILE_PATH' refused: python3 is needed to read the path against the project root and is not available."
+    [[ "$REL_PATH" =~ $TEST_SUPPORT_RE ]] || deny "test-writer may only write test files and their fixtures; '$FILE_PATH' is neither (.claude/agents/test-writer.md). Return the failing output instead: the implementation is written after the RED, by the session or the implementer."
+fi
+
+# A raw invisible space in a test is indistinguishable from a plain one on screen,
+# and every later edit anchored on that line misses it — the frozen file then
+# needs an unfreeze to change nothing. fr-FR `Intl` output is full of U+202F.
+# Only what the write ADDS counts: an anchor that already holds one is copied.
+if [[ "$FILE_PATH" =~ $TEST_FILE_RE ]] \
+   && echo "$INPUT" | jq -e '"[\u00a0\u202f\u2007\u200b\u2060\ufeff]" as $raw
+        | def count: [match($raw; "g")] | length;
+        ((.tool_input.content // .tool_input.new_string // "") | count)
+        > ((.tool_input.old_string // "") | count)' > /dev/null; then
+    deny "Raw invisible character (no-break space U+00A0, narrow no-break space U+202F, zero-width space or BOM) in the content written to '$FILE_PATH'. Write its escape in the source instead (\\u00a0, \\u202f); in the tool payload, that backslash is doubled. A raw one cannot be told apart from a space when the case is later edited."
+fi
+
 # A tree with its own toolchain never entered the cycle (tdd-require-red and
 # tdd-prove-red both skip it), so there is nothing to freeze — and freezing it
 # would lock a file no red ever validated. See hook-lib.sh.
@@ -102,22 +148,6 @@ if [[ -n "$CONTENT" && "$CONTENT" == "$(cat "$FILE_PATH")" ]]; then
     jq -n --arg m "TDD: identical re-save of the frozen test '$FILE_PATH' — allowed, nothing changed. tdd-prove-red is re-running it; read its verdict before writing any implementation." '{systemMessage: $m}'
     exit 0
 fi
-
-# jq, never a heredoc: these reasons interpolate $FILE_PATH, and a path holding a
-# `"` produced unparseable JSON — which the harness DROPS, so the deny vanished
-# with no message at all. Only the authored `\n` is expanded; every other backslash is left alone.
-deny() {
-    local reason
-    reason="${1//\\n/$'\n'}"
-    jq -n --arg r "$reason" '{
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: $r
-      }
-    }'
-    exit 0
-}
 
 # The module under test, needed by three of the conditions below.
 MODULE_BASE="${FILE_PATH%.test.ts}"

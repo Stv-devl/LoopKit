@@ -207,9 +207,11 @@ Le chemin recommandé lance Claude sous supervision :
 ```
 
 La status line crée trois seuils : checkpoint à 90 %, aucun nouveau sous-agent
-à 95 %, puis relais Codex à 97 %. Le superviseur interrompt Claude à la frontière
-atomique suivante et lance Codex sur `handoff-codex.md`. Il déclenche aussi le
-relais quand la sortie Claude annonce une limite d'usage.
+à 95 %, puis reprise à 97 %. Le superviseur interrompt Claude à la frontière
+atomique suivante et relance une session Claude neuve sur
+`/loop:orchestrate docs/work/<slug>/handoff.md`, deux fois au plus par feature.
+Codex ne reçoit le relais que sur une limite d'usage annoncée, et seulement pour
+une étape dont le handoff porte `codex_safe: yes`.
 
 Pour le quota d'abonnement affiché par le CLI : 90–94 % arme le checkpoint sans
 couper Claude ; 95 % déclenche le relais. Le motif est configurable avec
@@ -219,7 +221,7 @@ Relais manuel avant une limite :
 
 ```bash
 /handoff:codex docs/work/<slug>/plan.md
-./codex-handoff.sh docs/work/<slug>/handoff-codex.md
+./codex-handoff.sh docs/work/<slug>/handoff.md
 ```
 
 Après une coupure brutale, le checkpoint est optionnel :
@@ -250,9 +252,8 @@ session lance elle-même** `./codex-handoff.sh <handoff> <rôle> --auto`
 commande pour l'utilisateur — `--auto` bascule le script sur `codex exec
 -a never` dans le même sandbox `workspace-write`, non-interactif par
 construction. C'est le comportement par défaut, décidé une fois avec
-l'utilisateur, jamais redemandé feature par feature. Détail et justification
-du choix de ces deux frontières précises :
-[`docs/codex-claude-split-plan.md`](codex-claude-split-plan.md).
+l'utilisateur, jamais redemandé feature par feature. Le choix de ces deux
+frontières est justifié dans `docs/RATIONALE.md`.
 
 ## Les étapes de la boucle
 
@@ -446,7 +447,7 @@ C'est `/kit:doctor` qui vérifie qu'elles n'ont pas divergé depuis.
 `enforce-backend-layers.py`, la table du client dans `01-stack.md`, les scripts
 de `00-project.md`, et les deux que personne ne pense à faire — **les gates
 backend dans `commands/ship.md`** (le bloc est en `pnpm`, il ne teste rien sur un
-repo Python) et **`07-backend.md` dans les dimensions de `agents/reviewer.md`**.
+repo Python) et **`07-backend.md` dans la checklist `guides/review/tests-python.md`**.
 Non câblé = installé mais muet.
 
 Côté boucle, rien ne change : `/loop:interface` se saute quand il n'y a pas d'UI, les

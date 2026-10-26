@@ -158,6 +158,12 @@ tests cannot reach: **a real flow across several screens, in a real browser**.
 E2E **never replaces** the mandatory unit tests on business logic. It is a layer
 on top, not a substitute — a green E2E with no unit test still fails the gate.
 
+## When it runs
+
+In its own command, **after** the unit gates of `/loop:ship` are green — never in
+the same parallel batch as vitest and coverage. Three runners competing for the
+CPU turn timeouts into intermittent reds that say nothing about the app.
+
 ## When a run fails
 
 1. Read the actual error, not the summary. `pnpm exec playwright show-report`

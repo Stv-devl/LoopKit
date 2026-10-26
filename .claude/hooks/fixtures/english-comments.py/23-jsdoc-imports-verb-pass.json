@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/x.utils.ts", "content": "/** Imports the CSV rows into the store. */\nexport function importCsv(): number {\n  return 1;\n}\n"}}

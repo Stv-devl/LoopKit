@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/hooks/useStore.ts", "content": "export function useStore(): void {\n  // memo: walks the items once\n  const out = items.map((i) => memo(i));\n  return out;\n}\n"}}

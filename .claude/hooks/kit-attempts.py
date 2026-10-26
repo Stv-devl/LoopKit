@@ -30,8 +30,8 @@ def write_atomic(path: Path, data: dict[str, dict[str, object]]) -> None:
 
 def log_health(event: str, gate: str, reason: str, now: str) -> None:
     """One JSONL line per gate result. Feeds `.claude/.kit-health.jsonl`,
-    gitignored, local-only — schema: docs/codex-claude-split-plan.md, "Sonde
-    kit-health". Best-effort: never lets this probe fail the gate it observes."""
+    gitignored, local-only — read back by
+    kit-doctor.py check_kit_health. Best-effort: never lets this probe fail the gate it observes."""
     root = Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
     log = root / ".claude" / ".kit-health.jsonl"
     try:

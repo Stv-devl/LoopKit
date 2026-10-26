@@ -19,7 +19,7 @@ licence contamination.
 ## Tools
 
 ```bash
-pip-audit                              # CVE scan (pyproject / requirements)
+uv audit --frozen                      # CVE scan of uv.lock (dev groups included here)
 pip list --outdated --format=columns   # behind latest
 ruff check . --select F401             # imports the code does not use
 grep -rh "^import \|^from " app/ | sort -u   # what the code actually imports
@@ -32,7 +32,7 @@ If the project also ships a frontend: `pnpm audit`, `pnpm outdated`,
 
 ### Vulnerabilities
 
-- [ ] `pip-audit`: zero CRITICAL, zero HIGH
+- [ ] `uv audit --frozen --no-dev`: zero CRITICAL, zero HIGH (dev-only findings listed apart)
 - [ ] MEDIUM either fixed or documented with a reason
 
 ### Known-risky packages

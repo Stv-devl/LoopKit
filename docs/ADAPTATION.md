@@ -36,7 +36,7 @@ fois, une fois pour la machine, une fois pour l'agent.
 
 `SHARED_DIRS` est la troisième, et elle a **quatre** copies, pas deux : le tuple
 du hook, les deux listes d'import de `02-architecture.md`, la case « shared
-leaf » de `.claude/agents/reviewer.md` — qui en donne aussi le **nombre** — et la
+leaf » de `.claude/guides/review/correctness.md` — qui en donne aussi le **nombre** — et la
 ligne « code partagé » de `CLAUDE.md`. Le kit livre six entrées —
 `components/ hooks/ lib/ types/ stores/ config/`. `providers/` et `routes/` en
 sont volontairement absents : ce sont des câblages, ils ont le droit de connaître
@@ -47,7 +47,7 @@ que le **delta inséré** d'un Edit : un import déjà présent ailleurs dans le
 fichier ne lui arrive jamais, et le reviewer est alors le seul filet.
 
 `/kit:doctor` compare désormais le tuple à **trois** de ces copies — la liste
-« Forbidden » de `02-architecture.md`, `CLAUDE.md`, `reviewer.md` — plus le
+« Forbidden » de `02-architecture.md`, `CLAUDE.md`, `guides/review/correctness.md` — plus le
 compte que le reviewer annonce en toutes lettres (`check_shared_dirs`). La liste
 « Allowed from anywhere » de `02-architecture.md` reste **manuelle** : elle est
 énumérative et non miroir du tuple (`providers/` y figure, pas dans
@@ -390,6 +390,14 @@ Motion) et `patterns/gsap.md` (seulement si le spec déclare `Motion: gsap -
 mouvement, et Impeccable n'attrape que des motifs de code connus.
 
 ---
+
+### Context7 (optionnel, priorité basse)
+
+`doc-researcher` pèse peu (environ 0,3 % du coût mesuré). Si le serveur MCP
+Context7 est installé, relève le nom exact de ses outils avec `/mcp` et ajoute-les
+au `tools:` de `.claude/agents/doc-researcher.md` (le commentaire FILL en tête du
+fichier). Sans lui, l'agent saute cette étape de son ordre de recherche ; rien
+d'autre ne change. `install.sh` ne le câble pas.
 
 ## Vérifier que le câblage tient
 

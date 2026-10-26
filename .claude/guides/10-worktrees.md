@@ -135,8 +135,19 @@ git branch -d feat/<slug>
 
 ### Three things to know before the first fork
 
-- **The guardrails follow.** `.claude/` is versioned, so a worktree checkout
-  carries its own hooks, rules and commands. Nothing to copy.
+- **The guardrails follow — if `.claude/` is versioned.** A worktree checkout
+  then carries its own hooks, rules and commands. A project that gitignores
+  `.claude/` (or `docs/work/`) gets an empty one, and `git worktree remove`
+  deletes ignored files on merge: `/kit:doctor`'s `ignored-loop-paths` says so.
+- **What lives in the main tree only.** The hooks run from
+  `$CLAUDE_PROJECT_DIR`, so they follow the session. Anything ignored does not:
+  `.claude/.tdd-red/` markers, `.claude/.kit-health.jsonl`, the token markers,
+  and `kit-attempts.py`'s writes. Call `kit-attempts.py` by its absolute path from
+  the worktree, and expect a fresh worktree to start with no RED marker.
+- **Format the diff, not the folder.** `format-on-save.sh` formats each file as
+  it is written. A `prettier --write .` on a track rewrites files nobody touched
+  and turns into rebase conflicts; `prevent-destructive-commands.sh` asks first.
+  To format by hand: the files of `git diff --name-only`.
 - **The base ref is a setting.** `worktree.baseRef` in `settings.json` decides
   what `EnterWorktree` branches from: `head` (current local HEAD) or `fresh`
   (`origin/<default>`). This kit ships `head` — a local-only repo has no origin
@@ -147,6 +158,21 @@ git branch -d feat/<slug>
   (`CLAUDE.md`, Security); ask the user to copy it, never work around it. Two
   tracks that would each pay this for ten minutes of work are not worth forking:
   say so instead.
+
+## Working remotely (Remote Control)
+
+One feature per session, even from the phone. A session that chains features
+rereads the previous ones at every turn: measured on EcoCrew, 277k tokens per
+turn during the first feature, 456k from the fourth on. `/loop:ship` ends by
+asking for `/clear`, which Remote Control accepts from mobile and web; the
+`SessionStart` hook on `clear` then names the next feature, and `go` starts it.
+
+For several features in parallel from the phone, run the server mode on the
+machine: `claude remote-control --spawn worktree` gives each session started
+remotely its own worktree. The rules of this guide still apply to each track
+(how many, what never forks). Rejected: chaining the next feature into a
+background `claude -p` — invisible from the phone, and nobody there to hold the
+interface and plan gates.
 
 ## Merge protocol (gated)
 

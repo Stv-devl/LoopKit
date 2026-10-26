@@ -127,7 +127,14 @@ jobs:
       #                         passe.
       - name: Dependency audit
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: pnpm audit --audit-level=high
+        run: pnpm audit --prod --audit-level=high
+
+      # Les CVE des dependances de dev : signalees, jamais bloquantes (un outil de
+      # build n'atteint jamais un utilisateur). Meme regle que `/loop:ship`.
+      - name: Dependency audit (dev, advisory)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: pnpm audit --dev --audit-level=high
 
       # Le pendant CI de la seconde ligne "securite deterministe" de `/loop:ship`.
       # L'audit de dependances etait deja ici ; le scan de secrets ne l'etait

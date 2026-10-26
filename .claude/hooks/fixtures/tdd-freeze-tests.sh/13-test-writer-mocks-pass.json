@@ -1,0 +1,1 @@
+{"tool_name":"Write","agent_type":"test-writer","tool_input":{"file_path":"__PROJECT_ROOT__/src/features/x/__mocks__/item.gateway.ts","content":"export const g = {}"}}

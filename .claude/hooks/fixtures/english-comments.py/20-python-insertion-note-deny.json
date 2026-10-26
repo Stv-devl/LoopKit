@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/app/services/x.py","content":"def f():\n    \"\"\"Return one.\"\"\"\n    # Import lines to add at the top of the target file:\n    return 1\n"}}

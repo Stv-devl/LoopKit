@@ -1,0 +1,1 @@
+{"tool_name":"Edit","tool_input":{"file_path":"__FIXTURE_ROOT__/src/b.utils.test.ts","old_string":"const label = \"1 200\"","new_string":"const label = \"1 200\"\nconst other = \"2\""}}

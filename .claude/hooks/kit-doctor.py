@@ -143,6 +143,46 @@ def check_data_client() -> list[Finding]:
     return findings
 
 
+def check_client_copies() -> list[Finding]:
+    """Every template that names the data client names the declared one.
+
+    The templates show a gateway importing the client, a test mocking it, and the
+    coverage floor excluding its instance file. `/kit:init` declares the client in
+    `enforce-architecture.py`; a template still on `@/lib/client` then teaches a
+    path that does not exist, and an exclusion on the wrong file leaves the real
+    client counted against the floor.
+    """
+    hook = read(".claude/hooks/enforce-architecture.py")
+    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook or "", re.M)
+    if not module:
+        return skip("client-copies", "enforce-architecture.py")
+    declared = module.group(1)
+
+    seen: dict[str, set[str]] = {}
+    for path in (".claude/skills/templates/feature.md", ".claude/skills/templates/fixtures.md",
+                 ".claude/skills/patterns/react-query.md"):
+        text = read(path)
+        if text is None:
+            continue
+        found = set(re.findall(r'import\s*\{\s*(?:\w+\s+as\s+)?client\s*\}\s*from\s*["\']@/(lib/[^"\']+)["\']', text))
+        found |= set(re.findall(r'vi\.mock\(\s*["\']@/(lib/[^"\']+)["\'],\s*\(\)\s*=>\s*\(\{\s*\w+:\s*createMockClient', text))
+        if found:
+            seen[path] = found
+    cfg = read(".claude/skills/templates/tooling-config.md")
+    block = re.search(r"exclude:\s*\[\s*\.\.\.coverageConfigDefaults\.exclude,(.*?)\]", cfg or "", re.S)
+    if block:
+        wiring = {"lib/queryClient", "lib/utils/cn"}
+        instance = set(re.findall(r"'src/(lib/[^']+)\.ts'", block.group(1))) - wiring
+        seen[".claude/skills/templates/tooling-config.md"] = instance
+
+    wrong = {path: names for path, names in seen.items() if names != {declared}}
+    if not wrong:
+        return [Finding("client-copies", OK, f"@/{declared} in {len(seen)} template(s)")]
+    return [Finding("client-copies", DIVERGENCE,
+                    f"the declared client is @/{declared}; these templates name another",
+                    [f"{path}  →  {', '.join(sorted(names))}" for path, names in sorted(wrong.items())])]
+
+
 def check_composition_roots() -> list[Finding]:
     arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
     if arch is None or hook is None:
@@ -165,11 +205,11 @@ def check_shared_dirs() -> list[Finding]:
     while the structure diagram carried it).
 
     Four copies, not two: the tuple, `02-architecture.md`'s forbidden bullet,
-    `CLAUDE.md`'s non-negotiable, and `reviewer.md` — which restates the list AND
+    `CLAUDE.md`'s non-negotiable, and the reviewer's correctness checklist — which restates the list AND
     its count, the cheapest of the four to let rot.
     """
     arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
-    doc, rev = read("CLAUDE.md"), read(".claude/agents/reviewer.md")
+    doc, rev = read("CLAUDE.md"), read(".claude/guides/review/correctness.md")
     if hook is None:
         return skip("shared-dirs", "enforce-architecture.py")
 
@@ -187,7 +227,7 @@ def check_shared_dirs() -> list[Finding]:
          r"\*\*Forbidden:\*\*(.*?)→ `features/\*`", r"`src/([a-z]+)/\*`", arch),
         ("shared-dirs (CLAUDE.md)", "CLAUDE.md",
          r"shared leaf code \((.*?)\) never imports a feature", r"`([a-z]+)/`", doc),
-        ("shared-dirs (reviewer)", ".claude/agents/reviewer.md",
+        ("shared-dirs (reviewer)", ".claude/guides/review/correctness.md",
          r"No shared \*\*leaf\*\* code depending on a feature:(.*?)— the full", r"`src/([a-z]+)`", rev),
     )
 
@@ -206,16 +246,16 @@ def check_shared_dirs() -> list[Finding]:
         out += compare(name, (fname, set(re.findall(item_re, block.group(1)))),
                        (".claude/hooks/enforce-architecture.py", actual))
 
-    # reviewer.md also states the COUNT in prose — a number nothing else compares.
+    # The correctness checklist also states the COUNT in prose — a number nothing else compares.
     words = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
     n = re.search(r"of `enforce-architecture\.py`, (\w+) entries", rev) if rev else None
     if rev is None:
-        out += skip("shared-dirs (count)", ".claude/agents/reviewer.md")
+        out += skip("shared-dirs (count)", ".claude/guides/review/correctness.md")
     elif not n:
-        out.append(Finding("shared-dirs (count)", MISSING, "reviewer.md no longer states the entry count"))
+        out.append(Finding("shared-dirs (count)", MISSING, "the correctness checklist no longer states the entry count"))
     elif words.get(n.group(1)) != len(actual):
         out.append(Finding("shared-dirs (count)", DIVERGENCE, "the stated count is wrong", [
-            f".claude/agents/reviewer.md  →  {n.group(1)} entries",
+            f".claude/guides/review/correctness.md  →  {n.group(1)} entries",
             f".claude/hooks/enforce-architecture.py  →  {len(actual)} entries",
         ]))
     else:
@@ -264,7 +304,7 @@ def check_token_thresholds() -> list[Finding]:
     declared = {name: pct for name, pct in re.findall(r"`\.([a-z-]+)` at (\d+)%", rule)}
 
     # Each marker is written inside the `if used >= N` block above its write_text.
-    variables = {"token-warning": "warning", "token-stop-agents": "stop_agents", "codex-ready": "ready"}
+    variables = {"token-delegate": "delegate", "token-warning": "warning", "token-stop-agents": "stop_agents", "restart-ready": "ready"}
     actual: dict[str, str] = {}
     current: str | None = None
     for line in status.splitlines():
@@ -480,6 +520,75 @@ def check_ci_scripts() -> list[Finding]:
     return [Finding("ci-scripts", OK, fmt(called))]
 
 
+def check_audit_flags() -> list[Finding]:
+    """The dependency audit runs with the same flags in its three copies.
+
+    `/loop:ship`, the CI workflow and `00-project.md` each spelled it their own
+    way (`--audit-level=high` with dev dependencies, bare `pnpm audit`, a project
+    script with `--prod`): three gates under one name. The blocking line audits
+    production dependencies only; a dev-only CVE never reaches a user and is
+    reported apart, without blocking.
+    """
+    ship, project = read(".claude/commands/loop/ship.md"), read(".claude/rules/00-project.md")
+    ci = read("templates/github/ci.yml") or read(".github/workflows/ci.yml")
+    if ship is None or project is None or ci is None:
+        return skip("audit-flags", "commands/ship.md", "rules/00-project.md", "ci.yml")
+
+    def flags(text: str) -> str | None:
+        for line in text.splitlines():
+            line = re.sub(r"^\s*(?:-\s*)?(?:run:\s*)?", "", line.split("#")[0]).strip()
+            if re.match(r"pnpm audit(\s|$)", line) and "--dev" not in line:
+                return " ".join(sorted(line.split()[2:]))
+        return None
+
+    fence = re.search(r"### 1\. Gates.*?```bash\n(.*?)```", ship, re.S)
+    rule_fence = re.search(r"```bash\n(.*?)```", project, re.S)
+    seen = {
+        ".claude/commands/loop/ship.md": flags(fence.group(1)) if fence else None,
+        ".claude/rules/00-project.md": flags(rule_fence.group(1)) if rule_fence else None,
+        "ci.yml": flags(ci),
+    }
+    if any(value is None for value in seen.values()):
+        return [Finding("audit-flags", MISSING, "a copy no longer carries a `pnpm audit` line",
+                        [path for path, value in seen.items() if value is None])]
+    if len(set(seen.values())) > 1 or "--prod" not in next(iter(seen.values())):
+        return [Finding("audit-flags", DIVERGENCE,
+                        "the blocking audit must read `pnpm audit --prod --audit-level=high` in all three copies",
+                        [f"{path}  →  pnpm audit {value}".rstrip() for path, value in seen.items()])]
+    return [Finding("audit-flags", OK, "pnpm audit " + next(iter(seen.values())))]
+
+
+def check_ignored_loop_paths() -> list[Finding]:
+    """Nothing the loop needs across worktrees is gitignored.
+
+    `git worktree remove` deletes ignored files without a word. A project that
+    ignored `docs/work/` lost a track's research, design and plan on merge; one
+    that ignores `.claude/` gives every fresh worktree no rules, no hooks and no
+    agents. Only the per-session handoff is meant to be ignored.
+    """
+    probes = {
+        "docs/work/probe/plan.md": "docs/work/", ".claude/rules/probe.md": ".claude/rules/",
+        ".claude/agents/probe.md": ".claude/agents/", ".claude/commands/probe.md": ".claude/commands/",
+        ".claude/hooks/probe.sh": ".claude/hooks/", ".claude/skills/probe.md": ".claude/skills/",
+        ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
+    }
+    try:
+        result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", *probes],
+                                capture_output=True, text=True)
+    except FileNotFoundError:
+        return skip("ignored-loop-paths", "git")
+    if result.returncode not in (0, 1):
+        return skip("ignored-loop-paths", "a git repository")
+    ignored = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not ignored:
+        return [Finding("ignored-loop-paths", OK, "docs/work/ and the shipped .claude/ folders are tracked")]
+    folders = sorted({probes[path] for path in ignored if path in probes})
+    return [Finding("ignored-loop-paths", DIVERGENCE,
+                    "gitignored, so a worktree never gets it and `git worktree remove` deletes it",
+                    [f"{folder}  →  remove its .gitignore entry (only the per-session handoff file is meant to be ignored)"
+                     for folder in folders])]
+
+
 def check_workflow_names() -> list[Finding]:
     """The CD names the CI workflow, and it must name the one that exists.
 
@@ -588,12 +697,51 @@ def check_agent_models() -> list[Finding]:
     return findings
 
 
+def check_agent_efforts() -> list[Finding]:
+    """Every agent's `effort:` is the one its row of the tier table gives it.
+
+    A row's Effort cell is a backticked level the frontmatter must carry, or plain
+    words (a gate's effort is set at the call, by profile) meaning the agent
+    carries none: a fixed effort on a gate would override the call.
+    """
+    rule = read(".claude/rules/11-token-budget.md")
+    agents_dir = ROOT / ".claude/agents"
+    if rule is None or not agents_dir.is_dir() or not re.search(r"^\|[^\n]*\bEffort\b", rule, re.M):
+        return skip("agent-efforts", "an Effort column in 11-token-budget.md", ".claude/agents/")
+
+    declared: dict[str, str | None] = {}
+    for line in rule.splitlines():
+        row = re.match(r"\|\s*`([a-z][a-z0-9.-]+)`\s*\|(.*)\|\s*$", line)
+        if not row:
+            continue
+        cells = row.group(2).split("|")
+        if len(cells) < 3:
+            continue
+        level = re.search(r"`([a-z]+)`", cells[-2])
+        for name in re.findall(r"`([a-z][a-z0-9-]+)`", cells[-1]):
+            declared[name] = level.group(1) if level else None
+
+    wrong: list[str] = []
+    for path in sorted(agents_dir.glob("*.md")):
+        if path.stem not in declared:
+            continue
+        found = re.search(r"^effort:\s*(\S+)\s*$", path.read_text(encoding="utf-8"), re.M)
+        got = found.group(1) if found else None
+        if got != declared[path.stem]:
+            wrong.append(f"{path.stem}: .claude/rules/11-token-budget.md → {declared[path.stem] or 'none (set at the call)'}"
+                         f"   |   .claude/agents/{path.stem}.md → {got or 'none'}")
+    if wrong:
+        return [Finding("agent-efforts", DIVERGENCE,
+                        f"{len(wrong)} agent(s) carry an effort the rule does not give them", wrong)]
+    return [Finding("agent-efforts", OK, f"{len(declared)} agents match the Effort column")]
+
+
 # --------------------------------------------------------------- wiring & links
 
 # Written at runtime, or created by a command — absent is the normal state.
 RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
-    ".claude/.token-stop-agents", ".claude/.codex-ready", ".claude/.quota-warning",
+    ".claude/.token-delegate", ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees",
 }
@@ -602,8 +750,9 @@ RUNTIME_PATHS = {
 # one per language.
 NON_HOOKS = {
     "hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "test-attempts.sh", "test-hooks.sh", "test-install.sh",
-    "test-kit-doctor.sh", "test-rules-floor.sh", "test-workflow-contracts.sh",
+    "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
+    "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
+    "test-workflow-contracts.sh",
 }
 REACT_HOOKS = {
     "no-any-type.sh", "no-forbidden-icons.sh", "enforce-architecture.py",
@@ -1036,8 +1185,8 @@ def check_kit_health() -> list[Finding]:
     """Not a twin comparison, unlike every check above — a summary of events
     accumulated in `.claude/.kit-health.jsonl` (gate pass/fail, real hook
     refusals, review findings + verdicts). Never fails the gate: informational
-    only, same footing as the FILL findings below.
-    docs/codex-claude-split-plan.md, "Sonde kit-health"."""
+    only, same footing as the FILL findings below. The writers are
+    hook-lib.sh cwk_log_health_deny, kit-attempts.py and /loop:review."""
     raw = read(".claude/.kit-health.jsonl")
     if raw is None or not raw.strip():
         return skip("health", ".claude/.kit-health.jsonl")
@@ -1099,11 +1248,12 @@ def check_kit_health() -> list[Finding]:
 
 
 CHECKS = [
-    ("twins", [check_protected_dirs, check_data_client, check_composition_roots,
+    ("twins", [check_protected_dirs, check_data_client, check_client_copies, check_composition_roots,
                check_shared_dirs,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
-               check_tdd_layers, check_gate_allowlist, check_ci_scripts,
-               check_workflow_names, check_agent_models, check_settled_ledger]),
+               check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
+               check_ignored_loop_paths,
+               check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring]),
     ("links", [check_shipped_paths, check_command_references,

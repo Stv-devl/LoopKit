@@ -316,6 +316,19 @@ describe('Button', () => {
 });
 ```
 
+### What jsdom does not implement
+
+A rich-text editor (TipTap, ProseMirror, Lexical) calls layout APIs jsdom does not
+have. The test passes, then Vitest exits 1 on the **unhandled error** thrown
+after it. That red is right: stub the missing API once, in the setup file
+(`templates/fixtures.md`), never per test and never by ignoring the exit code.
+
+```ts
+document.elementFromPoint ??= () => null;
+Range.prototype.getClientRects ??= () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+```
+
 ## Gateway (mandatory as soon as it builds a query)
 
 The gateway is the only layer that **is** the transport, so it is the only one

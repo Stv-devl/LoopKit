@@ -15,7 +15,7 @@ pnpm test:run
 pnpm test:coverage
 pnpm typecheck
 pnpm lint
-pnpm audit
+pnpm audit --prod --audit-level=high
 pnpm test
 pnpm test:ui
 ```

@@ -21,25 +21,30 @@ is not only a manual saturation fallback any more.
 1. Resolve the artifact and its `docs/work/<slug>/` directory. Read only the
    entry, latest workflow artifacts, current story record, `git status --short`,
    `git diff --stat`, and deterministic results already recorded on disk.
-2. Write `docs/work/<slug>/handoff-codex.md` using the template below. Never
+2. Write `docs/work/<slug>/handoff.md` using the template below. Never
    paste source code, full diffs, conversation, secrets, or complete rule files.
-3. Stop and print:
-   `./codex-handoff.sh docs/work/<slug>/handoff-codex.md`
+3. Set `codex_safe: yes` only if every gate of the current step runs without
+   network (front layers, unit tests); a backend test on a database or an e2e
+   run makes it `no`. Codex's sandbox has no sockets, and `./codex-handoff.sh`
+   refuses anything but `yes`.
+4. Once the Write has returned, never in the same message, stop and print:
+   `./codex-handoff.sh docs/work/<slug>/handoff.md`
 
 ## Template
 
 ```markdown
 ---
-phase: execute        # research | interface | plan-gate | execute | review | ship
+phase: execute        # research | interface | plan | execute | review | ship
 execute_status: in-progress   # in-progress | done — only meaningful when phase: execute
 review_status: judgment       # judgment | fixes-handed-to-codex | fixes-done — only meaningful when phase: review
 token_profile: economy
+codex_safe: no                # yes only when every gate of this step runs offline
 ---
 
-# Codex handoff: <feature>
+# Handoff: <feature>
 Token profile: economy | standard | critical
 Entry: <path>
-Current phase: research | interface | plan-gate | execute | review | ship
+Current phase: research | interface | plan | execute | review | ship
 Worktree/branch: <path + branch, or main tree>
 
 ## Objective and acceptance criteria

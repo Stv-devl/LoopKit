@@ -1,4 +1,4 @@
-<!-- budget: 200 lines · /kit:doctor rules-budget -->
+<!-- budget: 140 lines · /kit:doctor rules-budget -->
 # <Project name — FILL> (React 19 + TS + Vite 8 + <backend — FILL> + TanStack Query)
 
 <!-- FILL: this file is the project's constitution. Everything in it is loaded
@@ -17,12 +17,8 @@
   if `none yet`, delete `.github/workflows/deploy.yml` rather than leaving it
   unfilled.
 
-The gates run **once or twice, never zero**. `/loop:ship` runs them before every
-commit, on this machine — that copy exists whatever the answers above. When the
-project has a remote, `.github/workflows/ci.yml` runs them again where nobody
-can skip them; a green CI is then not a reason to stop running `/loop:ship`, since it
-reports on a diff already pushed. No remote → no workflow installed at all, and
-the gates are unchanged · `.claude/skills/templates/ci.md`.
+`/loop:ship` runs the gates before every commit, remote or not; CI repeats them
+and never replaces them · `.claude/guides/rules-index.md`.
 
 ## Security
 
@@ -51,12 +47,8 @@ names (not values) or check `.env.example`.
 - `git worktree remove --force`, or deleting a worktree with `rm` — use
   `git worktree remove` (it refuses a dirty tree, and that refusal is the point)
 
-**Never write source from the shell.** A redirection, a `tee` or an in-place
-`sed` onto a TypeScript file goes around every `Write|Edit` guardrail at once.
-Use Write/Edit. The Bash hook denies it on the test-first layers and on any test
-file, and asks elsewhere · `05-testing.md`, "What the hooks refuse".
-
-When deleting, always target specific files/subdirectories, not entire folders.
+**Never write source from the shell** (redirection, `tee`, `sed -i`): it goes
+around every `Write|Edit` guardrail. Delete specific files, never whole folders.
 
 ## Non-negotiables
 
@@ -89,10 +81,7 @@ When deleting, always target specific files/subdirectories, not entire folders.
 
 ## Routing
 
-Two kinds of work have one entry point, and going around it is the failure mode:
-
-- **Git / GitHub** → the **`github` agent**. The convention lives there
-  (`.claude/agents/github.md`); `enforce-git-workflow.sh` enforces it.
+- **Git / GitHub** → the **`github` agent** (`.claude/agents/github.md`).
 - **Schema changes** → **`/database:migration`**. Never write SQL by hand.
 
 ## Workflows
@@ -112,77 +101,32 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
                └── /loop:orchestrate <artifact> runs the whole loop ──┘
 ```
 
-**The loop's gates come in two kinds, and only one of them defines the work.**
-`/loop:interface` and `/loop:plan` fix **what is to be built** — the retained proposal is
-what makes `/loop:review` scoring a divergence as Major honest, and the printed test
-plan is the last point where changing "correct" is free, since those test files
-freeze right after. Neither substitutes for the other and **neither proceeds on
-silence**. `/loop:ship`'s gates and `/loop:tracks`' fork are the other kind: they decide
-**what leaves the machine**, never what it should be.
+- `/loop:interface` and `/loop:plan` fix **what is built** and never proceed on
+  silence; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
+- Stories are sliced **functional, before the architecture**. External docs are
+  researched once: `docs/research-cache/settled.md` is read before any fetch.
+- **EXECUTE stays sequential** on the main thread; the RED legs go to one
+  `test-writer` per feature, GREEN past 70% and every fix batch to `implementer`.
+  Agents: `.claude/agents/` (13). Separate tracks get separate worktrees, their number
+  computed · `/loop:tracks`.
+- Token profile `economy` by default, persisted in work artifacts ·
+  `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual Codex
+  fallback `/handoff:codex` then `./codex-handoff.sh`.
+- Out of the loop, read-only, never a gate: `/audit:security`, `/audit:mutation`,
+  `/audit:part <name>`, `/kit:doctor`. Their fixes come back through the loop.
+  Exception: a `critical` profile arms one `/audit:security` surface at ship.
 
-- Stories are sliced **functional, before the architecture**; `/loop:plan` injects the
-  technical context per feature.
-- **External documentation is researched once** — `docs/research-cache/`, whose
-  `settled.md` ledger `/loop:research` reads before it fetches anything.
-- Parallelise independent information, never repeated reading of the same source
-  · `11-token-budget.md`. **EXECUTE stays sequential** — one exception, the RED
-  leg, one `test-writer` per test-first layer.
-- Separate tracks get separate worktrees; how many at once is **computed** ·
-  `/loop:tracks`, `.claude/guides/10-worktrees.md`.
-- Agents: `explorer`, `doc-researcher`, `story-writer`, `story-critic`,
-  `plan-critic`, `designer`, `test-writer`, `reviewer`, `verifier`, `e2e-tester`,
-  `security-auditor`, `github`.
-- Token profile: `economy` by default, persisted in work artifacts ·
-  `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual fallback
-  `/handoff:codex` then `./codex-handoff.sh`.
-- Out of the loop, read-only: `/audit:security`, `/audit:mutation`,
-  `/audit:part <name>` (one named part, disjoint fan-out, every finding refuted,
-  a register in `docs/audits/<part>.md` so every run after the first is a diff)
-  and `/kit:doctor`. They report; the fixes come back through the loop with their
-  tests, never inline. **Never a gate** — with one exception: on a `critical`
-  profile `/loop:ship` arms one surface of `/audit:security` before the commit, and a
-  Critical finding stops the ship (`/loop:ship` step 1bis · `11-token-budget.md`).
+Full map: `docs/Claude_Workflows.md`.
 
-Full map: `docs/Claude_Workflows.md`. Everything respects `.claude/rules/` and
-the guardrail hooks.
-
-**Reading a path in these files.** A path under `.claude/` is shipped and must
-exist — a missing one is a broken link. A path under `docs/work/<slug>/`,
-`docs/product/`, `docs/prd/`, `docs/stories/`, `docs/architecture/`,
-`docs/specs/` is **produced by the loop**, as are `docs/design-system.md` and
-`docs/product/backlog.md`: absent simply means "not generated yet". Always write
-the second kind with its full directory, never as a bare `plan.md`.
+**Reading a path in these files.** A `.claude/` path is shipped and must exist.
+`docs/work/<slug>/`, `docs/product/`, `docs/prd/`, `docs/stories/`,
+`docs/architecture/`, `docs/specs/` and `docs/design-system.md` are produced by
+the loop: absent means "not generated yet". Write them with their full directory.
 
 ## Rules Index
 
-**The `@` lines below are the loader, not an index.** Nothing walks
-`.claude/rules/` on its own — there is no `SessionStart` hook, and Claude Code
-reads this file plus its imports. A rule dropped into that directory without an
-`@` line here **never reaches a session**, silently. `/kit:doctor`'s
-`rules-loaded` compares the two lists.
-
-**Every rule declares a line budget**, in a `<!-- budget: N -->` comment on its
-first line, and `/kit:doctor`'s `rules-budget` fails when a file passes it. The
-budget is not tidiness: these files are re-read in full by every session **and by
-every subagent**, so a paragraph added here is a paragraph multiplied by the
-whole fan-out of the loop. Passing a budget is a decision — raise the number in
-the same commit, and say what it bought.
-
-**Three exits for anything that does not fit**, in this order:
-
-1. **A hook's deny text already says it** → delete. The deny fires at the exact
-   moment, names the file and prints the way out. Describing a refusal in a rule
-   is paid by every session to prevent an attempt the hook stops for free.
-2. **A pattern or template is read at the moment it applies** → move it there.
-   That is why no settled fact lives in `01-stack.md` any more.
-3. **It is a retrospective** → `.claude/guides/`, same authority, loaded by
-   nobody, read when something names it by path.
-
-The line that decides between 3 and staying: **a trap stays in the rule, a
-retrospective goes to the guide.** A trap changes what an agent does when it has
-never met it. And a whole rule moves out only when **something names it at the
-moment it applies** — `05-testing.md` never qualifies, its freeze fires on a
-write nobody announced.
+The `@` lines below are the loader: a rule without one never loads. Each rule
+has a line budget; where a new line goes · `.claude/guides/rules-index.md`.
 
 @.claude/rules/00-project.md @.claude/rules/01-stack.md
 @.claude/rules/02-architecture.md @.claude/rules/03-conventions.md

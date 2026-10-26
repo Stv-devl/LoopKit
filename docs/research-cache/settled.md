@@ -1,44 +1,25 @@
 # Settled external facts — the ledger
 
-**One purpose: stop the loop re-learning what it already knows.** The first time
-a probe settles a question about a version pinned in `.claude/rules/01-stack.md`,
-the answer is written **here**, and never researched again.
+A question about a version pinned in `.claude/rules/01-stack.md`, once settled by
+a probe, is answered **here** and never researched again. The file is cold: not
+loaded at session start, read only before any fetch by `/loop:research` (main
+thread; a question this file answers is not researched) and by `doc-researcher`
+(before its first network call, with the topic files next to it). Facts that fire
+silently while code is written stay hot in `01-stack.md`'s *Traps that stay
+loaded*.
 
-**This file is cold on purpose.** It is not loaded at session start — it grows
-without bound, and a cache nobody is reading costs the same as one everybody is.
-It is read at exactly one moment, by exactly two readers, both of which name it:
+**Writing a row:** only the main thread, at the synthesis step of
+`/loop:research`, in the same pass. `doc-researcher` never edits a rule or this
+ledger; it returns a `Promote to the ledger` block.
 
-| Reader | When |
-| --- | --- |
-| `/loop:research` (main thread) | before any fetch. A question this file answers is **not** researched — not "researched quickly", not researched |
-| `doc-researcher` | before its **first** network call, together with the topic files next to it |
-
-The three or four facts that fire **silently while code is being written**, with
-no pattern file open at that moment, are the exception: they stay hot, in
-`01-stack.md`'s short *Traps that stay loaded* table. Everything else lives here.
-
-**Who writes a row:** the main thread, at the synthesis step of `/loop:research`, in
-the same pass. The `doc-researcher` agent never does — it is forbidden from
-editing a rule or this ledger, and returns a `Promote to the ledger` block
-instead. Deferred, it never happens.
-
-- **One row per version-pinned behaviour**, not per library. "zod v4" is not a
-  fact; "`z.string().email()` is deprecated in v4 but still works" is one.
-- **A row dies with its version.** Bumping a dependency means deleting or
-  rewriting its rows in the same commit — a stale row is worse than no row.
-- **What moves on its own does not belong here.** A vendor API with its own
-  breaking-change schedule goes to a topic file in this directory with
-  `stability: volatile` and a re-check window.
-- **A row is never promoted back into a rule to make it easier to find.** The
-  rule names this file; that is the whole mechanism, and it is what keeps the
-  session floor flat as the ledger grows.
-
-> This file survives an addon install by construction. `addons/supabase/` and
-> `addons/fastapi/` overwrite `.claude/rules/01-stack.md`; they do not touch
-> `docs/`. Before this ledger existed, installing the Supabase addon silently
-> deleted every answer the loop had paid to establish. `/kit:doctor`'s
-> `settled-ledger` check now refuses any rule file that grows a dated table
-> again.
+- One row per version-pinned behaviour, not per library.
+- A row dies with its version: bumping a dependency deletes or rewrites its rows
+  in the same commit.
+- What moves on its own (a vendor API with its own breaking-change schedule) goes
+  to a topic file here with `stability: volatile` and a re-check window.
+- A row is never promoted back into a rule; the rule names this file.
+- Addon installs overwrite `.claude/rules/01-stack.md` but never `docs/`;
+  `/kit:doctor`'s `settled-ledger` refuses any rule file that grows a dated table.
 
 | Fact | Answer in effect | Established |
 | --- | --- | --- |
@@ -72,3 +53,5 @@ instead. Deferred, it never happens.
 | `@vitest/eslint-plugin` 1.6.x — `expect-expect` on a test whose only assertion is `expectTypeOf(...)` | Requires `settings: { vitest: { typecheck: true } }` — exact key, boolean — or the test is flagged as having no assertion | 2026-08-20 |
 | pytest 9.x — exit code for a **collection-time** import error | `2` (`ExitCode.INTERRUPTED`), never `5` (`NO_TESTS_COLLECTED`) or `1` — confirmed in `_pytest/config/__init__.py`'s `ExitCode` enum | 2026-08-20 |
 | pytest 9.x — `ImportError: cannot import name 'X' from 'Y'` vs `ModuleNotFoundError: No module named` | Different CPython exception branches with different message text: the literal phrase **"No module named" is absent** from the "cannot import name" variant, so a classifier grepping for that phrase misclassifies it as an assertion failure | 2026-08-20 |
+| Claude Code 2.1.x — setting the main session's model and effort from a launcher | `claude --model <alias> --effort <level>` (both listed in `claude --help`, 2.1.310). `workflow.py` passes `--model opus --effort medium` unless the caller gave one, `high` under its own `--critical` flag. A subagent's `effort:` frontmatter and the Agent call's `effort` parameter set it per agent; an older Claude Code without them runs the agent at its default | 2026-10-25, `claude --help` |
+| codex-cli 0.154.0 — model id for the two Codex roles (`execute-green`, `review-fixes`) | `gpt-5.6-terra`, passed as `-m` by `codex-handoff.sh` from `codex_model` in `.claude/workflow-routing.yml`, with `model_reasoning_effort=low`. Read in `~/.codex/models_cache.json` (also lists `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-luna`). Its `workspace-write` sandbox has no sockets: no database or browser gate runs there | 2026-10-25, `~/.codex/models_cache.json` |

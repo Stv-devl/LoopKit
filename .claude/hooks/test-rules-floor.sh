@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOTAL="$(wc -l "$ROOT/CLAUDE.md" "$ROOT"/.claude/rules/*.md | tail -1 | awk '{print $1}')"
-[[ "$TOTAL" -le 622 ]] || {
-    echo "session floor regression: $TOTAL lines (must stay at or below half of 1,245 = 622)" >&2
+[[ "$TOTAL" -le 520 ]] || {
+    echo "session floor regression: $TOTAL lines (ceiling 520, ratcheted down from 622 by the 2026-10 slimming)" >&2
     exit 1
 }
 

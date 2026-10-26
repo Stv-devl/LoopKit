@@ -221,7 +221,8 @@ install_settings() {
                         endswith("english-comments.py") or
                         endswith("prevent-destructive-commands.sh") or
                         endswith("enforce-git-workflow.sh") or
-                        endswith("auto-approve-config.sh"));
+                        endswith("auto-approve-config.sh") or
+                        endswith("next-feature-on-clear.py"));
           .hooks |= with_entries(
             .value |= [ .[] | .hooks |= map(select(core)) | select(.hooks | length > 0) ]
           )
@@ -298,6 +299,11 @@ add_py_hooks() {
                                command: "$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-prove-red-py.py",
                                timeout: 180}]) | unique_by(.command))
               else . end)
+          | .permissions.allow = (((.permissions.allow // []) + [
+              "Bash(python -m pytest)", "Bash(python -m pytest *)",
+              "Bash(uv run pytest)", "Bash(uv run pytest *)",
+              "Bash(mypy *)", "Bash(pyright *)", "Bash(ruff check .)", "Bash(ruff check app)",
+              "Bash(ruff check app/)", "Bash(uv audit *)"]) | unique)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 
@@ -312,7 +318,7 @@ wire_fastapi() {
         echo "  ! jq absent : déclare les 6 hooks Python à la main (README, § 6. Hooks)." >&2
     elif [[ -e "$t/.claude/settings.json" ]]; then
         add_py_hooks "$t/.claude/settings.json" \
-            && echo "  câblé : les 6 hooks Python dans .claude/settings.json" \
+            && echo "  câblé : les 6 hooks Python et les autorisations des gates backend dans .claude/settings.json" \
             || echo "  ! échec du câblage jq : déclare les 6 hooks à la main (README, § 6)." >&2
     fi
 
@@ -367,6 +373,19 @@ wire_supabase() {
                       s{DATA_CLIENT_OWN_PATH = "lib/client\.ts"}{DATA_CLIENT_OWN_PATH = "lib/supabase.ts"}' \
             "$t/.claude/hooks/enforce-architecture.py"
         echo "  câblé : lib/supabase dans DATA_CLIENT_MODULE / DATA_CLIENT_OWN_PATH"
+        # Les templates nomment le client : le module change, l'export aussi
+        # (`supabase`, pas `client`). Un alias garde les corps des exemples
+        # intacts ; /kit:doctor client-copies vérifie les copies.
+        for f in "$t/.claude/skills/templates/feature.md" "$t/.claude/skills/patterns/react-query.md"; do
+            [[ -f "$f" ]] && perl -pi -e 's{import \{ client \} from "\@/lib/client";}{import { supabase as client } from "\@/lib/supabase";}g' "$f"
+        done
+        [[ -f "$t/.claude/skills/templates/fixtures.md" ]] && perl -0pi -e \
+            's#vi\.mock\("\@/lib/client", \(\) => \(\{\n  client: createMockClient\(\),#vi.mock("\@/lib/supabase", () => ({\n  supabase: createMockClient(),#g' \
+            "$t/.claude/skills/templates/fixtures.md"
+        [[ -f "$t/.claude/skills/templates/tooling-config.md" ]] && perl -pi -e \
+            "s{'src/lib/client\.ts',}{'src/lib/supabase.ts',}" "$t/.claude/skills/templates/tooling-config.md"
+        [[ -f "$t/.claude/rules/05-testing.md" ]] && perl -pi -e \
+            's{`lib/client\.ts`}{`lib/supabase.ts`}' "$t/.claude/rules/05-testing.md"
     elif ! $installed_arch && ! grep -q 'DATA_CLIENT_MODULE = "lib/supabase"' \
                                    "$t/.claude/hooks/enforce-architecture.py"; then
         echo "  ! enforce-architecture.py préexistant : mets DATA_CLIENT_MODULE à" >&2
@@ -409,6 +428,15 @@ GITIGNORE_MARK_LEGACY="# === Claude Workflow Kit — état de session ==="
 ensure_gitignore() {
     local gi="$1/.gitignore"
     if [[ -f "$gi" ]] && grep -qF -e "$GITIGNORE_MARK" -e "$GITIGNORE_MARK_LEGACY" "$gi"; then
+        # A block written by an older kit lacks the names added since: append
+        # only the missing lines, never the block twice.
+        local line
+        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md; do
+            if ! grep -qxF "$line" "$gi"; then
+                printf '%s\n' "$line" >> "$gi"
+                GITIGNORE_TOUCHED=1
+            fi
+        done
         return
     fi
     [[ -f "$gi" ]] && printf '\n' >> "$gi"
@@ -421,11 +449,17 @@ $GITIGNORE_MARK
 .claude/.hook-timings.log
 .claude/.eslint-queue
 .claude/.eslint-queue.*
+.claude/.token-delegate
 .claude/.token-warning
 .claude/.token-stop-agents
+.claude/.restart-ready
 .claude/.codex-ready
 .claude/.quota-warning
 .claude/.tdd-red/
+# Le handoff d'une session interrompue : local, périmé dès qu'on reprend.
+# handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
+docs/work/*/handoff.md
+handoff-codex.md
 # .claude/.tdd-unfrozen n'est délibérément PAS ignoré : toute la raison d'être de
 # la liste d'exceptions TDD est d'être visible en review (.claude/rules/05-testing.md).
 EOF
@@ -588,6 +622,8 @@ if $WITH_FASTAPI; then
     # là laisse le projet à moitié câblé.
     for f in "$ADDON/hooks/"*.py "$ADDON/hooks/"*.sh; do
         [[ -f "$f" ]] || continue
+        # Les tests des hooks de l'addon tournent dans le kit, pas dans le projet.
+        [[ "$(basename "$f")" == test_* ]] && continue
         copy_file "$f" "$TARGET/.claude/hooks/$(basename "$f")"
     done
     copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/FASTAPI-ADDON.md"
@@ -666,12 +702,13 @@ Addon installé ? Son câblage n'est PAS automatique :
   PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent à
   faire : 01-stack.md, 00-project.md, 02-architecture.md, EXTERNAL_CLIENTS,
   et surtout les gates backend dans commands/ship.md + 07-backend.md dans
-  agents/reviewer.md)
+  guides/review/correctness.md et security.md)
 
 Lanceur supervisé recommandé :
   ./workflow.sh
-  À 90% il checkpoint, à 95% il arrête les nouveaux agents, à 97% il passe à
-  Codex. Une limite d'usage détectée dans la sortie déclenche le même relais.
+  À 90% il checkpoint, à 95% il arrête les nouveaux agents, à 97% il relance
+  Claude sur le handoff. Une limite d'usage passe à Codex si l'étape est sûre
+  hors réseau (codex_safe: yes), sinon il s'arrête sur le checkpoint.
 
 Relais manuel :
   /handoff:codex <artefact> puis ./codex-handoff.sh <handoff>

@@ -19,6 +19,7 @@ jq -e '[.hooks[][]?.hooks[]?.command] | all(
     contains("format-on-save.sh") | not
 )' "$TARGET/.claude/settings.json" >/dev/null
 python3 "$TARGET/.claude/hooks/kit-doctor.py" | grep -Fq 'No divergence.'
+jq -e '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[].command] | any(endswith("next-feature-on-clear.py"))' "$TARGET/.claude/settings.json" >/dev/null
 
 # A second install re-merges the selected layer into active settings.
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
@@ -58,5 +59,32 @@ done
 PY_COUNT="$(jq '[.hooks[][]?.hooks[]?.command | select(endswith("-py.py") or endswith("ruff-on-save.sh") or endswith("enforce-backend-layers.py") or endswith("no-any-type-py.py"))] | length' "$PY_TARGET/.claude/settings.json")"
 "$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
 [[ "$PY_COUNT" -eq "$(jq '[.hooks[][]?.hooks[]?.command | select(endswith("-py.py") or endswith("ruff-on-save.sh") or endswith("enforce-backend-layers.py") or endswith("no-any-type-py.py"))] | length' "$PY_TARGET/.claude/settings.json")" ]]
+
+# The backend gates are allowlisted, or /loop:ship prompts on each of them and a
+# reflex "no" drops one silently. Merged, never duplicated by a second install.
+for gate in 'Bash(python -m pytest *)' 'Bash(uv run pytest *)' 'Bash(mypy *)' \
+            'Bash(ruff check .)' 'Bash(uv audit *)' 'Bash(pyright *)'; do
+    jq -e --arg gate "$gate" '.permissions.allow | index($gate)' "$PY_TARGET/.claude/settings.json" >/dev/null
+done
+jq -e '.permissions.allow | length == (unique | length)' "$PY_TARGET/.claude/settings.json" >/dev/null
+if jq -e '.permissions.allow | index("Bash(ruff check *)")' "$PY_TARGET/.claude/settings.json" >/dev/null; then exit 1; fi
+
+# A fresh Supabase install declares lib/supabase and rewrites its template copies,
+# or /kit:doctor reports the installer's own divergence on day one.
+SB_TARGET="$SCRATCH/supabase-target"
+mkdir -p "$SB_TARGET"
+"$ROOT/install.sh" "$SB_TARGET" --supabase --no-ci >/dev/null 2>&1
+SB_DOCTOR="$(python3 "$SB_TARGET/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          client-copies' <<<"$SB_DOCTOR"
+grep -q 'ok          coverage-holes' <<<"$SB_DOCTOR"
+grep -Fq 'import { supabase as client } from "@/lib/supabase";' "$SB_TARGET/.claude/skills/templates/feature.md"
+grep -Fq 'supabase: createMockClient(),' "$SB_TARGET/.claude/skills/templates/fixtures.md"
+
+# The handoff is ignored on a fresh install and added to an older kit's block.
+grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
+sed -i '/^docs\/work\/\*\/handoff.md$/d; /^\.claude\/\.restart-ready$/d' "$PY_TARGET/.gitignore"
+"$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
+grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
+[[ "$(grep -cxF '.claude/.restart-ready' "$PY_TARGET/.gitignore")" -eq 1 ]]
 
 echo 'install fixtures: green.'

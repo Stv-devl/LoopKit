@@ -204,7 +204,7 @@ if [[ -f "$FILE_PATH" ]]; then
     done <<< "$ADDED"
 
     if [[ -n "$UNPROVEN" ]]; then
-        deny "Test-first: this edit to '$FILE_PATH' exports ${UNPROVEN% } — the most recent proved RED for '$TEST_PATH' did not name ${UNPROVEN% } as missing, so it proves nothing about it (.claude/rules/05-testing.md).\n\nSave '$TEST_PATH' with a case that exercises ${UNPROVEN% } and let tdd-prove-red observe it fail, then come back and write this.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
+        deny "Test-first: this edit to '$FILE_PATH' exports ${UNPROVEN% } — the most recent proved RED for '$TEST_PATH' did not name ${UNPROVEN% } as missing, so it proves nothing about it (.claude/rules/05-testing.md).\n\nSave '$TEST_PATH' with a case that exercises ${UNPROVEN% } and let tdd-prove-red observe it fail, then come back and write this.\n\nIf ${UNPROVEN% } is only a helper of this module, keep it unexported instead: an internal function is covered by the cases of the export that uses it.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
     fi
 
     exit 0

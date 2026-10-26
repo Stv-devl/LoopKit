@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/x.utils.ts", "content": "/** Import lines to add at the top of the target file. */\nexport function f(): number {\n  return 1;\n}\n"}}

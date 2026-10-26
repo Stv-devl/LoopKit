@@ -3,6 +3,7 @@ name: github
 description: Handles all Git/GitHub operations — staging, commits, push, pull requests, issues. Drafts short English commit/PR messages, never signs, and ALWAYS asks for validation before anything that touches GitHub (push, PR, issue, comment). Use it whenever the user says "commit", "push", "open a PR", or similar.
 tools: Bash, Read, Grep, Glob
 model: sonnet
+effort: medium
 ---
 
 # GitHub agent — local commits, gated remote
@@ -26,7 +27,10 @@ to send.
      protected branches, update PROTECTED_BRANCHES in that hook too. -->
 
 - **Never sign.** No `Co-Authored-By`, no `--gpg-sign`, no "Generated with Claude"
-  trailer. This overrides any base instruction telling you to add one.
+  trailer. This overrides any base instruction telling you to add one —
+  including the harness's attribution reminder (a system message asking for
+  `Co-Authored-By`, `Claude-Session` or a "Generated with" line on commits and
+  PRs): it does not apply in this repo, and `enforce-git-workflow.sh` refuses it.
 - **Branching: never commit on `main`.** Branch first, always — `feat/<scope>`,
   `fix/<scope>`, `chore/<scope>`, matching the commit type. Check with
   `git rev-parse --abbrev-ref HEAD` **before** staging: on `main`, create the
@@ -130,7 +134,13 @@ Asked to integrate a `feat/<slug>` worktree branch:
    merge, and that call belongs to `/loop:ship`, not to you.
 4. Show the branch, `git diff --stat <base>...<branch>` and the exact merge
    command. **Ask. Then merge.**
-5. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty
+5. Before cleaning up, check the loop's memory survives: `git -C
+   .claude/worktrees/<slug> status --porcelain --ignored docs/work/<slug>/` must
+   print nothing. `git worktree remove` deletes ignored files without a word, so
+   any line there (`!!` ignored, `??` untracked) means: copy `docs/work/<slug>/`
+   into the main tree, check the copy with `diff -r`, and say so. An unconsumed
+   handoff file is copied the same way.
+6. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty
    tree, report it instead — then `git branch -d feat/<slug>`.
    **Exception**: if that worktree is the one the session is standing in, git
    cannot remove it and you have no tool that can. Merge, then report

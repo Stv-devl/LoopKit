@@ -38,10 +38,23 @@ things — which is exactly how a report ends up claiming the context is full wh
 the quota is.
 
 The supervisor clears all four markers at the start of every `claude` launch and
-reads `.codex-ready` alone. `.token-warning` and `.token-stop-agents` are
+reads `.restart-ready` alone. `.token-warning` and `.token-stop-agents` are
 advisory: "start no new subagent at 95%" is a rule you honour, not one a process
 enforces.
 
 One hook detail worth keeping out of the rule: `token-statusline.py` clears
-`.codex-ready` on a **hysteresis at 90**, not at its own 97, so a `/compact` does
+`.restart-ready` on a **hysteresis at 90**, not at its own 97, so a `/compact` does
 not leave a stale handoff order behind.
+
+## Why effort is set per agent, and at the call for gates
+
+The measured spend (`docs/measurements/token-baseline.md`) is mostly the main
+session; output is about 5 % of tokens, so effort moves cost less than the model
+and far less than context size. It is set anyway, because it is free to set and
+the defaults were unchosen. Producers carry a fixed `effort:` in frontmatter:
+`test-writer` high (a wrong test freezes), the rest medium. Gates carry none: a
+fixed effort in frontmatter would override the call, and the call is where the
+profile is known — medium in `economy`/`standard`, high in `critical`. A Claude
+Code too old for the parameter runs the gate at its default: nothing breaks, but
+`critical` loses its extra effort. `/kit:doctor` `agent-efforts` keeps the
+frontmatter and the table in step.

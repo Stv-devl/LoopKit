@@ -1,4 +1,4 @@
-<!-- budget: 55 lines · /kit:doctor rules-budget -->
+<!-- budget: 50 lines · /kit:doctor rules-budget -->
 # Code Conventions
 
 ## TypeScript
@@ -18,7 +18,7 @@ No implementation comments. The comment hook's deny text owns syntax details.
 
 No new `useMemo`, `useCallback` or `memo`: React Compiler is on. Only identity as
 an external correctness contract, or a measured expensive non-render computation,
-qualifies; name the exception in a one-line comment. Fix compiler lint bail-outs.
+qualifies; name it right above, as `// memo: <reason>`. Fix compiler bail-outs.
 
 ## Semantic HTML and Accessibility
 

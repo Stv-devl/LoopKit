@@ -45,6 +45,82 @@ RUN_TESTS="pnpm test:run"
 # being killed silently. A hook that dies without a word looks like a green gate.
 RUN_TIMEOUT=150
 
+# ---------------------------------------------------------------------- symbols
+
+# The names a test file exercises from the module under test, one per line.
+# A function, and reachable alone through `--symbols <test file>`, because the
+# rest of this hook runs the real suite and no fixture can drive it.
+symbols_of() {
+    local FLAT NAMED ALIAS SYMBOLS=""
+    # Flattened, so a multi-line `import { a, b } from './x'` is still one match.
+    # Comments first: a commented-out import exercises nothing.
+    FLAT=$(sed -E 's#(^|[[:space:];{}(),])//.*$#\1#' "$1" | tr '\n' ' ' \
+        | sed -E 's#/\*([^*]|\*+[^*/])*\*+/# #g')
+
+    # import { toEntity, fromEntity } from './item.mapper'
+    NAMED=$(printf '%s' "$FLAT" \
+        | grep -oE "import[[:space:]]+(type[[:space:]]+)?\{[^}]*\}[[:space:]]+from[[:space:]]+['\"][^'\"]*${2}['\"]" \
+        || true)
+    if [[ -n "$NAMED" ]]; then
+        SYMBOLS+=$(printf '%s' "$NAMED" \
+            | sed 's/.*{\([^}]*\)}.*/\1/' \
+            | tr ',' '\n' \
+            | sed 's/[[:space:]]*type[[:space:]]\+//; s/[[:space:]]\+as[[:space:]]\+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+        SYMBOLS+=$'\n'
+    fi
+
+    # import * as repository from './item.repository'  → collect `repository.<name>`
+    ALIAS=$(printf '%s' "$FLAT" \
+        | grep -oE "import[[:space:]]+\*[[:space:]]+as[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+from[[:space:]]+['\"][^'\"]*${2}['\"]" \
+        | sed -E 's/.*as[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+from.*/\1/' \
+        || true)
+    if [[ -n "$ALIAS" ]]; then
+        SYMBOLS+=$(printf '%s' "$FLAT" \
+            | grep -oE "(^|[^.A-Za-z0-9_\$])${ALIAS}\.[A-Za-z_][A-Za-z0-9_]*" \
+            | sed -E 's/.*\.([A-Za-z_][A-Za-z0-9_]*)$/\1/' \
+            | sort -u || true)
+        SYMBOLS+=$'\n'
+    fi
+
+    # Loaded after `vi.mock`, the normal Vitest shape: `await import('./x')` or
+    # `await vi.importActual<…>('./x')`, destructured, aliased, or read inline.
+    local DYN="(vi\.importActual[[:space:]]*(<([^<>]|<[^<>]*>)*>)?|import)[[:space:]]*\([[:space:]]*['\"][^'\"]*${2}['\"][[:space:]]*\)"
+    SYMBOLS+=$(printf '%s' "$FLAT" \
+        | grep -oE "\{[^{}]*\}[[:space:]]*=[[:space:]]*await[[:space:]]+${DYN}" \
+        | sed 's/^{\([^}]*\)}.*/\1/' \
+        | tr ',' '\n' \
+        | sed 's/:.*//; s/=.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' \
+        | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' | grep -vx default || true)
+    SYMBOLS+=$'\n'
+    SYMBOLS+=$(printf '%s' "$FLAT" \
+        | grep -oE "\([[:space:]]*await[[:space:]]+${DYN}[[:space:]]*\)\.[A-Za-z_][A-Za-z0-9_]*" \
+        | sed -E 's/.*\)\.([A-Za-z_][A-Za-z0-9_]*)$/\1/' || true)
+    SYMBOLS+=$'\n'
+    local holder
+    for holder in $(printf '%s' "$FLAT" \
+        | grep -oE "(^|[^.A-Za-z0-9_\$])[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*await[[:space:]]+${DYN}" \
+        | sed -E 's/^[^A-Za-z_]?([A-Za-z_][A-Za-z0-9_]*).*/\1/' || true); do
+        SYMBOLS+=$(printf '%s' "$FLAT" \
+            | grep -oE "(^|[^.A-Za-z0-9_\$])${holder}\.[A-Za-z_][A-Za-z0-9_]*" \
+            | sed -E 's/.*\.([A-Za-z_][A-Za-z0-9_]*)$/\1/' \
+            | grep -vx default || true)
+        SYMBOLS+=$'\n'
+    done
+    printf '%s' "$SYMBOLS" | sed '/^[[:space:]]*$/d' | sort -u
+}
+
+module_re_of() {
+    local base="${1%.test.ts}"
+    [[ "$base" == "$1" ]] && base="${1%.test.tsx}"
+    basename "$base" | sed 's/\./\\./g'
+}
+
+if [[ "${1:-}" == --symbols ]]; then
+    symbols_of "$2" "$(module_re_of "$2")"
+    exit 0
+fi
+
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
@@ -121,40 +197,7 @@ done
 MODULE_BASE=$(basename "$BASE")
 MODULE_RE=$(printf '%s' "$MODULE_BASE" | sed 's/\./\\./g')
 
-# ---------------------------------------------------------------------- symbols
-
-# Flattened, so a multi-line `import { a, b } from './x'` is still one match.
-FLAT=$(tr '\n' ' ' < "$FILE_PATH")
-
-SYMBOLS=""
-
-# import { toEntity, fromEntity } from './item.mapper'
-NAMED=$(printf '%s' "$FLAT" \
-    | grep -oE "import[[:space:]]+(type[[:space:]]+)?\{[^}]*\}[[:space:]]+from[[:space:]]+['\"][^'\"]*${MODULE_RE}['\"]" \
-    || true)
-if [[ -n "$NAMED" ]]; then
-    SYMBOLS+=$(printf '%s' "$NAMED" \
-        | sed 's/.*{\([^}]*\)}.*/\1/' \
-        | tr ',' '\n' \
-        | sed 's/[[:space:]]*type[[:space:]]\+//; s/[[:space:]]\+as[[:space:]]\+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' \
-        | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
-    SYMBOLS+=$'\n'
-fi
-
-# import * as repository from './item.repository'  → collect `repository.<name>`
-ALIAS=$(printf '%s' "$FLAT" \
-    | grep -oE "import[[:space:]]+\*[[:space:]]+as[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+from[[:space:]]+['\"][^'\"]*${MODULE_RE}['\"]" \
-    | sed -E 's/.*as[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+from.*/\1/' \
-    || true)
-if [[ -n "$ALIAS" ]]; then
-    SYMBOLS+=$(printf '%s' "$FLAT" \
-        | grep -oE "\b${ALIAS}\.[A-Za-z_][A-Za-z0-9_]*" \
-        | cut -d. -f2 \
-        | sort -u || true)
-    SYMBOLS+=$'\n'
-fi
-
-SYMBOLS=$(printf '%s' "$SYMBOLS" | sed '/^[[:space:]]*$/d' | sort -u)
+SYMBOLS=$(symbols_of "$FILE_PATH" "$MODULE_RE")
 
 # Does the file assert anything at all? A run that fails without asserting is a
 # broken file, not a RED phase — and it is the exact shape of a "red" an agent

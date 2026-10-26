@@ -90,17 +90,8 @@ async def run_ingestion(document_id: str, tenant_id: str) -> None:
 
             # 5. Mirror the chunks in SQL, paired with their vector ids
             for chunk, point_id in zip(chunks, point_ids, strict=True):
-                db.add(Chunk(
-                    document_id=document.id,
-                    text=chunk.text,
-                    page=chunk.page,
-                    position=chunk.position,
-                    vector_point_id=point_id,
-                    section_title=chunk.section_title or None,
-                    content_type=chunk.content_type,
-                    keywords=chunk.keywords or None,
-                    char_count=chunk.char_count or len(chunk.text),
-                ))
+                db.add(Chunk(document_id=document.id, vector_point_id=point_id,
+                             text=chunk.text, page=chunk.page, position=chunk.position))
 
             document.status = "ready"
             document.chunk_count = len(point_ids)

@@ -210,25 +210,11 @@ The techniques that actually move recall, in the order they pay off:
 
 The endpoint stays a one-liner; the service yields.
 
-```python
-@router.post("/{project_id}/chat")
-async def chat(
-    project_id: str,
-    data: ChatRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> StreamingResponse:
-    return StreamingResponse(
-        chat_stream(db, tenant_id=current_user.tenant_id, project_id=project_id,
-                    user_id=current_user.id, question=data.question),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",   # nginx buffers SSE into uselessness without it
-        },
-    )
-```
+The route is `POST /{project_id}/chat`, depending on `get_db` and
+`get_current_user`, and returns `StreamingResponse(chat_stream(...,
+tenant_id=current_user.tenant_id, ...), media_type="text/event-stream")` with
+headers `Cache-Control: no-cache`, `Connection: keep-alive` and
+`X-Accel-Buffering: no` (nginx buffers SSE into uselessness without it).
 
 Wire format — `data: {json}\n\n`, double newline mandatory. Event vocabulary,
 declared once and shared with the frontend:

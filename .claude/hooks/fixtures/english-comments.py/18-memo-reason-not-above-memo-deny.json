@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "__FIXTURE_ROOT__/src/features/x/hooks/useStore.ts", "content": "export function useStore(): void {\n  // memo: not above any memoization\n  const total = 1 + 2;\n  return total;\n}\n"}}

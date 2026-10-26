@@ -50,14 +50,17 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | --- | --- | --- |
 | `protected-dirs` | `CLAUDE.md`, "Recursive delete on" | `PROTECTED_DIRS` in `prevent-destructive-commands.sh` |
 | `data-client` | `01-stack.md`, "Where does the client live?" | `DATA_CLIENT_MODULE` / `DATA_CLIENT_OWN_PATH` in `enforce-architecture.py` |
+| `client-copies` | `DATA_CLIENT_MODULE` in `enforce-architecture.py` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
 | `composition-roots` | `02-architecture.md`, the composition-root row | `COMPOSITION_ROOTS` in `enforce-architecture.py` |
-| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `reviewer.md` — which restates the list *and* its count | `SHARED_DIRS` in `enforce-architecture.py`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
+| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `guides/review/correctness.md` — which restates the list *and* its count | `SHARED_DIRS` in `enforce-architecture.py`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |
 | `coverage-holes` | `05-testing.md`, "three wiring files and only three" | the coverage `exclude` array in `tooling-config.md` |
 | `token-thresholds` | `11-token-budget.md`, the three markers | the `used >=` blocks in `token-statusline.py` |
 | `tdd-layers` | — | `CWK_TDD_LAYERS`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
 | `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
+| `ignored-loop-paths` | `docs/work/` and the shipped `.claude/` folders are versioned | `git check-ignore` on one probe path per folder; only the per-session handoff may be ignored |
+| `audit-flags` | the `pnpm audit` line of `/loop:ship`'s gate fence | the same line in `00-project.md` and `ci.yml`, all `--prod --audit-level=high` (dev CVEs are reported apart) |
 | `workflow-names` | `ci.yml`'s `name:` | the `workflow_run` trigger and `--workflow=` of `deploy.yml` |
 | `agent-models` | `11-token-budget.md`, the model-tier table | the `model:` line of every `.claude/agents/*.md` |
 | `settled-ledger` | `01-stack.md` names `docs/research-cache/settled.md` | that no rule file, core or addon, grew a dated table back |
@@ -67,7 +70,7 @@ interrupts. That is exactly why it belongs here: a gate added to `/loop:ship` wi
 its allow entry does not fail, it **asks**, someone declines it by reflex in the
 middle of the batch, the other gates stay green and the ship reports success
 without the check that was just added. The form matters too: a call carrying
-flags (`pnpm audit --audit-level=high`) needs the `Bash(pnpm audit *)` entry, and
+flags (`pnpm audit --prod --audit-level=high`) needs the `Bash(pnpm audit *)` entry, and
 the bare one does not cover it. A grant living only in `settings.local.json` is
 reported as missing, with a note — that file does not ship, so the next checkout
 has the gap back.

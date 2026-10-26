@@ -1,4 +1,4 @@
-<!-- budget: 75 lines · /kit:doctor rules-budget -->
+<!-- budget: 72 lines · /kit:doctor rules-budget -->
 # Clean Architecture
 
 ## Project Structure
