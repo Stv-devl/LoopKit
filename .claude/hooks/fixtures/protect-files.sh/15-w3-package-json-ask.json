@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__PROJECT_ROOT__/package.json","content":"x"},"_expect_reason":"guarded path: package.json"}

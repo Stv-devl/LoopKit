@@ -47,6 +47,25 @@ if [[ "${CWK_HOOK_TIMING:-1}" == "1" ]]; then
     trap __cwk_record EXIT
 fi
 
+# ------------------------------------------------------------- hook-guarded
+# The guarded-path list and its resolver (cwk_guard_rel, cwk_is_guarded,
+# cwk_is_guard_denied). A guard hook sets CWK_GUARD_HOOK=1 before sourcing this
+# file: without the list it cannot tell a guarded path from any other, and a
+# PreToolUse hook that exits 1 or 127 reads as "allow" — so it refuses (exit 2).
+# Every other hook only warns: a Stop hook that exits 2 blocks the turn's end,
+# again and again.
+# "Loaded" means usable: the three functions exist and both lists are non-empty,
+# so an empty or half-renamed file refuses like a missing one.
+if ! { source "$(dirname "${BASH_SOURCE[0]}")/hook-guarded.sh" 2>/dev/null \
+        && declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied >/dev/null 2>&1 \
+        && [[ ${#CWK_GUARDED[@]} -gt 0 && ${#CWK_GUARD_DENIED[@]} -gt 0 ]]; }; then
+    if [[ "${CWK_GUARD_HOOK:-0}" == 1 ]]; then
+        echo "BLOCKED: hook-guarded.sh missing or broken — the kit's guarded-path list is unusable, so this guard refuses rather than passes. The user restores it from a terminal (git checkout -- .claude/hooks/hook-guarded.sh, or re-copy it from the kit if it was never committed); the agent cannot, every guard hook refuses." >&2
+        exit 2
+    fi
+    echo "WARNING: hook-guarded.sh missing or broken (.claude/hooks/) — guarded paths are unprotected." >&2
+fi
+
 # -------------------------------------------------------------- cwk_require_jq
 # EVERY guardrail in this directory parses its stdin with `jq`, under `set -e`.
 # With jq off PATH the very first `$(… | jq …)` aborts the script at rc 127 — and

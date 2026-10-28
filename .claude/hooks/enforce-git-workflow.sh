@@ -28,6 +28,7 @@
 #
 
 set -e
+CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
 

@@ -290,12 +290,177 @@ run_prove_red_symbols() {
     rm -r "$tmp"
 }
 
+# hook-guarded.sh: one case = one function call in a fresh bash, run from the
+# project root and again from .claude/hooks/ (the result may not depend on $PWD).
+guard_call() {
+    local dir="$1"; shift
+    (cd "$dir" && bash -c 'source "$1" || exit 99; shift; "$@"' _ "$HOOKS_DIR/hook-guarded.sh" "$@" 2>&1)
+}
+
+guard_expect() {
+    local want="$1" out code dir; shift
+    for dir in "$PROJECT_ROOT" "$HOOKS_DIR"; do
+        CASES=$((CASES + 1))
+        set +e
+        out="$(CLAUDE_PROJECT_DIR="$PROJECT_ROOT" guard_call "$dir" "$@")"
+        code=$?
+        set -e
+        [[ "$code" -eq "$want" ]] \
+            || fail hook-guarded.sh "$* (from ${dir#"$PROJECT_ROOT"})" "expected exit $want, got $code"
+        [[ -z "$out" ]] || fail hook-guarded.sh "$* (from ${dir#"$PROJECT_ROOT"})" "printed '$out'"
+    done
+}
+
+guard_rel_expect() {
+    local want="$1" want_code="$2" project="$3" out code; shift 3
+    CASES=$((CASES + 1))
+    set +e
+    out="$(CLAUDE_PROJECT_DIR="$project" guard_call "$HOOKS_DIR" cwk_guard_rel "$@")"
+    code=$?
+    set -e
+    [[ "$out" == "$want" && "$code" -eq "$want_code" ]] \
+        || fail hook-guarded.sh "cwk_guard_rel $*" "expected '$want' exit $want_code, got '$out' exit $code"
+}
+
+run_guarded_cases() {
+    local p="$PROJECT_ROOT" tmp rel out code hook before after
+    # W1 the set, folders above it, and the denied set
+    for rel in .claude/scripts/a.sh .claude/hooks .github .claude . package.json tsconfig.app.json; do
+        guard_expect 0 cwk_is_guarded "$rel"
+    done
+    for rel in src/x.ts src docs/x.md apps/web/package.json; do
+        guard_expect 1 cwk_is_guarded "$rel"
+    done
+    for rel in .claude/.tdd-red/m .claude/.tdd-red; do
+        guard_expect 0 cwk_is_guard_denied "$rel"
+    done
+    for rel in .claude .claude/hooks/a.sh; do
+        guard_expect 1 cwk_is_guard_denied "$rel"
+    done
+
+    # W1 sourcing it has no side effect: no log line, no output, no trap, no shopt
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/.claude"
+    printf 'seed\n' > "$tmp/.claude/.hook-timings.log"
+    before="$(sha256sum "$tmp/.claude/.hook-timings.log")"
+    CASES=$((CASES + 1))
+    set +e
+    out="$(CLAUDE_PROJECT_DIR="$tmp" CWK_HOOK_TIMING=1 bash -c \
+        'source "$1" || exit 99; trap -p; shopt -p extglob || true' _ "$HOOKS_DIR/hook-guarded.sh" 2>&1)"
+    code=$?
+    set -e
+    after="$(sha256sum "$tmp/.claude/.hook-timings.log")"
+    [[ "$code" -eq 0 && "$out" == "shopt -u extglob" && "$before" == "$after" ]] \
+        || fail hook-guarded.sh side-effects "expected exit 0, no trap, extglob off, log unchanged; got exit $code, '$out'"
+
+    # W2 cwk_guard_rel
+    ln -s "$p" "$tmp/alias"
+    guard_rel_expect .claude/hooks/a.sh 0 "$p" "$p/.claude/worktrees/x/.claude/hooks/a.sh"
+    guard_rel_expect vite.config.ts 0 "$p" "$p/src/../vite.config.ts"
+    guard_rel_expect package.json 0 "$p" "$p//package.json"
+    guard_rel_expect package.json 0 "$p" "$p/./package.json"
+    guard_rel_expect package.json 0 "$p" ../package.json "$p/src"
+    guard_rel_expect package.json 0 "$p" package.json
+    guard_rel_expect vite.config.ts 0 "$p" "$tmp/alias/vite.config.ts"
+    guard_rel_expect vite.config.ts 0 "$tmp/alias" "$p/vite.config.ts"
+    guard_rel_expect "" 1 "$p" "$p/../y"
+    guard_rel_expect "" 1 "$p" /etc/passwd
+    rm -r "$tmp"
+
+    # W6 hook-guarded.sh missing: the guard hooks fail closed, the Stop hook does not
+    tmp="$(mktemp -d)"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+    rm -f "$tmp/hook-guarded.sh"
+    for hook in protect-files.sh prevent-destructive-commands.sh enforce-git-workflow.sh \
+                tdd-require-red.sh tdd-freeze-tests.sh; do
+        CASES=$((CASES + 1))
+        set +e
+        out="$(printf '{}' | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$tmp/$hook" 2>&1)"
+        code=$?
+        set -e
+        [[ "$code" -eq 2 && "$out" == *"BLOCKED: hook-guarded.sh missing"* ]] \
+            || fail "$hook" guarded-missing "expected exit 2 with 'BLOCKED: hook-guarded.sh missing', got $code"
+    done
+    mkdir -p "$tmp/root/.claude"
+    CASES=$((CASES + 1))
+    set +e
+    out="$(CLAUDE_PROJECT_DIR="$tmp/root" CWK_HOOK_TIMING=0 "$tmp/eslint-batch.sh" </dev/null 2>&1)"
+    code=$?
+    set -e
+    [[ "$code" -eq 0 && "$out" == *"WARNING: hook-guarded.sh missing"* ]] \
+        || fail eslint-batch.sh guarded-missing "expected exit 0 with 'WARNING: hook-guarded.sh missing', got $code"
+    rm -r "$tmp"
+}
+
+guard_hook_run() {
+    local dir="$1" hook="$2" input="$3"
+    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$dir/$hook" 2>&1
+}
+
+# W8-W11 hardening of the guarded set: a broken list fails closed like a missing
+# one, a half-upgraded kit does not pass, a newline in a path does not escape.
+run_guarded_hardening_cases() {
+    local p="$PROJECT_ROOT" tmp hook out code variant
+    # W8 hook-guarded.sh present but empty, or CWK_GUARDED emptied: the five guard hooks refuse
+    for variant in empty guarded-empty; do
+        tmp="$(mktemp -d)"
+        cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+        if [[ "$variant" == empty ]]; then
+            : > "$tmp/hook-guarded.sh"
+        else
+            printf 'CWK_GUARDED=()\n' >> "$tmp/hook-guarded.sh"
+        fi
+        for hook in protect-files.sh prevent-destructive-commands.sh enforce-git-workflow.sh \
+                    tdd-require-red.sh tdd-freeze-tests.sh; do
+            CASES=$((CASES + 1))
+            set +e
+            out="$(guard_hook_run "$tmp" "$hook" '{}')"
+            code=$?
+            set -e
+            [[ "$code" -eq 2 && "$out" == *"hook-guarded.sh missing or broken"* ]] \
+                || fail "$hook" "guarded-$variant" "expected exit 2 with 'hook-guarded.sh missing or broken', got $code"
+        done
+        rm -r "$tmp"
+    done
+
+    # W9 half-upgraded kit: the previous hook-lib.sh (no source of hook-guarded.sh) + the current protect-files.sh
+    tmp="$(mktemp -d)"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+    sed '/^# -* hook-guarded$/,/^# -* cwk_require_jq$/{/cwk_require_jq/!d;}' "$HOOKS_DIR/hook-lib.sh" > "$tmp/hook-lib.sh"
+    for rel in package.json .claude/.tdd-red/x; do
+        CASES=$((CASES + 1))
+        set +e
+        out="$(guard_hook_run "$tmp" protect-files.sh \
+            "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$p/$rel\",\"content\":\"x\"}}")"
+        code=$?
+        set -e
+        [[ "$code" -eq 2 || "$out" == *'"permissionDecision":"deny"'* || "$out" == *'"permissionDecision": "deny"'* ]] \
+            || fail protect-files.sh "old-hook-lib $rel" "expected deny, got exit $code '$out'"
+    done
+    rm -r "$tmp"
+
+    # W10 a newline inside a path segment stays inside it
+    guard_rel_expect package.json 0 "$p" "$p/x"$'\n'"/../package.json"
+    guard_rel_expect .claude/.tdd-red/m 0 "$p" "$p/a"$'\n'"/../.claude/.tdd-red/m"
+
+    # W11 near-prefix folders are not guarded; sourcing changes no shell option at all
+    guard_expect 1 cwk_is_guarded .git
+    guard_expect 1 cwk_is_guarded .claude/hook
+    CASES=$((CASES + 1))
+    set +e
+    out="$(bash -c 'a="$(shopt -p; set +o)"; source "$1" || exit 99; b="$(shopt -p; set +o)"; [[ "$a" == "$b" ]] && echo same || echo changed' _ "$HOOKS_DIR/hook-guarded.sh" 2>&1)"
+    set -e
+    [[ "$out" == same ]] || fail hook-guarded.sh side-effects-full "shopt/set output changed after sourcing: '$out'"
+}
+
 set -e
 run_fixture_sweep
 if [[ "${1:-}" != --fixtures-only ]]; then
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases
+    run_guarded_cases
+    run_guarded_hardening_cases
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"
     if [[ -f "$ADDON_TEST" ]]; then

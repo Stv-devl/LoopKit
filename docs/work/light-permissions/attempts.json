@@ -1,0 +1,7 @@
+{
+  "plan-critic": {
+    "count": 3,
+    "last": "2026-10-28T16:53:36.913180Z",
+    "reason": "pass 3: 3 Major (directory operands unguarded, second copy of the guarded set in shell_targets.py, byte-compare hold-back blocks configured installs)"
+  }
+}

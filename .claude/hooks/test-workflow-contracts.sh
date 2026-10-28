@@ -429,4 +429,29 @@ grep -Fq 'no board line to move' "$SHIP"
 grep -Fq 'Step 6 and the closing line print that cleanup' "$SHIP"
 grep -Fq 'git worktree remove .claude/worktrees/small-<name>' "$SHIP"
 
+# W7 guard-writes: the TDD escape hatch is now a guarded write, and the deny
+# texts say so; ADAPTATION names the guarded set and the kit-repo prompts.
+TDD_RED_HOOK="$ROOT/.claude/hooks/tdd-require-red.sh"
+TDD_FREEZE_HOOK="$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+ADAPTATION="$ROOT/docs/ADAPTATION.md"
+[[ "$(grep -c 'this write will ask the user' "$TDD_RED_HOOK")" -eq 5 ]]
+[[ "$(grep -c 'this write will ask the user' "$TDD_FREEZE_HOOK")" -eq 2 ]]
+grep -Fq '## 14. Chemins gardés' "$ADAPTATION"
+for needle in 'hook-guarded.sh' '.claude/.tdd-red/' 'vite.config.*' 'package.json' \
+              "dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord"; do
+    section "$ADAPTATION" '## 14. Chemins gardés' '## Vérifier que le câblage tient' | grep -Fq -- "$needle"
+done
+
+# W12 the .tdd-unfrozen write is a user prompt now: orchestrate Phase 4 and the
+# mutation audit say so, and the unattended claim is qualified; ADAPTATION names
+# the two settings files instead of a glob.
+MUTATION="$ROOT/.claude/commands/audit/mutation.md"
+grep -Fq 'the `.tdd-unfrozen` write asks the user' "$ORCHESTRATE"
+grep -Fq 'the `.tdd-unfrozen` write asks the user' "$MUTATION"
+if grep -Fq 'Correcting one never stops EXECUTE — it may run unattended' "$ORCHESTRATE"; then exit 1; fi
+adapt_guard=$(section "$ADAPTATION" '## 14. Chemins gardés' '## Vérifier que le câblage tient')
+grep -Fq '`.claude/settings.json`' <<<"$adapt_guard"
+grep -Fq '`.claude/settings.local.json`' <<<"$adapt_guard"
+if grep -Fq 'settings*.json' <<<"$adapt_guard"; then exit 1; fi
+
 echo 'workflow contract fixtures: green.'

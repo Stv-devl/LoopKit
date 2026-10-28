@@ -33,6 +33,7 @@
 #
 
 set -e
+CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
 
@@ -72,18 +73,20 @@ fi
 # JSON is DROPPED, so the deny disappeared silently — a protected file would have
 # been written with no message at all. The `${x//\\n/}` expansion turns the authored `\n`
 # into real newlines and leaves every other backslash alone.
-deny() {
+decide() {
     local reason
-    reason="${1//\\n/$'\n'}"
-    jq -n --arg r "$reason" '{
+    reason="${2//\\n/$'\n'}"
+    jq -n --arg d "$1" --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "deny",
+        permissionDecision: $d,
         permissionDecisionReason: $r
       }
     }'
     exit 0
 }
+deny() { decide deny "$1"; }
+ask() { decide ask "$1"; }
 
 # =============================================================================
 # SECRETS — refused whatever the tool, and on EVERY field that names a target
@@ -160,5 +163,25 @@ for pattern in "${WRITE_PROTECTED_PATTERNS[@]}"; do
         deny "Protected file: cannot modify '$FILE_PATH'\n\nThis file is protected to prevent accidental changes:\n• lock files - only a package manager writes them\n• .git/ - Git internal files\n• node_modules/ - managed by the package manager\n\nReading them is allowed; this block is on the write."
     fi
 done
+
+# =============================================================================
+# GUARDED — the kit's own guardrails: asked, never silently written
+# =============================================================================
+
+# The list and the resolver live in hook-guarded.sh (sourced by hook-lib.sh).
+# A relative file_path resolves against the session's cwd from the input, never
+# against this process's directory. Outside the project: nothing to guard.
+if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied >/dev/null 2>&1; then
+    deny "BLOCKED: the guarded-path functions are not loaded (hook-lib.sh and protect-files.sh are out of step, or hook-guarded.sh is broken), so this guard refuses rather than passes.\n\nThe user restores the kit from a terminal: git checkout -- .claude/hooks/ (or re-copy .claude/hooks/ from the kit)."
+fi
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+REL=$(cwk_guard_rel "$FILE_PATH" "$CWD") || exit 0
+
+if cwk_is_guard_denied "$REL"; then
+    deny "BLOCKED: .claude/.tdd-red/ is written only by tdd-prove-red.sh — a hand-written RED marker lets a module in with no observed failing test.\n\nWrite the test, run it, and let the PostToolUse hook record the RED it sees."
+fi
+if cwk_is_guarded "$REL"; then
+    ask "guarded path: $REL (kit guardrail; approve only if you meant to change it)"
+fi
 
 exit 0

@@ -255,10 +255,12 @@ came after the code or never failed; never work around it. One benign case: the
 means the denial was right. Once green, adding a case to a frozen file is a pure
 insertion (say what it covers) with the next free id of its letter; whoever wrote
 it, you append its plan line — an `implementer` reproduction case included, from
-the id it reports. Correcting one never stops EXECUTE — it may run unattended for
-hours. The agent that hits the freeze stops and reports; you print the case id,
-the old and new case line and the reason, write `.claude/.tdd-unfrozen` citing the
-id (`<path>  # U2: <reason>`, several as `# U2, U5: …`), make the edit yourself —
+the id it reports. Correcting one is the one step of EXECUTE that waits for the user:
+the `.tdd-unfrozen` write asks the user (a guarded path), and a headless run
+cannot answer, so it stops there. The agent that hits the freeze stops and
+reports; you print the case id, the old and new case line and the reason, write
+`.claude/.tdd-unfrozen` citing the id (`<path>  # U2: <reason>`, several as
+`# U2, U5: …`) once the user approves the prompt, make the edit yourself —
 never through `implementer` or `test-writer`, whose contracts forbid rewriting a
 frozen case — then rewrite the plan line with the same id and append
 `amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The user

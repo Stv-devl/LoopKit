@@ -137,7 +137,8 @@ freeze allows exactly that: appending a new `it()` is a pure insertion, permitte
 without ceremony (`tdd-freeze-tests.sh`). Say which behaviour it covers and why
 the `/loop:plan` test plan missed it.
 
-Only a survivor caused by a **wrong** assertion needs `.claude/.tdd-unfrozen` —
+Only a survivor caused by a **wrong** assertion needs `.claude/.tdd-unfrozen`
+(the `.tdd-unfrozen` write asks the user) —
 name the case id and why in the proposal; the fix goes back through the loop,
 which records it as a `## Gate` amendment (`orchestrate.md`, Phase 4).
 

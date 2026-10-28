@@ -400,6 +400,34 @@ au `tools:` de `.claude/agents/doc-researcher.md` (le commentaire FILL en tête 
 fichier). Sans lui, l'agent saute cette étape de son ordre de recherche ; rien
 d'autre ne change. `install.sh` ne le câble pas.
 
+## 14. Chemins gardés
+
+Les garde-fous du kit reposent sur des fichiers que l'agent pourrait lui-même
+réécrire : les hooks, leurs échappatoires, les marqueurs RED, la configuration
+des gates. Leur liste est unique, dans `.claude/hooks/hook-guarded.sh`, et tout
+hook qui en a besoin appelle `cwk_is_guarded` au lieu de la recopier :
+
+- `.claude/hooks/*` (fixtures et `hook-lib.sh` compris), `.claude/scripts/*`,
+  `.claude/settings.json`, `.claude/settings.local.json`, `.claude/.tdd-unfrozen`, `.claude/.size-exempt` ;
+- `vitest.config.*`, `eslint.config.*`, `vite.config.*` (le plancher de
+  couverture), `package.json` (les scripts des gates), `tsconfig*.json`,
+  `.github/workflows/*` ;
+- les dossiers qui les contiennent (`.claude`, `.github`, la racine).
+
+Un `Write` ou un `Edit` sur l'un d'eux **demande ton accord**, depuis l'arbre
+principal comme depuis `.claude/worktrees/<x>/`. `.claude/.tdd-red/` est
+**refusé** : seul `tdd-prove-red.sh` y écrit, et un marqueur écrit à la main
+ferait passer un module sans RED observé.
+
+Conséquence voulue :
+dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord.
+Dans ton projet, c'est la même chose pour `package.json` ou `vite.config.ts` :
+approuve si le changement est voulu.
+
+Si `hook-guarded.sh` disparaît, les cinq hooks de garde refusent tout (exit 2)
+plutôt que de laisser passer ; rétablis-le depuis un terminal :
+`git checkout -- .claude/hooks/hook-guarded.sh`.
+
 ## Vérifier que le câblage tient
 
 Un hook qui refuse doit imprimer un JSON `permissionDecision: deny` ; un hook qui
