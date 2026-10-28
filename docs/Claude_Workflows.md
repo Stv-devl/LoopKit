@@ -1,6 +1,6 @@
 # Workflows — créer une feature
 
-**Une seule boucle**, deux entrées. Prends l'entrée la plus légère qui suffit.
+**Une seule boucle**, trois entrées. Prends l'entrée la plus légère qui suffit.
 
 ```
                                    /loop:product        (une fois par produit)
@@ -10,6 +10,8 @@ ENTRÉE COMPLEXE (multi-épics)           ▼
                                         │
 ENTRÉE SIMPLE (1 écran, CRUD)           │
   /loop:spec ───────────────────────────┤
+ENTRÉE PETITE (changement borné)         │
+  /loop:small ──────────────────────────┤
 ENTRÉE BUG (symptôme → reproduction)    │
   /loop:debug ──────────────────────────┤
                                         ▼
@@ -22,6 +24,13 @@ BOUCLE (identique pour les deux)        ▼
 
 `/loop:orchestrate <artefact>` fait tourner la boucle entière. Chaque étape reste
 appelable seule si tu veux reprendre au milieu.
+
+## Entrée petite
+
+`/loop:small` prépare une modification bornée, hors fondations, dans son propre
+worktree. Une seule validation approuve la spec; le ticket passe ensuite par le
+plan, l'exécution, la revue et le ship normaux. Les tickets disjoints peuvent
+tourner en parallèle, mais sont intégrés un par un par fusion rapide.
 
 **FEATURE READY, concrètement** : c'est `docs/product/backlog.md`, ouvert par
 `/loop:product`. **Une ligne par unité de boucle** — une spec fait une ligne, un

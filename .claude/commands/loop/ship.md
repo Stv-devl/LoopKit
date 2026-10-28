@@ -193,6 +193,21 @@ line that looks stale and never by deleting the row. On the full pipeline the
 story goes with it: `Status` → `Dropped`, the reason in its Change Log. "Not now"
 is the line staying `READY` below, or `BLOCKED` with its reason.
 
+## Small-ticket integration
+
+For `Pipeline: small`, step 4 runs `small-scope.sh <name>` before the commit; a
+refusal ejects. In 4bis.1, rebase onto the spec's `Base:` branch. In 4bis.2,
+confirm `git -C <main-tree> branch --show-current` equals that Base and that no
+main-tree loop is active; otherwise print `main tree on <x>, not <base>: merge later`.
+Then merge with `git -C <main-tree> merge --ff-only feat/small-<name>`. The
+`<main-tree>` is the first worktree from `git worktree list --porcelain`; the
+merge asks through `enforce-git-workflow.sh` on main/master, through the default
+permission prompt otherwise. In 4bis.3 print, but do not run here,
+`git worktree remove .claude/worktrees/small-<name>` and `git branch -d feat/small-<name>`.
+
+Step 5 has no board line to move. Step 6 and the closing line print that cleanup,
+then `/loop:small --status` to run in the main session, then `close this terminal`.
+
 ## Output
 
 ```
@@ -209,7 +224,8 @@ is the line staying `READY` below, or `BLOCKED` with its reason.
 ```
 
 Then end the turn with one line to the user, in their language: the feature is
-shipped, type `/clear` then `go` to start the next one. A session that chains
+shipped. For a small ticket, print its cleanup, `/loop:small --status` to run in
+the main session, then `close this terminal`. A session that chains
 features rereads every previous one at each turn; `/clear` is the user's command
 (it works from Remote Control), and after it the SessionStart hook
 `next-feature-on-clear.py` hands the fresh session the feature `go` starts.

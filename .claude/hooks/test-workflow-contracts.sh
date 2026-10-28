@@ -8,6 +8,12 @@ CRITIC="$ROOT/.claude/agents/plan-critic.md"
 PRODUCT="$ROOT/.claude/commands/loop/product.md"
 ORCHESTRATE="$ROOT/.claude/commands/loop/orchestrate.md"
 REVIEW="$ROOT/.claude/commands/loop/review.md"
+SMALL="$ROOT/.claude/commands/loop/small.md"
+SHIP="$ROOT/.claude/commands/loop/ship.md"
+TRACKS="$ROOT/.claude/commands/loop/tracks.md"
+WORKTREES="$ROOT/.claude/guides/10-worktrees.md"
+GITHUB_AGENT="$ROOT/.claude/agents/github.md"
+RESEARCH="$ROOT/.claude/commands/loop/research.md"
 SPIKE="$ROOT/.claude/commands/loop/spike.md"
 RECIPE="$ROOT/.claude/commands/kit/recipe.md"
 
@@ -54,7 +60,7 @@ grep -Fq 'frontend-design' "$DESIGNER"
 grep -Fq 'Impeccable, loaded by `designer`' "$INTERFACE"
 grep -Fq 'only on a UI feature' "$ORCHESTRATE"
 grep -Fq 'only on a UI feature' "$PLAN"
-[ "$(ls "$ROOT"/.claude/commands/loop/*.md | wc -l)" -eq 12 ]
+[ "$(ls "$ROOT"/.claude/commands/loop/*.md | wc -l)" -eq 13 ]
 for f in PRODUCT.md DESIGN.md; do
   [ "$(wc -l < "$ROOT/$f")" -le 10 ]
 done
@@ -356,5 +362,71 @@ if grep -Fq 'say which case and why' "$ROOT/.claude/hooks/prevent-destructive-co
 if grep -Fq 'tell the user, with which case and why' "$ROOT/.claude/commands/audit/mutation.md"; then exit 1; fi
 if grep -Fq "et s'arrêter là" "$ROOT/docs/ADAPTATION.md"; then exit 1; fi
 if grep -Eq '^[[:space:]]*/loop:orchestrate docs/specs/<slug>\.md[[:space:]]*$' "$ROOT/README.md"; then exit 1; fi
+
+# Small-lane command and workflow contracts.
+[ "$(grep -Fc 'AskUserQuestion' "$SMALL")" -eq 1 ]
+for trigger in 'schema change' 'critical trigger' 'new dependency' 'new screen'; do
+  grep -Fq "$trigger" "$SMALL"
+done
+research_line=$(grep -nF 'Research inline' "$SMALL" | head -1 | cut -d: -f1)
+draft_line=$(grep -nF 'Draft the small spec' "$SMALL" | head -1 | cut -d: -f1)
+paths_line=$(grep -nF 'small-paths.sh' "$SMALL" | head -1 | cut -d: -f1)
+go_line=$(grep -nF 'AskUserQuestion' "$SMALL" | head -1 | cut -d: -f1)
+dispatch_line=$(grep -nF 'small-dispatch-check.sh' "$SMALL" | tail -1 | cut -d: -f1)
+dispatch_before=$(grep -nF 'small-dispatch-check.sh' "$SMALL" | head -1 | cut -d: -f1)
+paths_after=$(grep -nF 'small-paths.sh' "$SMALL" | tail -1 | cut -d: -f1)
+[ "$research_line" -lt "$draft_line" ]
+[ "$paths_line" -lt "$go_line" ]
+[ "$dispatch_before" -lt "$go_line" ]
+[ "$go_line" -lt "$dispatch_line" ]
+[ "$go_line" -lt "$paths_after" ]
+grep -Fq './workflow.sh "/loop:orchestrate docs/specs/small/<name>.md"' "$SMALL"
+if grep -Fq 'EnterWorktree' "$SMALL"; then exit 1; fi
+
+small_pick=$(grep -nF 'docs/specs/small/' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+light_pick=$(grep -nF 'Light pass' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+ready_pick=$(grep -nF 'FEATURE READY check' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+resume_rule=$(grep -nF 'is a resume' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+[ "$small_pick" -lt "$light_pick" ]
+[ "$small_pick" -lt "$ready_pick" ]
+[ "$small_pick" -lt "$resume_rule" ]
+small_branch=$(section "$ORCHESTRATE" 'Small pipeline' 'FEATURE READY check')
+for required in 'Pipeline: small' 'Entry:' 'small-plan.sh' 'one reviewer' 'one verifier' 'implementer' 'small-scope.sh'; do
+  grep -Fq "$required" <<<"$small_branch"
+done
+if grep -Fq 'AskUserQuestion' <<<"$small_branch"; then exit 1; fi
+
+grep -Fq 'small-ticket' "$WORKTREES"
+if grep -Fq 'What lives in the main tree only' "$WORKTREES"; then exit 1; fi
+for required in 'small-scope.sh' '4bis.1' '4bis.2' '4bis.3' 'merge --ff-only'; do
+  grep -Fq "$required" "$SHIP"
+done
+
+small_slug=$(grep -nF -- '- entry `docs/specs/small/<name>.md`' "$RESEARCH" | head -1 | cut -d: -f1)
+generic_slug=$(grep -nF -- '- entry `docs/specs/<x>.md`' "$RESEARCH" | head -1 | cut -d: -f1)
+[ "$small_slug" -lt "$generic_slug" ]
+
+for required in 'docs/work/small-<name>/ejected' 're-enter: /loop:spec' 'S2 trigger:' 'review FAIL:' 'kit-attempts.py'; do
+  grep -Fq "$required" <<<"$small_branch"
+done
+attempt_line=$(grep -F 'kit-attempts.py' <<<"$small_branch" | head -1)
+grep -Fq 'without `--board/--unit`' <<<"$attempt_line"
+for required in '--status' 'in flight' 'ejected' 'to clean'; do
+  grep -Fq -- "$required" "$SMALL"
+done
+grep -Fq "plan's \`Acceptance criteria\`" "$REVIEW"
+github_small=$(section "$GITHUB_AGENT" 'For a small-ticket branch' '1. `git worktree list`')
+grep -Fq 'small-ticket' <<<"$github_small"
+grep -Fq 'merge --ff-only' <<<"$github_small"
+grep -Fq "spec's \`Base:\`" <<<"$github_small"
+grep -Fq 'Do not copy' <<<"$github_small"
+grep -Fq 'docs/work/' <<<"$github_small"
+grep -Fq 'small-ticket dirty-tree exception' "$TRACKS"
+grep -Fq 'unmerged `small-*` worktrees' "$TRACKS"
+grep -Fq 'close this terminal' "$SHIP"
+grep -Fq '/loop:small --status' "$SHIP"
+grep -Fq 'no board line to move' "$SHIP"
+grep -Fq 'Step 6 and the closing line print that cleanup' "$SHIP"
+grep -Fq 'git worktree remove .claude/worktrees/small-<name>' "$SHIP"
 
 echo 'workflow contract fixtures: green.'

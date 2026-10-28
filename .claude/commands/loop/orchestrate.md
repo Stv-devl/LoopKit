@@ -60,19 +60,51 @@ On success use action `pass` and omit the reason. Exit 3 is the third failure:
 the script writes `BLOCKED — <gate> failed 3x : <reason>` into the exact unit
 cell, so never start a fourth attempt. In a worktree omit `--board/--unit`, report
 that exact main-tree edit and stop. Return a story to `Approved` when blocking.
-A new session does not reset the counter; a successful gate does.
+A new session does not reset the counter; a successful gate does. (Small: exit 3 ejects, step 1 of Phase 0.)
 
 ---
 
 ## Phase 0 — Read & decide
 
-1. Parse the optional profile flag (default `economy`; an entry that carries a
+1. **Small pipeline**, picked before anything else, so before the resume
+   branching of step 2. Select it when the entry is under `docs/specs/small/`, the
+   plan header says `Pipeline: small`, or a resumed handoff body has `Entry:`
+   naming a small spec: a resumed small handoff selects this branch first, then
+   branches on its `phase:` (`execute` → Phase 4, `review` → the review below,
+   honouring `review_status`: `fixes-done`, or a fix batch already landed, re-runs
+   only stages 1-2 once on the fixed findings, never a fresh judgment pass and never
+   a second fix batch (S7); `ship` → Phase 6). The branch skips Phase 0 steps 3-4, the board (small tickets are
+   off-board), Phase 0.5 (the session already runs in its worktree) and Phases 1, 2
+   and 3 (the committed spec is the validated contract); it replaces Phase 5 with the
+   review below. Run `.claude/scripts/small-plan.sh small-<name>` only when
+   `docs/work/small-<name>/plan.md` is absent, then execute that plan unchanged
+   (Phase 4). Run `kit-attempts.py` by path, without `--board/--unit`: exit 3
+   ejects. This branch asks the user nothing before `/loop:ship`'s merge go.
+
+   Review: stage 0 only for UI files; one reviewer for correctness, tests, security
+   and ui when applicable, then the three inline checks, one verifier, and one
+   implementer fix batch, each finding reproduced by a failing case first. Review
+   once more; a confirmed finding records
+   `python3 .claude/hooks/kit-attempts.py fail docs/work/small-<name>/plan.md review "<finding>"`
+   and ejects with `review FAIL: <finding>`. Before ship's commit run
+   `small-scope.sh <name>`; a refusal ejects. A judged S2 trigger writes
+   `S2 trigger: <kind>` and ejects.
+
+   Ejection triggers: a frozen test-first case that needs correcting, a path outside
+   `Files` needed, a size exemption needed, a judged S2 trigger, review `FAIL`, a
+   `small-scope.sh` refusal before the commit, a gate failed 3 times. Ejection
+   commits `docs/work/small-<name>/ejected` with the one-line reason, stops, and
+   prints the reason, then `re-enter: /loop:spec` in the main tree (the small spec's
+   Objective, Files and Done when as the description), then only
+   `git worktree remove .claude/worktrees/small-<name>` (the branch stays as a
+   reference, never continued).
+2. Parse the optional profile flag (default `economy`; an entry that carries a
    profile is inherited unless the user overrides) and `--inline-execute` (keeps
    EXECUTE and review fixes on Claude whatever the routing file says). Read the
    entry in full. A spec or story without its `Token profile:` line: say so.
 
    **A `docs/work/<slug>/handoff.md`**
-   (or `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter, then the artifacts it links, and
+   (outside the small pipeline above; or `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter, then the artifacts it links, and
    branch on `phase:`. `research` → Phase 1, keeping whatever `research.md`
    already holds (after a contract amendment the stale one was already deleted,
    "Contract amendment" below); `interface` → Phase 2;
@@ -86,19 +118,19 @@ A new session does not reset the counter; a successful gate does.
    dimensions those fixes came from, never a fresh judgment pass);
    `ship` → Phase 6. Nothing completed is redone. A `plan.md` with no sibling handoff
    jumps to Phase 4; with one, the handoff decides.
-2. **FEATURE READY check**, if `docs/product/backlog.md` exists. Not listed → add
+3. **FEATURE READY check**, if `docs/product/backlog.md` exists. Not listed → add
    the line as `READY` **at the end** of the table (`Entry artifact` = the path,
    `Pipeline` = `light` for a spec, `full` for a story, `BUG` for `debug.md`) and
    say so. `DRAFT` → stop and ask. `BLOCKED` → name its reason, stop if it still
    holds, else take it back. `DROPPED` or `SHIPPED` → stop. No board → skip in one
    line. States and transitions: `/loop:product`, "The board's state machine".
-3. **Take the entry**, in one line: a story's `Status` → `InProgress`, always; the
+4. **Take the entry**, in one line: a story's `Status` → `InProgress`, always; the
    board line → `IN LOOP`, **only from the main tree**. In a worktree, say so and
    leave the board alone: `/loop:ship` moves the line after the merge. Any exit other than `/loop:ship` step 5 gives it
    back: the line → `BLOCKED` with its reason, from the main tree, and the story's
    `Status` → `Approved`.
-4. Announce each **SKIP** and why. No user surface (migration, job, backend-only,
-   refactor) → INTERFACE SKIP. RESEARCH is **never** skipped.
+5. Announce each **SKIP** and why. No user surface (migration, job, backend-only,
+   refactor) → INTERFACE SKIP. RESEARCH is **never** skipped (small: done inline at dispatch, `/loop:small` step 2).
 
 ## Phase 0.5 — Track isolation (worktree or not)
 
@@ -230,7 +262,7 @@ id (`<path>  # U2: <reason>`, several as `# U2, U5: …`), make the edit yoursel
 never through `implementer` or `test-writer`, whose contracts forbid rewriting a
 frozen case — then rewrite the plan line with the same id and append
 `amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The user
-confirms it at the merge (`/loop:ship`). On a Python service layer the `-py` hooks
+confirms it at the merge (`/loop:ship`). (Small: no correction, the ticket ejects.) On a Python service layer the `-py` hooks
 play the same roles (`.claude/rules/07-backend.md`); hand the `test-writer` the
 `.py` path.
 
@@ -245,7 +277,7 @@ this track's tree, never as extra worktrees.
 
 ## Phase 5 — REVIEW
 
-`/loop:review docs/work/<slug>/plan.md`, handing it the plan's **`Vigilance`**
+(Small: replaced by the review of Phase 0 step 1.) `/loop:review docs/work/<slug>/plan.md`, handing it the plan's **`Vigilance`**
 section. Claude keeps the verdict; the fixes of the surviving Critical/Major always
 leave the main thread. Codex routed for `review-fixes` and running → the handoff
 (`phase: review`, `review_status: fixes-handed-to-codex`, `codex_safe`), same
@@ -266,6 +298,7 @@ user-gated step.
 
 Close with: criteria met, what was SKIP and why, what stays OUT, what needs
 deploying, and the next feature. If the track forked: the branch, and whether it
-is merged, awaiting your go-ahead, or still open.
+is merged, awaiting your go-ahead, or still open. (Small: no next feature; the
+ship cleanup commands, then `/loop:small --status` in the main session.)
 
 ## Task: $ARGUMENTS

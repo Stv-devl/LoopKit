@@ -431,7 +431,8 @@ ensure_gitignore() {
         # A block written by an older kit lacks the names added since: append
         # only the missing lines, never the block twice.
         local line
-        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md; do
+        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
+            .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_TOUCHED=1
@@ -447,6 +448,10 @@ $GITIGNORE_MARK
 # marqueurs TDD d'un seul poste.
 .claude/worktrees/
 .claude/.hook-timings.log
+.claude/.kit-health.jsonl
+.claude/settings.local.json
+__pycache__/
+.ruff_cache/
 .claude/.eslint-queue
 .claude/.eslint-queue.*
 .claude/.token-delegate
@@ -637,6 +642,7 @@ if $WITH_FASTAPI; then
 fi
 
 chmod +x "$TARGET/.claude/hooks/"*.sh "$TARGET/.claude/hooks/"*.py 2>/dev/null || true
+chmod +x "$TARGET/.claude/scripts/"*.sh 2>/dev/null || true
 chmod +x "$TARGET/codex-handoff.sh" 2>/dev/null || true
 chmod +x "$TARGET/workflow.py" "$TARGET/workflow.sh" 2>/dev/null || true
 
@@ -651,7 +657,7 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
 fi
 
 if [[ "$GITIGNORE_TOUCHED" -eq 1 ]]; then
-    echo "  .gitignore : bloc « état de session » ajouté (9 chemins écrits par les hooks)."
+    echo "  .gitignore : bloc « état de session » ajouté (17 chemins écrits par les hooks)."
     echo
 fi
 

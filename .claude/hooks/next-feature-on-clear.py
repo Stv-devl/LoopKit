@@ -41,8 +41,11 @@ def board_rows(board: Path) -> list[dict[str, str]]:
 
 
 def loop_slug(entry: str) -> str:
-    """`/loop:research`'s slug rule: a story is `<feature>-<n>`, anything else its stem."""
+    """`/loop:research`'s slug rule: a small spec is `small-<name>`, a story
+    `<feature>-<n>`, anything else its stem."""
     path = Path(entry)
+    if len(path.parts) == 4 and path.parts[:3] == ("docs", "specs", "small"):
+        return f"small-{path.stem}"
     if len(path.parts) >= 3 and path.parts[:2] == ("docs", "stories"):
         return f"{path.parts[-2]}-{path.stem}"
     return path.stem
@@ -98,6 +101,8 @@ def main() -> int:
     try:
         project = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     except FileNotFoundError:
+        return 0
+    if project.name.startswith("small-") and project.parent.parts[-2:] == (".claude", "worktrees"):
         return 0
     context = ("Fresh session after /clear. " + next_feature(project)
                + " Wait for the user's `go` before starting.")

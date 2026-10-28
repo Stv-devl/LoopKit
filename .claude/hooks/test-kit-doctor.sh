@@ -74,4 +74,11 @@ EFFORT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          agent-efforts' <<<"$EFFORT_OUTPUT"
 rm -r "$SCRATCH/.claude/agents" "$SCRATCH/.claude/rules/11-token-budget.md"
 
+printf 'Fork `.claude/worktrees/small-<name>`, list `.claude/worktrees/small-*`, read `.claude/nonexistent-x.md`.\n' \
+    > "$SCRATCH/.claude/commands/loop/small-probe.md"
+SHIPPED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q '\.claude/nonexistent-x\.md' <<<"$SHIPPED_OUTPUT"
+if grep -q '\.claude/worktrees/small' <<<"$SHIPPED_OUTPUT"; then exit 1; fi
+rm "$SCRATCH/.claude/commands/loop/small-probe.md"
+
 echo 'kit-doctor version fixtures: green.'

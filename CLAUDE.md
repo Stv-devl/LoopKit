@@ -86,13 +86,14 @@ around every `Write|Edit` guardrail. Delete specific files, never whole folders.
 
 ## Workflows
 
-**One loop, two entries.** Use the lightest entry that does the job.
+**One loop, three entries.** Use the lightest entry that does the job.
 
 ```
 frame (once) : /loop:product   (the product frame + the backlog board)
                /loop:design-system   (extract from code, or --new to create it
                                       with you, once, from zero)
 simple entry : /loop:spec
+small entry  : /loop:small
 complex entry: /bmad:pm → /bmad:sm → /stories:review → /bmad:architect
 parallelism  : /loop:tracks   (what can run at once right now — 3 max — and
                                the worktrees for it; recomputed after a merge)

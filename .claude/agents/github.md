@@ -127,6 +127,12 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
 
 Asked to integrate a `feat/<slug>` worktree branch:
 
+For a small-ticket branch, rebase onto the branch of the spec's `Base:` line, then
+use `git -C <main-tree> merge --ff-only feat/small-<name>` after its ship gate,
+shown then run on the user's go. The merge asks through `enforce-git-workflow.sh`
+on main/master, through the default permission prompt otherwise. Do not copy
+`docs/work/` and do not clean up: ship prints the main-session cleanup commands.
+
 1. `git worktree list` — confirm the branch, and that **no other merge is in
    flight**. One at a time, always.
 2. Rebase it on the base branch. Conflicts → stop and report them; do not

@@ -22,6 +22,8 @@ jobs:
         run: .claude/hooks/test-install.sh
       - name: Test version reporting
         run: .claude/hooks/test-kit-doctor.sh
+      - name: Test small lane fixtures
+        run: .claude/hooks/test-small-lane.sh
       - name: Test loop attempt counter
         run: .claude/hooks/test-attempts.sh
       - name: Pin workflow contracts

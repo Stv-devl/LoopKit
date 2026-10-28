@@ -52,6 +52,7 @@ with no user surface invokes nothing here, Impeccable included.
    (Critical if it drops an acceptance criterion). **The document is the
    reference, not the canvas it links to** — an artboard edited after the gate
    was validated by nobody (`/loop:interface`, "The canvas").
+   When there is no `design.md`, compare against the plan's `Acceptance criteria`.
 4. Look for what only the eye catches: hierarchy, alignment, contrast, overflow,
    truncation, loading flicker, layout shift when data lands.
 

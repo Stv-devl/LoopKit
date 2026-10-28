@@ -570,6 +570,7 @@ def check_ignored_loop_paths() -> list[Finding]:
         "docs/work/probe/plan.md": "docs/work/", ".claude/rules/probe.md": ".claude/rules/",
         ".claude/agents/probe.md": ".claude/agents/", ".claude/commands/probe.md": ".claude/commands/",
         ".claude/hooks/probe.sh": ".claude/hooks/", ".claude/skills/probe.md": ".claude/skills/",
+        ".claude/scripts/probe.sh": ".claude/scripts/",
         ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
     }
     try:
@@ -752,7 +753,7 @@ NON_HOOKS = {
     "hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
     "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
     "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
-    "test-workflow-contracts.sh",
+    "test-small-lane.sh", "test-workflow-contracts.sh",
 }
 REACT_HOOKS = {
     "no-any-type.sh", "no-forbidden-icons.sh", "enforce-architecture.py",
@@ -852,7 +853,7 @@ def check_shipped_paths() -> list[Finding]:
         for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for raw in re.findall(r"\.claude/[A-Za-z0-9._/*-]+", line):
                 path = raw.rstrip("./`,;:)")
-                if path in RUNTIME_PATHS:
+                if path in RUNTIME_PATHS or path.startswith(".claude/worktrees/"):
                     continue
                 # A glob is a legitimate way to name a family of files
                 # (`patterns/edge-function*.md`): one match is enough.

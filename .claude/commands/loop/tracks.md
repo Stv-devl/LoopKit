@@ -30,7 +30,7 @@ passed its gate. Drop them before computing anything, and name what
 you dropped and why — the whole point of this command is that no two sessions
 receive the same story, and `Status` is the only place that fact is written down.
 A story being built shows `InProgress` whichever path drives it (`/loop:orchestrate`
-Phase 0 step 2bis, `/bmad:dev` step 2). One that does not is a bug in that path,
+Phase 0 step 4, `/bmad:dev` step 2). One that does not is a bug in that path,
 not a story you may fork.
 
 **And drop the `BLOCKED` ones.** A story handed back mid-loop returns to
@@ -183,7 +183,10 @@ rebase, gates re-run in the worktree, go-ahead, merge, remove, then the next.
   lockfile. It is done first, in the main tree, and the tracks fork from that
   commit.
 - **Never fork a dirty tree.** Report it as a precondition failure, do not
-  stash it away yourself.
+  stash it away yourself. The small-ticket dirty-tree exception: `/loop:small`
+  forks with a main tree dirty outside `src/` (`small-dispatch-check.sh` checks
+  `src/` and the ticket's `Files` only, `10-worktrees.md`). Step 1 counts
+  unmerged `small-*` worktrees as tracks in flight.
 - Never drive more than one track from this session.
 - This command **reads and prepares**. It does not run a loop pass, does not
   merge, and does not commit — `/loop:orchestrate` and `/loop:ship` own those, inside each

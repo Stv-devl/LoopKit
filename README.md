@@ -1,6 +1,6 @@
 # LoopKit
 
-One loop from idea to commit for Claude Code — 30 commands, 12 subagents, 10
+One loop from idea to commit for Claude Code — 31 commands, 12 subagents, 10
 declarative rules and 14 hooks that mechanically refuse what the rules forbid.
 Built for React + TypeScript; the backend is a parameter.
 
@@ -12,6 +12,8 @@ COMPLEX ENTRY (multi-epic)              ▼
                                         │
 SIMPLE ENTRY (one screen, CRUD, fix)    │
   /loop:spec ───────────────────────────┤
+SMALL ENTRY (bounded change)             │
+  /loop:small ───────────────────────────┤
 BUG ENTRY (symptom → reproduction)      │
   /loop:debug ──────────────────────────┤
                                         ▼
@@ -50,6 +52,10 @@ for choices, and reports every marker it must leave open with its exact path.
 | `/loop:ship` | Parallel gates, commit via the `github` agent, board updated, next feature named | the commit |
 
 Every step is callable on its own, so you can rejoin mid-loop.
+
+`/loop:small` dispatches a bounded, non-foundation change into a dedicated
+worktree after one spec approval; it then follows the normal plan, execute,
+review and ship path and merges one ticket at a time.
 
 ## What makes it different
 

@@ -80,7 +80,7 @@ PY
 
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
-    local tmp input stdout_file stderr_file code verdict fixture_name extra_marker=""
+    local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT"
     tmp="$(mktemp -d)"
     fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
@@ -114,6 +114,11 @@ run_case() {
                 printf 'missing:%s\n' "bonus"
             } >"$extra_marker"
             ;;
+        # The session runs inside a worktree: its project dir is the worktree.
+        auto-approve-config.sh:0[12]-worktree-*)
+            project_dir="$tmp/.claude/worktrees/small-a"
+            mkdir -p "$project_dir"
+            ;;
         *)
             case "$hook:$expected" in
                 tdd-freeze-tests.sh:deny)
@@ -142,7 +147,7 @@ run_case() {
     esac
 
     set +e
-    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
         "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
     code=$?
     set -e
@@ -183,7 +188,8 @@ run_fixture_sweep() {
                 *-pass.json) expected=pass ;;
                 *-deny.json) expected=deny ;;
                 *-ask.json) expected=ask ;;
-                *) fail "$hook" "$(basename "$fixture")" "name must end in -pass.json, -deny.json or -ask.json"; continue ;;
+                *-allow.json) expected=allow ;;
+                *) fail "$hook" "$(basename "$fixture")" "name must end in -pass.json, -deny.json, -ask.json or -allow.json"; continue ;;
             esac
             run_case "$hook" "$fixture" "$expected"
         done < <(find "$directory" -maxdepth 1 -type f -name '*.json' | sort)

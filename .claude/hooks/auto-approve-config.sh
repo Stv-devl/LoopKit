@@ -31,6 +31,9 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
 if [[ -z "$PROJECT_DIR" ]]; then
     exit 0
 fi
+if [[ "$FILE_PATH" =~ (^|/)\.\.(/|$) ]]; then
+    exit 0
+fi
 if [[ "$FILE_PATH" == /* && "$FILE_PATH" != "$PROJECT_DIR"/* ]]; then
     exit 0
 fi
@@ -50,22 +53,27 @@ fi
 # Patterns for auto-approved files
 AUTO_APPROVE_PATTERNS=(
     "\.md$"                     # Markdown files
-    "tsconfig.*\.json$"         # TypeScript config
-    "\.eslintrc"                # ESLint config
-    "eslint\.config\."          # ESLint flat config
-    "vite\.config\."            # Vite config
-    "vitest\.config\."          # Vitest config
-    "tailwind\.config\."        # Tailwind config
-    "postcss\.config\."         # PostCSS config
-    "\.prettierrc"              # Prettier config
-    "package\.json$"            # Package manifest
-    "\.env\.example$"           # Example env file
-    "\.claude/"                 # Claude config files
+    "^tsconfig[^/]*\.json$"     # TypeScript config (project root)
+    "^\.eslintrc"               # ESLint config
+    "^eslint\.config\."         # ESLint flat config
+    "^vite\.config\."           # Vite config
+    "^vitest\.config\."         # Vitest config
+    "^tailwind\.config\."       # Tailwind config
+    "^postcss\.config\."        # PostCSS config
+    "^\.prettierrc"             # Prettier config
+    "^package\.json$"           # Package manifest
+    "^\.env\.example$"          # Example env file
+    "^\.claude/"                # Claude config files
     "CLAUDE\.md$"               # Claude instructions
 )
 
+REL_PATH="${FILE_PATH#"$PROJECT_DIR"/}"
+# A main-tree session must not auto-approve source files of a sibling worktree.
+if [[ "$REL_PATH" == .claude/worktrees/* ]]; then
+    exit 0
+fi
 for pattern in "${AUTO_APPROVE_PATTERNS[@]}"; do
-    if [[ "$FILE_PATH" =~ $pattern ]]; then
+    if [[ "$REL_PATH" =~ $pattern ]]; then
         cat << 'EOF'
 {
   "hookSpecificOutput": {

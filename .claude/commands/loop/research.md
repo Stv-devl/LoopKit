@@ -18,7 +18,8 @@ read. Nothing here is written from memory: every claim carries evidence
 **This block is the only copy of the derivation.** It is a pure function of the
 entry artifact's path, so anyone holding that path gets the same answer:
 
-- entry `docs/specs/<x>.md` → slug = `<x>`
+- entry `docs/specs/small/<name>.md` → slug = `small-<name>`
+- entry `docs/specs/<x>.md` → slug = `<x>` (where `<x>` is one path segment)
 - entry `docs/stories/<feature>/<epic>.<story>.md` → slug = `<feature>-<epic>.<story>`
   (e.g. `docs/stories/inbox/1.2.md` → `inbox-1.2`)
 

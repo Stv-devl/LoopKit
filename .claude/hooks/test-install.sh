@@ -20,6 +20,9 @@ jq -e '[.hooks[][]?.hooks[]?.command] | all(
 )' "$TARGET/.claude/settings.json" >/dev/null
 python3 "$TARGET/.claude/hooks/kit-doctor.py" | grep -Fq 'No divergence.'
 jq -e '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[].command] | any(endswith("next-feature-on-clear.py"))' "$TARGET/.claude/settings.json" >/dev/null
+for script in "$TARGET"/.claude/scripts/*.sh; do
+    [[ -x "$script" ]]
+done
 
 # A second install re-merges the selected layer into active settings.
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
@@ -86,5 +89,16 @@ sed -i '/^docs\/work\/\*\/handoff.md$/d; /^\.claude\/\.restart-ready$/d' "$PY_TA
 "$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
 grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
 [[ "$(grep -cxF '.claude/.restart-ready' "$PY_TARGET/.gitignore")" -eq 1 ]]
+
+# The kit's runtime files are ignored on a fresh install, and back-filled into an
+# older kit's block (a worktree's scope check would otherwise see them as drift).
+for ignored in .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/; do
+    grep -qxF "$ignored" "$PY_TARGET/.gitignore"
+done
+sed -i '/^\.claude\/\.kit-health\.jsonl$/d; /^\.ruff_cache\/$/d' "$PY_TARGET/.gitignore"
+"$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
+for ignored in .claude/.kit-health.jsonl .ruff_cache/; do
+    [[ "$(grep -cxF "$ignored" "$PY_TARGET/.gitignore")" -eq 1 ]]
+done
 
 echo 'install fixtures: green.'

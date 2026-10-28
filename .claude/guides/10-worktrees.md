@@ -139,11 +139,20 @@ git branch -d feat/<slug>
   then carries its own hooks, rules and commands. A project that gitignores
   `.claude/` (or `docs/work/`) gets an empty one, and `git worktree remove`
   deletes ignored files on merge: `/kit:doctor`'s `ignored-loop-paths` says so.
-- **What lives in the main tree only.** The hooks run from
-  `$CLAUDE_PROJECT_DIR`, so they follow the session. Anything ignored does not:
-  `.claude/.tdd-red/` markers, `.claude/.kit-health.jsonl`, the token markers,
-  and `kit-attempts.py`'s writes. Call `kit-attempts.py` by its absolute path from
-  the worktree, and expect a fresh worktree to start with no RED marker.
+- **Runtime files follow the session.** The ignored files follow
+  `$CLAUDE_PROJECT_DIR`, so a `./workflow.sh` session started in the worktree
+  keeps them there. `attempts.json` is versioned and travels with the branch.
+- **Small tickets fork on their own terms.** A `/loop:small` small-ticket
+  worktree forks even when it is the only track and with a main tree dirty
+  outside `src/`: condition 1 and the cost step are waived, and condition 4 is
+  narrowed to `small-dispatch-check.sh`'s first check (on a branch, `src/` and the
+  ticket's `Files` clean). The board, the brief and new specs stay uncommitted in
+  the main tree on purpose, and the fork starts from `HEAD`, not the working tree.
+  The dispatch announces the install, and the user copies the env file per
+  ticket: `.worktreeinclude` does not apply to `git worktree add`. An unmerged
+  `small-*` worktree counts against the three-track ceiling, and `/loop:tracks`
+  counts it as a track in flight. Merged, it counts for nothing, even with its
+  directory still on disk.
 - **Format the diff, not the folder.** `format-on-save.sh` formats each file as
   it is written. A `prettier --write .` on a track rewrites files nobody touched
   and turns into rebase conflicts; `prevent-destructive-commands.sh` asks first.
