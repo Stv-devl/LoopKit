@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__MAIN_TREE__","tool_input":{"command":"gh pr comment 1 --body x; git commit -m wip"}}

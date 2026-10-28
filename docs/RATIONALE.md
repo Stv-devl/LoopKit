@@ -256,7 +256,7 @@ never met it.
 | `protect-files`                   | before write/read      | refuses `.env*`, `.pem`, `.key` in both directions; lock files, `.git/` and `node_modules/` on write only |
 | `no-forbidden-icons`              | before write           | refuses the project's forbidden icon list                                                        |
 | `prevent-destructive-commands`    | before Bash            | refuses `rm -rf` on protected directories, reading secrets from the shell, `chmod 777`, `dd`, force-removing a worktree, writing a test-first layer from the shell, and a snapshot `-u` on a frozen test |
-| `enforce-git-workflow`            | before Bash            | refuses a commit on `main`/`master`, a signature (`-S`, `Co-Authored-By`); asks again for `git push`, `gh pr/issue/comment` and any merge into a protected branch |
+| `enforce-git-workflow`            | before Bash            | refuses a commit on `main`/`master`, a signature (`-S`, `Co-Authored-By`); asks again for `git push`/`send-pack`, `gh pr/issue/comment`, any merge into a protected branch, an alias that hides one, and a mutating git call on a directory it cannot read; reads every git call in the command on its own (global options, `-C`, aliases) |
 | `tdd-require-red`                 | before write           | refuses to **create** `utils`/`mapper`/`repository`-`services` until its test has been seen failing |
 | `tdd-freeze-tests`                | before write           | freezes those test files: adding a case passes, correcting a case is refused (`.claude/.tdd-unfrozen`) |
 | `format-on-save`                  | after write            | formats the file just written (synchronous: what follows must read the formatted bytes)          |

@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"git --git-dir=__MAIN_TREE__/.git --work-tree=__MAIN_TREE__ commit -m x"}}

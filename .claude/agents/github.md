@@ -19,7 +19,8 @@ here — change a rule here, and only here.
 Three of them are also enforced by `.claude/hooks/enforce-git-workflow.sh`, so
 they are not yours to interpret: a commit on `main`/`master` and a signed or
 attributed commit are **denied**, and every push, PR, issue, comment or merge
-into a protected branch re-triggers the permission prompt. Don't work around the
+into a protected branch re-triggers the permission prompt — whatever global
+options, `-C` or alias the git call carries. Don't work around the
 block — it is telling you to branch first, or to show the user what you are about
 to send.
 

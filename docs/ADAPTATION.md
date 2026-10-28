@@ -295,7 +295,8 @@ Ce qui la tient n'est pas le texte mais
 `.claude/hooks/enforce-git-workflow.sh` : commit sur `main`/`master` **refusé**,
 signature et trailer `Co-Authored-By` **refusés**, et `git push`, `gh pr`,
 `gh issue`, tout commentaire et tout merge dans une branche protégée repassent
-par ta validation. Si tes branches protégées ne s'appellent pas `main`/`master`,
+par ta validation, quels que soient les options globales, le `-C` ou l'alias de
+l'appel git. Si tes branches protégées ne s'appellent pas `main`/`master`,
 change `PROTECTED_BRANCHES` en tête du hook.
 
 ## 8. `.claude/rules/03-conventions.md` → les deux langues

@@ -59,6 +59,25 @@ raise SystemExit(0 if reason.strip() else 1)
 PY
 }
 
+# A fixture may carry "_expect_reason": the decision's reason must contain it.
+reason_has_expected() {
+    python3 - "$1" "$2" <<'PY'
+import json
+import pathlib
+import sys
+
+expected = json.loads(sys.argv[1]).get("_expect_reason")
+if not expected:
+    raise SystemExit(0)
+try:
+    reason = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")).get(
+        "hookSpecificOutput", {}).get("permissionDecisionReason", "")
+except json.JSONDecodeError:
+    reason = ""
+raise SystemExit(0 if expected in reason else 1)
+PY
+}
+
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
     local tmp input stdout_file stderr_file code verdict fixture_name extra_marker=""
@@ -66,7 +85,7 @@ run_case() {
     fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
     stderr_file="$tmp/stderr"
-    input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g" "$fixture")"
+    input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g; s|__MAIN_TREE__|$tmp|g; s|__FEAT_TREE__|$tmp/.feat|g" "$fixture")"
 
     case "$hook:$fixture_name" in
         # Edits an EXISTING item.utils.ts to add a never-before-exported
@@ -105,11 +124,18 @@ run_case() {
                     mkdir -p "$tmp/src"
                     printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
                     ;;
-                enforce-git-workflow.sh:deny)
+                # Every git-hook fixture gets the same repo: __MAIN_TREE__ on
+                # main, __FEAT_TREE__ a worktree on feat/x, and two aliases.
+                enforce-git-workflow.sh:*)
                     git -C "$tmp" init -q -b main
                     git -C "$tmp" config user.email fixture@loopkit.invalid
                     git -C "$tmp" config user.name Fixture
+                    git -C "$tmp" config alias.p push
+                    git -C "$tmp" config alias.q '!sh -c x'
+                    git -C "$tmp" config alias.a p
+                    git -C "$tmp" config alias.ci commit
                     git -C "$tmp" commit -q --allow-empty -m seed
+                    git -C "$tmp" worktree add -q "$tmp/.feat" -b feat/x
                     ;;
             esac
             ;;
@@ -136,6 +162,9 @@ run_case() {
     fi
     if [[ "$verdict" == deny ]] && ! deny_has_reason "$stdout_file" "$stderr_file"; then
         fail "$hook" "$(basename "$fixture")" "deny has no actionable reason"
+    fi
+    if ! reason_has_expected "$input" "$stdout_file"; then
+        fail "$hook" "$(basename "$fixture")" "reason does not contain the fixture's _expect_reason"
     fi
 
     [[ -n "$extra_marker" ]] && rm -f "$extra_marker"

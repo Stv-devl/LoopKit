@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"git commit -m \"x\n\nCo-Authored-By: a <a@b>\""}}
