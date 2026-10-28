@@ -273,4 +273,88 @@ sl 69.9; [[ ! -e "$SL/.claude/.token-delegate" ]]
 sl 70; [[ -e "$SL/.claude/.token-delegate" ]]
 sl 40; [[ ! -e "$SL/.claude/.token-delegate" ]]
 
+# Light loop with one stop fewer (docs/specs/light-fewer-gates.md): the spec
+# chains into the loop, the contract is asked at the first gate, the go is
+# recorded, case ids, frozen-test corrections confirmed at the merge.
+# A section whose end anchor is missing fails instead of reading to the end of
+# the file; a section is always assigned first so `set -e` sees that failure.
+section() { awk -v s="$2" -v e="$3" '!on && index($0, s) { on = 1; print; next } on && index($0, e) { ended = 1; exit } on; END { exit !ended }' "$1"; }
+TESTS_GUIDE="$ROOT/.claude/guides/review/tests.md"
+TEST_WRITER="$ROOT/.claude/agents/test-writer.md"
+SHIP="$ROOT/.claude/commands/loop/ship.md"
+PY_FREEZE="$ROOT/addons/fastapi/hooks/tdd-freeze-tests-py.py"
+if section "$PLAN" '7. **TEST PLAN GATE' 'no such end anchor' >/dev/null; then exit 1; fi
+if grep -Fq 'Once the spec is written, stop and propose' "$SPEC"; then exit 1; fi
+if grep -Fq 'Frame the contract, stop.' "$SPEC"; then exit 1; fi
+grep -Fq 'you will validate the contract with research in hand at the first gate' "$SPEC"
+grep -Fq '.token-warning' "$SPEC"
+grep -Fq './workflow.sh "/loop:orchestrate docs/specs/<slug>.md"' "$SPEC"
+gate_ui="$(section "$INTERFACE" '5. **INTERFACE GATE' '6. **Write**')"
+grep -Fq 'Contract (validated by this go)' <<<"$gate_ui"
+grep -Fq 'first round only' <<<"$gate_ui"
+grep -Fq 'write `design.md` (step 6) first' <<<"$gate_ui"
+design_gate="$(section "$INTERFACE" '## Chosen at the gate' '## Rejected')"
+grep -Fq 'Contract: as written' <<<"$design_gate"
+gate_plan="$(section "$PLAN" '7. **TEST PLAN GATE' '8. **Stop')"
+grep -Fq 'amended:' <<<"$gate_plan"
+grep -Fq 'proposed answer' <<<"$gate_plan"
+grep -Fq '## Gate' <<<"$gate_plan"
+grep -Fq 'asks step 7 again' <<<"$gate_plan"
+grep -Fq '`research.md` is read-only' <<<"$gate_plan"
+template_plan="$(section "$PLAN" '## Test plan (gate' '### Test-after')"
+grep -Fq -- '- [ ] U1' <<<"$template_plan"
+grep -Fq 'next free id' <<<"$template_plan"
+resume="$(section "$ORCHESTRATE" '## Phase 0 —' '## Phase 0.5 —')"
+grep -Fq '`## Gate` present' <<<"$resume"
+grep -Fq 'surviving blockers: none' <<<"$resume"
+phase3="$(section "$ORCHESTRATE" '## Phase 3 —' '## Phase 4 —')"
+grep -Fq 'Do not enter Phase 4 on silence' <<<"$phase3"
+grep -Fq 're-enters at the earliest phase' <<<"$phase3"
+grep -Fq 'from scratch' <<<"$phase3"
+if grep -Fq 'Each amendment is one failure on `contract`' <<<"$phase3"; then exit 1; fi
+ceiling="$(section "$ORCHESTRATE" '## Gate attempt ceiling' '## Phase 0 —')"
+grep -Fq '`contract`' <<<"$ceiling"
+if grep -Fq '(except on a contract amendment, below)' <<<"$resume"; then exit 1; fi
+phase4="$(section "$ORCHESTRATE" '## Phase 4 —' '## Phase 5 —')"
+if grep -Fq 'RED-leg `test-writer`' <<<"$phase4"; then exit 1; fi
+grep -Fq 'you append its plan line' <<<"$phase4"
+grep -Fq '`## Gate` amendment' "$TESTS_GUIDE"
+no_amendment="$(grep -F 'without one' "$TESTS_GUIDE")"
+grep -Fq 'stays **Major**' <<<"$no_amendment"
+TESTS_PY="$ROOT/.claude/guides/review/tests-python.md"
+grep -Fq '`## Gate` amendment' "$TESTS_PY"
+grep -Fq 'no assertion removed' "$TESTS_PY"
+grep -Fq 'case-insensitive' "$TESTS_PY"
+BACKEND_TEST="$ROOT/addons/fastapi/commands/backend/test.md"
+grep -Fq 'test_b<n>_{action}_{scenario}' "$BACKEND_TEST"
+grep -Fq 'next free `B` id' "$BACKEND_TEST"
+grep -Fq 'test_b<n>_' "$ROOT/addons/fastapi/commands/backend/service.md"
+if grep -Fq 'contract, stops.' "$ROOT/docs/RATIONALE.md"; then exit 1; fi
+grep -Fq 'append each further amendment' <<<"$gate_plan"
+grep -Fq 'no assertion removed' "$TESTS_GUIDE"
+naming="$(section "$TEST_WRITER" 'The case name is the case' 'Both outcomes')"
+grep -Fq 'starts with the case id' <<<"$naming"
+grep -Fq 'next free case id' "$ROOT/.claude/agents/implementer.md"
+grep -Fq 'with its case id' "$DEBUG"
+grep -Fq "it('R1 " "$ROOT/.claude/skills/patterns/tests.md"
+grep -Fq 'test_b1_' "$ROOT/addons/fastapi/skills/patterns/pytest-backend.md"
+if grep -Fq "**s'arrête** — tu relis les critères" "$ROOT/docs/Claude_Workflows.md"; then exit 1; fi
+commit_step="$(section "$SHIP" '### 4. Commit' '### 4bis')"
+grep -Fq '`amended`' <<<"$commit_step"
+if grep -Fq '`## Gate` (step 2)' "$SHIP"; then exit 1; fi
+merge_step="$(section "$SHIP" '2. Present the branch' '3. After the merge')"
+grep -Fq '`amended`' <<<"$merge_step"
+grep -Fq 'test hunk' <<<"$merge_step"
+if grep -Fq 'otherwise ask for them here' "$SHIP"; then exit 1; fi
+if grep -Fq 'tell the user' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"; then exit 1; fi
+grep -Fq 'The main thread records it' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+grep -Fq 'rewrite the plan line (same id)' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+if grep -Fq 'say so to the user' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"; then exit 1; fi
+if grep -Fq 'say which case and why' "$PY_FREEZE"; then exit 1; fi
+grep -Fq 'the main thread adds one line' "$PY_FREEZE"
+if grep -Fq 'say which case and why' "$ROOT/.claude/hooks/prevent-destructive-commands.sh"; then exit 1; fi
+if grep -Fq 'tell the user, with which case and why' "$ROOT/.claude/commands/audit/mutation.md"; then exit 1; fi
+if grep -Fq "et s'arrêter là" "$ROOT/docs/ADAPTATION.md"; then exit 1; fi
+if grep -Eq '^[[:space:]]*/loop:orchestrate docs/specs/<slug>\.md[[:space:]]*$' "$ROOT/README.md"; then exit 1; fi
+
 echo 'workflow contract fixtures: green.'

@@ -8,10 +8,14 @@ for vitest and do not transfer as written. Read
 copy — and apply these instead of the vitest-specific rows:
 
 - [ ] `app/services/**` is **test-first and frozen**, everything else in `app/`
-      is test-after. So the same freeze findings apply, in pytest terms: a case
-      dropped, weakened or renamed against `plan.md`'s test plan is a **Major**;
-      a frozen file edited without an entry in `.claude/.tdd-unfrozen` is a
-      **Critical**; a marker missing from `.claude/.tdd-red/` means the RED was
+      is test-after. So the same freeze findings apply, in pytest terms, matched
+      by the case id the name starts with (`test_b2_…` ↔ `B2`, case-insensitive;
+      no id → by case sentence): a case dropped, weakened or renamed against
+      `plan.md`'s test plan is a **Major** — unless it carries a
+      `## Gate` amendment for its id and the test's diff matches its `<new>` line with
+      no assertion removed beyond it, then one line flagged for the merge
+      (`tests.md`, "Frozen cases against the plan"); a frozen file edited
+      without an entry in `.claude/.tdd-unfrozen` is a **Critical**; a marker missing from `.claude/.tdd-red/` means the RED was
       never observed — say whether the hooks are wired in this tree before
       calling it a finding on the diff.
 - [ ] **`@pytest.mark.skip` / `xfail` / `pytest.skip()` in a frozen service

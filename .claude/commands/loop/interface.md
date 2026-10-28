@@ -78,6 +78,28 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
    - **cap at 3 rounds.** Past that, the loop is a sign the research missed a
      constraint: go back to it rather than re-rendering.
 
+   **On a light pass, the same call also asks the contract** — first round only;
+   graft rounds do not re-ask it. A pass is light when research's `(entry: …)`
+   header names `docs/specs/<x>.md`. Before the call, print the spec's
+   `Objective`, `Scope` IN/OUT and `Acceptance criteria` verbatim under
+   `Contract (validated by this go)`, then research's `Traps`, one line each. The
+   contract is its own question, never folded into the design answer: picking a
+   screen is not consent to the contract. Answers: `as written`, or free text to
+   amend (dropping the feature is free text too; the board takes it as
+   `IN LOOP → BLOCKED`).
+   - `as written` → `kit-attempts.py pass` on the `contract` key.
+   - An amendment → edit the spec, record a failure on `contract` (here only —
+     the third blocks), and hand back to `/loop:orchestrate`, which re-enters at
+     the earliest phase the edit invalidates (its "Contract amendment" section).
+     A `Scope`, `Data model`, `Custom backend` or `Front surface` amendment is
+     applied before any graft given in the same answer — say in one line that the
+     graft is dropped; the rerun replaces `design.md`. An `Acceptance criteria` or
+     `Business logic` amendment keeps the design and the graft:
+     write `design.md` (step 6) first, with `Contract: amended: …`, then hand
+     back — Phase 3 reads
+     it and re-asks the contract on the amended sections. Contract rounds are not
+     design rounds: they do not count toward the cap above.
+
    Nothing downstream happens until the user validates. **Do not continue on
    silence.**
 
@@ -95,7 +117,8 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
 6. **Write** `docs/work/<slug>/design.md`: the design the user retained, grafts
    included, plus the rejected options in one line each (so the decision isn't
    re-litigated in three weeks). Record the gate itself: which option was chosen,
-   any graft asked for, and the canvas URL with the date it was last read.
+   any graft asked for, and the canvas URL with the date it was last read — and,
+   on a light pass, the contract line (template below).
 7. **Stop.** Suggest `/loop:plan docs/work/<slug>/design.md`.
 
 ## The canvas
@@ -197,6 +220,9 @@ obligation is written on its side too, not only asserted here.>
 <which option the user picked, the graft they asked for, and whether they edited
 the canvas — or "front-runner retained as proposed". This line is what makes
 /loop:review's "divergence from the validated design is a Major" an honest severity.>
+<light pass only: `Contract: as written` | `Contract: amended: <one line per edit>`
+— /loop:plan reads it: it skips the contract question on `as written`, re-asks it
+on `amended:`, and copies the line into `## Gate`.>
 
 ## Rejected
 - <angle> : <one-line reason>

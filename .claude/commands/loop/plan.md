@@ -95,6 +95,35 @@ You **do not write code here**.
    alongside the three questions below. An open question carried past this point
    silently becomes an assumption baked into a frozen test — which is exactly the
    failure this gate exists to prevent. If research left none, say so in one line.
+   During `/loop:plan`, `research.md` is read-only: a question is answered at this
+   gate, never cleared by editing research.
+
+   **On a light pass** (research's `(entry: …)` names `docs/specs/<x>.md`), the
+   gate does three things more:
+   - **The contract, unless the interface already took it.** Ask it when
+     `design.md` is absent, or when its `Contract:` line reads `amended:` — then
+     print the amended sections first, so the user checks your rewrite of their
+     words. Print the spec's `Objective`, `Scope` IN/OUT and `Acceptance criteria`
+     verbatim under `Contract (validated by this go)`, research's `Traps` one line
+     each, and ask it as its own question in the same `AskUserQuestion` call as
+     the test plan: `as written` (→ `kit-attempts.py pass` on `contract`) or free
+     text to amend (→ edit the spec, record a failure on `contract`, hand back to
+     `/loop:orchestrate`, "Contract amendment"). Never edit research from here.
+   - **A proposed answer per open question**, with the case id(s) it decides, and
+     that answer already written into the printed `Test plan`: `go` accepts the
+     test plan and every proposed answer exactly as printed. Any other reply
+     amends the plan and asks step 7 again, on the amended plan; only a `go` is
+     recorded.
+   - **The go is recorded.** Append `## Gate` to the plan: date, `go`, the
+     contract line (copied from `design.md` when the interface took it;
+     append each further amendment made here, never replace the earlier
+     one), each open
+     question with the answer taken. A later rewrite of `## Test plan` inside this
+     command, before EXECUTE, deletes `## Gate`; a frozen-test amendment during
+     EXECUTE appends to it, creating it if absent (`orchestrate.md`, Phase 4).
+
+   `full` and `BUG` keep this step exactly as written, contract and proposed
+   answers aside; `## Gate` is still written on their go.
 
    **And if this plan corrects a defect** — a bug report, a `/loop:review` finding, a
    regression — check that the `Test plan` opens with the case that **reproduces
@@ -175,6 +204,13 @@ backend. Every `Result<T>` has both branches; every backend service that takes a
 isolation key has its cross-tenant case, because nothing else enforces isolation
 and the file freezes after this gate.>
 
+<Every test-first case carries an id: `U` utils, `M` mapper, `R`
+repository/`services.ts`, `B` `tests/services/test_*.py`, numbered per letter
+across the plan in plan order, never reused. A case added after the go (EXECUTE,
+a review fix's reproduction case, a debug plan) takes the next free id of its
+letter. The test title starts with the id (`test-writer`), and `/loop:review`
+matches frozen tests to these lines by id. Test-after cases carry none.>
+
 <If this plan corrects a defect, the **Reproduction** block below is mandatory and
 comes first — in the block of whatever file owns the defect, test-first or
 test-after. One case, phrased as the bug: it must fail on the current code.
@@ -182,13 +218,17 @@ Delete the block when the work introduces new behaviour only.>
 
 #### <path/to/x.repository.test.ts>
 **Reproduction** <only when this plan fixes something>
-- [ ] <the case that fails on the pre-fix code>
+- [ ] R1 <the case that fails on the pre-fix code>
 **Core behaviour**
-- [ ] <case>
+- [ ] R2 <case>
 **Business rules**
-- [ ] <case>
+- [ ] R3 <case>
 **Edge cases**
-- [ ] <case>
+- [ ] R4 <case>
+
+#### <path/to/x.utils.test.ts>
+**Core behaviour**
+- [ ] U1 <case>
 
 ### Test-after — hooks, gateway, UI
 <*.test.ts(x) files + the cases that must exist. A defect living here gets its
@@ -206,6 +246,13 @@ Delete the block when the work introduces new behaviour only.>
 - completeness: <0-100>
 - quality: <0-100>
 - surviving blockers: none
+
+## Gate
+<written on the go, step 7 — never before>
+- <date> go
+- Contract: as written | amended: <one line per edit>   (light only)
+- <open question> → <answer taken>
+- amended <date> U2: <old case line> → <new case line>   (frozen-test correction, EXECUTE)
 ```
 
 ## Rules

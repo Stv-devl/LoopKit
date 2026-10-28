@@ -122,12 +122,24 @@ Il a **deux modes**, détectés automatiquement (`--new` / `--extract` pour forc
 ## Entrée simple (défaut)
 
 ```bash
-/loop:spec ma feature                     # interview → docs/specs/<slug>.md (le contrat)
-/loop:orchestrate docs/specs/<slug>.md    # research → interface → plan → execute → review → ship
+/loop:spec ma feature    # interview → docs/specs/<slug>.md, puis enchaîne /loop:orchestrate
 ```
 
-`/loop:spec` pose 3-4 questions, écrit le contrat, **s'arrête** — tu relis les critères
-d'acceptation avant que quoi que ce soit ne parte.
+`/loop:spec` pose 3-4 questions, écrit le contrat, puis **enchaîne la boucle** sans
+redemander. Tu valides le contrat (objectif, périmètre, critères d'acceptation) au
+premier arrêt de la passe, recherche en main : à l'interface s'il y a un écran,
+sinon au plan de tests — une question à part, dans le même arrêt. Il ne s'arrête
+après la spec que si tu le demandes, ou si le contexte dépasse 90 % : il propose
+alors `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`.
+
+| Passe light | Avant | Maintenant |
+| --- | --- | --- |
+| Avec écran | go de la spec, interface, plan, merge | interface (+ contrat), plan, merge |
+| Sans écran | go de la spec, plan, merge | plan (+ contrat), merge |
+
+Un contrat amendé relance la phase qu'il invalide et tout ce qui suit (trois tours
+au plus). Un test gelé corrigé en EXECUTE n'arrête rien : il est consigné dans le
+`## Gate` du plan et tu le confirmes au merge.
 
 ## Entrée complexe
 
@@ -290,7 +302,8 @@ shadow-areas de trois éléments maximum ; economy reste silencieux.
 
 **Deux étapes s'arrêtent sur toi, et elles décident deux choses différentes.**
 `/loop:interface` te présente ses propositions et attend que tu tranches (greffe possible,
-3 tours maximum) : ça fixe **ce qu'est l'écran**, et c'est ce qui rend honnête le
+3 tours maximum) — et, en passe light, te demande aussi le contrat au premier tour :
+ça fixe **ce qu'est l'écran**, et c'est ce qui rend honnête le
 fait que `/loop:review` note ensuite un écart en Major. `/loop:plan` imprime son `Test plan`
 et attend ton feu vert : ça fixe **ce que « correct » veut dire pour la logique**,
 et c'est le dernier moment gratuit — juste après, ces fichiers de test gèlent.

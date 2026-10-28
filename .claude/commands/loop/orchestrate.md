@@ -33,7 +33,8 @@ silently upgrades it. Mechanical shell gates always run.
 Maintain `docs/work/<slug>/handoff.md` inline, without a subagent, from the
 `/handoff:codex` template (its frontmatter `phase:` is what a restart resumes):
 create it once `docs/work/<slug>/` exists; refresh it after interface, plan, each
-RED→GREEN layer, review fixes and ship gates; store only state, changed paths,
+RED→GREEN layer, review fixes and ship gates, and on a contract amendment
+re-entry; store only state, changed paths,
 decisions/traps and last deterministic results; link, never copy.
 
 Before launching any agent, check `.claude/.token-stop-agents`: if present,
@@ -45,7 +46,8 @@ restarts per feature, then it stops: the phase goes back to the plan to be split
 ## Gate attempt ceiling
 
 Every retryable gate owns one key in `docs/work/<slug>/attempts.json`:
-`interface`, `plan-critic`, `test-plan`, each `red:<layer>`, `review`, and each
+`interface`, `contract` (light only: one failure per contract amendment, `pass` on
+`as written`), `plan-critic`, `test-plan`, each `red:<layer>`, `review`, and each
 ship gate (`typecheck`, `lint`, `test`, `coverage`, `build`, `audit`, `security`).
 On failure run:
 
@@ -72,7 +74,13 @@ A new session does not reset the counter; a successful gate does.
    **A `docs/work/<slug>/handoff.md`**
    (or `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter, then the artifacts it links, and
    branch on `phase:`. `research` → Phase 1, keeping whatever `research.md`
-   already holds; `interface` → Phase 2; `plan` → Phase 3; `execute` → Phase 4,
+   already holds (after a contract amendment the stale one was already deleted,
+   "Contract amendment" below); `interface` → Phase 2;
+   `plan` → Phase 3 — a `plan.md` with `## Gate` present goes to Phase 4 without
+   asking; without it, if `plan.md` exists and its `## Plan critic` reads
+   `surviving blockers: none`, only `/loop:plan` step 7 is asked, on `plan.md` as it
+   stands; otherwise (no plan yet, or the critic not cleared — a contract
+   amendment re-entry interrupted) `/loop:plan` reruns in full; `execute` → Phase 4,
    from the layer `## In progress` names (`execute_status: done` → Phase 5);
    `review` → Phase 5 (`review_status: fixes-handed-to-codex` → re-run only the
    dimensions those fixes came from, never a fresh judgment pass);
@@ -136,6 +144,21 @@ separate) or the ceiling blocks. **Human gate**: it prints the `Test plan` and
 waits for an explicit go — the go freezes the test-first files
 (`.claude/rules/05-testing.md`). Do not enter Phase 4 on silence.
 
+**Light pass: the contract is validated at the first gate.** `/loop:spec` chains
+straight into this command, so the user has not yet re-read the written contract:
+`/loop:interface` asks it when there is a screen, else `/loop:plan` step 7, as its own
+question in the gate's call. The go is recorded in `plan.md`'s `## Gate`.
+
+**Contract amendment.** An amended contract re-enters at the earliest phase the
+edit invalidates: `Scope`, `Data model` or `Custom backend` → Phase 1; `Front
+surface` → Phase 2 (reopening the INTERFACE SKIP decision); `Acceptance criteria`
+or `Business logic to cover` → Phase 3. Before re-entering, delete the artifacts
+the rerun replaces — `research.md`, `design.md`, `plan.md` from that phase on, each
+by its exact path — and write the handoff's `phase:` to the re-entered phase. Then
+rerun that phase and every phase after it, `plan-critic` included; Phase 1 writes
+`research.md` from scratch. The gate that took the amendment already recorded its
+failure on `contract`; do not record it again here.
+
 ## Phase 4 — EXECUTE (sequential, on the main thread)
 
 **Routing first.** Read `.claude/workflow-routing.yml`, role `execute-green`.
@@ -198,8 +221,16 @@ came after the code or never failed; never work around it. One benign case: the
 `test-writer` reported a real red but no marker landed — re-save the test file
 **byte for byte identical** and read the verdict; anything but `RED confirmed`
 means the denial was right. Once green, adding a case to a frozen file is a pure
-insertion (say what it covers); correcting one goes through `.claude/.tdd-unfrozen`
-with a reason, after telling the user. On a Python service layer the `-py` hooks
+insertion (say what it covers) with the next free id of its letter; whoever wrote
+it, you append its plan line — an `implementer` reproduction case included, from
+the id it reports. Correcting one never stops EXECUTE — it may run unattended for
+hours. The agent that hits the freeze stops and reports; you print the case id,
+the old and new case line and the reason, write `.claude/.tdd-unfrozen` citing the
+id (`<path>  # U2: <reason>`, several as `# U2, U5: …`), make the edit yourself —
+never through `implementer` or `test-writer`, whose contracts forbid rewriting a
+frozen case — then rewrite the plan line with the same id and append
+`amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The user
+confirms it at the merge (`/loop:ship`). On a Python service layer the `-py` hooks
 play the same roles (`.claude/rules/07-backend.md`); hand the `test-writer` the
 `.py` path.
 

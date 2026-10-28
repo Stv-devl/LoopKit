@@ -65,7 +65,9 @@ feature being framed against a product description written for the first.
 ## Two entry points, one loop
 
 **Simple** — one screen, a CRUD, a fix: `/loop:spec` asks 3–4 questions, writes the
-contract, stops. You review the acceptance criteria before anything ships.
+contract and chains into the loop. You validate the contract at the first gate,
+with research in hand — the interface choice when there is a screen, else the
+test plan.
 
 **Complex** — several epics: `/bmad:pm` writes a PRD, `/bmad:sm` slices it into
 **functional** stories, `/stories:review` puts them through a gate,

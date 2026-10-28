@@ -96,6 +96,12 @@ seems to deserve it → say so in one line and ask.
 Walk the entry artifact's criteria one by one. For each: checked, and **how it was
 observed**. A criterion nobody can observe is not met.
 
+**Frozen cases amended during the pass.** Every `amended` line of `plan.md`'s
+`## Gate` (a frozen test corrected in EXECUTE, `orchestrate.md` Phase 4) is the
+user's to confirm, once, in the merge presentation (step 4bis, which every pass
+reaches). A refused amendment goes back to EXECUTE before the merge, then
+`/loop:review` and this command from step 1.
+
 ### 3. Deploy (only if the diff requires it, and only on request)
 
 <!-- FILL: the real deploy commands, and their traps. Two that bite everywhere:
@@ -111,7 +117,9 @@ Delegate to the **`github` agent**: it stages, writes the Conventional Commit
 message, commits locally, and never signs. It commits **on a branch, never on
 `main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>` if it has one, a fresh
 one otherwise. Anything remote (push, PR) waits for the user's explicit
-go-ahead — that gate belongs to the agent, don't bypass it.
+go-ahead — that gate belongs to the agent, don't bypass it. A push or PR asked
+for before 4bis shows first, in its preview, every `amended` line of `## Gate`
+with its test hunk: nothing leaves the machine before the user has seen them.
 
 ### 4bis. Integrate
 
@@ -124,8 +132,11 @@ track ran in a worktree.
 
 1. Rebase `feat/<slug>` on the current base branch. If the rebase moved anything,
    **re-run the gates** — the code that merges is not the code you tested.
-2. Present the branch, the diff summary and the exact merge command, and **wait
-   for the go-ahead**. Merging is as gated as pushing.
+2. Present the branch, the diff summary, every `amended` frozen case of
+   `## Gate` (section 2 above) — id, old and new case line, reason, and the test hunk
+   from the diff, so the user confirms the change itself, not its description —
+   and the exact merge command, and **wait for the go-ahead**. Merging is as gated
+   as pushing.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
    Otherwise, **mind who is standing where**:
    - the session is **inside** the worktree → `ExitWorktree` (`remove`). Git

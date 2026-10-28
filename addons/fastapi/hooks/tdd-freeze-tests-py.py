@@ -188,8 +188,11 @@ def main() -> None:
             "and a wholesale overwrite rewrites assertions with nothing watching.\n\n"
             "Adding a case is allowed, as an Edit that inserts after the last line of "
             "the previous case and carries its own assertion. Correcting a case is a "
-            "plan-level decision: say which case and why, add one line to "
-            "`.claude/.tdd-unfrozen`:\n\n    %s  # <one-line reason>\n\nthen edit.\n\n"
+            "plan-level decision: a subagent stops and reports the case id and why; "
+            "the main thread adds one line to "
+            "`.claude/.tdd-unfrozen`:\n\n    %s  # <case id>: <one-line reason>\n\n"
+            "rewrites the plan line (same id), appends `amended` to plan.md's "
+            "`## Gate` (the user confirms it at the merge), then edits.\n\n"
             "The implementation bends to the test — fix %s instead."
             % (file_path, file_path, impl_rel)
         )
@@ -293,9 +296,11 @@ def main() -> None:
             "return/raise at its own top level, no skip/xfail, no patch of the module "
             "under test.\n\n"
             "Denied: rewriting an assertion, renaming or deleting a case, anchoring on "
-            "part of a line. That is a plan-level correction — say which case and why, "
-            "add one line to `.claude/.tdd-unfrozen`:\n\n    %s  # <one-line reason>\n\n"
-            "then edit.\n\n"
+            "part of a line. That is a plan-level correction — a subagent stops and "
+            "reports the case id and why; the main thread adds one line to "
+            "`.claude/.tdd-unfrozen`:\n\n    %s  # <case id>: <one-line reason>\n\n"
+            "rewrites the plan line (same id), appends `amended` to plan.md's "
+            "`## Gate` (the user confirms it at the merge), then edits.\n\n"
             "The implementation bends to the test: fix %s."
             % (file_path, refused, file_path, impl_rel)
         )

@@ -59,6 +59,17 @@ Read by a `reviewer` assigned `tests` (`.claude/agents/reviewer.md`). On a diff 
       through on purpose, and it means a case validated at the `/loop:plan` gate was
       never written. **Major** — you are the only check that sees it, because you
       are the only one reading `plan.md`'s test plan.
+- [ ] **Frozen cases against the plan, by id.** Match each test-first test to its
+      `plan.md` case by the id its title starts with (`U1`, `b1` — case-insensitive);
+      a test with no id (written before ids) matches by case sentence. A case
+      dropped, weakened or renamed:
+      - with a `## Gate` amendment for its id (`amended <date> U2: <old> → <new>`)
+        → one line, flagged for the merge, where the user confirms it — but only
+        once you have read the test's diff: the title and assertions now match
+        `<new>`, and no assertion removed beyond what `<new>` says. The record is
+        written by the agent it excuses; any divergence from it stays **Major**;
+      - without one → it stays **Major**, cited in `.claude/.tdd-unfrozen` or not;
+      - edited with no `.tdd-unfrozen` entry at all → **Critical**.
 - [ ] A **snapshot** (`toMatchSnapshot` / `toMatchInlineSnapshot`) inside one of
       the three frozen files: **Major**. It is the only assertion that rewrites
       itself — `vitest -u` edits it in place, the runner is the writer, and no

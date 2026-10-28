@@ -474,4 +474,5 @@ doit être refusée. Si `tdd-prove-red` répond « could not run the test runner
 c'est `RUN_TESTS` qui ne correspond pas à ton script (point 4).
 
 Puis un tour à blanc : `/loop:spec une petite feature` doit produire
-`docs/specs/<slug>.md` et s'arrêter là.
+`docs/specs/<slug>.md`, enchaîner la boucle et s'arrêter au premier gate pour te
+demander le contrat (interface s'il y a un écran, sinon plan de tests).

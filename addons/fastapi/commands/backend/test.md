@@ -32,7 +32,9 @@ mocking.
 > *before* the module, and once proved red it stops moving. If the service does
 > not exist yet, use `/backend:service` — it walks RED→GREEN in order. Come here
 > for `tests/api/`, `tests/core/`, or to **append** a case to a service test that
-> the plan missed (allowed as a pure insertion carrying its own assertion).
+> the plan missed (allowed as a pure insertion carrying its own assertion). That
+> case takes the next free `B` id (`test_b<n>_…`); report it so its line is
+> appended to `plan.md`'s `Test plan`.
 >
 > **On that append, step 2 does not apply — do not open the service module.**
 > The freeze stops a test being *edited* into agreeing with the code; the
@@ -80,7 +82,8 @@ mocking.
   with no async plugin at all. Loud, but the message names plugins rather than
   your code, and every async test in the repo shows it at once
 - Arrange → Act → Assert, one logical assertion per test
-- Naming: `test_{action}_{scenario}`
+- Naming: `test_{action}_{scenario}`; in `tests/services/`, `test_b<n>_{action}_{scenario}`
+  — the plan's case id first, which `/loop:review` matches the test by
 - Each test independent; no state shared between tests
 - **Always** test isolation — nothing else enforces it
 - **Assert the behaviour, never the call** (`.claude/rules/05-testing.md`): the

@@ -29,8 +29,8 @@ git clone <this-repo> loopkit && cd loopkit
 ./install.sh /path/to/my-project      # core: language-agnostic guardrails
 # add --react-ts, --supabase (includes React/TS), and/or --fastapi
 /kit:init                             # inspect, ask closed choices, adapt, doctor
-/loop:spec my feature                 # then, inside the project
-/loop:orchestrate docs/specs/<slug>.md
+/loop:spec my feature                 # then, inside the project: it writes the
+                                      # spec and chains /loop:orchestrate
 ```
 
 `install.sh` writes existing kit files as `.new`; the sole exception is

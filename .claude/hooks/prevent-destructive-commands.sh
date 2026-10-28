@@ -256,7 +256,7 @@ TDD_FROZEN_TEST_RE="$CWK_TDD_SHELL_FROZEN_TEST_RE"
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE '(^|[[:space:]])(rm|unlink|shred|mv|truncate)([[:space:]]|$)' || continue
     if echo "$SEG" | grep -qE "$TDD_FROZEN_TEST_RE"; then
-        deny "BLOCKED: deleting or moving a frozen test file from the shell.\\n\\nThe freeze (tdd-freeze-tests.sh) allows a Write when the file does not exist — that is the RED phase. So removing the file and writing it again rewrites a frozen test wholesale, past every guardrail, which is exactly what the freeze exists to stop (.claude/rules/05-testing.md).\\n\\nIf a case is genuinely wrong, that is a plan-level correction: say which case and why, add the path + '# reason' to .claude/.tdd-unfrozen, then edit it with Edit.\\n\\nIf the whole feature is being abandoned, delete the implementation module too and say so — do not start by removing the specification."
+        deny "BLOCKED: deleting or moving a frozen test file from the shell.\\n\\nThe freeze (tdd-freeze-tests.sh) allows a Write when the file does not exist — that is the RED phase. So removing the file and writing it again rewrites a frozen test wholesale, past every guardrail, which is exactly what the freeze exists to stop (.claude/rules/05-testing.md).\\n\\nIf a case is genuinely wrong, that is a plan-level correction: a subagent stops and reports the case id and why; the main thread adds the path + '# <case id>: <reason>' to .claude/.tdd-unfrozen, records it in plan.md's ## Gate (orchestrate.md, Phase 4), then edits it with Edit.\\n\\nIf the whole feature is being abandoned, delete the implementation module too and say so — do not start by removing the specification."
     fi
 done < <(cwk_segments "$COMMAND")
 

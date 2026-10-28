@@ -118,7 +118,9 @@ A skipped dimension is **announced with its reason**, never dropped silently.
 > and reports any case that was **dropped, weakened or renamed** — an assertion
 > that migrated toward what the code happens to do is a **Major**, even with the
 > suite green. A test edited without a matching entry in `.claude/.tdd-unfrozen`
-> is a **Critical**: the freeze was worked around.
+> is a **Critical**: the freeze was worked around. A correction recorded as a
+> `## Gate` amendment for its case id is reported in one line and flagged for the
+> merge; the matching rules live in `.claude/guides/review/tests.md`.
 >
 > A case **added** beyond the plan is the one legitimate divergence — the test
 > list stays alive. It is still reported, in one line each, so the gate says what

@@ -27,7 +27,8 @@ file. It may read the bug contract, not the implementation module. The case must
 - pass after the fix without changing the assertion.
 
 If the normal `test-writer` input needs a plan path, first write a minimal
-`plan.md` containing only Contracts and the Reproduction case, obtain the user's
+`plan.md` containing only Contracts and the Reproduction case (with its case id,
+`/loop:plan`'s template), obtain the user's
 test-plan go, then launch it. No reproduction → stop `BLOCKED` with the exact
 missing evidence. Never compensate with a manual fix.
 

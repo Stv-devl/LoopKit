@@ -18,7 +18,9 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
   order (`.claude/rules/05-testing.md`, "A bugfix opens with the test that
   reproduces the bug"): add the case that reproduces it — in a frozen test-first
   file only as a pure new case after the existing ones, the freeze allows that
-  and nothing else — run it and **see it fail**, then fix, then see it pass. A
+  and nothing else; its title starts with the next free case id of its letter,
+  and you report that id so the plan line is appended — run it and **see it
+  fail**, then fix, then see it pass. A
   case that passes before the fix means the finding is not what it claims:
   stop on that finding and report it.
 
@@ -34,8 +36,9 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 
 - **Never change an existing test case.** `tdd-freeze-tests.sh` refuses it on the
   test-first files; the only write allowed there is a pure new case. A case that
-  looks wrong → stop and return `Blocked on: <case> — <why>`; the main thread takes
-  it to the user.
+  looks wrong → stop and return `Blocked on: <case id> — <why>`; the main thread
+  records the correction and the user confirms it at the merge
+  (`orchestrate.md` Phase 4).
 - Stay inside the batch's files. Something outside it needs to change → say so,
   do not do it.
 - Follow `.claude/rules/` and the template or pattern the plan names; read

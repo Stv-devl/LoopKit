@@ -130,9 +130,11 @@ pytest file no hook will ever prove.
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**
-  `it('returns err(not_found) when the gateway finds no row')` /
-  `def test_get_by_id_raises_not_found_for_another_tenant()`. Never
-  `it('should work')`, never `test_get_by_id_2`. Written first, it is the prompt
+  `it('R2 returns err(not_found) when the gateway finds no row')` /
+  `def test_b3_get_by_id_raises_not_found_for_another_tenant()`. The title
+  starts with the case id the plan gives the line (`U1`, `R2`, `B3`), and the
+  sentence still follows: the id is how `/loop:review` matches the test to its
+  plan line. Never `it('should work')`, never `test_get_by_id_2`. Written first, it is the prompt
   the implementation is generated against, so its precision is the
   implementation's precision.
 - **Both outcomes of the boundary, always.** TypeScript: anything returning

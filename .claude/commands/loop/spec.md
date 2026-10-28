@@ -64,20 +64,32 @@ Produce a **spec on disk** that will serve as the single source of truth for
    the feature you happen to be holding. Genuinely new — nothing on the board names
    it — goes at the **end** of the table, `READY`. Reordering is `/loop:product`'s, and
    the user's.
-5. **Don't implement.** Once the spec is written, stop and propose
-   `/loop:orchestrate docs/specs/<slug>.md` — which runs the loop:
-   research → interface → plan → execute → review → ship.
+5. **Don't implement — chain into the loop.** Once the spec is written and
+   registered, run `/loop:orchestrate docs/specs/<slug>.md` in this session,
+   without asking (research → interface → plan → execute → review → ship), and say
+   so in one line:
+   `Spec written. Running the loop: you will validate the contract with research in hand at the first gate.`
+   The contract is asked there, as its
+   own question, by `/loop:interface` or `/loop:plan`; nothing proceeds on silence.
+
+   Two exceptions, where you propose the command instead of running it: the user
+   asked to stop after the spec; `.claude/.token-warning` exists (context ≥ 90%) —
+   then propose `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`, never a
+   bare fresh session or `/clear` then `go`, which take the topmost `READY` line,
+   not necessarily this one. Everything else is `/loop:orchestrate`'s: its FEATURE
+   READY check and its Phase 0.5 hand-over stop as they always did.
 
 > This is the **light entry** into the shared loop. Don't do the research here:
 > `/loop:research` does it in parallel, with the live DB and blast-radius probes this
-> interview can't run. Frame the contract, stop.
+> interview can't run. Frame the contract, then hand it to the loop.
 
 > **Why this path has no adversarial gate, and that is a decision.** The full
 > pipeline puts `/stories:review` — two stages, adversarial critics — between the
 > slice and the architecture. Here there is one small feature and no slice to get
 > wrong, so the equivalent spend would buy a critic re-reading a contract the user
-> just dictated. What replaces it is downstream and human: the user re-reads the
-> acceptance criteria before anything starts, `/loop:interface` gates the screen and
+> just dictated. What replaces it is downstream and human: the user validates the
+> contract at the first gate of the pass, with research in hand (`/loop:interface`
+> when there is a screen, else `/loop:plan`); `/loop:interface` gates the screen and
 > `/loop:plan` gates the test plan — and it is the **test plan**, not this file, that
 > the frozen tests are written from. What nothing catches on this path is the
 > **product** half: a spec contradicting a `Product invariant` is caught later, by
