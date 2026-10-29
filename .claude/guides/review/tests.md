@@ -45,7 +45,9 @@ Read by a `reviewer` assigned `tests` (`.claude/agents/reviewer.md`). On a diff 
       branches asserted.
 - [ ] For each test-first file in the diff, a marker exists in `.claude/.tdd-red/`
       (the RED phase was actually observed). Missing → say whether the hooks are
-      wired in this tree at all before calling it a finding on the diff.
+      wired in this tree at all before calling it a finding on the diff. Check
+      markers with `ls`/`test -e`, never an inline interpreter: an inline program
+      naming `.claude/.tdd-red` is denied.
 - [ ] Run the suite for the touched files with the **run-once** script
       (`pnpm test:run <paths>`) — never watch mode, it hangs. Report the real output.
 - [ ] Hook tests build the `QueryClient` **outside** the render (a factory), not

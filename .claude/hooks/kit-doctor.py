@@ -750,7 +750,7 @@ RUNTIME_PATHS = {
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
 # one per language.
 NON_HOOKS = {
-    "hook-lib.sh", "hook-guarded.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
+    "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
     "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
     "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
     "test-small-lane.sh", "test-workflow-contracts.sh",

@@ -1,0 +1,148 @@
+{"id":"X1.01","verdict":"ask","command":"mv .claude/hooks/tdd-freeze-tests.sh /tmp/","reason":"guarded path:"}
+{"id":"X1.02","verdict":"ask","command":"cp x .claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X1.03","verdict":"ask","command":"echo x >> .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X1.04","verdict":"ask","command":"echo x > package.json","reason":"guarded path:"}
+{"id":"X1.05","verdict":"ask","command":"echo x>package.json","reason":"guarded path:"}
+{"id":"X1.06","verdict":"ask","command":"echo x >| package.json","reason":"guarded path:"}
+{"id":"X1.07","verdict":"ask","command":"echo x &> package.json","reason":"guarded path:"}
+{"id":"X1.08","verdict":"ask","command":"echo x >&package.json","reason":"guarded path:"}
+{"id":"X1.09","verdict":"ask","command":"tee .claude/settings.json","reason":"guarded path:"}
+{"id":"X1.10","verdict":"ask","command":"ln -sf x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.11","verdict":"ask","command":"install x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.12","verdict":"ask","command":"rsync x .claude/hooks/","reason":"guarded path:"}
+{"id":"X1.13","verdict":"ask","command":"truncate -s0 vite.config.ts","reason":"guarded path:"}
+{"id":"X1.14","verdict":"ask","command":"patch package.json p.diff","reason":"guarded path:"}
+{"id":"X1.15","verdict":"ask","command":"sed -n -i 's/a/b/' .claude/settings.json","reason":"guarded path:"}
+{"id":"X1.16","verdict":"ask","command":"sed --in-place 's/a/b/' tsconfig.json","reason":"guarded path:"}
+{"id":"X1.17","verdict":"ask","command":"perl -i -pe 's/a/b/' eslint.config.js","reason":"guarded path:"}
+{"id":"X1.18","verdict":"ask","command":"rm .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.19","verdict":"ask","command":"rmdir .claude/scripts","reason":"guarded path:"}
+{"id":"X1.20","verdict":"ask","command":"unlink .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.21","verdict":"ask","command":"shred .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.22","verdict":"ask","command":"chmod -x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.23","verdict":"ask","command":"chown u .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.24","verdict":"ask","command":"cp -t .claude/hooks x","reason":"guarded path:"}
+{"id":"X1.25","verdict":"ask","command":"cp --target-directory=.claude/hooks x","reason":"guarded path:"}
+{"id":"X1.26","verdict":"ask","command":"git diff --output=.claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X1.27","verdict":"ask","command":"git diff --output .claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X8.01","verdict":"ask","command":"cat > package.json <<'EOF'\nit's\nEOF","reason":"guarded path:"}
+{"id":"X8.02","verdict":"ask","command":"echo \"<<EOF\"\nsed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X8.03","verdict":"deny","command":"cat > .claude/.tdd-red/m <<'EOF'\nit's\nEOF","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X8.04","verdict":"deny","command":"touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X4.01","verdict":"ask","command":"rm -rf .github/workflows","reason":"guarded path:"}
+{"id":"X4.02","verdict":"ask","command":"mv .github /tmp/","reason":"guarded path:"}
+{"id":"X4.03","verdict":"ask","command":"cp -r /tmp/h/. .claude/worktrees/x/.claude/","reason":"guarded path:"}
+{"id":"X4.04","verdict":"ask","command":"rm -rf .claude/hooks","reason":"guarded path:"}
+{"id":"X4.05","verdict":"deny","command":"rm -r .claude/.tdd-red","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X4.06","verdict":"deny","command":"rm .claude/.tdd-red/*","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X2.01","verdict":"ask","command":"find .claude/hooks -name a -exec cp x {} \\;","reason":"guarded path:"}
+{"id":"X2.02","verdict":"ask","command":"find .claude/hooks -name a -execdir rm {} \\;","reason":"guarded path:"}
+{"id":"X2.03","verdict":"ask","command":"find .claude/hooks -ok rm {} \\;","reason":"guarded path:"}
+{"id":"X2.04","verdict":"ask","command":"find .claude/hooks -okdir rm {} \\;","reason":"guarded path:"}
+{"id":"X2.05","verdict":"ask","command":"find .claude/hooks -delete","reason":"guarded path:"}
+{"id":"X2.06","verdict":"ask","command":"find . -fprint .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X2.07","verdict":"ask","command":"find . -fprintf .claude/.size-exempt x","reason":"guarded path:"}
+{"id":"X2.08","verdict":"ask","command":"find . -fls .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X2.09","verdict":"ask","command":"sed 'w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.10","verdict":"ask","command":"sed 'W .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.11","verdict":"ask","command":"sed -n 's/x/y/w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.12","verdict":"ask","command":"sed 's|x|y|w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.13","verdict":"ask","command":"sed 'e cmd' f","reason":"unresolved write target"}
+{"id":"X2.14","verdict":"ask","command":"rg --pre ./x pat","reason":"unresolved write target"}
+{"id":"X2.15","verdict":"ask","command":"rg --pre=./x pat","reason":"unresolved write target"}
+{"id":"X2.16","verdict":"ask","command":"find .claude/hooks -name a.sh -execdir sed -i 's/a/b/' a.sh \\;","reason":"unresolved write target"}
+{"id":"X3.01","verdict":"ask","command":"node -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.02","verdict":"ask","command":"node -p \"1\"","reason":"unresolved write target"}
+{"id":"X3.03","verdict":"ask","command":"bash -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.04","verdict":"ask","command":"bash -lc \"true\"","reason":"unresolved write target"}
+{"id":"X3.05","verdict":"ask","command":"sh -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.06","verdict":"ask","command":"zsh -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.07","verdict":"ask","command":"python3 -Bc \"1\"","reason":"unresolved write target"}
+{"id":"X3.08","verdict":"ask","command":"perl -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.09","verdict":"ask","command":"perl -ne 'print'","reason":"unresolved write target"}
+{"id":"X3.10","verdict":"ask","command":"ruby -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.11","verdict":"ask","command":"eval \"x\"","reason":"unresolved write target"}
+{"id":"X3.12","verdict":"ask","command":"echo x | bash","reason":"unresolved write target"}
+{"id":"X3.13","verdict":"deny","command":"python3 -c \"open('.claude/.tdd-red/m','w')\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.14","verdict":"deny","command":"python3 - <<'EOF'\nopen('.claude/.tdd-red/m','w')\nEOF","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.15","verdict":"deny","command":"printf \"open('.claude/.tdd-red/m','w')\" | python3","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.16","verdict":"deny","command":"touch \"$CLAUDE_PROJECT_DIR/.claude/.tdd-red/m\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X5.01","verdict":"ask","command":"sed -i 's/a/b/' .claude/worktrees/x/.claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X5.02","verdict":"ask","cwd":"__PROJECT_ROOT__/.claude/worktrees/x/.claude/hooks","command":"sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.01","verdict":"ask","command":"cd .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.02","verdict":"ask","cwd":"__PROJECT_ROOT__/.claude/hooks","command":"sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.03","verdict":"ask","cwd":"__PROJECT_ROOT__/src","command":"sed -i 's/a/b/' ../package.json","reason":"guarded path:"}
+{"id":"X6.04","verdict":"ask","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X6.05","verdict":"ask","command":"pushd .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.06","verdict":"ask","command":"cp x .claude/hooks/*","reason":"guarded path:"}
+{"id":"X6.07","verdict":"ask","command":"cp x .claude/hooks/{a,b}.sh","reason":"guarded path:"}
+{"id":"X6.08","verdict":"ask","command":"sed -i 's/a/b/' *.json","reason":"guarded path:"}
+{"id":"X6.09","verdict":"ask","command":"cd \"$D\" && sed -i 's/a/b/' a.sh","reason":"unresolved write target"}
+{"id":"X6.10","verdict":"ask","command":"cd -; sed -i 's/a/b/' a.sh","reason":"unresolved write target"}
+{"id":"X6.11","verdict":"ask","command":"echo x > $T","reason":"unresolved write target"}
+{"id":"X6.12","verdict":"ask","command":"rm \"$f\"","reason":"unresolved write target"}
+{"id":"X6.13","verdict":"ask","command":"sed -i 's/a/b/' ~/x/package.json","reason":"unresolved write target"}
+{"id":"X6.14","verdict":"ask","command":"for f in package.json tsconfig.json; do sed -i 's/a/b/' \"$f\"; done","reason":"unresolved write target"}
+{"id":"X6.15","verdict":"ask","command":"find .claude/hooks -name '*.sh' | xargs sed -i 's/x/y/'","reason":"unresolved write target"}
+{"id":"X6.16","verdict":"pass","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' a.sh"}
+{"id":"X7.01","verdict":"ask","command":"env sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.02","verdict":"ask","command":"nice -n 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.03","verdict":"ask","command":"timeout -k 1 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.04","verdict":"ask","command":"sudo sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.05","verdict":"ask","command":"time sed -i 's/a/b/' vite.config.ts","reason":"guarded path:"}
+{"id":"X7.06","verdict":"ask","command":"(cd .claude/hooks && sed -i 's/a/b/' a.sh)","reason":"guarded path:"}
+{"id":"X7.07","verdict":"ask","command":"(cd src); sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.08","verdict":"ask","command":"{ sed -i 's/a/b/' package.json; }","reason":"guarded path:"}
+{"id":"X7.09","verdict":"ask","command":"if true; then sed -i 's/a/b/' package.json; fi","reason":"guarded path:"}
+{"id":"X7.10","verdict":"ask","command":"echo \"$(sed -i 's/a/b/' package.json)\"","reason":"guarded path:"}
+{"id":"X7.11","verdict":"ask","command":"echo \"$(rm .claude/hooks/*)\"","reason":"guarded path:"}
+{"id":"X7.12","verdict":"ask","command":"cat <<EOF\n$(sed -i 's/a/b/' package.json)\nEOF","reason":"guarded path:"}
+{"id":"X7.13","verdict":"ask","command":"x=$((1<<2))\nsed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X10.01","verdict":"ask","command":"rm -rf src/features/x","reason":"under a protected dir"}
+{"id":"X10.02","verdict":"ask","command":"rm src/features/x -rf","reason":"under a protected dir"}
+{"id":"X10.03","verdict":"ask","command":"rm --rec src/features/x","reason":"under a protected dir"}
+{"id":"X10.04","verdict":"ask","command":"rm -Rf src/features/x","reason":"under a protected dir"}
+{"id":"X10.05","verdict":"ask","command":"mv src/features/x /tmp/","reason":"under a protected dir"}
+{"id":"X10.06","verdict":"ask","command":"rm -rf src/*","reason":"under a protected dir"}
+{"id":"X10.07","verdict":"ask","command":"mv src/* /tmp/","reason":"under a protected dir"}
+{"id":"X10.08","verdict":"deny","command":"rm -rf src","reason":"A subdirectory is asked"}
+{"id":"X11.01","verdict":"deny","command":"rm -rf src/features/x; mkfs.ext4 /dev/sdb","reason":"Disk formatting"}
+{"id":"X11.02","verdict":"deny","command":"cp x .claude/hooks/a.sh; touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X9.01","verdict":"pass","command":"cat .claude/hooks/a.sh"}
+{"id":"X9.02","verdict":"pass","command":"cat .claude/hooks/a.sh # don't"}
+{"id":"X9.03","verdict":"pass","command":"grep x .claude/settings.json"}
+{"id":"X9.04","verdict":"pass","command":"sed -n '/error/p;s/we/x/p' .claude/settings.json"}
+{"id":"X9.05","verdict":"pass","command":"sed -n '0~4p;/x/,+3p' .claude/settings.json"}
+{"id":"X9.06","verdict":"pass","command":"find . -name '*.ts' -exec grep -l x {} +"}
+{"id":"X9.07","verdict":"pass","command":"git commit -m \"note > package.json\""}
+{"id":"X9.08","verdict":"pass","command":"git commit -m \"$(cat <<'EOF'\nit's fine\nEOF\n)\""}
+{"id":"X9.09","verdict":"pass","command":"rm /tmp/x-*"}
+{"id":"X9.10","verdict":"pass","command":"rm 'a[1].txt'"}
+{"id":"X9.11","verdict":"pass","command":"sed -i 's/a/b/' docs/*.md"}
+{"id":"X9.12","verdict":"pass","command":"echo x 2>&1"}
+{"id":"X9.13","verdict":"pass","command":"python3 .claude/hooks/kit-doctor.py"}
+{"id":"X9.14","verdict":"pass","command":".claude/hooks/test-hooks.sh 2>&1 | tail -1"}
+{"id":"X9.15","verdict":"pass","command":"bash .claude/hooks/test-small-lane.sh"}
+{"id":"X9.16","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py fail docs/work/x/plan.md test \"expected > in vite.config.ts\""}
+{"id":"X9.17","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test"}
+{"id":"X15.01","verdict":"deny","command":"cp /tmp/m \\\n  .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X15.02","verdict":"ask","command":"mv /tmp/a \\\n  .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X15.03","verdict":"ask","command":"rm -rf \\\n  src/features/x","reason":"under a protected dir"}
+{"id":"X15.04","verdict":"deny","command":"touch .claude/.tdd-\\\nred/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X15.05","verdict":"pass","command":"cat \\\n  .claude/hooks/a.sh"}
+{"id":"X17.01","verdict":"deny","command":"cd -P .claude && touch .tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X17.02","verdict":"ask","command":"cd -- .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X17.03","verdict":"ask","command":"env -C .claude/hooks sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X17.04","verdict":"deny","command":"cd /nonexistent; touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X17.05","verdict":"ask","command":"false && cd /tmp; sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X18.01","verdict":"deny","command":"cd .claude/hooks && echo \"$(touch ../.tdd-red/m)\" && cd /tmp","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X18.02","verdict":"ask","command":"x=$(sed -i 's/a/b/' package.json); cd docs","reason":"guarded path:"}
+{"id":"X19.01","verdict":"deny","command":"cp -rt .claude/.tdd-red x","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X19.02","verdict":"ask","command":"cp -t.claude/hooks x","reason":"guarded path:"}
+{"id":"X19.03","verdict":"ask","command":"mv --target-directory=.claude/hooks x","reason":"guarded path:"}
+{"id":"X19.04","verdict":"ask","command":"install -Dt .claude/hooks x","reason":"guarded path:"}
+{"id":"X19.05","verdict":"ask","command":"cp --target=.claude/hooks x","reason":"guarded path:"}
+{"id":"X20.01","verdict":"ask","command":"patch -p1 < fix.diff","reason":"unresolved write target"}
+{"id":"X20.02","verdict":"ask","command":"patch -o package.json x p.diff","reason":"guarded path:"}
+{"id":"X21.01","verdict":"ask","command":"perl -i -p fix.pl package.json","reason":"guarded path:"}
+{"id":"X21.02","verdict":"ask","command":"perl -pi fix.pl package.json","reason":"guarded path:"}

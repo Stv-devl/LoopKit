@@ -120,8 +120,8 @@ agent does when it has never met it.
 **Wiring** — `hook-wiring`: every script in `.claude/hooks/` is registered in
 `settings.json`, every registered path exists, every registered `.sh` is
 executable. The standalone scripts (`hook-lib.sh` and `tdd_py_lib.py`, the two
-shared libraries; `hook-timings-report.sh`; `kit-doctor.py`) are known and not
-reported. A shell
+shared libraries; `hook-guarded.sh`; `shell_targets.py`;
+`hook-timings-report.sh`; `kit-doctor.py`) are known and not reported. A shell
 hook without `+x` **fails open**: the guardrail does not run and the write goes
 through.
 

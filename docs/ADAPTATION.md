@@ -419,6 +419,12 @@ principal comme depuis `.claude/worktrees/<x>/`. `.claude/.tdd-red/` est
 **refusé** : seul `tdd-prove-red.sh` y écrit, et un marqueur écrit à la main
 ferait passer un module sans RED observé.
 
+Il en va de même pour le shell : une écriture sur un chemin gardé, quel que soit
+le moyen (redirection, `cp`, `sed -i`, `find -exec`, un programme inline passé à un
+interpréteur), demande ton accord. Sur `.claude/.tdd-red/`, elle est refusée. Un
+`rm -r` ou un `mv` sous un dossier protégé (`src/`, `.claude/`…) demande aussi ton
+accord.
+
 Conséquence voulue :
 dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord.
 Dans ton projet, c'est la même chose pour `package.json` ou `vite.config.ts` :

@@ -453,6 +453,196 @@ run_guarded_hardening_cases() {
     [[ "$out" == same ]] || fail hook-guarded.sh side-effects-full "shopt/set output changed after sourcing: '$out'"
 }
 
+# X1-X11 of docs/work/guard-shell/plan.md: one case per line of the jsonl, each
+# turned into a fixture and run through run_case, so it gets the same checks.
+run_shell_guard_cases() {
+    local file="$FIXTURES_DIR/_harness/shell-guard.jsonl" tmp line id verdict command cwd reason count=0
+    local -A seen=()
+    local -a lines=()
+    if [[ ! -f "$file" ]]; then
+        fail prevent-destructive-commands.sh shell-guard.jsonl "case file is missing"
+        return 0
+    fi
+    mapfile -t lines < "$file"
+    tmp="$(mktemp -d)"
+    for line in "${lines[@]}"; do
+        [[ -z "$line" ]] && continue
+        if ! jq -e 'type == "object" and (.id | type == "string") and (.command | type == "string")
+                    and (.verdict | IN("ask", "deny", "pass"))' <<<"$line" >/dev/null 2>&1; then
+            fail prevent-destructive-commands.sh shell-guard.jsonl "unparsable or incomplete line: ${line:0:60}"
+            continue
+        fi
+        id="$(jq -r '.id' <<<"$line")"
+        verdict="$(jq -r '.verdict' <<<"$line")"
+        command="$(jq -r '.command' <<<"$line")"
+        cwd="$(jq -r '.cwd // "__PROJECT_ROOT__"' <<<"$line")"
+        reason="$(jq -r '.reason // ""' <<<"$line")"
+        if [[ -n "${seen[$id]:-}" ]]; then
+            fail prevent-destructive-commands.sh "$id" "duplicate case id"
+            continue
+        fi
+        seen[$id]=1
+        if [[ "$verdict" != pass && -z "$reason" ]]; then
+            fail prevent-destructive-commands.sh "$id" "ask/deny case has no reason"
+            continue
+        fi
+        count=$((count + 1))
+        jq -cn --arg command "$command" --arg cwd "$cwd" --arg reason "$reason" \
+            '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}
+             + (if $reason != "" then {_expect_reason: $reason} else {} end)' \
+            > "$tmp/$id-$verdict.json"
+        run_case prevent-destructive-commands.sh "$tmp/$id-$verdict.json" "$verdict"
+    done
+    [[ "$count" -gt 0 ]] || fail prevent-destructive-commands.sh shell-guard.jsonl "case file holds no case"
+    rm -r "$tmp"
+}
+
+# Prints the verdict on its first line, then the hook's stdout and stderr.
+shell_guard_probe() {
+    local dir="$1" path_override="$2" command="$3" input tmp code verdict
+    tmp="$(mktemp -d)"
+    input="$(jq -cn --arg command "$command" --arg cwd "$PROJECT_ROOT" \
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}')"
+    set +e
+    printf '%s' "$input" | PATH="${path_override:-$PATH}" CLAUDE_PROJECT_DIR="$PROJECT_ROOT" \
+        CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$dir/prevent-destructive-commands.sh" \
+        >"$tmp/stdout" 2>"$tmp/stderr"
+    code=$?
+    set -e
+    verdict="$(semantic_verdict "$code" "$tmp/stdout")"
+    printf '%s\n' "$verdict"
+    cat "$tmp/stdout" "$tmp/stderr"
+    rm -r "$tmp"
+}
+
+# X12: a missing or broken shell_targets.py is not a pass.
+run_shell_guard_failure_cases() {
+    local state tmp bin tool out verdict want reason command path_override i
+    local -a commands=("sed -i 's/a/b/' package.json" "echo x > .github/workflows/ci.yml" "touch .claude/.tdd-red/m" "ls src")
+    local -a wants=(ask ask deny pass)
+    for state in renamed empty exit1 garbage nosentinel no-python3; do
+        tmp="$(mktemp -d)"
+        cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+        path_override=""
+        case "$state" in
+            renamed)    rm -f "$tmp/shell_targets.py" ;;
+            empty)      : > "$tmp/shell_targets.py" ;;
+            exit1)      printf 'import sys\nsys.exit(1)\n' > "$tmp/shell_targets.py" ;;
+            garbage)    printf 'print("garbage")\n' > "$tmp/shell_targets.py" ;;
+            nosentinel) printf 'print("rm\\tpackage.json")\n' > "$tmp/shell_targets.py" ;;
+            no-python3)
+                bin="$tmp/bin-no-python3"
+                mkdir -p "$bin"
+                for tool in env bash dirname basename date jq grep sed cat tr head tail cut sort uniq \
+                            mktemp rm mkdir wc readlink realpath sha256sum awk ls touch cp mv ln tee \
+                            id uname sleep git; do
+                    [[ -x "$(command -v "$tool" 2>/dev/null)" ]] && ln -sf "$(command -v "$tool")" "$bin/$tool"
+                done
+                path_override="$bin"
+                ;;
+        esac
+        for i in 0 1 2 3; do
+            command="${commands[$i]}"; want="${wants[$i]}"; reason=""
+            [[ "$want" == pass ]] || reason="shell guard unavailable"
+            CASES=$((CASES + 1))
+            out="$(shell_guard_probe "$tmp" "$path_override" "$command")"
+            verdict="${out%%$'\n'*}"
+            if [[ "$verdict" != "$want" ]]; then
+                fail prevent-destructive-commands.sh "resolver-$state: $command" "expected $want, got $verdict"
+            elif [[ -n "$reason" && "$out" != *"$reason"* ]]; then
+                fail prevent-destructive-commands.sh "resolver-$state: $command" "reason does not contain '$reason'"
+            fi
+        done
+        rm -r "$tmp"
+    done
+}
+
+# X14: a padded command stays far under the hook timeout, and the row cap keeps the deny.
+run_shell_guard_budget_case() {
+    local tmp operands start end elapsed_ms
+    tmp="$(mktemp -d)"
+    operands="$(printf 'f%d ' $(seq 1 500))"
+    jq -cn --arg command "rm ${operands}package.json" --arg cwd "__PROJECT_ROOT__" \
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}' > "$tmp/X14.01-ask.json"
+    operands="$(printf 'f%d ' $(seq 1 70))"
+    jq -cn --arg command "rm ${operands}.claude/.tdd-red/m" --arg cwd "__PROJECT_ROOT__" --arg reason "is written only by tdd-prove-red.sh" \
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd, _expect_reason: $reason}' > "$tmp/X14.02-deny.json"
+    run_case prevent-destructive-commands.sh "$tmp/X14.01-ask.json" ask
+    start="$(date +%s%N)"
+    sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" "$tmp/X14.01-ask.json" \
+        | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+            "$HOOKS_DIR/prevent-destructive-commands.sh" >/dev/null 2>&1 || true
+    end="$(date +%s%N)"
+    elapsed_ms=$(((end - start) / 1000000))
+    [[ "$elapsed_ms" -lt 2000 ]] \
+        || fail prevent-destructive-commands.sh X14.01-ask.json "500-operand rm took ${elapsed_ms} ms, bound is 2000"
+    run_case prevent-destructive-commands.sh "$tmp/X14.02-deny.json" deny
+    rm -r "$tmp"
+}
+
+# X16: the hook runs on bash 3.2 constructs only (macOS /bin/bash): mapfile and
+# readarray are disabled for the run, and the file holds none of the 4.x forms.
+run_shell_guard_bash3_case() {
+    local hook="$HOOKS_DIR/prevent-destructive-commands.sh" command input out code verdict banned
+    for command in "echo x > package.json" "echo hi"; do
+        input="$(jq -cn --arg command "$command" --arg cwd "$PROJECT_ROOT" \
+            '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}')"
+        CASES=$((CASES + 1))
+        set +e
+        out="$(printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+            bash -c 'enable -n mapfile readarray 2>/dev/null; . "$0"' "$hook" 2>&1)"
+        code=$?
+        set -e
+        if [[ "$command" == "echo hi" ]]; then
+            [[ "$code" -eq 0 && -z "$out" ]] \
+                || fail prevent-destructive-commands.sh "bash3: $command" "expected exit 0 and no output, got $code '${out:0:120}'"
+        else
+            [[ "$out" == *"guarded path:"* && "$code" -eq 0 && "$out" == *'"permissionDecision"'*ask* ]] \
+                || fail prevent-destructive-commands.sh "bash3: $command" "expected ask with 'guarded path:', got $code '${out:0:120}'"
+        fi
+    done
+    for banned in 'mapfile' 'readarray' '[-1]' 'declare -A' 'local -A'; do
+        CASES=$((CASES + 1))
+        if grep -qF -e "$banned" "$hook"; then
+            fail prevent-destructive-commands.sh "bash3-static" "the hook holds '$banned', a bash 4+ construct"
+        fi
+    done
+}
+
+# X22: the resolver-failed deny must not carry the resolver-success deny text.
+run_shell_guard_reason_split_case() {
+    local tmp out verdict
+    tmp="$(mktemp -d)"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+    printf 'import sys\nsys.exit(1)\n' > "$tmp/shell_targets.py"
+    CASES=$((CASES + 1))
+    out="$(shell_guard_probe "$tmp" "" "touch .claude/.tdd-red/m")"
+    verdict="${out%%$'\n'*}"
+    if [[ "$verdict" != deny ]]; then
+        fail prevent-destructive-commands.sh "reason-split" "expected deny, got $verdict"
+    elif [[ "$out" != *"shell guard unavailable"* ]]; then
+        fail prevent-destructive-commands.sh "reason-split" "reason does not contain 'shell guard unavailable'"
+    elif [[ "$out" == *"is written only by tdd-prove-red.sh"* ]]; then
+        fail prevent-destructive-commands.sh "reason-split" "reason holds the resolver-success deny text"
+    fi
+    rm -r "$tmp"
+}
+
+# X23: no .cwd and no CLAUDE_PROJECT_DIR (a manual run): the base is $PWD, not empty.
+run_shell_guard_no_base_case() {
+    local tmp out code
+    tmp="$(mktemp -d)"
+    CASES=$((CASES + 1))
+    set +e
+    out="$(cd "$tmp" && printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo x > app/api/routes.py"}}' \
+        | env -u CLAUDE_PROJECT_DIR CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/prevent-destructive-commands.sh" 2>&1)"
+    code=$?
+    set -e
+    [[ "$code" -eq 0 && -z "$out" ]] \
+        || fail prevent-destructive-commands.sh "no-base" "expected exit 0 and no output, got $code '${out:0:120}'"
+    rm -r "$tmp"
+}
+
 set -e
 run_fixture_sweep
 if [[ "${1:-}" != --fixtures-only ]]; then
@@ -461,6 +651,12 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_missing_jq_cases
     run_guarded_cases
     run_guarded_hardening_cases
+    run_shell_guard_cases
+    run_shell_guard_failure_cases
+    run_shell_guard_budget_case
+    run_shell_guard_bash3_case
+    run_shell_guard_reason_split_case
+    run_shell_guard_no_base_case
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"
     if [[ -f "$ADDON_TEST" ]]; then

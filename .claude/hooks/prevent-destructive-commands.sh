@@ -96,10 +96,10 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE "$RM_RECURSIVE" || continue
 
     # A protected dir as a whole path segment: `src`, `./src`, `src/`,
-    # `/abs/path/src/`. A path INSIDE one (`dist/assets`) stays deletable — that
-    # is the documented escape ("specify a subdirectory").
+    # `/abs/path/src/`. A path INSIDE one (`dist/assets`) is not denied here: the
+    # guarded-set block below asks for it.
     if echo "$SEG" | grep -qE "$PROTECTED_TARGET"; then
-        deny "BLOCKED: Cannot delete protected directory recursively.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/\\n\\nSpecify a subdirectory or specific files instead."
+        deny "BLOCKED: Cannot delete protected directory recursively.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/\\n\\nA subdirectory is asked, not blocked: name it and let the user approve."
     fi
 
     # Root, home, cwd — with or without a trailing slash. The missing `/?` is
@@ -370,6 +370,125 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
         deny "BLOCKED: writing a test-first layer or a test file from the shell.\\n\\nThe TDD hooks (tdd-require-red, tdd-freeze-tests, tdd-prove-red) only see the Write and Edit tools. A redirection bypasses all three: the RED phase is never observed and a frozen test can be rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed and nothing will block you. If you genuinely need to correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/05-testing.md)."
     fi
 done < <(cwk_segments "$COMMAND")
+
+# =============================================================================
+# THE GUARDED SET, SHELL SIDE  —  the last deny of this file, then the first ask
+#
+# protect-files.sh asks on a Write/Edit of a guarded path; every shell writer
+# reaches the same files without that hook ever running. shell_targets.py
+# resolves each write of the command (redirect, cp, sed -i, find -exec, an
+# interpreter's inline program…) to an absolute path or a marker, and this
+# block classifies the rows with hook-guarded.sh — the one list, never copied.
+#
+# Failure is not a pass: no python3, no resolver, a nonzero exit or output
+# without its `#end` sentinel fall back to the raw text (docs/specs/guard-shell.md).
+# =============================================================================
+
+HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
+GUARD_BASE="$(jq -r '.cwd // empty' <<<"$INPUT")"
+[[ -n "$GUARD_BASE" ]] || GUARD_BASE="${CLAUDE_PROJECT_DIR:-}"
+[[ -n "$GUARD_BASE" ]] || GUARD_BASE="$PWD"
+GUARD_FAILED=0
+GUARD_OUT=""
+if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
+    GUARD_OUT="$(python3 -B "$HOOK_DIR/shell_targets.py" "$COMMAND" "$GUARD_BASE" 2>/dev/null)" || GUARD_FAILED=1
+else
+    GUARD_FAILED=1
+fi
+
+GUARD_ROWS=()
+if [[ "$GUARD_FAILED" == 0 ]]; then
+    # bash 3.2 constructs only (macOS /bin/bash): a read loop, positive indices.
+    GUARD_LINES=()
+    GUARD_COUNT=0
+    while IFS= read -r GUARD_LINE || [[ -n "$GUARD_LINE" ]]; do
+        GUARD_LINES+=("$GUARD_LINE")
+        GUARD_COUNT=$((GUARD_COUNT + 1))
+    done <<<"$GUARD_OUT"
+    GUARD_END_RE=$'^#end\t([0-9]+)$'
+    GUARD_ROW_RE=$'^[^\t]+\t.+$'
+    GUARD_LAST=""
+    [[ "$GUARD_COUNT" -eq 0 ]] || GUARD_LAST="${GUARD_LINES[$((GUARD_COUNT - 1))]}"
+    if [[ "$GUARD_LAST" =~ $GUARD_END_RE && "${BASH_REMATCH[1]}" == "$((GUARD_COUNT - 1))" ]]; then
+        GUARD_INDEX=0
+        while [[ "$GUARD_INDEX" -lt $((GUARD_COUNT - 1)) ]]; do
+            GUARD_LINE="${GUARD_LINES[$GUARD_INDEX]}"
+            [[ "$GUARD_LINE" =~ $GUARD_ROW_RE ]] || GUARD_FAILED=1
+            GUARD_ROWS+=("$GUARD_LINE")
+            GUARD_INDEX=$((GUARD_INDEX + 1))
+        done
+    else
+        GUARD_FAILED=1
+    fi
+fi
+
+# One verdict per row, D > G > P > U; the reason shown is the first row of the
+# strongest verdict over the whole command.
+GUARD_DENY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U=""
+GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
+guard_classify() {
+    local verb="$1" target="$2" rel text
+    case "$target" in
+        '?inline:'* | '?unknown:'*)
+            text="${target#*:}"
+            if [[ "$text" == *.claude/.tdd-red* ]]; then
+                [[ -n "$GUARD_DENY" ]] || GUARD_DENY="$verb ${text:0:200}"
+            else
+                [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb ${text:0:200}"
+            fi
+            return 0
+            ;;
+        '?glob:'*) target="${target#?glob:}" ;;
+    esac
+    rel="$(cwk_guard_rel "$target")" || return 0
+    if cwk_is_guard_denied "$rel"; then
+        [[ -n "$GUARD_DENY" ]] || GUARD_DENY="$verb $rel"
+    elif cwk_is_guarded "$rel"; then
+        [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
+    elif [[ ( "$verb" == rm-r || "$verb" == mv ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+        [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
+    fi
+    return 0
+}
+
+if [[ "$GUARD_FAILED" == 0 ]]; then
+    for GUARD_LINE in "${GUARD_ROWS[@]}"; do
+        guard_classify "${GUARD_LINE%%$'\t'*}" "${GUARD_LINE#*$'\t'}"
+    done
+fi
+
+if [[ -n "$GUARD_DENY" ]]; then
+    deny "BLOCKED: .claude/.tdd-red/ is written only by tdd-prove-red.sh ($GUARD_DENY).\\n\\nA RED marker is the proof that a test failed before its module existed; a hand-written one lets a module in with no observed failure (.claude/rules/05-testing.md)."
+fi
+if [[ "$GUARD_FAILED" == 1 && "$COMMAND" == *.claude/.tdd-red* ]]; then
+    deny "BLOCKED: shell guard unavailable and the command names .claude/.tdd-red/.\\n\\nshell_targets.py is missing, broken or python3 is absent, so this write cannot be resolved; a RED marker is created only by the tdd-prove-red.sh script. Run /kit:doctor."
+fi
+
+# The text fallback's ask half: a guarded name, a heredoc, a redirect or a writer verb.
+guard_text_writes() {
+    local pattern prefix bare
+    [[ "$COMMAND" == *.claude/* || "$COMMAND" == *'<<'* ]] && return 0
+    for pattern in "${CWK_GUARDED[@]}"; do
+        prefix="${pattern%%[*?[]*}"
+        [[ -n "$prefix" && "$COMMAND" == *"$prefix"* ]] && return 0
+    done
+    bare="$(sed -E 's/[0-9]*>&[0-9-]+//g' <<<"$COMMAND")"
+    [[ "$bare" == *'>'* || "$COMMAND" == *--output* ]] && return 0
+    grep -qE '(^|[^[:alnum:]_.-])(tee|cp|mv|install|rsync|ln|patch|rm|rmdir|unlink|shred|truncate|touch|chmod|chown|sed|perl|ruby|python[0-9.]*|node|bash|sh|zsh|eval|find|rg)([^[:alnum:]_.-]|$)' <<<"$COMMAND"
+}
+
+if [[ "$GUARD_FAILED" == 1 ]] && guard_text_writes; then
+    ask "shell guard unavailable: shell_targets.py is missing, broken or python3 is absent, so the write targets of this command cannot be resolved.\\n\\nApprove only if it writes nothing under the kit's guardrails (.claude/, package.json, tsconfig*, vite/vitest/eslint configs, .github/workflows/). Run /kit:doctor."
+fi
+if [[ -n "$GUARD_ASK_G" ]]; then
+    ask "guarded path: $GUARD_ASK_G (kit guardrail; approve only if you meant to change it)."
+fi
+if [[ -n "$GUARD_ASK_P" ]]; then
+    ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. Approve only if this subtree is meant to go."
+fi
+if [[ -n "$GUARD_ASK_U" ]]; then
+    ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails."
+fi
 
 # =============================================================================
 # FORMATTER WRITING A WHOLE FOLDER  —  an `ask`, so after every deny
