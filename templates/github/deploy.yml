@@ -7,17 +7,25 @@
 #
 # Quatre propriétés, et aucune n'est optionnelle :
 #
-#   1. Il ne déploie QUE ce qu'un CI vert a produit. Sans exception : le
-#      déclenchement manuel lui-même va chercher le dernier run CI **réussi**
-#      au lieu de reconstruire. Un déploiement qui peut partir sur un rouge
-#      n'est pas un CD, c'est un `scp` avec des étapes.
+#   1. Il ne déploie QUE ce qu'un CI vert a produit. Sur `workflow_run`, ce CI
+#      vient d'un push de ce même dépôt (same repository) : un fork est refusé,
+#      il contrôle son propre `ci.yml`. Sur les deux chemins, le step Resolve
+#      prouve que le commit est sur la branche par défaut. Le dispatch manuel
+#      exécute pourtant le fichier de la ref choisie, et une branche peut
+#      réécrire ce filtre : la barrière contre une autre branche est
+#      l'environment (propriété 4). Un déploiement qui peut partir sur un
+#      rouge n'est pas un CD, c'est un `scp` avec des étapes.
 #   2. Il déploie l'ARTEFACT de ce run, jamais un rebuild. Rebuilder, c'est
 #      expédier un binaire que rien n'a testé — même commit, autre sortie, et
 #      personne ne le voit passer.
 #   3. Le JOB fournit l'environnement, le step `Publish` ne le suppose jamais.
 #      Voir le bloc `steps:` : c'est la propriété dont l'oubli est silencieux.
 #   4. `environment:` est la validation humaine. Configure la required reviewer
-#      dans Settings → Environments, ou ce fichier déploie tout seul.
+#      dans Settings → Environments, ou ce fichier déploie tout seul. Règle aussi
+#      les branches de déploiement sur la seule branche par défaut, et mets les
+#      secrets dans Settings → Environments → `production` → Environment secrets :
+#      un secret de dépôt part vers toute branche. `ghcr` n'a pas de secret : sa
+#      barrière n'est donc pas l'environment, voir `docs/ADAPTATION.md`.
 #
 # L'étape `Publish` est la seule chose qui dépende de ton hébergeur, et elle
 # n'est pas écrite ici : `install.sh` l'y a insérée depuis
@@ -55,13 +63,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Sur `workflow_run`, on ne part que si le CI a conclu au vert. Sur
-    # `workflow_dispatch` il n'y a pas de run déclencheur : la garantie est
-    # reportée au step « Resolve » ci-dessous, qui refuse de continuer s'il
-    # n'existe aucun run CI vert à déployer.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    # `workflow_run` ne part que sur un CI vert issu d'un push de ce dépôt
+    # (same repository) ; un fork est refusé car il contrôle son `ci.yml`.
+    # Le step « Resolve » prouve que le commit est sur la branche par défaut,
+    # pour les deux chemins. `workflow_dispatch` exécute le fichier de la ref
+    # choisie : une branche peut réécrire ce `if:` et ce step. Seul
+    # l'environment (branches de déploiement, secrets d'environnement) l'arrête.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == github.event.repository.default_branch)
 
     # Le bloc entier vient du fragment `<cible>.environment` quand il existe :
     # Pages impose son nom d'environment ET fabrique sa propre URL, les deux
@@ -95,14 +103,14 @@ jobs:
           if [ "$EVENT" = "workflow_run" ]; then
             id="$RUN_ID"; sha="$RUN_SHA"
           else
-            # Dispatch manuel : le dernier CI VERT de la branche par défaut.
+            # Dispatch manuel : le dernier CI VERT issu d'un push sur la branche par défaut.
             # Aucun run vert → on s'arrête, plutôt que de déployer autre chose.
             # `|| true` : sans lui, un `gh` en échec (réseau, token) fait
             # retourner 1 à `read`, et `set -e` tue le step AVANT le message
             # ci-dessous — le garde ne couvrait que le cas « aucun run vert »,
             # pas le cas « gh est cassé ». Les deux mènent ici maintenant.
             id=""; sha=""
-            read -r id sha < <(gh run list --workflow=CI --branch="$DEFAULT_BRANCH" \
+            read -r id sha < <(gh run list --workflow=CI --branch="$DEFAULT_BRANCH" --event=push \
               --status=success --limit=1 \
               --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"') || true
             if [ -z "$id" ] || [ "$id" = "null" ]; then
@@ -116,6 +124,15 @@ jobs:
             # ne dit pas ca. Relancer le CI sur la branche par defaut regle le
             # cas ; monter la retention dans ci.yml est l'autre option.
           fi
+          # Le `head_branch` d'un run ne suffit pas : un push de TAG rapporte
+          # son nom de tag comme `head_branch`, donc un tag nommé comme la
+          # branche par défaut passe le `if:`. On exige que le commit soit
+          # un ancêtre (ou la tête) de la branche par défaut.
+          status="$(gh api "repos/$GH_REPO/compare/$sha...refs/heads/$DEFAULT_BRANCH?per_page=1" --jq .status)"
+          case "$status" in
+            ahead|identical) ;;
+            *) echo "Le commit $sha n'est pas sur la branche $DEFAULT_BRANCH : deploiement refuse." >&2; exit 1 ;;
+          esac
           echo "id=$id"   >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
@@ -143,12 +160,12 @@ jobs:
       # autre.
       # ------------------------------------------------------------------
       - name: Checkout the commit that produced the build
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ steps.run.outputs.sha }}
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: pnpm
@@ -157,7 +174,7 @@ jobs:
       # apporte les SOURCES (Dockerfile, config d'hébergeur), jamais les octets
       # publiés. Ceux-là sortent de cet artefact, et de lui seul.
       - name: Download the build the CI produced
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist-${{ steps.run.outputs.sha }}
           path: dist

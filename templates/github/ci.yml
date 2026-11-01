@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # `pnpm/action-setup` lit le champ `packageManager` de package.json —
       # une seule déclaration de version, pas deux à garder synchrones.
@@ -48,12 +48,12 @@ jobs:
       # Le kit ne scaffolde aucun package.json, donc le champ est à toi :
       #     "packageManager": "pnpm@10.x.y"
       # ou, à défaut, ajoute `with: { version: 10 }` ci-dessous.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       # Plancher déclaré par `.claude/rules/01-stack.md` : Node 20.19+ ou
       # 22.12+ (contrainte de Vite 8, qui est ESM-only). Descendre sous ce
       # plancher est une décision, pas un détail de config.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: pnpm
@@ -172,7 +172,7 @@ jobs:
       # seconde. Même famille que la garde ci-dessus, un cran plus loin.
       - name: Upload build
         if: ${{ !cancelled() && steps.build.outcome == 'success' && github.event_name == 'push' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-${{ github.sha }}
           path: dist/

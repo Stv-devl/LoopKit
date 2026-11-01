@@ -11,16 +11,18 @@
       # « Build Output API » depuis le dist/ du CI, et `--prebuilt` publie
       # exactement ça.
       #
-      # À créer côté GitHub — Settings → Secrets and variables → Actions :
+      # Secrets : Settings → Environments → `production` → Environment secrets,
+      # pas la page du dépôt : seul l'environment les retient hors des branches non autorisées.
       #   secret  VERCEL_TOKEN         (Account settings → Tokens)
       #   secret  VERCEL_ORG_ID        (.vercel/project.json après `vercel link`)
       #   secret  VERCEL_PROJECT_ID    (idem)
+      # Variable : Settings → Secrets and variables → Actions → Variables.
       #   var     PRODUCTION_URL
       - name: Publish
         run: |
           mkdir -p .vercel/output/static
           cp -r dist/. .vercel/output/static/
-          pnpm dlx vercel deploy --prebuilt --prod
+          pnpm dlx vercel@65.9.0 deploy --prebuilt --prod
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}

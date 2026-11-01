@@ -635,6 +635,7 @@ if $NO_CI; then
     echo "  Aucun workflow GitHub (--no-ci ou projet local)."
 else
     copy_file "$KIT_DIR/templates/github/ci.yml" "$TARGET/.github/workflows/ci.yml"
+    copy_file "$KIT_DIR/templates/github/dependabot.yml" "$TARGET/.github/dependabot.yml"
     install_deploy "$DEPLOY_TARGET"
 fi
 

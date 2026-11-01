@@ -518,5 +518,161 @@ jq -e '[.hooks[][].hooks[]
                             or endswith("enforce-git-workflow.sh"))]
        | length >= 5 and all(.onFailure == "block")
          and ([.[].command | sub(".*/"; "")] | unique | length == 3)' "$ROOT/.claude/settings.json" >/dev/null
+# HC harness-cd: a deploy leaves only from a green push of this repository's
+# default branch, on pinned actions and CLIs, to a host whose key is known.
+CD_DIR="$ROOT/templates/github"
+CD_DEPLOY="$CD_DIR/deploy.yml"
+CD_SSH="$CD_DIR/publish/ssh.yml"
+# HC1a reproduces the hole: a run from a fork's `main` satisfies the old condition.
+grep -Fxq -- "    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == github.event.repository.default_branch)" "$CD_DEPLOY"
+# HC1b one job-level condition, and nothing YAML would fold into it.
+[ "$(grep -c '^    if:' "$CD_DEPLOY")" -eq 1 ]
+[ "$(awk '/^jobs:/ { jobs = 1; next } jobs && /^  [^ #]/ { n++ } END { print n + 0 }' "$CD_DEPLOY")" -eq 1 ]
+if grep -Fq '>-' "$CD_DEPLOY"; then exit 1; fi
+awk '/^    if:/ { seen = 1; next } seen && /[^[:space:]]/ { match($0, /^ */); exit (RLENGTH > 4) }' "$CD_DEPLOY"
+# The whole `run:` body of a named step, from the line after `run: |` to the next
+# line indented less than the body (blank lines kept only between body lines).
+cd_run_body() {
+    awk -v name="$2" '
+        !step && $0 ~ ("^ +- name: " name "$") { step = 1; next }
+        step && !body && /^ +run: \|$/ { body = 1; next }
+        body && /^[[:space:]]*$/ { blank = blank "\n"; next }
+        body && /^          / { printf "%s%s\n", blank, $0; blank = ""; next }
+        body { exit }
+    ' "$1"
+}
+# HC1c-e the Resolve body is byte for byte what the kit means: dispatch picks the newest
+# successful push run of the default branch, and both paths refuse a commit that is not on
+# it before any output is written.
+cmp -s <(cd_run_body "$CD_DEPLOY" 'Resolve the CI run to deploy') - <<'EOF'
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_run" ]; then
+            id="$RUN_ID"; sha="$RUN_SHA"
+          else
+            # Dispatch manuel : le dernier CI VERT issu d'un push sur la branche par défaut.
+            # Aucun run vert → on s'arrête, plutôt que de déployer autre chose.
+            # `|| true` : sans lui, un `gh` en échec (réseau, token) fait
+            # retourner 1 à `read`, et `set -e` tue le step AVANT le message
+            # ci-dessous — le garde ne couvrait que le cas « aucun run vert »,
+            # pas le cas « gh est cassé ». Les deux mènent ici maintenant.
+            id=""; sha=""
+            read -r id sha < <(gh run list --workflow=CI --branch="$DEFAULT_BRANCH" --event=push \
+              --status=success --limit=1 \
+              --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"') || true
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "Aucun run CI vert exploitable sur $DEFAULT_BRANCH." >&2
+              echo "Causes : aucun run reussi, ou 'gh run list' a echoue." >&2
+              exit 1
+            fi
+            echo "Dispatch manuel : deploiement du run CI $id ($sha)."
+            # Si ce run a plus de `retention-days` (7 dans ci.yml), son artefact
+            # a expire et le telechargement plus bas echouera sur un message qui
+            # ne dit pas ca. Relancer le CI sur la branche par defaut regle le
+            # cas ; monter la retention dans ci.yml est l'autre option.
+          fi
+          # Le `head_branch` d'un run ne suffit pas : un push de TAG rapporte
+          # son nom de tag comme `head_branch`, donc un tag nommé comme la
+          # branche par défaut passe le `if:`. On exige que le commit soit
+          # un ancêtre (ou la tête) de la branche par défaut.
+          status="$(gh api "repos/$GH_REPO/compare/$sha...refs/heads/$DEFAULT_BRANCH?per_page=1" --jq .status)"
+          case "$status" in
+            ahead|identical) ;;
+            *) echo "Le commit $sha n'est pas sur la branche $DEFAULT_BRANCH : deploiement refuse." >&2; exit 1 ;;
+          esac
+          echo "id=$id"   >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+EOF
+# HC3a-f the SSH target refuses any host key but the pinned one.
+if grep -Eq 'accept-new|StrictHostKeyChecking=no' "$CD_SSH"; then exit 1; fi
+if grep -oiE 'StrictHostKeyChecking[^[:alnum:]]*[[:alnum:]-]*' "$CD_SSH" | grep -vx 'StrictHostKeyChecking=yes'; then exit 1; fi
+# the whole Publish body: guards, the secret written to known_hosts before rsync, and rsync's strict option.
+cmp -s <(cd_run_body "$CD_SSH" 'Publish') - <<'EOF'
+          set -euo pipefail
+          : "${DEPLOY_HOST:?secret DEPLOY_HOST manquant}"
+          : "${DEPLOY_PATH:?variable DEPLOY_PATH manquante — refus de rsync --delete vers la racine}"
+          : "${DEPLOY_KNOWN_HOSTS:?secret DEPLOY_KNOWN_HOSTS manquant — refus de deployer sans cle d hote}"
+          case "$DEPLOY_PATH" in
+            /) echo "DEPLOY_PATH=/ interdit avec --delete." >&2; exit 1 ;;
+            /*) : ;;
+            *) echo "DEPLOY_PATH doit être un chemin absolu (reçu: $DEPLOY_PATH)." >&2; exit 1 ;;
+          esac
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"
+EOF
+grep -Fxq -- '          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}' "$CD_SSH"
+grep -Eq '^ *# +secret +DEPLOY_KNOWN_HOSTS ' "$CD_SSH"
+grep -Eq '^ *# +secret +DEPLOY_HOST .*statique' "$CD_SSH"
+# nothing outside the comments may scan a host key: the env block and the steps before `run:` included.
+if grep -vE '^[[:space:]]*#' "$CD_SSH" | grep -Fq 'ssh-keyscan'; then exit 1; fi
+# HC2a-b every active `uses:` is pinned to a full SHA with its exact tag, and none went missing.
+cd_uses="$(grep -rhE '^[^#]*\buses["'"'"']?[[:space:]]*:' "$CD_DIR")"
+[ -n "$cd_uses" ]
+if grep -Ev '^[[:space:]]*(- )?uses: [^[:space:]@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$cd_uses"; then exit 1; fi
+[ "$(wc -l <<<"$cd_uses")" -eq 13 ]
+# HC2c every CLI call names an exact version, and no other launcher appears.
+cd_active="$(find "$CD_DIR" -type f -exec awk '
+    FNR == 1 { if (cont != "") print cont; cont = "" }
+    cont == "" && /^[[:space:]]*#/ { next }
+    { line = $0
+      if (cont != "") { sub(/^[[:space:]]+/, "", line); line = cont " " line; cont = "" }
+      if (line ~ /\\[[:space:]]*$/) { sub(/[[:space:]]*\\[[:space:]]*$/, "", line); cont = line; next }
+      sub(/[[:space:]]+#.*$/, "", line)
+      print line }
+    END { if (cont != "") print cont }' {} +)"
+cd_calls="$(grep -oE 'pnpm([[:space:]]+[^[:space:];&|]+)*[[:space:]]+dlx([[:space:]]+-[^[:space:];&|]+)*[[:space:]]+[^[:space:];&|]+' <<<"$cd_active")"
+if grep -Ev '^pnpm (dlx vercel@[0-9]+\.[0-9]+\.[0-9]+|--package=netlify-cli@[0-9]+\.[0-9]+\.[0-9]+ dlx netlify)$' <<<"$cd_calls"; then exit 1; fi
+grep -Fq 'netlify-cli@' <<<"$cd_calls"
+grep -Fq 'vercel@' <<<"$cd_calls"
+cd_flags='(-[^[:space:]]+[[:space:]]+)*'
+cd_before='(^|[^[:alnum:]_.-])'
+if grep -Eq "${cd_before}(npx|pnpx|bunx|yarn[[:space:]]+dlx)([^[:alnum:]_.-]|\$)|${cd_before}npm[[:space:]]+${cd_flags}(i|install|exec|x)([[:space:]]|\$)|${cd_before}(pnpm|yarn)[[:space:]]+${cd_flags}(add|global)([[:space:]]|\$)" <<<"$cd_active"; then exit 1; fi
+# HC2d dependabot is byte for byte what the kit means: both ecosystems weekly, npm majors left out.
+cmp -s "$CD_DIR/dependabot.yml" - <<'EOF'
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+EOF
+# HC4 the docs and comments state the same guarantees.
+CD_CI_MD="$ROOT/.claude/skills/templates/ci.md"
+cd_property="$(section "$CD_CI_MD" '1. **It deploys only what a green CI produced' '2. **It ships')"
+grep -Fq 'push' <<<"$cd_property"
+grep -Fq 'same repository' <<<"$cd_property"
+grep -Fq 'DEPLOY_KNOWN_HOSTS' "$CD_CI_MD"
+cd_environment="$(section "$CD_CI_MD" '4. **`environment: production` is the human gate.' '## What is deliberately not here')"
+for needle in 'runs the file of the chosen ref' '"Deployment branches and tags"' '"Protected branches only"' 'environment secrets' 'GitHub Free' '`ghcr` has no secret' 'who holds write access' '`pages` is not settled'; do
+    grep -Fq -- "$needle" <<<"$(tr -s ' \n' ' ' <<<"$cd_environment")"
+done
+cd_adapt="$(section "$ROOT/docs/ADAPTATION.md" '**`deploy.yml`** est **assemblé**' 'Puis **`CLAUDE.md`, section `Environment`**')"
+cd_adapt_flat="$(tr -s ' \n' ' ' <<<"$cd_adapt")"
+for needle in 'DEPLOY_KNOWN_HOSTS' 'statique' 'dependabot' 'doit fusionner le `deploy.yml.new`' 'son propre `--deploy=<cible>`' 'hors terminal le défaut est `none`' 'cette fusion rend `DEPLOY_KNOWN_HOSTS` obligatoire' 'à la main' 'majeures' 'Deployment branches and tags' 'secrets d’environnement' 'GitHub Free' '`ghcr` n'"'"'a aucun secret' 'sur qui a l'"'"'accès en écriture' 'ce point n'"'"'est pas tranché'; do
+    grep -Fq -- "$needle" <<<"$cd_adapt_flat"
+done
+for cd_snippet in netlify vercel ssh; do
+    grep -Fq -- 'Settings → Environments → `production` → Environment secrets' "$CD_DIR/publish/$cd_snippet.yml"
+done
+grep -Fq -- 'ssh-keyscan -t ed25519 <hote> | ssh-keygen -lf -' "$CD_SSH"
+grep -Fq -- 'chemin OpenSSH standard' "$CD_SSH"
+cd_comment="$(awk '/^    if:/ { printf "%s", block; exit } /^ *#/ { block = block $0 "\n"; next } { block = "" }' "$CD_DEPLOY")"
+grep -Fq 'push' <<<"$cd_comment"
+grep -Fq 'fork' <<<"$cd_comment"
+cd_header="$(section "$CD_DEPLOY" '#   1. Il ne déploie' '#   2. Il déploie')"
+grep -Fq 'push' <<<"$cd_header"
+grep -Eq '# Dispatch manuel.*push' "$CD_DEPLOY"
 
 echo 'workflow contract fixtures: green.'

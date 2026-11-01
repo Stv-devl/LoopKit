@@ -1,12 +1,14 @@
       # Netlify. `--no-build` est ce qui respecte la propriété n°2 : on publie
       # le `dist/` que le CI a testé, Netlify ne rebuild rien.
       #
-      # À créer côté GitHub — Settings → Secrets and variables → Actions :
+      # Secrets : Settings → Environments → `production` → Environment secrets,
+      # pas la page du dépôt : seul l'environment les retient hors des branches non autorisées.
       #   secret  NETLIFY_AUTH_TOKEN   (User settings → Applications → New token)
       #   secret  NETLIFY_SITE_ID      (Site configuration → Site ID)
+      # Variable : Settings → Secrets and variables → Actions → Variables.
       #   var     PRODUCTION_URL       (pour le lien dans l'onglet Environments)
       - name: Publish
-        run: pnpm dlx netlify-cli deploy --prod --no-build --dir=dist
+        run: pnpm --package=netlify-cli@27.16.1 dlx netlify deploy --prod --no-build --dir=dist
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

@@ -247,6 +247,9 @@ au premier push, pas plus tard.
   `pages`, `ssh`, `ghcr` — chacune portant dans le fichier la liste exacte des
   secrets et variables GitHub à créer, et sa permission supplémentaire si elle
   en exige une (Pages et GHCR seulement, jamais accordée « au cas où »).
+  La cible SSH demande aussi `DEPLOY_KNOWN_HOSTS`, vérifié hors bande, et un
+  `DEPLOY_HOST` sur une IP statique ou un nom stable : l'entrée `known_hosts`
+  est liée à cette adresse.
 
   Sur **`none`** — le défaut hors terminal — l'étape `Publish` est un `exit 1`.
   Un CD non configuré qui « réussit » à ne rien déployer est le pire des trois
@@ -256,6 +259,34 @@ au premier push, pas plus tard.
 
   Changer d'avis : `./install.sh <projet> --deploy=<autre>` écrit un
   `deploy.yml.new` à côté, à fusionner.
+
+  dependabot arrive avec le CI et surveille les actions GitHub comme les
+  dépendances npm.
+
+  Une cible déjà installée garde son ancien `deploy.yml` : elle doit fusionner le
+  `deploy.yml.new` pour recevoir ces garanties. Relance l'installeur avec son
+  propre `--deploy=<cible>` : hors terminal le défaut est `none`, et le
+  `deploy.yml.new` porterait alors un `exit 1`. Sur SSH, cette fusion rend
+  `DEPLOY_KNOWN_HOSTS` obligatoire.
+
+  dependabot ne lit pas les lignes `pnpm` des `run:` : les versions des CLI
+  (`netlify-cli`, `vercel`) se montent à la main. Les versions majeures npm sont
+  exclues exprès (`01-stack.md` : changer de version est une décision).
+
+  Le déclenchement manuel exécute le fichier de la ref choisie : une branche peut
+  réécrire son propre `if:` et le step Resolve. Là où le déploiement exige un
+  secret d'environnement, l'environment est la barrière : règle « Deployment
+  branches and tags » sur Selected avec la branche par défaut (pas « Protected
+  branches only », qui autorise toutes les branches quand aucune règle de
+  protection n'existe), et garde les secrets de déploiement en secrets
+  d’environnement, les copies au niveau du dépôt supprimées. `ghcr` n'a aucun
+  secret et se connecte avec `GITHUB_TOKEN` : un workflow de branche avec
+  `packages: write` peut pousser quelle que soit la règle, la confiance repose
+  là sur qui a l'accès en écriture. Pour `pages`, ce point n'est pas tranché.
+  Limites de plan : les required reviewers existent sur GitHub Free, Pro et Team pour
+  les dépôts publics seulement ; les règles de branche et les secrets
+  d’environnement existent aussi sur les dépôts privés Pro et Team ; sur un dépôt
+  privé Free, il n'y a ni l'un ni l'autre.
 
 Puis **`CLAUDE.md`, section `Environment`** : deux lignes, le local et la prod.
 Pas de production pour l'instant → écris `none yet` et **supprime

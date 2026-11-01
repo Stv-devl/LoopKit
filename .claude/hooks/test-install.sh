@@ -274,4 +274,41 @@ K1B_OUT="$(p1_rerun "$K1B_TARGET")"
 grep -Fq '2 chemins ajoutés' <<<"$K1B_OUT"
 if grep -Fq 'bloc « état de session » ajouté' <<<"$K1B_OUT"; then exit 1; fi
 
+# I4 harness-cd: what an assembled target really receives.
+cd_install() {
+    mkdir -p "$1"
+    "$ROOT/install.sh" "$@" >/dev/null 2>&1 </dev/null
+}
+CD_TEMPLATE="$ROOT/templates/github/dependabot.yml"
+# (I4a) dependabot arrives with the CI.
+I4A="$SCRATCH/cd-with-ci"
+cd_install "$I4A" --deploy=none
+cmp -s "$CD_TEMPLATE" "$I4A/.github/dependabot.yml"
+# (I4b) and not without it.
+I4B="$SCRATCH/cd-no-ci"
+cd_install "$I4B" --no-ci
+[ ! -e "$I4B/.github/dependabot.yml" ]
+# (I4c) every target, each on a fresh directory, since copy_file keeps a first deploy.yml.
+for fragment in "$ROOT"/templates/github/publish/*.yml; do
+    target="$(basename "$fragment" .yml)"
+    target_dir="$SCRATCH/cd-target-$target"
+    cd_install "$target_dir" --deploy="$target"
+    assembled="$target_dir/.github/workflows/deploy.yml"
+    grep -Fxq -- "    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == github.event.repository.default_branch)" "$assembled"
+    [ "$(grep -c '^    if:' "$assembled")" -eq 1 ]
+    [ "$(awk '/^jobs:/ { jobs = 1; next } jobs && /^  [^ #]/ { n++ } END { print n + 0 }' "$assembled")" -eq 1 ]
+    assembled_uses="$(grep -E '^[^#]*\buses["'"'"']?[[:space:]]*:' "$assembled")"
+    [ -n "$assembled_uses" ]
+    if grep -Ev '^[[:space:]]*(- )?uses: [^[:space:]@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$assembled_uses"; then exit 1; fi
+done
+# (I4d) the SSH target carries its host key checks once assembled.
+grep -Eq '^ +: "\$\{DEPLOY_KNOWN_HOSTS:\?' "$SCRATCH/cd-target-ssh/.github/workflows/deploy.yml"
+grep -Fxq -- "          printf '%s\n' \"\$DEPLOY_KNOWN_HOSTS\" > ~/.ssh/known_hosts" "$SCRATCH/cd-target-ssh/.github/workflows/deploy.yml"
+grep -Fxq -- '            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \' "$SCRATCH/cd-target-ssh/.github/workflows/deploy.yml"
+# (I4e) a second install keeps the target's own file and writes the copy beside it.
+echo '# local edit' >>"$I4A/.github/dependabot.yml"
+cd_install "$I4A" --deploy=none
+grep -Fxq '# local edit' "$I4A/.github/dependabot.yml"
+cmp -s "$CD_TEMPLATE" "$I4A/.github/dependabot.yml.new"
+
 echo 'install fixtures: green.'

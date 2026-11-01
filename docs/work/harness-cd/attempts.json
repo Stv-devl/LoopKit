@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-11-01T16:12:16.685089Z",
+    "reason": "re-review 3/3: Resolve env lines unpinned (DEFAULT_BRANCH from ref_name stays green), cd_run_body takes the first same-name step (dead Publish decoy stays green), HC2c launcher deny-list misses npm --prefix, yarn --cwd/-q dlx, quoted hash"
+  }
+}
