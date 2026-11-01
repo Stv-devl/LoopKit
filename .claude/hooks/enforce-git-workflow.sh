@@ -1,11 +1,37 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
 # Purpose: make the Git convention mechanical instead of declarative.
 #
-#   deny → committing on a protected branch, signing a commit
-#   ask  → anything that touches the remote or merges into a protected branch
+#   deny → committing on a protected branch, signing a commit; a `git add` (or
+#          `git stage`) that forces, hides its paths, cancels the dry-run,
+#          is not alone in its call (only git add/stage/status/diff/log may
+#          come before it), or would stage a secret (`git add --dry-run`); a
+#          `-C` value the shell expands (`$`, a backtick, a leading `~`, glob or
+#          brace characters) is not resolved and denies as unconfirmed
+#   ask  → a `git add` aimed at a directory that is not a repository the hook
+#          can read safely (its git dir is not `.git`, `.git/worktrees/<name>` or
+#          `.git/modules/<path>`: a bare-clone worktree, `--separate-git-dir`, a
+#          planted git dir, a missing or non-repo directory): no dry-run, because
+#          the git dir's own config could run code. The ask names the directory
+#          and says the hook did not check what is staged. An argument naming a
+#          secret (`.env*`, `*.pem`, `*.key`, `credentials.*`) still denies there,
+#          read from the argument text alone;
+#          anything that touches the remote or merges into a protected branch;
+#          a commit with --amend, --no-verify, --all, --include, --only,
+#          --patch, --interactive or a pathspec; a switch/checkout that
+#          discards or resets
+#   pass → a call naming `git` and add, stage, commit or switch passes only as
+#          one whole strict form (`grammar_strict`); anything else asks, as the
+#          last decision. The parser keeps the denies and the specific asks; it
+#          never decides a pass for such a call.
+#
+# When its parser cannot be trusted (python3 missing or failing, no end
+# marker, a top-level parse failure) or a call holds more than 50 git calls,
+# it fails closed on a raw word scan that reads through quotes: every
+# `git add`/`git stage` is denied, every commit/switch/checkout asked.
 #
 # The convention itself lives in `.claude/agents/github.md` (the only copy).
 # CLAUDE.md keeps one line saying all Git work goes through that agent; this
@@ -14,12 +40,16 @@
 #
 # Deliberate limits:
 #   - the branch is read from the tool call's cwd, or from each git call's own
-#     `-C`. `cd elsewhere && git commit` is best-effort: a bare `cd` is not read.
+#     `-C`. `cd elsewhere && git commit` is best-effort for the branch check: a
+#     bare `cd` is not followed (a `cd` before a `git add` denies it instead).
+#     A call that names add, stage, commit or switch is no longer best-effort
+#     there: the grammar ask below makes it ask.
 #   - wrappers that take options (`nice -n 5 git`, `env -i git`, `sudo git`) are
 #     not unwrapped; the whole-text rules decide them.
-#   - a `$(...)` or `bash -c` string shlex cannot read is skipped, not asked about
-#     (a commit message with an apostrophe is the normal case); a top-level
-#     command it cannot read, or more than 50 git calls, falls back to word rules.
+#   - a `$(...)` or `bash -c` string shlex cannot read is skipped by the parsing
+#     rules (a commit message with an apostrophe is the normal case), but when
+#     the call names the four words the grammar ask now decides it; a top-level
+#     command it cannot read falls back to a scan of the raw text.
 #   - an `export GIT_DIR=...` (or GIT_WORK_TREE, GIT_CONFIG*) in an earlier
 #     statement is not read, like a bare `cd`.
 #   - `ask` is not a block. It forces the permission prompt back in front of the
@@ -40,8 +70,12 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 [[ -z "$COMMAND" ]] && exit 0
 [[ -z "$CWD" ]] && CWD="${CLAUDE_PROJECT_DIR:-$PWD}"
 
-# Nothing git-shaped in this command → cheapest possible exit.
-echo "$COMMAND" | grep -qE '\b(git|gh)\b' || exit 0
+# The command as the shell would glue it: quotes, `\` and `\`+newline removed.
+NORM="${COMMAND//\\$'\n'/}"
+NORM="${NORM//[\'\"\\]/}"
+
+# Nothing git-shaped in either reading → cheapest possible exit.
+printf '%s\n%s\n' "$COMMAND" "$NORM" | grep -qE 'git|\bgh\b' || exit 0
 
 # CONFIGURE: branches that only ever receive merges.
 PROTECTED_BRANCHES="main|master"
@@ -53,6 +87,7 @@ PROTECTED_BRANCHES="main|master"
 decide() {
     local decision="$1" reason
     reason="${2//\\n/$'\n'}"
+    reason="${reason:0:4000}"
     jq -n --arg d "$decision" --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -68,7 +103,26 @@ ask()  { decide "ask"  "$1"; }
 
 PUSH_REASON="This pushes to a remote. Present the branch, the remote and what is being pushed, then let the user decide."
 FORCE_REASON="This is a FORCE push: it overwrites remote history and can destroy commits other people have. Say which branch and why a normal push will not do, then let the user decide."
-commit_reason() { printf '%s' "BLOCKED: never commit on '$1'.\\n\\nBranch first, then commit:\\n  git checkout -b feat/<scope>   (or fix/, chore/)\\n\\n'$1' only ever receives merges, and a merge needs the user's go-ahead. A loop track already carries its feat/<slug> branch — use that one. Convention: .claude/agents/github.md"; }
+commit_reason() { printf '%s' "BLOCKED: never commit on '$1'.\\n\\nBranch first, then commit:\\n  git switch -c feat/<scope>   (or fix/, chore/)\\n\\n'$1' only ever receives merges, and a merge needs the user's go-ahead. A loop track already carries its feat/<slug> branch — use that one. Convention: .claude/agents/github.md"; }
+ADD_HIDDEN_REASON="BLOCKED: this git add hides what it stages (\$, \$(…), backtick, pathspec file or git options). Name the paths literally, in a plain \`git add <paths>\`."
+ADD_UNREADABLE_REASON="BLOCKED: unreadable git add — the hook could not read this call (a wrapper such as timeout, stdbuf or xargs, a cd before it, another command before it, or a parse failure). Run \`git add <paths>\` alone, as its own call, with literal paths (\`git -C <tree> add …\` for another tree)."
+add_reason() {
+    case "$1" in
+        force)  printf '%s' "BLOCKED: git add --force stages a path .gitignore excludes. Stage explicit paths without -f; an ignored file stays out of the repo." ;;
+        hidden) printf '%s' "$ADD_HIDDEN_REASON" ;;
+        nodry)  printf '%s' "BLOCKED: git add --no-dry-run would cancel the hook's own dry-run. Stage explicit paths without it." ;;
+        cd|prior) printf '%s' "$ADD_UNREADABLE_REASON" ;;
+        locked) printf '%s' "BLOCKED: .git/index.lock exists, another git process holds the index. Wait for it, then retry; never delete the lock while it runs." ;;
+        secret:*) printf '%s' "BLOCKED: this git add would stage a secret: ${1#secret:}. Never stage .env*, *.pem, *.key, credentials.*; add the pattern to .gitignore." ;;
+        *) printf '%s' "BLOCKED: git add --dry-run could not confirm what this stages ($1). If the paths are new in this same call (touch, git init), run git add as its own call; otherwise name existing paths literally." ;;
+    esac
+}
+# The `c:` (commit) or `s:` (switch/checkout) part of a row's flags column.
+row_flags() {
+    local part
+    if [[ "$1" == c ]]; then part="${2#c:}"; part="${part%%;*}"; else part="${2##*;s:}"; fi
+    printf '%s' "${part//,/, }"
+}
 merge_reason() { printf '%s' "This integrates into '$1'. Show the branch, 'git diff --stat' and the exact command, then let the user decide. One merge at a time — never two in flight."; }
 
 # -----------------------------------------------------------------------------
@@ -96,13 +150,20 @@ dir_protected() {
     echo "$SEG_BRANCH" | grep -qE "^($PROTECTED_BRANCHES)$"
 }
 
-# One line per git call: subcommand, directory, alias-on-command-line, force.
-# A command shlex cannot read prints UNPARSABLE.
+# One line per git call: subcommand, directory, alias-on-command-line, force,
+# dangerous flags (`c:` as a commit, `s:` as a switch/checkout), and the verdict
+# of a `git add` (`-` for any other call). Only codes in the last two columns,
+# never user text, except the paths of a `secret:` verdict, which come last.
+# A command shlex cannot read prints UNPARSABLE. When it cannot read a call, a
+# fallback scan of the raw text adds `?fb-add` / `?fb-flags` rows.
 parse_segments() {
-    python3 - "$1" "$2" <<'PY'
+    python3 -I - "$1" "$2" <<'PY'
 import os
+import re
 import shlex
+import subprocess
 import sys
+import time
 
 WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
               "--config-env", "--exec-path", "--attr-source"}
@@ -113,8 +174,36 @@ SEPARATOR_CHARS = set(";&|()\n")
 WORD_START = set(" \t\r\n;&|()<>")
 HIDDEN = "?hidden"
 MAX_GIT_SEGMENTS = 50
+ALLOWED_ADD_GLOBALS = {"-C", "--no-pager", "-P"}
+DRY_RUN_BUDGET = 2.0
+SECRET_KEEP = {".env.example", ".env.sample", ".env.template"}
+REDIRECT_CHARS = set("<>&")
+HEREDOC = re.compile(r"(?<!<)<<(-?)[ \t]*['\"]?([A-Za-z0-9_.-]+)['\"]?")
+COMMIT = {
+    "dangerous": {"amend": "--amend", "no-verify": "--no-verify", "all": "--all",
+                  "patch": "--patch", "interactive": "--interactive",
+                  "include": "--include", "only": "--only",
+                  "pathspec-from-file": "pathspec"},
+    "short": {"a": "--all", "n": "--no-verify", "i": "--include", "o": "--only", "p": "--patch"},
+    "value_short": set("mFcCt"),
+    "attached_short": set("uS"),
+    "value_long": {"message", "file", "author", "date", "reuse-message", "reedit-message",
+                   "fixup", "squash", "template", "trailer", "cleanup", "pathspec-from-file"},
+    "pathspec": True,
+}
+SWITCH = {
+    "dangerous": {"discard-changes": "--discard-changes", "force": "--force",
+                  "force-create": "--force-create"},
+    "short": {"f": "--force", "C": "--force-create", "B": "--force-create"},
+    "value_short": set("cbBC"),
+    "attached_short": set(),
+    "value_long": {"orphan", "create", "force-create"},
+}
+ADD_SUBS = {"add", "stage"}
+QUIET_SUBS = {"add", "stage", "status", "diff", "log"}
+RAW_SEPARATORS = re.compile(r"[\s;&|()`'\"]+|\$\(")
 rows = []
-state = {"capped": False, "unread": False}
+state = {"capped": False, "unread": False, "deadline": None, "cd": False, "prior": False}
 
 
 def strip_comments(text):
@@ -123,6 +212,9 @@ def strip_comments(text):
         ch = text[i]
         if quote == "'":
             quote = "" if ch == "'" else quote
+        elif ch == "\\" and text[i + 1:i + 2] == "\n":
+            i += 2
+            continue
         elif ch == "\\" and i + 1 < len(text):
             out.append(ch)
             i += 1
@@ -131,7 +223,7 @@ def strip_comments(text):
             quote = "" if ch == '"' else quote
         elif ch in "'\"":
             quote = ch
-        elif ch == "#" and (i == 0 or text[i - 1] in WORD_START):
+        elif ch == "#" and (not out or out[-1] in WORD_START):
             while i < len(text) and text[i] != "\n":
                 i += 1
             continue
@@ -182,9 +274,174 @@ def hides_config(value):
     return low.startswith(("alias.", "include"))
 
 
+def strip_redirections(args):
+    out, i = [], 0
+    while i < len(args):
+        tok = args[i]
+        if tok and set(tok) <= REDIRECT_CHARS:
+            if out and out[-1].isdigit():
+                out.pop()
+            i += 2
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
+def classify(args, family, stop_at_dashdash=True):
+    found, i = [], 0
+    dangerous = family["dangerous"]
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            if family.get("pathspec") and i < len(args):
+                found.append("pathspec")
+            if stop_at_dashdash:
+                break
+            continue
+        if family.get("pathspec") and not (arg.startswith("-") and len(arg) > 1):
+            found.append("pathspec")
+            continue
+        if arg.startswith("--") and len(arg) > 2:
+            name, eq, _ = arg[2:].partition("=")
+            if name in dangerous:
+                hits = [name]
+            else:
+                hits = [d for d in dangerous if d.startswith(name)]
+            found.extend(dangerous[h] for h in hits)
+            takes_value = any(v.startswith(name) for v in family["value_long"])
+            if not eq and takes_value and all(h in family["value_long"] for h in hits):
+                i += 1
+            continue
+        if arg.startswith("-") and len(arg) > 1:
+            letters = arg[1:]
+            for j, ch in enumerate(letters):
+                if ch in family["short"]:
+                    found.append(family["short"][ch])
+                if ch in family["value_short"]:
+                    if j == len(letters) - 1:
+                        i += 1
+                    break
+                if ch in family["attached_short"]:
+                    break
+    return sorted(set(found))
+
+
+def flags_column(args):
+    commit = ",".join(classify(args, COMMIT))
+    switch = ",".join(classify(args, SWITCH))
+    return f"c:{commit};s:{switch}"
+
+
+def is_secret(path):
+    base = path.rsplit("/", 1)[-1]
+    if base.startswith(".env"):
+        return base not in SECRET_KEEP
+    return base.endswith((".pem", ".key")) or base.startswith("credentials.")
+
+
+def staged_secrets(dry_run_output):
+    paths = (line[5:-1] for line in dry_run_output.splitlines()
+             if line.startswith("add '") and line.endswith("'"))
+    return [p for p in paths if is_secret(p)]
+
+
+def lock_held(directory):
+    try:
+        res = subprocess.run(["git", "-C", directory, "rev-parse", "--git-path", "index.lock"],
+                             stdin=subprocess.DEVNULL, capture_output=True, timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    lock = res.stdout.decode(errors="replace").strip()
+    if res.returncode != 0 or not lock:
+        return False
+    return os.path.exists(os.path.join(directory, lock))
+
+
+def readable_git_dir(directory):
+    try:
+        res = subprocess.run(["git", "-C", directory, "rev-parse", "--absolute-git-dir"],
+                             stdin=subprocess.DEVNULL, capture_output=True, timeout=1,
+                             env={**os.environ, "LC_ALL": "C"})
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if res.returncode != 0:
+        return False
+    parts = os.path.normpath(res.stdout.decode(errors="replace").strip()).split(os.sep)
+    if parts[-1] == ".git" or parts[-3:-1] == [".git", "worktrees"]:
+        return True
+    return any(parts[k] == ".git" and parts[k + 1] == "modules" for k in range(len(parts) - 2))
+
+
+def dry_run(directory, args):
+    if not readable_git_dir(directory):
+        named = [a for a in args if a != "--" and is_secret(a)]
+        if named:
+            return "secret:" + ",".join(p.replace("\t", " ") for p in named)
+        return "unsafe:" + directory.replace("\t", " ").replace("\n", " ")
+    if state["deadline"] is None:
+        state["deadline"] = time.monotonic() + DRY_RUN_BUDGET
+    left = state["deadline"] - time.monotonic()
+    if left <= 0:
+        return "timeout"
+    try:
+        proc = subprocess.Popen(["git", "-C", directory, "add", "--dry-run", *args],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, env={**os.environ, "LC_ALL": "C"})
+    except OSError:
+        return "failed"
+    try:
+        out, _ = proc.communicate(timeout=left)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(0.5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        return "timeout"
+    if proc.returncode != 0:
+        return "failed"
+    secrets = staged_secrets(out.decode(errors="replace"))
+    if secrets:
+        return "secret:" + ",".join(p.replace("\t", " ") for p in secrets)
+    return "ok"
+
+
+def add_verdict(args, directory, other_globals, git_env, dir_unread):
+    for arg in args:
+        if arg == "--":
+            break
+        if arg.startswith("--") and len(arg) > 2:
+            name = arg[2:].partition("=")[0]
+            if name.startswith("no-d") and "no-dry-run".startswith(name):
+                return "nodry"
+            if "force".startswith(name):
+                return "force"
+        elif arg.startswith("-") and len(arg) > 1 and "f" in arg[1:]:
+            return "force"
+    for arg in args:
+        if "$" in arg or "`" in arg:
+            return "hidden"
+        name = arg[2:].partition("=")[0] if arg.startswith("--") else ""
+        if name.startswith("pathspec-f") and (
+                "pathspec-from-file".startswith(name) or "pathspec-file-nul".startswith(name)):
+            return "hidden"
+    if other_globals or git_env:
+        return "hidden"
+    if dir_unread:
+        return "failed"
+    if lock_held(directory):
+        return "locked"
+    return dry_run(directory, args)
+
+
 def parse_git(seg, start, base, assigns):
     directory, alias_cfg, i = base, 0, start
     git_dir = work_tree = None
+    other_globals = dir_unread = False
+    git_env = any(a.startswith("GIT_") for a in assigns)
     for assign in assigns:
         name, _, value = assign.partition("=")
         if name == "GIT_DIR":
@@ -203,8 +460,12 @@ def parse_git(seg, start, base, assigns):
             i += 1
             if not eq:
                 value = None
+        if opt not in ALLOWED_ADD_GLOBALS:
+            other_globals = True
         if opt == "-C":
             directory = os.path.join(directory, value)
+            if value.startswith("~") or any(ch in value for ch in "$`*?[{}"):
+                dir_unread = True
         if name == "--git-dir" and value is not None:
             git_dir = value
         if name == "--work-tree" and value is not None:
@@ -228,7 +489,16 @@ def parse_git(seg, start, base, assigns):
     if len(rows) >= MAX_GIT_SEGMENTS:
         state["capped"] = True
         return
-    rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}")
+    args = strip_redirections(seg[i + 1:])
+    if sub not in ADD_SUBS:
+        addv = "-"
+    elif state["cd"]:
+        addv = "cd"
+    else:
+        addv = add_verdict(args, directory, other_globals, git_env, dir_unread)
+        if (addv == "ok" or addv.startswith("unsafe:")) and state["prior"]:
+            addv = "prior"
+    rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}\t{flags_column(args)}\t{addv.replace(chr(10), ' ')}")
 
 
 def nested(text, base, depth):
@@ -238,8 +508,20 @@ def nested(text, base, depth):
         state["unread"] = True
 
 
+def quiet_git(seg, i):
+    if seg[i] != "git" and not seg[i].endswith("/git"):
+        return False
+    j = i + 1
+    while j < len(seg) and seg[j].startswith("-"):
+        j += 2 if seg[j] in WITH_VALUE else 1
+    return j >= len(seg) or seg[j] in QUIET_SUBS
+
+
 def walk(text, base, depth):
+    pending = False
     for seg in segments(tokens(text)):
+        if pending:
+            state["prior"] = True
         if depth < 3:
             for tok in seg:
                 if "$(" in tok or "`" in tok:
@@ -248,8 +530,13 @@ def walk(text, base, depth):
         while i < len(seg) and (seg[i] in PREFIXES or is_assignment(seg[i])):
             i += 1
         if i >= len(seg):
+            pending = any(is_assignment(t) for t in seg)
             continue
+        pending = not quiet_git(seg, i)
         prog = seg[i]
+        if prog in ("cd", "pushd"):
+            state["cd"] = True
+            continue
         if prog == "eval":
             if depth < 3:
                 nested(" ".join(seg[i + 1:]), base, depth + 1)
@@ -275,28 +562,147 @@ def walk(text, base, depth):
             parse_git(seg, i + 1, base, [t for t in seg[:i] if is_assignment(t)])
         elif any(t == "git" or t.endswith("/git") for t in seg[i + 1:]):
             state["unread"] = True
+    if pending:
+        state["prior"] = True
 
 
+def logical_lines(text):
+    out, cur, quote, i = [], [], "", 0
+    while i < len(text):
+        ch = text[i]
+        if quote == "'":
+            quote = "" if ch == "'" else quote
+        elif ch == "\\" and text[i + 1:i + 2] == "\n":
+            i += 2
+            continue
+        elif ch == "\\" and i + 1 < len(text):
+            cur.append(ch)
+            i += 1
+            ch = text[i]
+        elif quote == '"':
+            quote = "" if ch == '"' else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "\n":
+            out.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(ch)
+        i += 1
+    out.append("".join(cur))
+    return out
+
+
+def heredoc_free_lines(text):
+    lines = text.split("\n")
+    kept, i = [], 0
+    while i < len(lines):
+        kept.append(lines[i])
+        match = HEREDOC.search(lines[i])
+        if match:
+            strip_tabs, word = match.group(1) == "-", match.group(2)
+            for j in range(i + 1, len(lines)):
+                candidate = lines[j].lstrip("\t") if strip_tabs else lines[j]
+                if candidate == word:
+                    i = j
+                    break
+        i += 1
+    return logical_lines("\n".join(kept))
+
+
+def fallback_rows(text, base, strict=False):
+    found = []
+    for line in heredoc_free_lines(text):
+        try:
+            words, split_only = tokens(line), False
+        except ValueError:
+            words, split_only = line.split(), True
+        for seg in segments(words):
+            for k, tok in enumerate(seg):
+                if tok != "git" and not tok.endswith("/git"):
+                    continue
+                j = k + 1
+                while j < len(seg) and seg[j].startswith("-"):
+                    j += 2 if seg[j] in WITH_VALUE else 1
+                if j >= len(seg):
+                    continue
+                sub, rest = seg[j], strip_redirections(seg[j + 1:])
+                if sub in ADD_SUBS:
+                    found.append(f"?fb-add\t{base}\t0\t0\t-\t-")
+                elif sub in ("commit", "switch", "checkout"):
+                    family = COMMIT if sub == "commit" else SWITCH
+                    if split_only:
+                        bare = [w.replace("'", "").replace('"', "") for w in rest]
+                        flags = [f for f in classify(bare, family, stop_at_dashdash=False)
+                                 if f != "pathspec"]
+                    else:
+                        flags = classify(rest, family)
+                    if strict:
+                        found.append(f"?fb-cap\t{base}\t0\t0\t{sub}:{','.join(flags)}\t-")
+                    elif flags:
+                        found.append(f"?fb-flags\t{base}\t0\t0\t{', '.join(flags)}\t-")
+    return found
+
+
+def raw_rows(text, base, adds_only=False):
+    words = [w for w in RAW_SEPARATORS.split(text.replace("\\\n", "")) if w]
+    found = []
+    for k, word in enumerate(words):
+        if word != "git" and not word.endswith("/git"):
+            continue
+        j = k + 1
+        while j < len(words) and words[j].startswith("-"):
+            j += 2 if words[j] in WITH_VALUE else 1
+        if j >= len(words):
+            continue
+        if words[j] in ADD_SUBS:
+            found.append(f"?fb-add\t{base}\t0\t0\t-\t-")
+        elif not adds_only and words[j] in ("commit", "switch", "checkout"):
+            found.append(f"?fb-cap\t{base}\t0\t0\t{words[j]}:\t-")
+    return found
+
+
+failed = False
 try:
     walk(sys.argv[1], sys.argv[2], 0)
 except ValueError:
-    print("UNPARSABLE")
-    raise SystemExit(0)
-if state["unread"]:
-    rows.append("?unread\t.\t0\t0")
-print("\n".join(rows))
-if state["capped"]:
-    print("UNPARSABLE")
+    failed = True
+base_dir = sys.argv[2].replace("\t", " ").replace("\n", " ")
+if failed:
+    plain = "\n".join(heredoc_free_lines(sys.argv[1]))
+    out = fallback_rows(sys.argv[1], base_dir) + raw_rows(plain, base_dir, adds_only=True)
+    out.append("UNPARSABLE")
+else:
+    out = rows
+    if state["unread"]:
+        out.append("?unread\t.\t0\t0\t-\t-")
+        out.extend(fallback_rows(sys.argv[1], base_dir))
+    if state["capped"]:
+        out.extend(fallback_rows(sys.argv[1], base_dir, strict=True))
+        out.extend(raw_rows(sys.argv[1], base_dir) + ["UNPARSABLE"])
+out.append(f"#end\t{len(out)}")
+print("\n".join(out))
 PY
 }
 
+# The parser is trusted only when python3 runs, exits 0 and prints its end
+# marker last; anything else leaves PARSED empty and arms the floor below.
 PARSE_FAILED=0
-PARSED=$(parse_segments "$COMMAND" "$BASE_DIR") || PARSE_FAILED=1
+PARSE_TRUSTED=0
+if command -v python3 >/dev/null 2>&1 && PARSED=$(parse_segments "$COMMAND" "$BASE_DIR") \
+   && [[ "${PARSED##*$'\n'}" =~ ^#end$'\t'[0-9]+$ ]]; then
+    PARSE_TRUSTED=1
+    if [[ "$PARSED" == *$'\n'* ]]; then PARSED="${PARSED%$'\n'*}"; else PARSED=""; fi
+else
+    PARSED=""
+    PARSE_FAILED=1
+fi
 [[ $'\n'"$PARSED"$'\n' == *$'\n'UNPARSABLE$'\n'* ]] && PARSE_FAILED=1
 
 # The floor reads the first parsed call's tree; the `-C` regex is the fallback
 # for a command the parser could not read.
-FIRST_DIR=$(printf '%s\n' "$PARSED" | awk -F'\t' 'NF > 1 && $1 != "?unread" { print $2; exit }')
+FIRST_DIR=$(printf '%s\n' "$PARSED" | awk -F'\t' 'NF > 1 && $1 != "?unread" && $1 !~ /^\?fb-/ { print $2; exit }')
 [[ -n "$FIRST_DIR" ]] && CWD="$FIRST_DIR"
 
 # A marker row: a git call the parser did not read (wrapper, swallowed nested
@@ -355,10 +761,53 @@ if [[ "$IS_COMMIT" -eq 1 ]]; then
     fi
 fi
 
-while IFS=$'\t' read -r SUB DIR _ _; do
-    [[ -z "$SUB" || "$SUB" == UNPARSABLE || "$SUB" == "?unread" ]] && continue
+# The python floor: the parser did not run or cannot be trusted, so the
+# subcommand after each `git` word (global options and their values skipped)
+# decides alone — every add denied first, then every commit/switch/checkout asked.
+FLOOR_SUBS=()
+floor_subs() {
+    local text="${COMMAND//\\$'\n'/}" j
+    local -a words
+    text="${text//[;&|()\"\'\`\$]/ }"
+    read -ra words <<< "${text//$'\n'/ }"
+    for ((j = 0; j < ${#words[@]}; j++)); do
+        [[ "${words[j]}" == git || "${words[j]}" == */git ]] || continue
+        while ((j + 1 < ${#words[@]})) && [[ "${words[j + 1]}" == -* ]]; do
+            case "${words[j + 1]}" in
+                -C|-c|--git-dir|--work-tree|--namespace|--config-env|--exec-path|--attr-source) j=$((j + 2)) ;;
+                *) j=$((j + 1)) ;;
+            esac
+        done
+        if ((j + 1 < ${#words[@]})); then
+            FLOOR_SUBS+=("${words[j + 1]}")
+        fi
+    done
+    return 0
+}
+if [[ "$PARSE_TRUSTED" -eq 0 ]]; then
+    floor_subs
+    for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
+        [[ "$FLOOR_SUB" == add || "$FLOOR_SUB" == stage ]] && deny "$ADD_UNREADABLE_REASON"
+    done
+    for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
+        [[ "$FLOOR_SUB" == commit ]] && on_protected_branch && deny "$(commit_reason "$BRANCH")"
+    done
+    for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
+        if [[ "$FLOOR_SUB" =~ ^(commit|switch|checkout)$ ]]; then
+            ask "The hook could not run its parser (python3 missing or failed); this git $FLOOR_SUB is not checked. Show the exact call, then let the user decide."
+        fi
+    done
+fi
+
+while IFS=$'\t' read -r SUB DIR _ _ _ ADDV; do
+    [[ "$SUB" == "?fb-add" ]] && deny "$ADD_UNREADABLE_REASON"
+    [[ -z "$SUB" || "$SUB" == UNPARSABLE || "$SUB" == "?unread" || "$SUB" == "?fb-flags" || "$SUB" == "?fb-cap" ]] && continue
+    if [[ -n "$ADDV" && "$ADDV" != "-" && "$ADDV" != ok && "$ADDV" != unsafe:* ]]; then
+        deny "$(add_reason "$ADDV")"
+    fi
     effective_sub "$SUB" "$DIR"
     [[ "$EFF_SUB" == commit ]] && dir_protected "$DIR" && deny "$(commit_reason "$SEG_BRANCH")"
+    [[ "$SUB" != add && "$SUB" != stage && ( "$EFF_SUB" == add || "$EFF_SUB" == stage ) ]] && deny "$ADD_HIDDEN_REASON"
 done <<< "$PARSED"
 
 # -----------------------------------------------------------------------------
@@ -393,23 +842,40 @@ if echo "$COMMAND" | grep -qE '\bgit\s+(merge|rebase)\b' && on_protected_branch;
     ask "$(merge_reason "$BRANCH")"
 fi
 
-while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE; do
-    [[ -z "$SUB" || "$SUB" == UNPARSABLE || "$SUB" == "?unread" ]] && continue
+while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE FLAGS ADDV; do
+    [[ "$ADDV" == unsafe:* ]] && ask "This git add targets '${ADDV#unsafe:}', not a repository the hook can read safely (its git dir is not a .git directory or a linked worktree's), so the hook did not dry-run it and did not check what this stages, so it may include secrets. Show the exact call, then let the user decide."
+    [[ "$SUB" == "?fb-flags" ]] && ask "The hook could not read this git call (a wrapper or a parse failure), and it carries $FLAGS. Show the exact call, then let the user decide."
+    if [[ "$SUB" == "?fb-cap" ]]; then
+        CAP_ITEMS="${FLAGS#*:}"
+        ask "The hook could not read this whole call (more than 50 git calls); this git ${FLAGS%%:*} carries ${CAP_ITEMS:-nothing the hook could check}. Show the exact call, then let the user decide."
+    fi
+    [[ -z "$SUB" || "$SUB" == UNPARSABLE || "$SUB" == "?unread" || "$SUB" == "?fb-add" ]] && continue
     [[ "$SUB" == "?hidden" ]] && ask "The git subcommand is built from an expansion, so it is hidden. Show the expanded command, then let the user decide."
     [[ "$ALIAS_CFG" == 1 ]] && ask "This git call defines an alias or config include outside the repo config, so the subcommand it runs is hidden. Show the expanded command, then let the user decide."
     if [[ "$SUB" == push || "$SUB" == send-pack ]]; then
         [[ "$FORCE" == 1 ]] && ask "$FORCE_REASON"
         ask "$PUSH_REASON"
     fi
+    effective_sub "$SUB" "$DIR"
     if ! is_builtin "$SUB"; then
         [[ -d "$DIR" ]] || ask "'git $SUB' may be an alias, and '$DIR' does not exist to read it from. Show what it runs, then let the user decide."
-        effective_sub "$SUB" "$DIR"
         if [[ "$ALIAS" == '!'* ]] || echo "$ALIAS" | grep -qE '\b(push|send-pack|merge|rebase)\b'; then
             ask "'git $SUB' is an alias for '$ALIAS'. Show what it runs, then let the user decide."
         fi
         if [[ -n "$ALIAS" ]] && ! is_builtin "$EFF_SUB"; then
             ask "'git $SUB' is an alias for '$ALIAS', which is not a plain builtin command (an alias chain). Show what it runs, then let the user decide."
         fi
+    fi
+    if [[ -n "$ALIAS" && "$ALIAS" == *[[:space:]]* ]] && [[ "$EFF_SUB" =~ ^(commit|switch|checkout)$ ]]; then
+        ask "'git $SUB' is an alias for '$ALIAS', which carries its own flags. Show what it runs, then let the user decide."
+    fi
+    COMMIT_FLAGS=$(row_flags c "$FLAGS")
+    SWITCH_FLAGS=$(row_flags s "$FLAGS")
+    if [[ "$EFF_SUB" == commit && -n "$COMMIT_FLAGS" ]]; then
+        ask "This commit uses $COMMIT_FLAGS (it rewrites history, skips the hooks, or commits beyond what is staged). Say why, then let the user decide."
+    fi
+    if [[ "$EFF_SUB" =~ ^(switch|checkout)$ && -n "$SWITCH_FLAGS" ]]; then
+        ask "This git $EFF_SUB uses $SWITCH_FLAGS: it discards local changes or resets an existing branch. Say why, then let the user decide."
     fi
     if ! git -C "$DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         case "$SUB" in
@@ -430,5 +896,60 @@ if [[ "$PARSE_FAILED" -eq 1 ]]; then
         ask "The hook could not read which git command runs here. Show the exact git calls, then let the user decide."
     fi
 fi
+
+grammar_triggered() {
+    [[ "$1" =~ git($|[^A-Za-z0-9_]) ]] && [[ "$1" =~ (^|[^A-Za-z0-9_])(add|stage|commit|switch)($|[^A-Za-z0-9_]) ]]
+}
+
+grammar_value_ok() {
+    [[ "$1" != -* && "$1" != . && "/$1/" != */../* ]]
+}
+
+grammar_add_ok() {
+    local dir="$1" tree="$BASE_DIR" path full
+    local -a paths
+    if [[ -n "$dir" ]]; then
+        grammar_value_ok "$dir" || return 1
+        if [[ "$dir" == /* ]]; then tree="$dir"; else tree="$BASE_DIR/$dir"; fi
+    fi
+    read -r -a paths <<< "$2"
+    for path in "${paths[@]}"; do
+        grammar_value_ok "$path" || return 1
+        if [[ "$path" == /* ]]; then full="$path"; else full="$tree/$path"; fi
+        [[ -d "$full" ]] && return 1
+    done
+    return 0
+}
+
+grammar_strict() {
+    local text="$1"
+    local safe='[A-Za-z0-9._/@+-]+' word='[A-Za-z0-9._/@+:-]+' branch='[A-Za-z0-9._/-]+'
+    local double='"[^"$`\\]+"' single="'[^'\$\`\\\\]+'"
+    local add_form="^git( -C ($safe))? (add|stage)( --)?(( $safe)+)\$"
+    local commit_form="^git commit -m ($double|$single|$word)\$"
+    local switch_form="^git switch -c ($branch)\$"
+    text="${text#"${text%%[! $'\t']*}"}"
+    text="${text%"${text##*[! $'\t']}"}"
+    [[ "$text" =~ [[:cntrl:]] ]] && return 1
+    if [[ "$text" =~ $add_form ]]; then
+        grammar_add_ok "${BASH_REMATCH[2]}" "${BASH_REMATCH[5]}"
+    elif [[ "$text" =~ $commit_form ]]; then
+        [[ "${BASH_REMATCH[1]}" != -* ]]
+    elif [[ "$text" =~ $switch_form ]]; then
+        [[ "${BASH_REMATCH[1]}" != -* ]]
+    else
+        return 1
+    fi
+}
+
+grammar_decide() {
+    # Under a UTF-8 locale, [A-Za-z0-9] in a bash regex also matches non-ASCII letters.
+    local LC_ALL=C
+    grammar_triggered "$COMMAND" || grammar_triggered "$NORM" || return 0
+    grammar_strict "$COMMAND" && return 0
+    ask "This is not a plain git call: only \`git add <paths>\`, \`git commit -m \"<one line>\"\` and \`git switch -c <branch>\` run without a prompt, each alone in its call. Show the exact call, then let the user decide."
+}
+
+grammar_decide
 
 exit 0

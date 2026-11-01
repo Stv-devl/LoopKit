@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 """Resolve the write targets of a Bash command: `python3 -B shell_targets.py <cmd> <base>`.
 
 Prints `<verb>\t<target>` rows, then always `#end\t<row count>`. A target is an

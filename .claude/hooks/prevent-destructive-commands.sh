@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -422,9 +423,10 @@ if [[ "$GUARD_FAILED" == 0 ]]; then
     fi
 fi
 
-# One verdict per row, D > G > P > U; the reason shown is the first row of the
-# strongest verdict over the whole command.
-GUARD_DENY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U=""
+# One verdict per row, D > G > P > U > R; the reason shown is the first row of
+# the strongest verdict over the whole command. R: acceptEdits auto-approves
+# `rm`, so any other recursive delete inside the project asks.
+GUARD_DENY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
 guard_classify() {
     local verb="$1" target="$2" rel text
@@ -447,6 +449,8 @@ guard_classify() {
         [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
     elif [[ ( "$verb" == rm-r || "$verb" == mv ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
+    elif [[ "$verb" == rm-r ]]; then
+        [[ -n "$GUARD_ASK_R" ]] || GUARD_ASK_R="$rel"
     fi
     return 0
 }
@@ -488,6 +492,9 @@ if [[ -n "$GUARD_ASK_P" ]]; then
 fi
 if [[ -n "$GUARD_ASK_U" ]]; then
     ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails."
+fi
+if [[ -n "$GUARD_ASK_R" ]]; then
+    ask "This rm deletes recursively ($GUARD_ASK_R). Say what it removes and why, then let the user decide."
 fi
 
 # =============================================================================

@@ -145,7 +145,7 @@ track ran in a worktree.
    - the worktree belongs to **another** track → `git worktree remove
      .claude/worktrees/<slug>` then `git branch -d feat/<slug>`.
 
-   Never `--force`, never `rm -rf` (the Bash hook blocks both). A refusal means
+   Never `--force`, never `rm -rf` (the Bash hook denies or asks on both). A refusal means
    uncommitted work: report it, don't override it.
 
 A red gate or a failed review means the track stays in its worktree and loops on

@@ -146,6 +146,18 @@ alors `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`.
 | Avec écran | go de la spec, interface, plan, merge | interface (+ contrat), plan, merge |
 | Sans écran | go de la spec, plan, merge | plan (+ contrat), merge |
 
+Entre ces arrêts, la passe ne demande pas d'accord pour les éditions,
+`git add <chemins>`, `git commit -m "<une ligne>"` ni les gates : ces
+formes strictes, seules dans leur appel, sont les seules à passer sans invite.
+Les invites qui restent : `git push`, `gh pr`, un commit avec `--amend` (ou
+`--no-verify`, `--all`, `--include`, `--only`, `--patch`, un pathspec), tout
+autre appel qui nomme `git` et `add`, `stage`, `commit` ou `switch`, un
+`switch`/`checkout` avec
+`--discard-changes` (ou `--force`, `-C`), un `rm -r`, et les écritures sur les
+chemins gardés (`docs/ADAPTATION.md` § 14). Un projet dont les hooks de garde ne
+sont pas à jour garde toutes ses invites, et perd le P1 qu'une installation
+précédente lui avait donné (§ 15).
+
 Un contrat amendé relance la phase qu'il invalide et tout ce qui suit (trois tours
 au plus). Un test gelé corrigé en EXECUTE n'arrête rien : il est consigné dans le
 `## Gate` du plan et tu le confirmes au merge.

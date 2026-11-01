@@ -454,4 +454,69 @@ grep -Fq '`.claude/settings.json`' <<<"$adapt_guard"
 grep -Fq '`.claude/settings.local.json`' <<<"$adapt_guard"
 if grep -Fq 'settings*.json' <<<"$adapt_guard"; then exit 1; fi
 
+# K1 light-permissions-git: the narrow permissions, exactly; the commit and
+# staging forms the git hook polices; keys ignored; the branch hint.
+SETTINGS="$ROOT/.claude/settings.json"
+jq -e '.permissions.defaultMode == "acceptEdits"' "$SETTINGS" >/dev/null
+for allow in 'Bash(git add *)' 'Bash(git commit -m *)' 'Bash(git switch -c *)' \
+             'Bash(git branch --show-current)' 'Bash(git worktree list)'; do
+    jq -e --arg a "$allow" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
+done
+for wide in 'Bash(git commit *)' 'Bash(git switch *)' 'Bash(git branch *)' 'Bash(git push *)' 'Bash(git *)'; do
+    if jq -e --arg a "$wide" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null; then exit 1; fi
+done
+grep -Fq 'git commit -m "<one line>"' "$GITHUB_AGENT"
+grep -Fq 'never `.`, `-A`, `--all`, `-u`' "$GITHUB_AGENT"
+for ignored in '*.pem' '*.key' 'credentials.*'; do
+    grep -qxF "$ignored" "$ROOT/.gitignore"
+done
+GIT_HOOK="$ROOT/.claude/hooks/enforce-git-workflow.sh"
+grep -Fq 'git switch -c feat/<scope>' "$GIT_HOOK"
+if grep -Fq 'git checkout -b' "$GIT_HOOK"; then exit 1; fi
+# K1 docs: the hold-back and the measure method; the prompts a light pass keeps.
+for needle in 'P1 held back' 'tool_use' 'tool_result'; do
+    grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+for needle in 'git push' 'gh pr' '--amend' '--discard-changes' 'chemins gardés'; do
+    grep -Fq -- "$needle" "$ROOT/docs/Claude_Workflows.md"
+done
+
+# K1b install.sh strips exactly the five P1 allows K1 names, no other list.
+P1_KIT="$(sed -n "/^P1_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^P1_ALLOWS='//; s/'\$//")"
+jq -en --argjson kit "$P1_KIT" \
+    '($kit | sort) == (["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
+                        "Bash(git branch --show-current)", "Bash(git worktree list)"] | sort)' >/dev/null
+# K1c docs: the removal on hold-back, settings.local.json, and the prompts the
+# amendment adds to a light pass.
+for needle in 'retirés' 'settings.local.json'; do
+    grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+for needle in 'rm -r' 'pathspec'; do
+    grep -Fq -- "$needle" "$ROOT/docs/Claude_Workflows.md"
+done
+if grep -Fq 'blocks both' "$ROOT/.claude/commands/loop/ship.md"; then exit 1; fi
+# K1d amendment 2: git add alone and git stage in §15; the github agent stages
+# from another tree with -C and knows the new asks; the light pass lists --patch.
+adapt_p1=$(section "$ADAPTATION" '## 15. Permissions étroites' '## Vérifier que le câblage tient')
+for needle in 'seul dans son appel' 'git stage'; do
+    grep -Fq -- "$needle" <<<"$adapt_p1"
+done
+for needle in 'git -C <tree> add' '--include'; do
+    grep -Fq -- "$needle" "$GITHUB_AGENT"
+done
+grep -Fq -- '--patch' "$ROOT/docs/Claude_Workflows.md"
+# K1e git-allow-grammar: the strict forms are the only prompt-free ones.
+grep -Fq 'formes strictes' <<<"$adapt_p1"
+if grep -Fq 'peuvent le précéder' <<<"$adapt_p1"; then exit 1; fi
+grep -Fq 'strict forms' "$GITHUB_AGENT"
+if grep -Fq 'git add/stage/status/diff/log' "$GITHUB_AGENT"; then exit 1; fi
+grep -Fq 'formes strictes' "$ROOT/docs/Claude_Workflows.md"
+# K1f the three guard hooks fail closed: every handler naming one carries onFailure=block
+# (a timeout or a crash otherwise falls through to the normal permission flow).
+jq -e '[.hooks[][].hooks[]
+        | select(.command | endswith("protect-files.sh") or endswith("prevent-destructive-commands.sh")
+                            or endswith("enforce-git-workflow.sh"))]
+       | length >= 5 and all(.onFailure == "block")
+         and ([.[].command | sub(".*/"; "")] | unique | length == 3)' "$ROOT/.claude/settings.json" >/dev/null
+
 echo 'workflow contract fixtures: green.'

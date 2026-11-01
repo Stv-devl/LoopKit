@@ -79,7 +79,7 @@ TEST_SUPPORT_RE='(^|/)(tests?|__tests__|__mocks__|__fixtures__|fixtures|e2e)/|\.
 # `agent_type` is set by Claude Code when the call comes from a sub-agent.
 AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
 if [[ "$AGENT_TYPE" == test-writer && ! "$FILE_PATH" =~ $TEST_FILE_RE ]]; then
-    REL_PATH=$(python3 -c 'import os, sys; p, r = (os.path.normpath(a) for a in sys.argv[1:]); print(os.path.relpath(p, r) if p.startswith(r + os.sep) else p)' \
+    REL_PATH=$(python3 -I -c 'import os, sys; p, r = (os.path.normpath(a) for a in sys.argv[1:]); print(os.path.relpath(p, r) if p.startswith(r + os.sep) else p)' \
         "$FILE_PATH" "${CLAUDE_PROJECT_DIR:-$PWD}") \
         || deny "test-writer write to '$FILE_PATH' refused: python3 is needed to read the path against the project root and is not available."
     [[ "$REL_PATH" =~ $TEST_SUPPORT_RE ]] || deny "test-writer may only write test files and their fixtures; '$FILE_PATH' is neither (.claude/agents/test-writer.md). Return the failing output instead: the implementation is written after the RED, by the session or the implementer."

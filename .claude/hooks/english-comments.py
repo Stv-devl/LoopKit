@@ -130,7 +130,7 @@ LOOSE_PY = re.compile(r"(^|/)(test_[^/]*|conftest)\.py$|/(alembic|migrations)/ve
 # Python's tooling directives: never prose about the code.
 PY_DIRECTIVE = re.compile(
     r"^\s*(!|-\*-|noqa|type:\s*ignore|pragma\s*:|pylint\s*:|nosec|ruff\s*:|"
-    r"mypy\s*:|fmt\s*:\s*(on|off)|isort\s*:)",
+    r"mypy\s*:|fmt\s*:\s*(on|off)|isort\s*:|cwk-guard-api:\s*\d+\s*$)",
     re.IGNORECASE,
 )
 

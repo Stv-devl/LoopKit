@@ -116,9 +116,20 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
 
 1. `git status` + `git diff` (and `git diff --staged`) — understand the change.
    `git log --oneline -10` — match the commit style.
-2. Stage the relevant files (`git add <paths>`; avoid blanket `git add -A` if
-   unrelated changes are present — tell the user if so).
-3. Draft the commit subject. Commit locally (no signature).
+2. Stage the relevant files with `git add <explicit paths>`:
+   never `.`, `-A`, `--all`, `-u`, a directory or a glob. Unrelated changes
+   present → leave them unstaged and tell the user. Only strict forms run
+   without a prompt, each alone in its call, on one line: nothing before it,
+   no `cd`, no `&&`, no redirection, ASCII paths without spaces.
+   For another tree, `git -C <tree> add <paths>`: the hook accepts it, no P1
+   allow matches, so it prompts.
+3. Draft the commit subject. Commit locally (no signature), exactly
+   `git commit -m "<one line>"` — no heredoc, no `$(...)`, no `-a`, no `$`,
+   backtick or `\` in the message. That form runs without a prompt, and so do
+   `git commit -m '<one line>'` and an unquoted `git commit -m <word>`; a new branch is `git switch -c <branch>`, alone too. The git hook asks
+   on anything else that names add, stage, commit or switch, including `--amend`,
+   `--no-verify`, `--all`, `--include`, `--only`, `--patch`, `--interactive`
+   and a pathspec.
 4. If push/PR was requested: draft the message, **show it, ask, then run**.
 5. For a PR: `gh pr create --title "<short>" --body "<markdown>"` — base `main`
    unless told otherwise. Show the title + body first.

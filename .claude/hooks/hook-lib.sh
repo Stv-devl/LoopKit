@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: hook-lib (sourced, never executed)
 # Purpose: three things every hook needs and none is worth re-writing per file

@@ -8,6 +8,26 @@ FIXTURES_DIR="${FIXTURES_DIR:-$HOOKS_DIR/fixtures}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$HOOKS_DIR/../.." && pwd)}"
 FAILURES=0
 CASES=0
+# The git fixtures must not depend on this machine's git config (a global
+# excludesFile ignoring *.pem would turn a deny into a pass).
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# Git still reads $XDG_CONFIG_HOME/git/ignore as its default excludesFile (the
+# ~/.config one only when XDG_CONFIG_HOME is unset): point it at an empty scratch dir.
+CWK_TEST_HOME="$(mktemp -d)"
+trap 'rm -r "$CWK_TEST_HOME"' EXIT
+export XDG_CONFIG_HOME="$CWK_TEST_HOME/.config"
+
+# no_python_bin <dir>: a PATH directory holding every tool a hook needs, python3 aside.
+no_python_bin() {
+    local tool
+    mkdir -p "$1"
+    for tool in env bash dirname basename date jq grep sed cat tr head tail cut sort uniq \
+                mktemp rm mkdir wc readlink realpath sha256sum awk ls touch cp mv ln tee \
+                id uname sleep timeout git; do
+        [[ -x "$(command -v "$tool" 2>/dev/null)" ]] && ln -sf "$(command -v "$tool")" "$1/$tool"
+    done
+    return 0
+}
 
 fail() {
     printf 'FAIL %s / %s: %s\n' "$1" "$2" "$3" >&2
@@ -81,6 +101,7 @@ PY
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
     local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT"
+    local hook_path="$PATH" real_git
     tmp="$(mktemp -d)"
     fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
@@ -130,7 +151,12 @@ run_case() {
                     printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
                     ;;
                 # Every git-hook fixture gets the same repo: __MAIN_TREE__ on
-                # main, __FEAT_TREE__ a worktree on feat/x, and two aliases.
+                # main, __FEAT_TREE__ a worktree on feat/x, aliases, and two
+                # tracked files. `-secrets-` cases add untracked secrets to the
+                # feat tree; `-shim-` cases put a git that stalls on
+                # `add --dry-run` first on the hook's PATH; `-envmod-`,
+                # `-nopy-`, `-badpy-`, `-ignored-`, `-envkeep-`, `-stalias-`
+                # are described where they are built below.
                 enforce-git-workflow.sh:*)
                     git -C "$tmp" init -q -b main
                     git -C "$tmp" config user.email fixture@loopkit.invalid
@@ -139,15 +165,60 @@ run_case() {
                     git -C "$tmp" config alias.q '!sh -c x'
                     git -C "$tmp" config alias.a p
                     git -C "$tmp" config alias.ci commit
-                    git -C "$tmp" commit -q --allow-empty -m seed
+                    mkdir -p "$tmp/src"
+                    printf '%s\n' 'export const x = 1' >"$tmp/src/x.ts"
+                    printf '%s\n' 'API_URL=' >"$tmp/.env.example"
+                    git -C "$tmp" add src/x.ts .env.example
+                    git -C "$tmp" commit -q -m seed
                     git -C "$tmp" worktree add -q "$tmp/.feat" -b feat/x
+                    if [[ "$fixture_name" == *-secrets-* ]]; then
+                        mkdir -p "$tmp/.feat/certs"
+                        printf '%s\n' key >"$tmp/.feat/certs/a.pem"
+                        printf '%s\n' 'API_KEY=x' >"$tmp/.feat/.env.local"
+                    fi
+                    if [[ "$fixture_name" == *-shim-* ]]; then
+                        real_git="$(command -v git)"
+                        mkdir -p "$tmp/.shim"
+                        printf '#!/bin/sh\ncase " $* " in *" add "*"--dry-run"*) sleep 3 ;; esac\nexec "%s" "$@"\n' \
+                            "$real_git" >"$tmp/.shim/git"
+                        chmod +x "$tmp/.shim/git"
+                        hook_path="$tmp/.shim:$PATH"
+                    fi
+                    if [[ "$fixture_name" == *-envmod-* ]]; then
+                        printf '%s\n' 'API_URL=x' >"$tmp/.feat/.env.example"
+                    fi
+                    # `-ignored-`: the secrets exist but an untracked .gitignore
+                    # hides them, so only a statement run before the add exposes them.
+                    if [[ "$fixture_name" == *-ignored-* ]]; then
+                        mkdir -p "$tmp/.feat/certs"
+                        printf '%s\n' key >"$tmp/.feat/certs/a.pem"
+                        printf '%s\n' 'API_KEY=x' >"$tmp/.feat/.env.local"
+                        printf '%s\n' '.env*' '*.pem' '!.env.example' >"$tmp/.feat/.gitignore"
+                    fi
+                    if [[ "$fixture_name" == *-envkeep-* ]]; then
+                        printf '%s\n' 'API_URL=' >"$tmp/.feat/.env.sample"
+                        printf '%s\n' 'API_URL=' >"$tmp/.feat/.env.template"
+                    fi
+                    if [[ "$fixture_name" == *-stalias-* ]]; then
+                        git -C "$tmp" config alias.st stage
+                    fi
+                    # `-nopy-`: no python3 on the hook's PATH; `-badpy-`: a
+                    # python3 that prints a plausible row and no end marker.
+                    if [[ "$fixture_name" == *-nopy-* || "$fixture_name" == *-badpy-* ]]; then
+                        no_python_bin "$tmp/.bin"
+                        if [[ "$fixture_name" == *-badpy-* ]]; then
+                            printf '#!/bin/sh\nprintf '"'"'commit\\t.\\t0\\t0\\tc:;s:\\t-\\n'"'"'\n' >"$tmp/.bin/python3"
+                            chmod +x "$tmp/.bin/python3"
+                        fi
+                        hook_path="$tmp/.bin"
+                    fi
                     ;;
             esac
             ;;
     esac
 
     set +e
-    printf '%s' "$input" | CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+    printf '%s' "$input" | PATH="$hook_path" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
         "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
     code=$?
     set -e
@@ -497,6 +568,363 @@ run_shell_guard_cases() {
     rm -r "$tmp"
 }
 
+# The git cases of docs/specs/light-permissions-git.md (G1-G13): same shape as
+# shell-guard.jsonl, run in the git fixture repo. `setup` (secrets, shim, envmod,
+# nopy, badpy, ignored, envkeep, stalias) lands in the fixture name, which is
+# what run_case keys the repo setup on.
+run_git_guard_cases() {
+    local file="$FIXTURES_DIR/_harness/git-guard.jsonl" tmp line id verdict command cwd reason setup count=0
+    local -A seen=()
+    local -a lines=()
+    if [[ ! -f "$file" ]]; then
+        fail enforce-git-workflow.sh git-guard.jsonl "case file is missing"
+        return 0
+    fi
+    mapfile -t lines < "$file"
+    tmp="$(mktemp -d)"
+    for line in "${lines[@]}"; do
+        [[ -z "$line" ]] && continue
+        if ! jq -e 'type == "object" and (.id | type == "string") and (.command | type == "string")
+                    and (.verdict | IN("ask", "deny", "pass"))' <<<"$line" >/dev/null 2>&1; then
+            fail enforce-git-workflow.sh git-guard.jsonl "unparsable or incomplete line: ${line:0:60}"
+            continue
+        fi
+        id="$(jq -r '.id' <<<"$line")"
+        verdict="$(jq -r '.verdict' <<<"$line")"
+        command="$(jq -r '.command' <<<"$line")"
+        cwd="$(jq -r '.cwd // "__FEAT_TREE__"' <<<"$line")"
+        reason="$(jq -r '.reason // ""' <<<"$line")"
+        setup="$(jq -r '.setup // "plain"' <<<"$line")"
+        if [[ -n "${seen[$id]:-}" ]]; then
+            fail enforce-git-workflow.sh "$id" "duplicate case id"
+            continue
+        fi
+        seen[$id]=1
+        if [[ "$verdict" != pass && -z "$reason" ]]; then
+            fail enforce-git-workflow.sh "$id" "ask/deny case has no reason"
+            continue
+        fi
+        count=$((count + 1))
+        jq -cn --arg command "$command" --arg cwd "$cwd" --arg reason "$reason" \
+            '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}
+             + (if $reason != "" then {_expect_reason: $reason} else {} end)' \
+            > "$tmp/$id-$setup-$verdict.json"
+        run_case enforce-git-workflow.sh "$tmp/$id-$setup-$verdict.json" "$verdict"
+    done
+    [[ "$count" -gt 0 ]] || fail enforce-git-workflow.sh git-guard.jsonl "case file holds no case"
+    rm -r "$tmp"
+}
+
+# G10: a dry-run past its deadline is stopped so git removes its own index.lock;
+# a lock already held is refused without running anything, and left alone.
+run_git_add_lock_case() {
+    local tmp feat lock input out code verdict
+    tmp="$(mktemp -d)"
+    feat="$tmp/.feat"
+    git -C "$tmp" init -q -b main
+    git -C "$tmp" config user.email fixture@loopkit.invalid
+    git -C "$tmp" config user.name Fixture
+    mkdir -p "$tmp/src"
+    printf '%s\n' 'export const x = 1' >"$tmp/src/x.ts"
+    git -C "$tmp" add src/x.ts
+    git -C "$tmp" commit -q -m seed
+    git -C "$tmp" worktree add -q "$feat" -b feat/x
+    printf '%s\n' 'export const x = 2' >"$feat/src/x.ts"
+    lock="$(git -C "$feat" rev-parse --path-format=absolute --git-path index.lock)"
+    printf '#!/bin/sh\nsleep 4\n' >"$tmp/slow-fsmonitor"
+    chmod +x "$tmp/slow-fsmonitor"
+    git -C "$feat" config core.fsmonitor "$tmp/slow-fsmonitor"
+    input="$(jq -cn --arg cwd "$feat" '{tool_name: "Bash", tool_input: {command: "git add src/x.ts"}, cwd: $cwd}')"
+
+    CASES=$((CASES + 1))
+    set +e
+    out="$(printf '%s' "$input" | CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    verdict="$(semantic_verdict "$code" <(printf '%s' "$out"))"
+    [[ "$verdict" == deny && "$out" == *timeout* ]] \
+        || fail enforce-git-workflow.sh G10.01 "expected deny with timeout, got $verdict '${out:0:120}'"
+    [[ ! -e "$lock" ]] || fail enforce-git-workflow.sh G10.01 "index.lock left behind after the timeout"
+    git -C "$feat" config --unset core.fsmonitor
+    git -C "$feat" add src/x.ts 2>/dev/null || fail enforce-git-workflow.sh G10.01 "a real git add fails after the timeout"
+
+    CASES=$((CASES + 1))
+    : >"$lock"
+    set +e
+    out="$(printf '%s' "$input" | CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    verdict="$(semantic_verdict "$code" <(printf '%s' "$out"))"
+    [[ "$verdict" == deny && "$out" == *"index.lock exists"* ]] \
+        || fail enforce-git-workflow.sh G10.02 "expected deny with index.lock exists, got $verdict '${out:0:120}'"
+    [[ -e "$lock" ]] || fail enforce-git-workflow.sh G10.02 "the held lock was removed"
+    rm -r "$tmp"
+}
+
+# G10.03: a secret list too long for one jq argument still ends in a deny, never in no output.
+run_git_add_long_reason_case() {
+    local tmp feat input out code verdict i pad
+    tmp="$(mktemp -d)"
+    feat="$tmp/.feat"
+    git -C "$tmp" init -q -b main
+    git -C "$tmp" config user.email fixture@loopkit.invalid
+    git -C "$tmp" config user.name Fixture
+    printf '%s\n' 'export const x = 1' >"$tmp/x.ts"
+    git -C "$tmp" add x.ts
+    git -C "$tmp" commit -q -m seed
+    git -C "$tmp" worktree add -q "$feat" -b feat/x
+    pad="$(printf 'p%.0s' $(seq 1 240))"
+    for i in $(seq 1 560); do
+        : >"$feat/.env.$pad$i"
+    done
+    input="$(jq -cn --arg cwd "$feat" '{tool_name: "Bash", tool_input: {command: "git add -A"}, cwd: $cwd}')"
+
+    CASES=$((CASES + 1))
+    set +e
+    out="$(printf '%s' "$input" | CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    verdict="$(semantic_verdict "$code" <(printf '%s' "$out"))"
+    [[ "$code" -eq 0 && "$verdict" == deny && "$out" == *secret* ]] \
+        || fail enforce-git-workflow.sh G10.03 "expected deny naming secrets with exit 0, got rc=$code $verdict '${out:0:120}'"
+    rm -r "$tmp"
+}
+
+# Fills <dir> with a git dir in bare layout (core.bare=false, core.worktree=.) whose
+# config runs `touch <marker>` through core.fsmonitor or a filter's clean command.
+make_untrusted_repo() {
+    local dir="$1" kind="$2" marker="$3"
+    mkdir -p "$dir/objects" "$dir/refs" "$dir/info"
+    printf 'ref: refs/heads/main\n' >"$dir/HEAD"
+    printf 'payload\n' >"$dir/y.txt"
+    {
+        printf '[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = .\n'
+        if [[ "$kind" == fsmonitor ]]; then
+            printf '\tfsmonitor = touch %s\n' "$marker"
+        else
+            printf '[filter "x"]\n\tclean = touch %s; cat\n' "$marker"
+            printf 'y.txt filter=x\n' >"$dir/info/attributes"
+        fi
+    } >"$dir/config"
+}
+
+# Runs the hook on <command> with <cwd> in the payload, from <run_dir> as process cwd.
+# Prints the verdict, then the hook's stdout.
+git_hook_probe() {
+    local command="$1" cwd="$2" run_dir="$3" input out code
+    input="$(jq -cn --arg command "$command" --arg cwd "$cwd" \
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}')"
+    set +e
+    out="$(cd "$run_dir" && printf '%s' "$input" | CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
+}
+
+# G15.01-G15.05: a git dir the agent wrote itself (no `.git` segment) runs nothing
+# from its config: no dry-run, an ask naming the directory.
+run_git_untrusted_repo_cases() {
+    local tmp marker id kind command cwd run_dir out verdict
+    local -a specs=(
+        "G15.01|fsmonitor|git -C @EVIL add y.txt|@TMP|@TMP"
+        "G15.02|fsmonitor|git add y.txt|@EVIL|@EVIL"
+        "G15.03|filter|git -C @EVIL add y.txt|@TMP|@TMP"
+        "G15.04|fsmonitor|git -C @EVIL add y.txt; true|@TMP|@TMP"
+        "G15.05|fsmonitor|git -C @TMP/wt add y.txt|@TMP|@TMP"
+    )
+    local spec
+    for spec in "${specs[@]}"; do
+        IFS='|' read -r id kind command cwd run_dir <<<"$spec"
+        tmp="$(mktemp -d)"
+        marker="$tmp/MARKER"
+        make_untrusted_repo "$tmp/evil" "$kind" "$marker"
+        if [[ "$id" == G15.05 ]]; then
+            mkdir -p "$tmp/wt"
+            printf 'gitdir: ../evil\n' >"$tmp/wt/.git"
+            cp "$tmp/evil/y.txt" "$tmp/wt/y.txt"
+        fi
+        command="${command//@EVIL/$tmp/evil}"; command="${command//@TMP/$tmp}"
+        cwd="${cwd//@EVIL/$tmp/evil}"; cwd="${cwd//@TMP/$tmp}"
+        run_dir="${run_dir//@EVIL/$tmp/evil}"; run_dir="${run_dir//@TMP/$tmp}"
+        CASES=$((CASES + 1))
+        out="$(git_hook_probe "$command" "$cwd" "$run_dir")"
+        verdict="${out%%$'\n'*}"
+        [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh "$id" "the repository's own config ran inside the hook ($kind)"
+        if [[ "$id" == G15.04 ]]; then
+            [[ "$verdict" != pass ]] || fail enforce-git-workflow.sh "$id" "expected no pass, got $verdict"
+        else
+            [[ "$verdict" == ask && "$out" == *"not a repository the hook can read safely"* ]] \
+                || fail enforce-git-workflow.sh "$id" "expected ask naming an unsafe repository, got $verdict '${out:0:160}'"
+        fi
+        rm -r "$tmp"
+    done
+}
+
+# G15.06: a real linked worktree (git dir under .git/worktrees/) still passes a plain git add.
+run_git_linked_worktree_case() {
+    local tmp feat out verdict
+    tmp="$(mktemp -d)"
+    feat="$tmp/.feat"
+    git -C "$tmp" init -q -b main
+    git -C "$tmp" config user.email fixture@loopkit.invalid
+    git -C "$tmp" config user.name Fixture
+    printf '%s\n' 'export const x = 1' >"$tmp/x.ts"
+    git -C "$tmp" add x.ts
+    git -C "$tmp" commit -q -m seed
+    git -C "$tmp" worktree add -q "$feat" -b feat/x
+    printf '%s\n' 'export const y = 1' >"$feat/y.ts"
+    CASES=$((CASES + 1))
+    out="$(git_hook_probe "git add y.ts" "$feat" "$tmp")"
+    verdict="${out%%$'\n'*}"
+    [[ "$verdict" == pass ]] || fail enforce-git-workflow.sh G15.06 "expected pass in a linked worktree, got $verdict '${out:0:160}'"
+    rm -r "$tmp"
+}
+
+# G15.07: a shlex.py in the process cwd is not imported by the hook's parser.
+run_git_python_isolation_case() {
+    local tmp out verdict
+    tmp="$(mktemp -d)"
+    printf 'import pathlib\npathlib.Path(%s).touch()\n' "'$tmp/MARKER'" >"$tmp/shlex.py"
+    CASES=$((CASES + 1))
+    out="$(git_hook_probe "git status" "$tmp" "$tmp")"
+    verdict="${out%%$'\n'*}"
+    [[ ! -e "$tmp/MARKER" ]] || fail enforce-git-workflow.sh G15.07 "a shlex.py in the cwd ran inside the hook"
+    [[ "$verdict" == pass ]] || fail enforce-git-workflow.sh G15.07 "expected pass, got $verdict '${out:0:160}'"
+    rm -r "$tmp"
+}
+
+# Fails <id> unless the probe output <out> holds the verdict <want> and every needle.
+g15_expect() {
+    local id="$1" want="$2" out="$3" verdict needle
+    shift 3
+    verdict="${out%%$'\n'*}"
+    CASES=$((CASES + 1))
+    if [[ "$verdict" != "$want" ]]; then
+        fail enforce-git-workflow.sh "$id" "expected $want, got $verdict '${out:0:200}'"
+        return 0
+    fi
+    for needle in "$@"; do
+        [[ "$out" == *"$needle"* ]] || fail enforce-git-workflow.sh "$id" "reason lacks '$needle': '${out:0:300}'"
+    done
+    return 0
+}
+
+# A repository with one commit in <dir>.
+make_seed_repo() {
+    git init -q -b main "$1"
+    git -C "$1" config user.email fixture@loopkit.invalid
+    git -C "$1" config user.name Fixture
+    printf '%s\n' 'export const x = 1' >"$1/x.ts"
+    git -C "$1" add x.ts
+    git -C "$1" commit -q -m seed
+}
+
+UNSAFE_PHRASE="not a repository the hook can read safely"
+UNCHECKED_PHRASE="did not check what this stages"
+
+# G15.08-G15.10: a real submodule (git dir under .git/modules/) keeps the secret deny.
+# G15.11-G15.14: a worktree of a bare clone and a --separate-git-dir repository: a secret named
+# in the call still denies, anything else asks with the warning.
+run_git_secret_scope_cases() {
+    local tmp out
+    tmp="$(mktemp -d)"
+    make_seed_repo "$tmp/lib"
+    make_seed_repo "$tmp/sup"
+    git -C "$tmp/sup" -c protocol.file.allow=always submodule add -q "$tmp/lib" sub >/dev/null 2>&1
+    printf 'k\n' >"$tmp/sup/sub/.env.local"
+    printf 'v\n' >"$tmp/sup/sub/y.ts"
+    out="$(git_hook_probe "git add .env.local" "$tmp/sup/sub" "$tmp")"
+    g15_expect G15.08 deny "$out" "would stage a secret"
+    out="$(git_hook_probe "git add -A" "$tmp/sup/sub" "$tmp")"
+    g15_expect G15.09 deny "$out" "would stage a secret"
+    out="$(git_hook_probe "git add y.ts" "$tmp/sup/sub" "$tmp")"
+    g15_expect G15.10 pass "$out"
+
+    git clone -q --bare "$tmp/sup" "$tmp/bare.git"
+    git -C "$tmp/bare.git" worktree add -q "$tmp/wt" -b feat/x main
+    printf 'k\n' >"$tmp/wt/.env.local"
+    out="$(git_hook_probe "git add .env.local" "$tmp/wt" "$tmp")"
+    g15_expect G15.11 deny "$out" "would stage a secret"
+    out="$(git_hook_probe "git add -A" "$tmp/wt" "$tmp")"
+    g15_expect G15.12 ask "$out" "$UNSAFE_PHRASE" "$UNCHECKED_PHRASE" "may include secrets" "$tmp/wt"
+
+    git init -q -b main --separate-git-dir "$tmp/sep.git" "$tmp/work"
+    printf 'k\n' >"$tmp/work/.env.local"
+    out="$(git_hook_probe "git add .env.local" "$tmp/work" "$tmp")"
+    g15_expect G15.13 deny "$out" "would stage a secret"
+    out="$(git_hook_probe "git add -A" "$tmp/work" "$tmp")"
+    g15_expect G15.14 ask "$out" "$UNSAFE_PHRASE" "$UNCHECKED_PHRASE" "may include secrets" "$tmp/work"
+    rm -r "$tmp"
+}
+
+# G15.15-G15.22: a -C value the shell expands is not resolved: the deny for a target that
+# cannot be confirmed, as before the readable-git-dir check.
+run_git_expanded_dir_cases() {
+    local tmp out id command spec
+    local -a specs=(
+        'G15.15|git -C ~/proj add .env.local'
+        'G15.16|git -C $HOME/proj add .env.local'
+        'G15.17|git -C "$HOME/proj" add -A'
+        'G15.18|git -C rep* add -A'
+        'G15.19|git -C {repo,x} add -A'
+        'G15.20|git -C rep? add -A'
+        'G15.21|git -C rep[a] add -A'
+    )
+    tmp="$(mktemp -d)"
+    make_seed_repo "$tmp/repo"
+    for spec in "${specs[@]}"; do
+        id="${spec%%|*}"
+        command="${spec#*|}"
+        out="$(git_hook_probe "$command" "$tmp/repo" "$tmp")"
+        g15_expect "$id" deny "$out" "could not confirm"
+    done
+    out="$(git_hook_probe 'git -C `pwd` add -A' "$tmp/repo" "$tmp")"
+    g15_expect G15.22 deny "$out" "BLOCKED"
+    rm -r "$tmp"
+}
+
+# G15.23-G15.31: the git-dir test is exact (no `.git` substring, suffix or any `worktrees` parent),
+# the rev-parse timeout is not trusted, and the ask names the directory and the unchecked staging.
+run_git_unsafe_edge_cases() {
+    local tmp marker out id dir real_git spec
+    local -a layouts=("G15.23|.github/evil" "G15.24|site.github.io/evil" "G15.25|evil.git" "G15.26|x/worktrees/y")
+    for spec in "${layouts[@]}"; do
+        id="${spec%%|*}"
+        tmp="$(mktemp -d)"
+        marker="$tmp/MARKER"
+        dir="$tmp/${spec#*|}"
+        make_untrusted_repo "$dir" fsmonitor "$marker"
+        out="$(git_hook_probe "git -C $dir add y.txt" "$tmp" "$tmp")"
+        [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh "$id" "the repository's own config ran inside the hook"
+        g15_expect "$id" ask "$out" "$UNSAFE_PHRASE" "$UNCHECKED_PHRASE" "$dir"
+        rm -r "$tmp"
+    done
+
+    tmp="$(mktemp -d)"
+    marker="$tmp/MARKER"
+    make_seed_repo "$tmp/repo"
+    printf 'v\n' >"$tmp/repo/y.ts"
+    real_git="$(command -v git)"
+    mkdir "$tmp/shim"
+    printf '#!/bin/sh\ncase "$*" in *"rev-parse --absolute-git-dir"*) exec sleep 5 ;; esac\nexec %s "$@"\n' "$real_git" >"$tmp/shim/git"
+    chmod +x "$tmp/shim/git"
+    out="$(PATH="$tmp/shim:$PATH" git_hook_probe "git add y.ts" "$tmp/repo" "$tmp")"
+    g15_expect G15.27 ask "$out" "$UNSAFE_PHRASE" "$tmp/repo"
+
+    out="$(git_hook_probe "mkdir n2; git -C n2 add x" "$tmp" "$tmp")"
+    g15_expect G15.28 deny "$out" "unreadable git add"
+    make_untrusted_repo "$tmp/evil" fsmonitor "$marker"
+    out="$(git_hook_probe "git -C $tmp/evil add y.txt; git add -f x" "$tmp" "$tmp")"
+    g15_expect G15.29 deny "$out" "--force"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.29 "the repository's own config ran inside the hook"
+    out="$(git_hook_probe "git -C $tmp/nonexistent add x" "$tmp" "$tmp")"
+    g15_expect G15.30 ask "$out" "$UNSAFE_PHRASE" "$UNCHECKED_PHRASE" "$tmp/nonexistent"
+    mkdir "$tmp/plain"
+    out="$(git_hook_probe "git -C $tmp/plain add x" "$tmp" "$tmp")"
+    g15_expect G15.31 ask "$out" "$UNSAFE_PHRASE" "$UNCHECKED_PHRASE" "$tmp/plain"
+    rm -r "$tmp"
+}
+
 # Prints the verdict on its first line, then the hook's stdout and stderr.
 shell_guard_probe() {
     local dir="$1" path_override="$2" command="$3" input tmp code verdict
@@ -532,12 +960,7 @@ run_shell_guard_failure_cases() {
             nosentinel) printf 'print("rm\\tpackage.json")\n' > "$tmp/shell_targets.py" ;;
             no-python3)
                 bin="$tmp/bin-no-python3"
-                mkdir -p "$bin"
-                for tool in env bash dirname basename date jq grep sed cat tr head tail cut sort uniq \
-                            mktemp rm mkdir wc readlink realpath sha256sum awk ls touch cp mv ln tee \
-                            id uname sleep git; do
-                    [[ -x "$(command -v "$tool" 2>/dev/null)" ]] && ln -sf "$(command -v "$tool")" "$bin/$tool"
-                done
+                no_python_bin "$bin"
                 path_override="$bin"
                 ;;
         esac
@@ -657,6 +1080,15 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_shell_guard_bash3_case
     run_shell_guard_reason_split_case
     run_shell_guard_no_base_case
+    run_git_guard_cases
+    run_git_add_lock_case
+    run_git_add_long_reason_case
+    run_git_untrusted_repo_cases
+    run_git_linked_worktree_case
+    run_git_python_isolation_case
+    run_git_secret_scope_cases
+    run_git_expanded_dir_cases
+    run_git_unsafe_edge_cases
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"
     if [[ -f "$ADDON_TEST" ]]; then

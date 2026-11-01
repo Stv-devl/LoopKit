@@ -203,12 +203,47 @@ copy_tree() {
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
 }
 
+GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
+             prevent-destructive-commands.sh enforce-git-workflow.sh)
+P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
+            "Bash(git branch --show-current)", "Bash(git worktree list)"]'
+
+# guard_api_number <file>
+# The file's `# cwk-guard-api: N` number, empty when the file or the line is absent.
+guard_api_number() {
+    [[ -f "$1" ]] || return 0
+    sed -n 's/^# cwk-guard-api: \([0-9][0-9]*\)$/\1/p' "$1" | head -n 1
+}
+
+# guard_api_missing <target dir>
+# The guard hooks of the target that do not police P1 yet: absent, without the
+# api line, or below the kit's number; plus hook-lib.sh when it no longer sources
+# hook-guarded.sh. Space-separated, empty when every guard is current.
+guard_api_missing() {
+    local target="$1" f have want missing=()
+    for f in "${GUARD_FILES[@]}"; do
+        want="$(guard_api_number "$KIT_DIR/.claude/hooks/$f")"
+        have="$(guard_api_number "$target/.claude/hooks/$f")"
+        if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
+            missing+=(".claude/hooks/$f")
+        fi
+    done
+    if ! grep -q 'source .*hook-guarded\.sh' "$target/.claude/hooks/hook-lib.sh" 2>/dev/null \
+        && [[ " ${missing[*]:-} " != *" .claude/hooks/hook-lib.sh "* ]]; then
+        missing+=(".claude/hooks/hook-lib.sh")
+    fi
+    echo "${missing[*]:-}"
+}
+
 # install_settings <target settings> <react true|false>
 # settings.json is the one kit file that must merge on every update: a .new here
 # means newly added hooks stay mute. User keys win; selected hook groups merge by
 # event + matcher and commands remain unique. Re-running is byte-stable.
+# P1 (defaultMode + the narrow git allows) is held back while a guard hook of the
+# target is not current: the kit side loses it, and a P1 an earlier install left
+# in the target goes too (the five allows, an acceptEdits mode); nothing else does.
 install_settings() {
-    local target="$1" react="$2" selected tmp
+    local target="$1" react="$2" selected tmp held
     selected="$(mktemp)"
     tmp="$(mktemp)"
 
@@ -229,6 +264,16 @@ install_settings() {
         ' "$KIT_DIR/.claude/settings.json" > "$selected"
     fi
 
+    held="$(guard_api_missing "$TARGET")"
+    if [[ -n "$held" ]]; then
+        jq --argjson p1 "$P1_ALLOWS" \
+            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1)' \
+            "$selected" > "$tmp"
+        mv "$tmp" "$selected"
+        tmp="$(mktemp)"
+        echo "P1 held back: $held — merge their .new copies, then re-run install.sh"
+    fi
+
     mkdir -p "$(dirname "$target")"
     if [[ ! -e "$target" ]]; then
         cp "$selected" "$target"
@@ -237,7 +282,7 @@ install_settings() {
         return
     fi
 
-    jq -s '
+    jq -s --argjson p1 "$P1_ALLOWS" --arg held "$held" '
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
@@ -246,7 +291,11 @@ install_settings() {
       .[0] as $old | .[1] as $new
       | ($new * $old)
       | .permissions.allow = ((($old.permissions.allow // []) + ($new.permissions.allow // [])) | unique)
-      | .hooks = (reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
+      | if $held == "" then . else
+          .permissions.allow -= $p1
+          | if .permissions.defaultMode == "acceptEdits" then del(.permissions.defaultMode) else . end
+        end
+      | .hooks =(reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
           .[$event] = merged_groups((($old.hooks[$event] // []) + ($new.hooks[$event] // [])))))
     ' "$target" "$selected" > "$tmp"
     if jq -e --slurpfile candidate "$tmp" '. == $candidate[0]' "$target" >/dev/null; then
@@ -432,10 +481,11 @@ ensure_gitignore() {
         # only the missing lines, never the block twice.
         local line
         for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
-            .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/; do
+            .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
+            '*.pem' '*.key' 'credentials.*'; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
-                GITIGNORE_TOUCHED=1
+                GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
             fi
         done
         return
@@ -465,6 +515,11 @@ __pycache__/
 # handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
 docs/work/*/handoff.md
 handoff-codex.md
+# Clés et identifiants : protect-files.sh refuse de les lire, git add les refuse
+# aussi ; ignorés ici pour qu'un `git add .` ne les liste même pas.
+*.pem
+*.key
+credentials.*
 # .claude/.tdd-unfrozen n'est délibérément PAS ignoré : toute la raison d'être de
 # la liste d'exceptions TDD est d'être visible en review (.claude/rules/05-testing.md).
 EOF
@@ -647,6 +702,7 @@ chmod +x "$TARGET/codex-handoff.sh" 2>/dev/null || true
 chmod +x "$TARGET/workflow.py" "$TARGET/workflow.sh" 2>/dev/null || true
 
 GITIGNORE_TOUCHED=0
+GITIGNORE_FILLED=0
 ensure_gitignore "$TARGET"
 
 echo
@@ -657,7 +713,10 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
 fi
 
 if [[ "$GITIGNORE_TOUCHED" -eq 1 ]]; then
-    echo "  .gitignore : bloc « état de session » ajouté (17 chemins écrits par les hooks)."
+    echo "  .gitignore : bloc « état de session » ajouté (20 chemins : état écrit par les hooks, clés et identifiants)."
+    echo
+elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
+    echo "  .gitignore : $GITIGNORE_FILLED chemins ajoutés au bloc existant."
     echo
 fi
 

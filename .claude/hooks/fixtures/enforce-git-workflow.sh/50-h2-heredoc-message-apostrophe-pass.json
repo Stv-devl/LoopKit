@@ -1,1 +1,0 @@
-{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"git commit -m \"$(cat <<'EOF'\ndon't rebase twice\nEOF\n)\""}}

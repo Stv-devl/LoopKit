@@ -55,3 +55,7 @@ Claude Code 2.x, headless `claude -p --permission-mode acceptEdits --output-form
 - **A hook `ask` overrides both `acceptEdits` (Write and its auto-approved Bash verbs) and an allow rule.** P2's asks are effective under P1.
 - `Bash(git commit -m *)` matches a trailing `--amend`: confirmed, the allow list is not the guard.
 - In `-p`, the allow rule written in the scratch project's `.claude/settings.json` was **not** applied (even `git commit -m y --allow-empty` was denied) while `--allowedTools` was; likely the untrusted-workspace rule for headless runs. A headless smoke of installed settings (light-permissions-git) must account for it.
+
+## Backslash-newline continuation vs an allow rule — measured 2026-10-29 (light-permissions-git K2b)
+Claude Code 2.1.312, `claude -p --output-format stream-json --max-turns 2 --tools Bash --model sonnet --settings <target>/.claude/settings.json`, installed P1 (`acceptEdits`, `Bash(git add *)`). The model sent `git add \⏎  src/x.ts` (two physical lines): **not** in `permission_denials`, the file was staged. [measured]
+- The matcher treats a `\`+newline continuation as one subcommand: `Bash(git add *)` approves it. A hook must join continuations itself (a newline split would hide flags after the `\`).

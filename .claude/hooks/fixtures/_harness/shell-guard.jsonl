@@ -146,3 +146,13 @@
 {"id":"X20.02","verdict":"ask","command":"patch -o package.json x p.diff","reason":"guarded path:"}
 {"id":"X21.01","verdict":"ask","command":"perl -i -p fix.pl package.json","reason":"guarded path:"}
 {"id":"X21.02","verdict":"ask","command":"perl -pi fix.pl package.json","reason":"guarded path:"}
+{"id":"X22.01","verdict":"ask","command":"rm -rf docs/work/x","reason":"deletes recursively"}
+{"id":"X22.02","verdict":"ask","command":"rm -r tests","reason":"deletes recursively"}
+{"id":"X22.03","verdict":"ask","command":"rm --recursive a","reason":"deletes recursively"}
+{"id":"X22.04","verdict":"ask","command":"timeout 9 rm -fr docs/x","reason":"deletes recursively"}
+{"id":"X22.05","verdict":"deny","command":"rm -rf src","reason":"protected directory"}
+{"id":"X22.06","verdict":"ask","command":"rm -rf src/features/x","reason":"under a protected dir"}
+{"id":"X22.07","verdict":"pass","command":"rm a.txt"}
+{"id":"X22.08","verdict":"pass","command":"git rm -r docs/x"}
+{"id":"X22.09","verdict":"pass","command":"git commit -m \"drop rm -r docs\""}
+{"id":"X22.10","verdict":"pass","command":"rm -rf /tmp/x"}

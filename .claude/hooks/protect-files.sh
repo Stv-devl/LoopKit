@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: protect-files
 # Event: PreToolUse (Write|Edit), PreToolUse (Read), PreToolUse (Grep|Glob)

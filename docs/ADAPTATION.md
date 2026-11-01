@@ -423,7 +423,8 @@ Il en va de même pour le shell : une écriture sur un chemin gardé, quel que s
 le moyen (redirection, `cp`, `sed -i`, `find -exec`, un programme inline passé à un
 interpréteur), demande ton accord. Sur `.claude/.tdd-red/`, elle est refusée. Un
 `rm -r` ou un `mv` sous un dossier protégé (`src/`, `.claude/`…) demande aussi ton
-accord.
+accord, et tout autre `rm -r` dans le projet aussi : `acceptEdits` approuve `rm`
+seul, le hook remet l'invite. La racine d'un dossier protégé reste refusée.
 
 Conséquence voulue :
 dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord.
@@ -433,6 +434,64 @@ approuve si le changement est voulu.
 Si `hook-guarded.sh` disparaît, les cinq hooks de garde refusent tout (exit 2)
 plutôt que de laisser passer ; rétablis-le depuis un terminal :
 `git checkout -- .claude/hooks/hook-guarded.sh`.
+
+## 15. Permissions étroites (P1) et leur retenue
+
+`.claude/settings.json` livre `permissions.defaultMode: "acceptEdits"` et cinq
+autorisations exactes : `Bash(git add *)`, `Bash(git commit -m *)`,
+`Bash(git switch -c *)`, `Bash(git branch --show-current)`,
+`Bash(git worktree list)`. Pas de `git *`, `git push *`, `git commit *`,
+`git switch *` ni `git branch *`. Ce qui rend ces formes sûres, c'est
+`enforce-git-workflow.sh` : il refuse `git add -f`, un `git add` qui stagerait
+un secret (`.env*`, `*.pem`, `*.key`, `credentials.*`) ou dont il ne peut pas
+lire les chemins (avec `--no-dry-run`, par exemple). Un `git add` doit être
+seul dans son appel, et seules des formes strictes passent sans invite, sur une
+ligne : `git add [--] <chemins>`,
+`git commit -m "<une ligne>"` ou entre apostrophes, et `git switch -c <branche>`.
+`git -C <arbre> add …` et `git stage`, son synonyme, passent le hook aux mêmes règles mais aucune autorisation P1 ne les couvre : ils demandent ton accord. Un chemin s'écrit en ASCII sans
+espace, n'est ni `.` ni un dossier et ne contient pas `..` ; un message ne contient
+ni `$`, ni accent grave, ni `\`, ni son guillemet. Tout autre appel qui nomme `git`
+et `add`, `stage`, `commit` ou `switch` demande ton accord, même sans danger
+(`git diff src/commit.ts`), car le hook ne cherche plus à lire le shell : un `mv`,
+`sed -i`, `rm` ou `cp` glissé dans l'appel changerait ce qui est stagé. Il
+demande aussi ton accord sur `--amend`, `--no-verify`, `--all`, `--include`,
+`--only`, `--patch`, `--interactive`, un commit avec un pathspec,
+`--discard-changes`, `--force` et `--force-create`. Sans python3, sur une
+commande illisible ou au-delà de 50 appels git, il lit les mots bruts, même
+entre guillemets : il refuse tout `git add`/`git stage` et demande pour tout
+commit, switch ou checkout (un message de commit qui cite `git add` est alors
+refusé lui aussi).
+
+**À la fusion.** `install.sh` fait l'union de `allow` (les tiennes restent, les
+cinq s'ajoutent) et garde ton `defaultMode` s'il en a un : ta clé gagne toujours.
+
+**La retenue.** P1 sans les hooks qui le surveillent serait un `acceptEdits`
+nu. Les six fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
+`shell_targets.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
+`enforce-git-workflow.sh`) portent une ligne `# cwk-guard-api: N`. Si dans ton
+projet l'un d'eux manque, n'a pas cette ligne ou porte un numéro plus bas que
+celui du kit, ou si `hook-lib.sh` ne source plus `hook-guarded.sh`, `install.sh`
+n'ajoute ni le `defaultMode` ni les cinq autorisations ; s'ils sont déjà là
+(une installation précédente), ils sont retirés — le `defaultMode` seulement
+s'il vaut `acceptEdits`. Il affiche :
+
+```
+P1 held back: <fichiers> — merge their .new copies, then re-run install.sh
+```
+
+Fusionne les `.new` de ces fichiers (en gardant tes réglages, `PROTECTED_DIRS`,
+`PROTECTED_BRANCHES`), puis relance `install.sh`. Seuls ces six réglages du kit
+sont retirés ; tes autres autorisations et un `defaultMode` choisi par toi
+restent. Tes propres modifications de ces hooks ne déclenchent jamais la retenue
+tant que la ligne d'api est à jour. `install.sh` ne touche pas
+`.claude/settings.local.json` : une approbation « don't ask again » qui y est
+enregistrée survit à la retenue ; vide-la à la main si besoin.
+
+**Mesurer le gain.** Le temps mort des invites de permission sur une passe light
+se lit dans le transcript de session (`docs/measuring-the-loop.md`) : l'écart
+entre un `tool_use` et son `tool_result`, sur les appels qui ont demandé un
+accord, additionné par passe. « Avant » vient d'un transcript de passe light
+existant, « après » de la suivante.
 
 ## Vérifier que le câblage tient
 

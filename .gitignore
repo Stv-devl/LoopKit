@@ -18,6 +18,12 @@ blob-report/
 !.env.sample
 !.env.template
 
+# Keys and credentials (protect-files.sh denies reading them; the git hook denies
+# staging them); ignoring them keeps `git add .` from even listing them.
+*.pem
+*.key
+credentials.*
+
 # =============================================================================
 # Claude Code session state
 #
