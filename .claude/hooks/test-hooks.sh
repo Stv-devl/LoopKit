@@ -17,6 +17,19 @@ CWK_TEST_HOME="$(mktemp -d)"
 trap 'rm -r "$CWK_TEST_HOME"' EXIT
 export XDG_CONFIG_HOME="$CWK_TEST_HOME/.config"
 
+# Every hook call runs under a wall-clock cap, far above the slowest legitimate
+# case (a stalled git is cut at 3 s), so a hook that hangs turns its case red
+# instead of stopping the suite. Resolved once: a case may run with a PATH that
+# lacks `timeout`. No `timeout`/`gtimeout` on this machine: no cap.
+CASE_SECONDS="${CWK_CASE_TIMEOUT:-60}"
+CASE_TIMEOUT=()
+for CWK_TIMEOUT_BIN in timeout gtimeout; do
+    if CWK_TIMEOUT_PATH="$(command -v "$CWK_TIMEOUT_BIN" 2>/dev/null)" && [[ -x "$CWK_TIMEOUT_PATH" ]]; then
+        CASE_TIMEOUT=("$CWK_TIMEOUT_PATH" -k 5 "$CASE_SECONDS")
+        break
+    fi
+done
+
 # no_python_bin <dir>: a PATH directory holding every tool a hook needs, python3 aside.
 no_python_bin() {
     local tool
@@ -101,12 +114,148 @@ PY
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
     local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT"
-    local hook_path="$PATH" real_git
+    local hook_path="$PATH" real_git hook_home="$HOME"
     tmp="$(mktemp -d)"
     fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
     stderr_file="$tmp/stderr"
     input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g; s|__MAIN_TREE__|$tmp|g; s|__FEAT_TREE__|$tmp/.feat|g" "$fixture")"
+
+    # A shell-guard row's `setup` key, matched whole, never as a substring.
+    # `aliasdir`: the project dir is a symlink to $tmp/real, the cwd its physical path.
+    # `pkgroot`: package.json at the project root $tmp. `pkgabove`: package.json in
+    # $tmp, ABOVE the project $tmp/p; `pkgalias`: same, the project a symlink to it.
+    # `pkgsub`: package.json and src/ in $tmp/sub. `cfgdirs`: docs/, .github/, src/
+    # in the project $tmp. `cfgempty`: an empty project $tmp. `noproject`: no
+    # CLAUDE_PROJECT_DIR at all.
+    if [[ "$hook" == prevent-destructive-commands.sh ]]; then
+        case "${SHELL_SETUP:-}" in
+            aliasdir)
+                mkdir -p "$tmp/real"
+                ln -s "$tmp/real" "$tmp/alias"
+                project_dir="$tmp/alias"
+                ;;
+            pkgroot)
+                printf '{}\n' >"$tmp/package.json"
+                mkdir -p "$tmp/docs"
+                project_dir="$tmp"
+                ;;
+            pkgabove|pkgalias)
+                printf '{}\n' >"$tmp/package.json"
+                mkdir -p "$tmp/p"
+                project_dir="$tmp/p"
+                if [[ "$SHELL_SETUP" == pkgalias ]]; then
+                    ln -s "$tmp/p" "$tmp/link"
+                    project_dir="$tmp/link"
+                fi
+                ;;
+            pkgsub)
+                mkdir -p "$tmp/sub/src"
+                printf '{}\n' >"$tmp/sub/package.json"
+                project_dir="$tmp"
+                ;;
+            cfgdirs)
+                mkdir -p "$tmp/docs" "$tmp/.github" "$tmp/src"
+                project_dir="$tmp"
+                ;;
+            cfgempty) project_dir="$tmp" ;;
+            noproject) project_dir="" ;;
+            # Fake secrets for the glob rows, all in the project $tmp. `secrets`:
+            # .env, .env.example, server.pem, credentials.json, notes.txt, sub/.env.
+            # `secrets-home`: .env only in $tmp/home, the hook's HOME. `secrets-sub`:
+            # .env only in sub/. `secrets-dot`: .env and notes.txt.
+            secrets)
+                mkdir -p "$tmp/sub"
+                printf 'K=v\n' >"$tmp/.env"
+                printf 'K=\n' >"$tmp/.env.example"
+                printf 'k\n' >"$tmp/server.pem"
+                printf '{}\n' >"$tmp/credentials.json"
+                printf 'n\n' >"$tmp/notes.txt"
+                printf 'K=v\n' >"$tmp/sub/.env"
+                project_dir="$tmp"
+                ;;
+            secrets-home)
+                mkdir -p "$tmp/home"
+                printf 'K=v\n' >"$tmp/home/.env"
+                hook_home="$tmp/home"
+                project_dir="$tmp"
+                ;;
+            secrets-sub)
+                mkdir -p "$tmp/sub"
+                printf 'K=v\n' >"$tmp/sub/.env"
+                project_dir="$tmp"
+                ;;
+            secrets-dot)
+                printf 'K=v\n' >"$tmp/.env"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            # `secrets-keys`: id.key, .credentials, credentials, .env.local, notes.txt
+            # (no .env). `secrets-tmpl`: the three templates and notes.txt only.
+            secrets-keys)
+                printf 'k\n' >"$tmp/id.key"
+                printf '{}\n' >"$tmp/.credentials"
+                printf '{}\n' >"$tmp/credentials"
+                printf 'K=v\n' >"$tmp/.env.local"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            secrets-tmpl)
+                printf 'K=\n' >"$tmp/.env.example"
+                printf 'K=\n' >"$tmp/.env.sample"
+                printf 'K=\n' >"$tmp/.env.template"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            # `secrets-deep`: $tmp/d holds two symlinks to itself, so `*/*/…/*` has
+            # 2^N paths to list: a glob that cannot finish within the hook's timeout;
+            # the only .env is $tmp/.env, outside what that glob lists.
+            secrets-deep)
+                mkdir -p "$tmp/d"
+                ln -s . "$tmp/d/a"
+                ln -s . "$tmp/d/b"
+                printf 'K=v\n' >"$tmp/.env"
+                project_dir="$tmp"
+                ;;
+            # `secrets-many`: 300 folders m001-m300 holding x, 300 files .e001-.e300,
+            # .env, cfg/server.pem and notes.txt: `*/*` and `.e*` list 301 entries,
+            # one past the scan's cap of 256, in whatever order the filesystem gives.
+            secrets-many)
+                mkdir -p "$tmp/cfg"
+                for ((n = 1; n <= 300; n++)); do
+                    mkdir "$tmp/$(printf 'm%03d' "$n")"
+                    : >"$tmp/$(printf 'm%03d' "$n")/x"
+                    : >"$tmp/$(printf '.e%03d' "$n")"
+                done
+                printf 'K=v\n' >"$tmp/.env"
+                printf 'k\n' >"$tmp/cfg/server.pem"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            # `secrets-mode`: .env.development.local (a secret), .env.example and
+            # .env.local.example (templates), notes.txt.
+            secrets-mode)
+                printf 'K=v\n' >"$tmp/.env.development.local"
+                printf 'K=\n' >"$tmp/.env.example"
+                printf 'K=\n' >"$tmp/.env.local.example"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            # `secrets-modetmpl`: .env.local.sample and .env.local.template (templates),
+            # .env.development.local (the control, a secret), notes.txt.
+            secrets-modetmpl)
+                printf 'K=\n' >"$tmp/.env.local.sample"
+                printf 'K=\n' >"$tmp/.env.local.template"
+                printf 'K=v\n' >"$tmp/.env.development.local"
+                printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            '') ;;
+            *)
+                fail "$hook" "$fixture_name" "unknown setup '$SHELL_SETUP' (a misspelt name would run with no setup)"
+                ;;
+        esac
+    fi
 
     case "$hook:$fixture_name" in
         # Edits an EXISTING item.utils.ts to add a never-before-exported
@@ -134,6 +283,83 @@ run_case() {
                 printf 'sha256:%s\n' "$(sha256sum "$tmp/src/item.utils.test.ts" | cut -d' ' -f1)"
                 printf 'missing:%s\n' "bonus"
             } >"$extra_marker"
+            ;;
+        # Marker digest cases, 08-18: `NN-<create|edit>-<marker>[-nohash]-*`.
+        # The project is $tmp, so the marker lives in $tmp/.claude/.tdd-red/.
+        # `empty` = empty marker, `nodigest` = no sha256 line, `emptydigest` =
+        # `sha256:` with no value, `match`/`other` = right/wrong digest,
+        # `unavail` = `sha256:unavailable`. `-nohash` takes sha256sum and
+        # shasum off the hook's PATH. `-edit-` adds `bonus`, named missing.
+        tdd-require-red.sh:0[89]-*|tdd-require-red.sh:1[0-8]-*)
+            project_dir="$tmp"
+            mkdir -p "$tmp/src" "$tmp/.claude/.tdd-red"
+            printf '%s\n' "import { bonus } from './item.utils'; it('doubles', () => { expect(bonus()).toBe(2) })" \
+                >"$tmp/src/item.utils.test.ts"
+            [[ "$fixture_name" == *-edit-* ]] && printf '%s\n' 'export const value = 1' >"$tmp/src/item.utils.ts"
+            extra_marker="$tmp/.claude/.tdd-red/$(printf '%s' "$tmp/src/item.utils.test.ts" | tr -c 'A-Za-z0-9._-' '_')"
+            case "$fixture_name" in
+                *-empty-*) : >"$extra_marker" ;;
+                *)
+                    date -u +%Y-%m-%dT%H:%M:%SZ >"$extra_marker"
+                    case "$fixture_name" in
+                        *-emptydigest-*) printf 'sha256:\n' >>"$extra_marker" ;;
+                        *-match-*) printf 'sha256:%s\n' "$(sha256sum "$tmp/src/item.utils.test.ts" | cut -d' ' -f1)" >>"$extra_marker" ;;
+                        *-other-*) printf 'sha256:%064d\n' 0 >>"$extra_marker" ;;
+                        *-unavail-*) printf 'sha256:unavailable\n' >>"$extra_marker" ;;
+                    esac
+                    printf 'missing:bonus\n' >>"$extra_marker"
+                    ;;
+            esac
+            if [[ "$fixture_name" == *-nohash-* ]]; then
+                no_python_bin "$tmp/.bin"
+                rm -f "$tmp/.bin/sha256sum" "$tmp/.bin/shasum"
+                hook_path="$tmp/.bin"
+            fi
+            ;;
+        # Path cases 08-17: the project is $tmp/p, $tmp/out lies outside it.
+        # `-filelink-`: p/docs/link.md → out/id_rsa; `-dirlink-`: p/docs/ext → out;
+        # `-unset-`: no CLAUDE_PROJECT_DIR.
+        auto-approve-config.sh:0[89]-*|auto-approve-config.sh:[12][0-9]-*)
+            mkdir -p "$tmp/p/docs" "$tmp/out"
+            project_dir="$tmp/p"
+            case "$fixture_name" in
+                # `-newlinelink-`: p/docs/ext → a sibling folder named `p` + a newline,
+                # holding notes.md: a resolver that drops that newline reads it as the project.
+                *-newlinelink-*)
+                    mkdir -p "$tmp/p"$'\n'
+                    printf 'x\n' >"$tmp/p"$'\n'/notes.md
+                    ln -s "$tmp/p"$'\n' "$tmp/p/docs/ext"
+                    ;;
+                # `-newlinefilelink-`: p/docs/l.md (a FILE link) → p + a newline + /notes.md,
+                # a sibling folder: a resolver that drops that newline reads the project's notes.md.
+                *-newlinefilelink-*)
+                    mkdir -p "$tmp/p"$'\n'
+                    printf 'x\n' >"$tmp/p"$'\n'/notes.md
+                    ln -s "$tmp/p"$'\n'/notes.md "$tmp/p/docs/l.md"
+                    ;;
+                # `-dotdotlink-`: p/.claude/l → ext/../x, p/.claude/ext → out.
+                *-dotdotlink-*)
+                    mkdir -p "$tmp/p/.claude"
+                    ln -s "$tmp/out" "$tmp/p/.claude/ext"
+                    ln -s ext/../x "$tmp/p/.claude/l"
+                    ;;
+                *-filelink-*)
+                    printf 'k\n' >"$tmp/out/id_rsa"
+                    ln -s "$tmp/out/id_rsa" "$tmp/p/docs/link.md"
+                    ;;
+                *-dirlink-*)
+                    printf 'x\n' >"$tmp/out/notes.md"
+                    ln -s "$tmp/out" "$tmp/p/docs/ext"
+                    ;;
+                *-unset-*) project_dir="" ;;
+            esac
+            ;;
+        # A file inside the project linked to a secret outside it, named `.env`.
+        protect-files.sh:36-*)
+            mkdir -p "$tmp/p/docs" "$tmp/out"
+            printf 'K=v\n' >"$tmp/out/.env"
+            ln -s "$tmp/out/.env" "$tmp/p/docs/conf.txt"
+            project_dir="$tmp/p"
             ;;
         # The session runs inside a worktree: its project dir is the worktree.
         auto-approve-config.sh:0[12]-worktree-*)
@@ -165,6 +391,9 @@ run_case() {
                     git -C "$tmp" config alias.q '!sh -c x'
                     git -C "$tmp" config alias.a p
                     git -C "$tmp" config alias.ci commit
+                    git -C "$tmp" config alias.nuke 'clean -fdx'
+                    git -C "$tmp" config alias.wa 'worktree add'
+                    git -C "$tmp" config alias.rs restore
                     mkdir -p "$tmp/src"
                     printf '%s\n' 'export const x = 1' >"$tmp/src/x.ts"
                     printf '%s\n' 'API_URL=' >"$tmp/.env.example"
@@ -202,6 +431,22 @@ run_case() {
                     if [[ "$fixture_name" == *-stalias-* ]]; then
                         git -C "$tmp" config alias.st stage
                     fi
+                    # `-modified-`: src/x.ts edited in the feat tree; `-staged-`:
+                    # edited and staged; `-cycle-`: alias.l1 and alias.l2 call each other.
+                    if [[ "$fixture_name" == *-modified-* || "$fixture_name" == *-staged-* ]]; then
+                        printf '%s\n' 'export const x = 2' >"$tmp/.feat/src/x.ts"
+                    fi
+                    if [[ "$fixture_name" == *-staged-* ]]; then
+                        git -C "$tmp/.feat" add src/x.ts
+                    fi
+                    # `-credfile-`: an untracked .credentials.json in the feat tree.
+                    if [[ "$fixture_name" == *-credfile-* ]]; then
+                        printf '%s\n' '{}' >"$tmp/.feat/.credentials.json"
+                    fi
+                    if [[ "$fixture_name" == *-cycle-* ]]; then
+                        git -C "$tmp" config alias.l1 l2
+                        git -C "$tmp" config alias.l2 l1
+                    fi
                     # `-nopy-`: no python3 on the hook's PATH; `-badpy-`: a
                     # python3 that prints a plausible row and no end marker.
                     if [[ "$fixture_name" == *-nopy-* || "$fixture_name" == *-badpy-* ]]; then
@@ -218,12 +463,15 @@ run_case() {
     esac
 
     set +e
-    printf '%s' "$input" | PATH="$hook_path" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
-        "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
+    printf '%s' "$input" | PATH="$hook_path" HOME="$hook_home" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+        ${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"} "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
     code=$?
     set -e
     verdict="$(semantic_verdict "$code" "$stdout_file")"
     CASES=$((CASES + 1))
+    if [[ "$code" -eq 124 || "$code" -eq 137 ]]; then
+        fail "$hook" "$(basename "$fixture")" "the hook did not finish within ${CASE_SECONDS}s (killed, exit $code)"
+    fi
 
     if [[ "$verdict" != "$expected" ]]; then
         fail "$hook" "$(basename "$fixture")" \
@@ -524,6 +772,25 @@ run_guarded_hardening_cases() {
     [[ "$out" == same ]] || fail hook-guarded.sh side-effects-full "shopt/set output changed after sourcing: '$out'"
 }
 
+# W12 partial install: the current tdd-freeze-tests.sh beside a hook-lib.sh of the
+# previous kit, which defines no CWK_TEST_FILE_RE. An empty regex matches every
+# path, so the freeze fails closed and names the stale file.
+run_freeze_partial_install_case() {
+    local tmp out code
+    tmp="$(mktemp -d)"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp"/
+    sed '/^CWK_TEST_FILE_RE=/d' "$HOOKS_DIR/hook-lib.sh" > "$tmp/hook-lib.sh"
+    CASES=$((CASES + 1))
+    set +e
+    out="$(guard_hook_run "$tmp" tdd-freeze-tests.sh \
+        "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$PROJECT_ROOT/src/x.ts\",\"content\":\"x\"}}")"
+    code=$?
+    set -e
+    [[ "$code" -eq 0 && "$out" == *'"permissionDecision": "deny"'* && "$out" == *hook-lib.sh* ]] \
+        || fail tdd-freeze-tests.sh "partial-install" "expected a deny naming hook-lib.sh, got exit $code '${out:0:160}'"
+    rm -r "$tmp"
+}
+
 # X1-X11 of docs/work/guard-shell/plan.md: one case per line of the jsonl, each
 # turned into a fixture and run through run_case, so it gets the same checks.
 run_shell_guard_cases() {
@@ -548,6 +815,7 @@ run_shell_guard_cases() {
         command="$(jq -r '.command' <<<"$line")"
         cwd="$(jq -r '.cwd // "__PROJECT_ROOT__"' <<<"$line")"
         reason="$(jq -r '.reason // ""' <<<"$line")"
+        SHELL_SETUP="$(jq -r '.setup // ""' <<<"$line")"
         if [[ -n "${seen[$id]:-}" ]]; then
             fail prevent-destructive-commands.sh "$id" "duplicate case id"
             continue
@@ -564,6 +832,7 @@ run_shell_guard_cases() {
             > "$tmp/$id-$verdict.json"
         run_case prevent-destructive-commands.sh "$tmp/$id-$verdict.json" "$verdict"
     done
+    SHELL_SETUP=""
     [[ "$count" -gt 0 ]] || fail prevent-destructive-commands.sh shell-guard.jsonl "case file holds no case"
     rm -r "$tmp"
 }
@@ -925,6 +1194,79 @@ run_git_unsafe_edge_cases() {
     rm -r "$tmp"
 }
 
+# G15.32: a git restore in a --separate-git-dir repository runs no git diff, so its
+# core.fsmonitor never fires, and asks.
+run_git_restore_planted_case() {
+    local tmp out
+    tmp="$(mktemp -d)"
+    git init -q -b main --separate-git-dir "$tmp/sep.git" "$tmp/work"
+    git -C "$tmp/work" config user.email fixture@loopkit.invalid
+    git -C "$tmp/work" config user.name Fixture
+    mkdir -p "$tmp/work/src"
+    printf '%s\n' 'export const x = 1' >"$tmp/work/src/x.ts"
+    git -C "$tmp/work" add src/x.ts
+    git -C "$tmp/work" commit -q -m seed
+    git -C "$tmp/work" switch -q -c feat/x
+    git -C "$tmp/work" config core.fsmonitor "touch $tmp/MARKER"
+    out="$(git_hook_probe "git restore src/x.ts" "$tmp/work" "$tmp")"
+    [[ ! -e "$tmp/MARKER" ]] || fail enforce-git-workflow.sh G15.32 "the repository's own config ran inside the hook"
+    g15_expect G15.32 ask "$out" "uncommitted changes"
+    rm -r "$tmp"
+}
+
+# G10.04: a reason past 4000 characters is cut and says so.
+run_git_reason_cut_case() {
+    local tmp feat out reason i pad
+    tmp="$(mktemp -d)"
+    feat="$tmp/.feat"
+    make_seed_repo "$tmp"
+    git -C "$tmp" worktree add -q "$feat" -b feat/x
+    pad="$(printf 'p%.0s' $(seq 1 240))"
+    for i in $(seq 1 40); do
+        : >"$feat/.env.$pad$i"
+    done
+    out="$(git_hook_probe "git add -A" "$feat" "$tmp")"
+    g15_expect G10.04 deny "$out" "[reason truncated]"
+    reason="$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"${out#*$'\n'}")"
+    [[ "$reason" == *"[reason truncated]" && "${#reason}" -le 4000 ]] \
+        || fail enforce-git-workflow.sh G10.04 "reason of ${#reason} chars does not end in the truncation marker"
+    rm -r "$tmp"
+}
+
+# L1: the whole-text scans run under LC_ALL=C. A UTF-8 locale picked from `locale -a`
+# makes them quadratic on a long run of `git `/`gh ` words: the hook must still answer
+# in under 2 s. ASCII calls get the same verdict in both locales.
+run_locale_cases() {
+    local loc tmp pad word start ms out_c out_u command id=0
+    loc="$(locale -a 2>/dev/null | grep -iE 'utf-?8' | head -n 1 || true)"
+    if [[ -z "$loc" ]]; then
+        printf 'SKIP L1 locale cases: no UTF-8 locale installed\n'
+        return 0
+    fi
+    tmp="$(mktemp -d)"
+    make_seed_repo "$tmp/repo"
+    git -C "$tmp/repo" switch -q -c feat/x
+    for word in git gh; do
+        id=$((id + 1))
+        pad="$(printf "$word %.0s" $(seq 1 $((60000 / (${#word} + 1)))))"
+        [[ "$word" == git ]] && command="$pad; commit" || command="$pad; comment"
+        CASES=$((CASES + 1))
+        start="$(date +%s%N)"
+        LC_ALL="$loc" git_hook_probe "$command" "$tmp/repo" "$tmp" >/dev/null
+        ms=$((($(date +%s%N) - start) / 1000000))
+        [[ "$ms" -lt 2000 ]] || fail enforce-git-workflow.sh "L1.0$id" "60 KB of '$word ' took $ms ms under $loc"
+    done
+    for command in "git commit" "gh pr comment 1" "git status"; do
+        id=$((id + 1))
+        CASES=$((CASES + 1))
+        out_c="$(LC_ALL=C git_hook_probe "$command" "$tmp/repo" "$tmp" | head -n 1)"
+        out_u="$(LC_ALL="$loc" git_hook_probe "$command" "$tmp/repo" "$tmp" | head -n 1)"
+        [[ "$out_c" == "$out_u" ]] \
+            || fail enforce-git-workflow.sh "L1.0$id" "'$command': $out_c under C, $out_u under $loc"
+    done
+    rm -r "$tmp"
+}
+
 # Prints the verdict on its first line, then the hook's stdout and stderr.
 shell_guard_probe() {
     local dir="$1" path_override="$2" command="$3" input tmp code verdict
@@ -1074,6 +1416,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_missing_jq_cases
     run_guarded_cases
     run_guarded_hardening_cases
+    run_freeze_partial_install_case
     run_shell_guard_cases
     run_shell_guard_failure_cases
     run_shell_guard_budget_case
@@ -1089,6 +1432,9 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_git_secret_scope_cases
     run_git_expanded_dir_cases
     run_git_unsafe_edge_cases
+    run_git_restore_planted_case
+    run_git_reason_cut_case
+    run_locale_cases
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"
     if [[ -f "$ADDON_TEST" ]]; then

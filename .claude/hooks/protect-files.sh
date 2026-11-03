@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: protect-files
 # Event: PreToolUse (Write|Edit), PreToolUse (Read), PreToolUse (Grep|Glob)
@@ -101,11 +101,26 @@ ENV_TEMPLATE_RE='\.(example|sample|template)$'
 SECRET_PATTERNS=(
     "\.pem$"                    # SSL certificates
     "\.key$"                    # Private keys
-    "(^|/)credentials(\.|$)"    # credentials.json & co — anchored, so a
-                                # src/features/credentials/ file stays writable
+    "(^|/)\.?credentials(\.|$)" # credentials.json, .credentials.json — anchored,
+                                # so a src/features/credentials/ file stays writable
 )
 
+# A relative target resolves against the session's cwd, else the project dir.
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+
+# Each target is also probed by the file it opens: `docs/conf.txt` linked to an
+# outside `.env` is a secret under an innocent name. The physical path comes
+# from cwk_real_file, never from cwk_real_rel, which prints nothing outside.
+PROBES=()
 for target in "${TARGETS[@]}"; do
+    PROBES+=("$target")
+    physical="$(cwk_real_file "$target" "$CWD" 2>/dev/null)" || physical=""
+    if [[ -n "$physical" && "$physical" != "$target" ]]; then
+        PROBES+=("$physical")
+    fi
+done
+
+for target in "${PROBES[@]}"; do
     # Two probes per target, because a glob hides the secret in two different
     # places and stripping for one blinds the other:
     #
@@ -172,14 +187,13 @@ done
 # The list and the resolver live in hook-guarded.sh (sourced by hook-lib.sh).
 # A relative file_path resolves against the session's cwd from the input, never
 # against this process's directory. Outside the project: nothing to guard.
-if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied >/dev/null 2>&1; then
+if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why cwk_real_file >/dev/null 2>&1; then
     deny "BLOCKED: the guarded-path functions are not loaded (hook-lib.sh and protect-files.sh are out of step, or hook-guarded.sh is broken), so this guard refuses rather than passes.\n\nThe user restores the kit from a terminal: git checkout -- .claude/hooks/ (or re-copy .claude/hooks/ from the kit)."
 fi
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 REL=$(cwk_guard_rel "$FILE_PATH" "$CWD") || exit 0
 
 if cwk_is_guard_denied "$REL"; then
-    deny "BLOCKED: .claude/.tdd-red/ is written only by tdd-prove-red.sh — a hand-written RED marker lets a module in with no observed failing test.\n\nWrite the test, run it, and let the PostToolUse hook record the RED it sees."
+    deny "BLOCKED: $REL is never written by hand.\n\n$(cwk_guard_denied_why "$REL")"
 fi
 if cwk_is_guarded "$REL"; then
     ask "guarded path: $REL (kit guardrail; approve only if you meant to change it)"

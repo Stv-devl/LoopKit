@@ -71,7 +71,11 @@ deny() {
 # A test file or one of its fixtures, read on the path relative to the project
 # root and normalised: a project that itself sits under a `tests/` folder, or a
 # `src/tests/../x.ts`, must not pass for test support.
-TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_test|conftest)\.py$'
+# A hook-lib.sh of the previous kit defines no CWK_TEST_FILE_RE, and an empty
+# regex matches every path: refuse rather than freeze (or free) the wrong files.
+[[ -n "${CWK_TEST_FILE_RE:-}" ]] \
+    || deny "hook-lib.sh is stale: it defines no CWK_TEST_FILE_RE, so the test files cannot be told from the rest. Merge hook-lib.sh.new (or re-run install.sh), then retry."
+TEST_FILE_RE="$CWK_TEST_FILE_RE"
 TEST_SUPPORT_RE='(^|/)(tests?|__tests__|__mocks__|__fixtures__|fixtures|e2e)/|\.fixtures?\.[cm]?[jt]sx?$'
 
 # The test-writer holds Edit to append a case to a frozen file, and nothing else:

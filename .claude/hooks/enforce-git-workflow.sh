@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
@@ -17,12 +17,20 @@
 #          planted git dir, a missing or non-repo directory): no dry-run, because
 #          the git dir's own config could run code. The ask names the directory
 #          and says the hook did not check what is staged. An argument naming a
-#          secret (`.env*`, `*.pem`, `*.key`, `credentials.*`) still denies there,
+#          secret (`.env*`, `*.pem`, `*.key`, `[.]credentials[.*]`) still denies there,
 #          read from the argument text alone;
 #          anything that touches the remote or merges into a protected branch;
 #          a commit with --amend, --no-verify, --all, --include, --only,
 #          --patch, --interactive or a pathspec; a switch/checkout that
 #          discards or resets
+#   destructive (python, on the parsed call, a non-`!` alias expanded up to 5
+#          hops): ask on clean without -n/-i, reset --hard, stash clear|drop,
+#          branch -D/-M/-C/-f, update-ref on HEAD/refs/heads or --stdin, a
+#          checkout/restore that overwrites `.`, `:/`, a glob, a directory or a
+#          named file with uncommitted changes (`git diff --quiet HEAD`, under the
+#          add dry-run's preconditions), a fetch into a local branch, upload-pack,
+#          update-head-ok, an alias's worktree add outside .claude/worktrees/;
+#          deny a checkout/restore that rewrites a test-first module or a test
 #   pass → a call naming `git` and add, stage, commit or switch passes only as
 #          one whole strict form (`grammar_strict`); anything else asks, as the
 #          last decision. The parser keeps the denies and the specific asks; it
@@ -52,6 +60,10 @@
 #     command it cannot read falls back to a scan of the raw text.
 #   - an `export GIT_DIR=...` (or GIT_WORK_TREE, GIT_CONFIG*) in an earlier
 #     statement is not read, like a bare `cd`.
+#   - the destructive rules live in the parser: with python3 missing or bad
+#     only the floor answers. A wrapped or unreadable call (`timeout 5 git
+#     clean -fdx`, a destructive call beside a heredoc shlex cannot read) gets
+#     no verdict from them (harness-hardening.md, Open follow-ups).
 #   - `ask` is not a block. It forces the permission prompt back in front of the
 #     user even when the command would otherwise be auto-approved. That IS the
 #     validation gate the convention asks for — the agent goes through it too.
@@ -86,8 +98,9 @@ PROTECTED_BRANCHES="main|master"
 # every other backslash is left alone.
 decide() {
     local decision="$1" reason
+    local cut=" [reason truncated]"
     reason="${2//\\n/$'\n'}"
-    reason="${reason:0:4000}"
+    ((${#reason} > 4000)) && reason="${reason:0:$((4000 - ${#cut}))}$cut"
     jq -n --arg d "$decision" --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -113,7 +126,7 @@ add_reason() {
         nodry)  printf '%s' "BLOCKED: git add --no-dry-run would cancel the hook's own dry-run. Stage explicit paths without it." ;;
         cd|prior) printf '%s' "$ADD_UNREADABLE_REASON" ;;
         locked) printf '%s' "BLOCKED: .git/index.lock exists, another git process holds the index. Wait for it, then retry; never delete the lock while it runs." ;;
-        secret:*) printf '%s' "BLOCKED: this git add would stage a secret: ${1#secret:}. Never stage .env*, *.pem, *.key, credentials.*; add the pattern to .gitignore." ;;
+        secret:*) printf '%s' "BLOCKED: this git add would stage a secret: ${1#secret:}. Never stage .env*, *.pem, *.key, credentials.*, .credentials.*; add the pattern to .gitignore." ;;
         *) printf '%s' "BLOCKED: git add --dry-run could not confirm what this stages ($1). If the paths are new in this same call (touch, git init), run git add as its own call; otherwise name existing paths literally." ;;
     esac
 }
@@ -157,7 +170,7 @@ dir_protected() {
 # A command shlex cannot read prints UNPARSABLE. When it cannot read a call, a
 # fallback scan of the raw text adds `?fb-add` / `?fb-flags` rows.
 parse_segments() {
-    python3 -I - "$1" "$2" <<'PY'
+    python3 -I - "$1" "$2" "$CWK_TDD_SHELL_TARGET_RE" "$CWK_TDD_SHELL_FROZEN_TEST_RE" <<'PY'
 import os
 import re
 import shlex
@@ -202,8 +215,45 @@ SWITCH = {
 ADD_SUBS = {"add", "stage"}
 QUIET_SUBS = {"add", "stage", "status", "diff", "log"}
 RAW_SEPARATORS = re.compile(r"[\s;&|()`'\"]+|\$\(")
+TDD_TARGET = re.compile(sys.argv[3].replace("[:space:]", r"\s"))
+TDD_FROZEN = re.compile(sys.argv[4].replace("[:space:]", r"\s"))
+NETWORK_SUBS = {"fetch", "pull", "clone", "ls-remote"}
+NETWORK_LONG = {"upload-pack", "update-head-ok", "refmap"}
+NETWORK_KNOWN = {"update-shallow", "unshallow", "refetch", "recurse-submodules",
+                 "rebase", "reference", "reference-if-able"}
+NETWORK_VALUE_LONG = {"depth", "deepen", "shallow-since", "shallow-exclude", "jobs", "negotiation-tip",
+                      "server-option", "recurse-submodules-default", "submodule-prefix", "upload-pack",
+                      "refmap", "origin", "branch", "template", "reference", "separate-git-dir",
+                      "config", "strategy", "strategy-option"}
+NETWORK_VALUE_SHORT = {"fetch": "jo", "pull": "josX", "clone": "bocju", "ls-remote": "o"}
+RESET_KNOWN = {"soft", "mixed", "merge", "keep", "quiet", "no-quiet", "patch", "intent-to-add",
+               "pathspec-from-file", "pathspec-file-nul", "recurse-submodules",
+               "no-recurse-submodules", "refresh", "no-refresh"}
+BRANCH_KNOWN = {"format", "delete", "move", "copy", "create-reflog", "set-upstream-to", "track",
+                "no-track", "unset-upstream", "edit-description", "list", "all", "remotes",
+                "contains", "no-contains", "merged", "no-merged", "sort", "points-at", "column",
+                "no-column", "color", "no-color", "verbose", "quiet", "abbrev", "no-abbrev",
+                "show-current", "ignore-case", "omit-empty", "recurse-submodules"}
+CHECKOUT_FAMILY = {
+    "restore": {"value_short": "s", "value_long": {"source", "conflict"},
+                "known": {"staged", "worktree", "source", "ours", "theirs", "merge", "conflict",
+                          "ignore-unmerged", "overlay", "no-overlay", "quiet", "progress",
+                          "no-progress", "recurse-submodules", "no-recurse-submodules",
+                          "ignore-skip-worktree-bits", "pathspec-file-nul", "patch"}},
+    "checkout": {"value_short": "bB", "value_long": {"orphan", "conflict"},
+                 "known": {"orphan", "conflict", "ours", "theirs", "merge", "detach", "track",
+                           "no-track", "guess", "no-guess", "overlay", "no-overlay", "quiet",
+                           "progress", "no-progress", "force", "ignore-skip-worktree-bits",
+                           "ignore-other-worktrees", "overwrite-ignore", "no-overwrite-ignore",
+                           "recurse-submodules", "no-recurse-submodules", "pathspec-file-nul",
+                           "patch"}},
+}
+GLOB_CHARS = set("*?[")
+MAX_ALIAS_HOPS = 5
+LOST_UNCOMMITTED = "every uncommitted change there is lost, and no commit or stash holds it"
 rows = []
-state = {"capped": False, "unread": False, "deadline": None, "cd": False, "prior": False}
+state = {"capped": False, "unread": False, "deadline": None, "cd": False, "prior": False,
+         "builtins": None}
 
 
 def strip_comments(text):
@@ -338,7 +388,7 @@ def is_secret(path):
     base = path.rsplit("/", 1)[-1]
     if base.startswith(".env"):
         return base not in SECRET_KEEP
-    return base.endswith((".pem", ".key")) or base.startswith("credentials.")
+    return base.endswith((".pem", ".key")) or re.match(r"\.?credentials(\.|$)", base) is not None
 
 
 def staged_secrets(dry_run_output):
@@ -380,28 +430,10 @@ def dry_run(directory, args):
         if named:
             return "secret:" + ",".join(p.replace("\t", " ") for p in named)
         return "unsafe:" + directory.replace("\t", " ").replace("\n", " ")
-    if state["deadline"] is None:
-        state["deadline"] = time.monotonic() + DRY_RUN_BUDGET
-    left = state["deadline"] - time.monotonic()
-    if left <= 0:
-        return "timeout"
-    try:
-        proc = subprocess.Popen(["git", "-C", directory, "add", "--dry-run", *args],
-                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, env={**os.environ, "LC_ALL": "C"})
-    except OSError:
-        return "failed"
-    try:
-        out, _ = proc.communicate(timeout=left)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
-        try:
-            proc.wait(0.5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        return "timeout"
-    if proc.returncode != 0:
+    code, out = deadline_git(directory, ["add", "--dry-run", *args], capture=True)
+    if code in ("timeout", "failed"):
+        return code
+    if code != 0:
         return "failed"
     secrets = staged_secrets(out.decode(errors="replace"))
     if secrets:
@@ -437,10 +469,405 @@ def add_verdict(args, directory, other_globals, git_env, dir_unread):
     return dry_run(directory, args)
 
 
+def git_builtins():
+    if state["builtins"] is None:
+        try:
+            res = subprocess.run(["git", "--list-cmds=builtins"], stdin=subprocess.DEVNULL,
+                                 capture_output=True, timeout=1)
+            names = res.stdout.decode(errors="replace").split() if res.returncode == 0 else []
+        except (OSError, subprocess.TimeoutExpired):
+            names = []
+        state["builtins"] = set(names)
+    return state["builtins"]
+
+
+def quick_git(directory, args):
+    try:
+        return subprocess.run(["git", "-C", directory, *args], stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=1, env={**os.environ, "LC_ALL": "C"})
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def deadline_git(directory, args, capture=False):
+    """Run git inside the call's shared budget.
+
+    Returns (exit code, stdout), or ("timeout"|"failed", b"") when the budget is
+    spent or git cannot start; a git still running at the deadline is killed.
+    """
+    if state["deadline"] is None:
+        state["deadline"] = time.monotonic() + DRY_RUN_BUDGET
+    left = state["deadline"] - time.monotonic()
+    if left <= 0:
+        return "timeout", b""
+    try:
+        proc = subprocess.Popen(["git", "-C", directory, *args], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, env={**os.environ, "LC_ALL": "C"})
+    except OSError:
+        return "failed", b""
+    try:
+        out, _ = proc.communicate(timeout=left)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(0.5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        return "timeout", b""
+    return proc.returncode, out or b""
+
+
+def expand_alias(sub, args, directory):
+    """The builtin a non-`!` alias runs, its args first: (sub, args, via_alias, problem)."""
+    seen, via = {sub}, False
+    for hop in range(MAX_ALIAS_HOPS + 1):
+        if sub in git_builtins() or not os.path.isdir(directory):
+            return sub, args, via, ""
+        if hop == MAX_ALIAS_HOPS:
+            return sub, args, via, "it chains more than five aliases"
+        res = quick_git(directory, ["config", "--get", f"alias.{sub}"])
+        if res is None:
+            return sub, args, via, "its config could not be read"
+        value = res.stdout.decode(errors="replace").strip()
+        if res.returncode != 0 or not value or value.startswith("!"):
+            return sub, args, via, ""
+        try:
+            words = shlex.split(value)
+        except ValueError:
+            return sub, args, via, "its value does not parse"
+        if not words:
+            return sub, args, via, ""
+        sub, args, via = words[0], words[1:] + args, True
+        if sub in seen:
+            return sub, args, via, "it calls itself"
+        seen.add(sub)
+    return sub, args, via, ""
+
+
+def is_long(arg):
+    return arg.startswith("--") and len(arg) > 2
+
+
+def is_short(arg):
+    return arg.startswith("-") and not arg.startswith("--") and len(arg) > 1
+
+
+def long_hits(arg, ours, known=()):
+    """The options of `ours` a long option names, exactly or by a prefix only they share."""
+    name = arg[2:].partition("=")[0]
+    if name in ours:
+        return {name}
+    if not name or name in known:
+        return set()
+    hits = {c for c in (*ours, *known) if c.startswith(name)}
+    return hits if hits <= set(ours) else set()
+
+
+def short_letters(arg, value_letters=""):
+    letters = ""
+    for ch in arg[1:]:
+        letters += ch
+        if ch in value_letters:
+            break
+    return letters
+
+
+def split_operands(args, value_short, value_long):
+    """The operands before and after `--`, option values skipped, and whether `--` was there."""
+    before, i = [], 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            return before, args[i:], True
+        if is_long(arg):
+            if "=" not in arg and long_hits(arg, value_long):
+                i += 1
+            continue
+        if is_short(arg):
+            letters = short_letters(arg, value_short)
+            if letters[-1] in value_short and len(letters) == len(arg) - 1:
+                i += 1
+            continue
+        before.append(arg)
+    return before, [], False
+
+
+def ask(text):
+    return f"ask:{text} Show the exact call, then let the user decide."
+
+
+def deny(text):
+    return f"deny:{text}"
+
+
+def sequence_ask(what):
+    return ask(f"This {what} reads the work tree, and a cd or an earlier command in the same call "
+               "keeps the hook from checking which tree and what it would lose. Run it alone.")
+
+
+def has_glob_or_magic(path):
+    return path in (".", "") or path.startswith(":") or bool(GLOB_CHARS & set(path))
+
+
+def worktree_clean(directory, paths, ctx):
+    if ctx["other_globals"] or ctx["git_env"] or ctx["dir_unread"]:
+        return False
+    if not readable_git_dir(directory):
+        return False
+    return deadline_git(directory, ["diff", "--quiet", "HEAD", "--", *paths])[0] == 0
+
+
+def clean_rule(sub, args, directory, ctx):
+    dry, interactive, i = False, False, 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            break
+        if is_long(arg):
+            hits = long_hits(arg, {"dry-run", "no-dry-run", "interactive", "no-interactive"},
+                             {"force", "quiet"})
+            if "no-interactive" in hits:
+                interactive = False
+            elif "interactive" in hits:
+                interactive = True
+            elif "no-dry-run" in hits:
+                dry = False
+            elif "dry-run" in hits:
+                dry = True
+            elif "=" not in arg and "exclude".startswith(arg[2:]):
+                i += 1
+            continue
+        if is_short(arg):
+            letters = short_letters(arg, "e")
+            if "i" in letters:
+                interactive = True
+            if "n" in letters:
+                dry = True
+            if letters[-1] == "e" and len(letters) == len(arg) - 1:
+                i += 1
+    if dry or interactive:
+        return "-"
+    return ask("git clean deletes untracked files for good: no commit or stash holds them. "
+               "Run `git clean -n` first and show its list.")
+
+
+def reset_rule(sub, args, directory, ctx):
+    for arg in args:
+        if arg == "--":
+            break
+        if is_long(arg) and "hard" in long_hits(arg, {"hard"}, RESET_KNOWN):
+            return ask(f"git reset --hard discards the work tree and the index: {LOST_UNCOMMITTED}. "
+                       "Show `git status` first.")
+    return "-"
+
+
+def stash_rule(sub, args, directory, ctx):
+    if args and args[0] in ("clear", "drop"):
+        return ask(f"git stash {args[0]} deletes stashed work that nothing else holds. "
+                   "Show `git stash list` first.")
+    return "-"
+
+
+def branch_rule(sub, args, directory, ctx):
+    for arg in args:
+        if arg == "--":
+            break
+        if (is_long(arg) and "force" in long_hits(arg, {"force"}, BRANCH_KNOWN)) or \
+                (is_short(arg) and set(short_letters(arg, "u")) & set("DMCf")):
+            return ask(f"This git branch {arg} deletes, renames over or resets a branch: "
+                       "commits only that branch holds can be lost.")
+    return "-"
+
+
+def update_ref_rule(sub, args, directory, ctx):
+    operands, i = [], 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--stdin":
+            return ask("git update-ref --stdin reads the refs it rewrites from its input: the hook "
+                       "cannot see them, and a branch it moves can lose commits.")
+        if arg == "-m":
+            i += 1
+        elif not arg.startswith("-"):
+            operands.append(arg)
+    if operands and (operands[0] == "HEAD" or operands[0].startswith("refs/heads/")):
+        return ask(f"git update-ref rewrites {operands[0]} directly, with no merge check: "
+                   "the commits it pointed to can be lost.")
+    return "-"
+
+
+def checkout_rule(sub, args, directory, ctx):
+    family = CHECKOUT_FAMILY[sub]
+    staged = worktree = False
+    for arg in args:
+        if arg == "--":
+            break
+        if is_long(arg):
+            hits = long_hits(arg, {"pathspec-from-file", "staged", "worktree"}, family["known"])
+            if "pathspec-from-file" in hits:
+                return ask(f"This git {sub} reads its paths from a file, so the hook cannot see "
+                           "which files it overwrites.")
+            staged = staged or "staged" in hits
+            worktree = worktree or "worktree" in hits
+        elif is_short(arg) and sub == "restore":
+            letters = short_letters(arg, family["value_short"])
+            staged = staged or "S" in letters
+            worktree = worktree or "W" in letters
+    if sub == "restore" and staged and not worktree:
+        return "-"
+    before, after, dashdash = split_operands(args, family["value_short"], family["value_long"])
+    for operand in before + after:
+        if TDD_TARGET.search(operand) or TDD_FROZEN.search(operand):
+            return deny(f"BLOCKED: this git {sub} would rewrite '{operand}', a test-first module or "
+                        "a test file, from git. A frozen test changes only through the plan, a "
+                        "test-first module only after a proved RED (.claude/rules/05-testing.md). "
+                        "Edit it with Write/Edit instead.")
+    if sub == "restore":
+        paths = before + after
+    elif dashdash:
+        paths = after
+    elif len(before) > 1:
+        paths = before[1:]
+    elif before and has_glob_or_magic(before[0]):
+        paths = before
+    elif before and ctx["moved"]:
+        return sequence_ask(f"git {sub}")
+    elif before and os.path.exists(os.path.join(directory, before[0])):
+        paths = before
+    else:
+        paths = []
+    for path in paths:
+        if has_glob_or_magic(path):
+            return ask(f"This git {sub} overwrites '{path}' in the work tree, a pattern that reaches "
+                       f"many files: {LOST_UNCOMMITTED}. Show `git status` first.")
+    if paths and ctx["moved"]:
+        return sequence_ask(f"git {sub}")
+    for path in paths:
+        if os.path.isdir(os.path.join(directory, path)):
+            return ask(f"This git {sub} overwrites the directory '{path}' in the work tree: "
+                       f"{LOST_UNCOMMITTED}. Show `git status` first.")
+    if not paths or worktree_clean(directory, paths, ctx):
+        return "-"
+    return ask(f"This git {sub} overwrites {', '.join(paths)}, which hold uncommitted changes or "
+               "could not be checked: those changes are lost. Show `git diff HEAD -- <paths>` first.")
+
+
+def refspec_destination(spec):
+    spec = spec.lstrip("+")
+    if spec.startswith("^") or ":" not in spec:
+        return ""
+    return spec.split(":", 1)[1]
+
+
+def network_rule(sub, args, directory, ctx):
+    upload = ask(f"This git {sub} sets the upload-pack program: it runs an arbitrary command.")
+    head_ok = ask(f"This git {sub} uses --update-head-ok: it can move the checked-out branch, "
+                  "and the work tree no longer matches it.")
+    short_values = NETWORK_VALUE_SHORT[sub]
+    positional, refmaps, i = [], [], 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            positional += args[i:]
+            break
+        if is_long(arg):
+            name, eq, value = arg[2:].partition("=")
+            hits = long_hits(arg, NETWORK_LONG, NETWORK_KNOWN | NETWORK_VALUE_LONG)
+            if "upload-pack" in hits:
+                return upload
+            if "update-head-ok" in hits:
+                return head_ok
+            if not eq and ("refmap" in hits or name in NETWORK_VALUE_LONG):
+                value = args[i] if i < len(args) else ""
+                i += 1
+            if "refmap" in hits:
+                refmaps.append(value)
+            continue
+        if is_short(arg):
+            letters = short_letters(arg, short_values)
+            if "u" in letters:
+                return upload if sub in ("clone", "ls-remote") else head_ok
+            if letters[-1] in short_values and len(letters) == len(arg) - 1:
+                i += 1
+            continue
+        positional.append(arg)
+    if sub == "fetch":
+        for spec in refmaps + positional[1:]:
+            dst = refspec_destination(spec)
+            if dst and (dst.startswith("refs/heads/") or not dst.startswith("refs/")):
+                return ask(f"This git fetch writes '{dst}', a local branch: it moves or force-rewinds "
+                           "it outside the merge ask. Fetch into refs/remotes/ instead.")
+    return "-"
+
+
+def worktree_rule(sub, args, directory, ctx):
+    if not ctx["via_alias"] or not args or args[0] != "add":
+        return "-"
+    rest = args[1:]
+    for arg in rest:
+        if arg == "--":
+            break
+        if (is_long(arg) and "force" in long_hits(arg, {"force"}, {"detach", "checkout", "lock",
+                                                                    "reason", "orphan", "quiet",
+                                                                    "track", "guess-remote"})) or \
+                (is_short(arg) and set(short_letters(arg, "bB")) & set("Bf")):
+            return ask(f"This alias runs git worktree add {arg}: it resets an existing branch or "
+                       "overrides git's own checks, and work on that branch can be lost.")
+    before, after, _ = split_operands(rest, "bB", {"reason"})
+    paths = before + after
+    if not paths:
+        return "-"
+    if ctx["moved"]:
+        return sequence_ask("alias of git worktree add")
+    outside = ask(f"This alias runs git worktree add '{paths[0]}', a tree outside "
+                  ".claude/worktrees/ (or one the hook could not place), where the kit's guarded "
+                  "paths no longer apply.")
+    res = quick_git(directory, ["rev-parse", "--show-toplevel"])
+    if res is None or res.returncode != 0:
+        return outside
+    root = os.path.join(res.stdout.decode(errors="replace").strip(), ".claude", "worktrees")
+    lexical = os.path.normpath(os.path.join(directory, paths[0]))
+    if not lexical.startswith(os.path.normpath(root) + os.sep):
+        return outside
+    if not os.path.realpath(lexical).startswith(os.path.realpath(root) + os.sep):
+        return outside
+    return "-"
+
+
+DESTRUCTIVE_RULES = {"clean": clean_rule, "reset": reset_rule, "stash": stash_rule,
+                     "branch": branch_rule, "update-ref": update_ref_rule,
+                     "checkout": checkout_rule, "restore": checkout_rule,
+                     "worktree": worktree_rule,
+                     **{s: network_rule for s in NETWORK_SUBS}}
+
+
+def destructive_verdict(sub, args, directory, ctx):
+    """`-`, `ask:<reason>` or `deny:<reason>`: what this call, alias expanded, can destroy."""
+    for value in ctx["configs"]:
+        key = value.partition("=")[0].lower()
+        if key.endswith(".uploadpack") or (key.startswith("remote.") and key.endswith(".fetch")):
+            return ask(f"This git call sets {key} on the command line: it picks the program git "
+                       "runs, or rewrites which local refs a fetch moves.")
+    runs, args, via_alias, problem = expand_alias(sub, args, directory)
+    if problem:
+        return ask(f"'git {sub}' is an alias the hook could not expand: {problem}.")
+    rule = DESTRUCTIVE_RULES.get(runs)
+    if rule is None:
+        return "-"
+    return rule(runs, args, directory, {**ctx, "via_alias": via_alias})
+
+
 def parse_git(seg, start, base, assigns):
     directory, alias_cfg, i = base, 0, start
     git_dir = work_tree = None
     other_globals = dir_unread = False
+    configs = []
     git_env = any(a.startswith("GIT_") for a in assigns)
     for assign in assigns:
         name, _, value = assign.partition("=")
@@ -470,8 +897,10 @@ def parse_git(seg, start, base, assigns):
             git_dir = value
         if name == "--work-tree" and value is not None:
             work_tree = value
-        if name in ("-c", "--config-env") and value and hides_config(value):
-            alias_cfg = 1
+        if name in ("-c", "--config-env") and value:
+            configs.append(value)
+            if hides_config(value):
+                alias_cfg = 1
     if i >= len(seg):
         return
     if work_tree:
@@ -498,7 +927,14 @@ def parse_git(seg, start, base, assigns):
         addv = add_verdict(args, directory, other_globals, git_env, dir_unread)
         if (addv == "ok" or addv.startswith("unsafe:")) and state["prior"]:
             addv = "prior"
-    rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}\t{flags_column(args)}\t{addv.replace(chr(10), ' ')}")
+    destr = "-"
+    if sub != HIDDEN:
+        destr = destructive_verdict(sub, args, directory, {
+            "configs": configs, "other_globals": other_globals, "git_env": git_env,
+            "dir_unread": dir_unread, "moved": state["cd"] or state["prior"]})
+    destr = destr.replace("\t", " ").replace("\n", " ")
+    rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}\t{flags_column(args)}"
+                f"\t{addv.replace(chr(10), ' ')}\t{destr}")
 
 
 def nested(text, base, depth):
@@ -746,7 +1182,7 @@ effective_sub() {
 # -----------------------------------------------------------------------------
 
 IS_COMMIT=0
-echo "$COMMAND" | grep -qE '\bgit\b[^|;&]*\bcommit\b' && IS_COMMIT=1
+echo "$COMMAND" | LC_ALL=C grep -qE '\bgit\b[^|;&]*\bcommit\b' && IS_COMMIT=1
 
 if [[ "$IS_COMMIT" -eq 1 ]] && on_protected_branch; then
     deny "$(commit_reason "$BRANCH")"
@@ -799,12 +1235,13 @@ if [[ "$PARSE_TRUSTED" -eq 0 ]]; then
     done
 fi
 
-while IFS=$'\t' read -r SUB DIR _ _ _ ADDV; do
+while IFS=$'\t' read -r SUB DIR _ _ _ ADDV DESTR; do
     [[ "$SUB" == "?fb-add" ]] && deny "$ADD_UNREADABLE_REASON"
     [[ -z "$SUB" || "$SUB" == UNPARSABLE || "$SUB" == "?unread" || "$SUB" == "?fb-flags" || "$SUB" == "?fb-cap" ]] && continue
     if [[ -n "$ADDV" && "$ADDV" != "-" && "$ADDV" != ok && "$ADDV" != unsafe:* ]]; then
         deny "$(add_reason "$ADDV")"
     fi
+    [[ "$DESTR" == deny:* ]] && deny "${DESTR#deny:}"
     effective_sub "$SUB" "$DIR"
     [[ "$EFF_SUB" == commit ]] && dir_protected "$DIR" && deny "$(commit_reason "$SEG_BRANCH")"
     [[ "$SUB" != add && "$SUB" != stage && ( "$EFF_SUB" == add || "$EFF_SUB" == stage ) ]] && deny "$ADD_HIDDEN_REASON"
@@ -826,11 +1263,11 @@ if echo "$COMMAND" | grep -qE '\bgh\s+(issue|release|repo|api)\b'; then
     ask "This writes to GitHub. Show exactly what will be sent, then let the user decide."
 fi
 
-if echo "$COMMAND" | grep -qE '\bgh\b[^|;&]*\bcomment\b'; then
+if echo "$COMMAND" | LC_ALL=C grep -qE '\bgh\b[^|;&]*\bcomment\b'; then
     ask "This posts a public comment. Show its full text first, then let the user decide."
 fi
 
-if echo "$COMMAND" | grep -qE '\bgit\s+push\b[^|;&]*(-f\b|--force\b)'; then
+if echo "$COMMAND" | LC_ALL=C grep -qE '\bgit\s+push\b[^|;&]*(-f\b|--force\b)'; then
     ask "$FORCE_REASON"
 fi
 
@@ -842,7 +1279,7 @@ if echo "$COMMAND" | grep -qE '\bgit\s+(merge|rebase)\b' && on_protected_branch;
     ask "$(merge_reason "$BRANCH")"
 fi
 
-while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE FLAGS ADDV; do
+while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE FLAGS ADDV DESTR; do
     [[ "$ADDV" == unsafe:* ]] && ask "This git add targets '${ADDV#unsafe:}', not a repository the hook can read safely (its git dir is not a .git directory or a linked worktree's), so the hook did not dry-run it and did not check what this stages, so it may include secrets. Show the exact call, then let the user decide."
     [[ "$SUB" == "?fb-flags" ]] && ask "The hook could not read this git call (a wrapper or a parse failure), and it carries $FLAGS. Show the exact call, then let the user decide."
     if [[ "$SUB" == "?fb-cap" ]]; then
@@ -869,6 +1306,7 @@ while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE FLAGS ADDV; do
     if [[ -n "$ALIAS" && "$ALIAS" == *[[:space:]]* ]] && [[ "$EFF_SUB" =~ ^(commit|switch|checkout)$ ]]; then
         ask "'git $SUB' is an alias for '$ALIAS', which carries its own flags. Show what it runs, then let the user decide."
     fi
+    [[ "$DESTR" == ask:* ]] && ask "${DESTR#ask:}"
     COMMIT_FLAGS=$(row_flags c "$FLAGS")
     SWITCH_FLAGS=$(row_flags s "$FLAGS")
     if [[ "$EFF_SUB" == commit && -n "$COMMIT_FLAGS" ]]; then
@@ -890,9 +1328,9 @@ while IFS=$'\t' read -r SUB DIR ALIAS_CFG FORCE FLAGS ADDV; do
 done <<< "$PARSED"
 
 if [[ "$PARSE_FAILED" -eq 1 ]]; then
-    if echo "$COMMAND" | grep -qE '\b(push|send-pack|merge|rebase)\b|alias\.' \
-       || { echo "$COMMAND" | grep -qE '\bcommit\b' \
-            && echo "$COMMAND" | grep -qE '(^|[[:space:]])(-C|--git-dir|--work-tree)|GIT_DIR|GIT_WORK_TREE'; }; then
+    if echo "$COMMAND" | LC_ALL=C grep -qE '\b(push|send-pack|merge|rebase)\b|alias\.' \
+       || { echo "$COMMAND" | LC_ALL=C grep -qE '\bcommit\b' \
+            && echo "$COMMAND" | LC_ALL=C grep -qE '(^|[[:space:]])(-C|--git-dir|--work-tree)|GIT_DIR|GIT_WORK_TREE'; }; then
         ask "The hook could not read which git command runs here. Show the exact git calls, then let the user decide."
     fi
 fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: hook-lib (sourced, never executed)
 # Purpose: three things every hook needs and none is worth re-writing per file
@@ -55,10 +55,11 @@ fi
 # PreToolUse hook that exits 1 or 127 reads as "allow" — so it refuses (exit 2).
 # Every other hook only warns: a Stop hook that exits 2 blocks the turn's end,
 # again and again.
-# "Loaded" means usable: the three functions exist and both lists are non-empty,
+# "Loaded" means usable: the seven functions exist and both lists are non-empty,
 # so an empty or half-renamed file refuses like a missing one.
 if ! { source "$(dirname "${BASH_SOURCE[0]}")/hook-guarded.sh" 2>/dev/null \
-        && declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied >/dev/null 2>&1 \
+        && declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why \
+                      cwk_real_path cwk_real_file cwk_real_rel >/dev/null 2>&1 \
         && [[ ${#CWK_GUARDED[@]} -gt 0 && ${#CWK_GUARD_DENIED[@]} -gt 0 ]]; }; then
     if [[ "${CWK_GUARD_HOOK:-0}" == 1 ]]; then
         echo "BLOCKED: hook-guarded.sh missing or broken — the kit's guarded-path list is unusable, so this guard refuses rather than passes. The user restores it from a terminal (git checkout -- .claude/hooks/hook-guarded.sh, or re-copy it from the kit if it was never committed); the agent cannot, every guard hook refuses." >&2
@@ -260,6 +261,9 @@ CWK_TDD_TEST_RE="(^|[/.])(${CWK_TDD_LAYERS})\.test\.tsx?$"
 CWK_TDD_SHELL_TARGET_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.tsx?|\.test\.tsx?"
 # A frozen test file named inside a shell command (Bash hook).
 CWK_TDD_SHELL_FROZEN_TEST_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.test\.tsx?"
+# Any test file, TypeScript or Python, on a path relative to the project root:
+# what tdd-freeze-tests.sh freezes and what a shell tool option may never write.
+CWK_TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_test|conftest)\.py$'
 
 # ------------------------------------------------------ CWK_TDD_PY_TARGET_RE
 # The Python test-first cycle (fastapi addon), for the ONE rule that has to know

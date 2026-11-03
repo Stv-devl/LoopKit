@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: auto-approve-config
 # Event: PreToolUse (Read)
@@ -28,27 +29,50 @@ fi
 # every .md on the machine — the exact outcome this block exists to prevent.
 # Not knowing where the project is means not auto-approving anything.
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
-if [[ -z "$PROJECT_DIR" ]]; then
+if [[ "$PROJECT_DIR" != /* ]]; then
     exit 0
 fi
 if [[ "$FILE_PATH" =~ (^|/)\.\.(/|$) ]]; then
     exit 0
 fi
-if [[ "$FILE_PATH" == /* && "$FILE_PATH" != "$PROJECT_DIR"/* ]]; then
+
+# No resolver (hook-guarded.sh missing or stale) → no approval.
+declare -F cwk_real_rel __cwk_guard_norm >/dev/null 2>&1 || exit 0
+
+# A relative path is read from the session's cwd, else the project dir.
+BASE=$(echo "$INPUT" | jq -r '.cwd // empty')
+[[ -n "$BASE" ]] || BASE="$PROJECT_DIR"
+
+# A main-tree session must not auto-approve files of a sibling worktree. Read
+# lexically first (`$P//.claude/worktrees/…`, `$P/./.claude/worktrees/…`), then
+# physically below, where a symlink into a worktree lands.
+LEXICAL="$FILE_PATH"
+[[ "$LEXICAL" == /* ]] || LEXICAL="$BASE/$LEXICAL"
+LEXICAL="$(__cwk_guard_norm "$LEXICAL")"
+if [[ "$LEXICAL" == "$(__cwk_guard_norm "$PROJECT_DIR")"/.claude/worktrees/* ]]; then
     exit 0
 fi
 
-# Never pre-approve a secret. protect-files.sh denies these on the same event and
-# a deny outranks an allow, so nothing was actually leaking — but two hooks of one
-# event returning opposite decisions on `.claude/secrets.key` is a contradiction
+# The file the path opens, symlinks followed. Outside the project, nothing is
+# approved: a link inside it may name ~/.ssh/id_rsa.
+REL_PATH=$(cwk_real_rel "$FILE_PATH" "$BASE") || exit 0
+if [[ "$REL_PATH" == .claude/worktrees/* ]]; then
+    exit 0
+fi
+
+# Never pre-approve a secret, by the name given or by the file it opens.
+# protect-files.sh denies these on the same event and a deny outranks an allow,
+# but two hooks of one event returning opposite decisions is a contradiction
 # waiting to be resolved the wrong way by a later refactor. Keep the lists agreed.
-BASENAME="${FILE_PATH##*/}"
-if [[ "$BASENAME" =~ ^\.env(\..+)?$ ]] && [[ ! "$BASENAME" =~ \.(example|sample|template)$ ]]; then
-    exit 0
-fi
-if [[ "$FILE_PATH" =~ \.pem$|\.key$|(^|/)credentials(\.|$) ]]; then
-    exit 0
-fi
+for probe in "$FILE_PATH" "$REL_PATH"; do
+    BASENAME="${probe##*/}"
+    if [[ "$BASENAME" =~ ^\.env(\..+)?$ ]] && [[ ! "$BASENAME" =~ \.(example|sample|template)$ ]]; then
+        exit 0
+    fi
+    if [[ "$probe" =~ \.pem$|\.key$|(^|/)\.?credentials(\.|$) ]]; then
+        exit 0
+    fi
+done
 
 # Patterns for auto-approved files
 AUTO_APPROVE_PATTERNS=(
@@ -67,11 +91,6 @@ AUTO_APPROVE_PATTERNS=(
     "CLAUDE\.md$"               # Claude instructions
 )
 
-REL_PATH="${FILE_PATH#"$PROJECT_DIR"/}"
-# A main-tree session must not auto-approve source files of a sibling worktree.
-if [[ "$REL_PATH" == .claude/worktrees/* ]]; then
-    exit 0
-fi
 for pattern in "${AUTO_APPROVE_PATTERNS[@]}"; do
     if [[ "$REL_PATH" =~ $pattern ]]; then
         cat << 'EOF'

@@ -470,6 +470,15 @@ grep -Fq 'never `.`, `-A`, `--all`, `-u`' "$GITHUB_AGENT"
 for ignored in '*.pem' '*.key' 'credentials.*'; do
     grep -qxF "$ignored" "$ROOT/.gitignore"
 done
+# K1 harness-hooks DA1: the kit's Read deny, exactly and in order (a `!` entry
+# carves only out of the entries before it); the doc names the union and the gap.
+jq -e '.permissions.deny == ["Read(.env)", "Read(.env.*)", "Read(!.env.example)",
+        "Read(!.env.sample)", "Read(!.env.template)", "Read(!.env.*.example)",
+        "Read(!.env.*.sample)", "Read(!.env.*.template)", "Read(*.pem)", "Read(*.key)",
+        "Read(credentials.*)", "Read(.credentials.*)"]' "$SETTINGS" >/dev/null
+grep -Fq 'Read(!.env.example)' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'permissions.deny' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'sandbox.enabled' "$ROOT/docs/ADAPTATION.md"
 GIT_HOOK="$ROOT/.claude/hooks/enforce-git-workflow.sh"
 grep -Fq 'git switch -c feat/<scope>' "$GIT_HOOK"
 if grep -Fq 'git checkout -b' "$GIT_HOOK"; then exit 1; fi
@@ -491,6 +500,12 @@ jq -en --argjson kit "$P1_KIT" \
 for needle in 'retirés' 'settings.local.json'; do
     grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
 done
+# K1 harness-hooks A0: the hold-back message and list in the doc match install.sh.
+for needle in 'merge <fichiers>.new, then re-run install.sh' 'Bash(pnpm build *)' \
+              'tdd-require-red.sh' 'auto-approve-config.sh'; do
+    grep -Fq -- "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+if grep -Fq 'merge their .new copies' "$ROOT/docs/ADAPTATION.md"; then exit 1; fi
 for needle in 'rm -r' 'pathspec'; do
     grep -Fq -- "$needle" "$ROOT/docs/Claude_Workflows.md"
 done

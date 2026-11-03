@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -183,6 +183,35 @@ if echo "$COMMAND" | grep -qE "$SECRET_RE"; then
     if echo "$SANITIZED" | grep -qE "$SECRET_RE"; then
         deny "BLOCKED: Reading or copying secret files (.env*, *.key, *.pem, credentials) via shell is not allowed.\\n\\nAsk the user for variable NAMES (not values) or check .env.example."
     fi
+fi
+
+# The text above reads spelling: `cat .e*`, `cat .e""nv` and `\grep -r` escape it.
+# shell_targets.py's secret mode expands each operand against the real listing
+# and names the reads that skip the grep wrapper or the ignore files. A failed
+# run adds no verdict: SECRET_RE stays the floor, the guard asks below keep theirs.
+HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
+GUARD_BASE="$(jq -r '.cwd // empty' <<<"$INPUT")"
+[[ -n "$GUARD_BASE" ]] || GUARD_BASE="${CLAUDE_PROJECT_DIR:-}"
+[[ -n "$GUARD_BASE" ]] || GUARD_BASE="$PWD"
+SECRET_DENY="" SECRET_ASK=""
+if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
+    SECRET_OUT="$(python3 -I -B "$HOOK_DIR/shell_targets.py" --secret-reads "$COMMAND" "$GUARD_BASE" "$SECRET_VERB" 2>/dev/null)" || SECRET_OUT=""
+    SECRET_LINES=()
+    while IFS= read -r SECRET_LINE; do
+        SECRET_LINES+=("$SECRET_LINE")
+    done <<<"$SECRET_OUT"
+    SECRET_COUNT=${#SECRET_LINES[@]}
+    if [[ "$SECRET_COUNT" -gt 0 && "${SECRET_LINES[$((SECRET_COUNT - 1))]}" == $'#end\t'"$((SECRET_COUNT - 1))" ]]; then
+        for SECRET_LINE in "${SECRET_LINES[@]:0:$((SECRET_COUNT - 1))}"; do
+            case "$SECRET_LINE" in
+                $'deny\t'*) [[ -n "$SECRET_DENY" ]] || SECRET_DENY="${SECRET_LINE#*$'\t'}" ;;
+                $'ask\t'*) [[ -n "$SECRET_ASK" ]] || SECRET_ASK="${SECRET_LINE#*$'\t'}" ;;
+            esac
+        done
+    fi
+fi
+if [[ -n "$SECRET_DENY" ]]; then
+    deny "BLOCKED: ${SECRET_DENY:0:300}, a secret file.\\n\\nA glob or a quoted spelling still opens it. Ask the user for variable NAMES (not values) or read .env.example."
 fi
 
 # =============================================================================
@@ -385,10 +414,6 @@ done < <(cwk_segments "$COMMAND")
 # without its `#end` sentinel fall back to the raw text (docs/specs/guard-shell.md).
 # =============================================================================
 
-HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
-GUARD_BASE="$(jq -r '.cwd // empty' <<<"$INPUT")"
-[[ -n "$GUARD_BASE" ]] || GUARD_BASE="${CLAUDE_PROJECT_DIR:-}"
-[[ -n "$GUARD_BASE" ]] || GUARD_BASE="$PWD"
 GUARD_FAILED=0
 GUARD_OUT=""
 if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
@@ -426,25 +451,104 @@ fi
 # One verdict per row, D > G > P > U > R; the reason shown is the first row of
 # the strongest verdict over the whole command. R: acceptEdits auto-approves
 # `rm`, so any other recursive delete inside the project asks.
-GUARD_DENY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
+GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
+GUARD_ASK_F="" GUARD_ASK_O="" GUARD_INLINE_TDD=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
+GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
+GUARD_PROJECT_REAL=""
+if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+    GUARD_PROJECT_REAL="$(cwk_real_path "$CLAUDE_PROJECT_DIR")" || GUARD_PROJECT_REAL=""
+fi
+GUARD_ROOT_WHY="It is the project root or a folder above it: deleting or emptying it loses the whole project."
+GUARD_TEST_WHY="A test-first module or a test file is written only with Write/Edit, where the TDD hooks see it (.claude/rules/05-testing.md)."
+
+guard_note_deny() {
+    [[ -n "$GUARD_DENY" ]] && return 0
+    GUARD_DENY="$1"
+    GUARD_DENY_WHY="$2"
+}
+
+# The project root or a folder above it, compared physically: an alias of the
+# project dir, `..`, `../..` or the absolute path all land here.
+guard_is_root_or_above() {
+    local real
+    [[ -n "$GUARD_PROJECT_REAL" ]] || return 1
+    real="$(cwk_real_path "$1")" || return 1
+    [[ "$real" == / || "$GUARD_PROJECT_REAL" == "$real" || "$GUARD_PROJECT_REAL" == "$real"/* ]]
+}
+
+# flag-r empties or rewrites a folder, flag-w writes a file, cfg loads a config.
+guard_classify_tool() {
+    local verb="$1" target="$2" rel="$3"
+    case "$verb" in
+        flag-r | flag-w)
+            if [[ "$rel" =~ $GUARD_PROTECTED_ROOT_RE && "$rel" != dist ]]; then
+                guard_note_deny "$rel written by $verb" "$rel is a protected directory, and a tool option that writes its output there empties or overwrites it whole."
+            elif [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $CWK_TEST_FILE_RE ]]; then
+                guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
+            elif cwk_is_guarded "$rel"; then
+                [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
+            elif [[ "$verb" == flag-r || "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+                [[ -n "$GUARD_ASK_F" ]] || GUARD_ASK_F="$rel ($verb)"
+            fi
+            ;;
+        cfg)
+            if [[ -d "$target" ]]; then
+                [[ "$(cwk_real_path "$target")" == "$GUARD_PROJECT_REAL" ]] && return 0
+            elif cwk_is_guarded "$rel"; then
+                return 0
+            fi
+            [[ -n "$GUARD_ASK_F" ]] || GUARD_ASK_F="$rel (cfg)"
+            ;;
+    esac
+    return 0
+}
+
 guard_classify() {
-    local verb="$1" target="$2" rel text
+    local verb="$1" target="$2" rel text plain=1
     case "$target" in
         '?inline:'* | '?unknown:'*)
             text="${target#*:}"
             if [[ "$text" == *.claude/.tdd-red* ]]; then
-                [[ -n "$GUARD_DENY" ]] || GUARD_DENY="$verb ${text:0:200}"
+                if [[ -z "$GUARD_DENY" ]]; then
+                    GUARD_DENY="$verb ${text:0:200}"
+                    GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.tdd-red)"
+                fi
+            elif [[ "$target" == '?inline:'* ]] \
+                && grep -qE "$TDD_TARGET_RE|$TDD_FROZEN_TEST_RE" <<<"$text"; then
+                [[ -n "$GUARD_INLINE_TDD" ]] || GUARD_INLINE_TDD="$verb ${text:0:200}"
             else
                 [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb ${text:0:200}"
             fi
             return 0
             ;;
-        '?glob:'*) target="${target#?glob:}" ;;
+        '?glob:'*) target="${target#?glob:}"; plain=0 ;;
     esac
-    rel="$(cwk_guard_rel "$target")" || return 0
-    if cwk_is_guard_denied "$rel"; then
-        [[ -n "$GUARD_DENY" ]] || GUARD_DENY="$verb $rel"
+    if [[ "$plain" == 1 && ( "$verb" == rm-r || "$verb" == flag-r ) ]] && guard_is_root_or_above "$target"; then
+        guard_note_deny "$target written by $verb" "$GUARD_ROOT_WHY"
+        return 0
+    fi
+    if ! rel="$(cwk_guard_rel "$target")"; then
+        [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] || return 0
+        case "$target" in
+            /dev/null | /dev/stdout | /dev/stderr | /dev/fd/*) return 0 ;;
+        esac
+        if [[ "$verb" != rm-r && "$verb" != flag-r && "$verb" != cfg ]] \
+            && [[ "$target" == /tmp || "$target" == /tmp/* ]]; then
+            return 0
+        fi
+        [[ -n "$GUARD_ASK_O" ]] || GUARD_ASK_O="$target by $verb"
+        return 0
+    fi
+    if [[ "$verb" == rm && "$rel" =~ ^\.git/(worktrees/[^/]+/)?(refs/([^/]+/)*)?[^/]+\.lock$ ]]; then
+        # A stale lock (`.git/index.lock`, `.git/refs/heads/x.lock`, a linked worktree's
+        # `.git/worktrees/<name>/index.lock`) is removed with a plain `rm`; a recursive
+        # delete, a move or any other path under .git stays denied.
+        return 0
+    elif cwk_is_guard_denied "$rel"; then
+        guard_note_deny "$rel written by $verb" "$(cwk_guard_denied_why "$rel")"
+    elif [[ "$verb" == flag-r || "$verb" == flag-w || "$verb" == cfg ]]; then
+        guard_classify_tool "$verb" "$target" "$rel"
     elif cwk_is_guarded "$rel"; then
         [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
     elif [[ ( "$verb" == rm-r || "$verb" == mv ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
@@ -462,11 +566,33 @@ if [[ "$GUARD_FAILED" == 0 ]]; then
 fi
 
 if [[ -n "$GUARD_DENY" ]]; then
-    deny "BLOCKED: .claude/.tdd-red/ is written only by tdd-prove-red.sh ($GUARD_DENY).\\n\\nA RED marker is the proof that a test failed before its module existed; a hand-written one lets a module in with no observed failure (.claude/rules/05-testing.md)."
+    deny "BLOCKED: $GUARD_DENY.\\n\\n$GUARD_DENY_WHY"
 fi
 if [[ "$GUARD_FAILED" == 1 && "$COMMAND" == *.claude/.tdd-red* ]]; then
     deny "BLOCKED: shell guard unavailable and the command names .claude/.tdd-red/.\\n\\nshell_targets.py is missing, broken or python3 is absent, so this write cannot be resolved; a RED marker is created only by the tdd-prove-red.sh script. Run /kit:doctor."
 fi
+if [[ -n "$GUARD_INLINE_TDD" ]]; then
+    deny "BLOCKED: an inline program names a test-first module or a test file ($GUARD_INLINE_TDD).\\n\\n$GUARD_TEST_WHY Write it with Write/Edit; to only read it, use the Read tool or cat."
+fi
+
+# A fix pass of eslint or ruff naming a test file rewrites it in place, past the
+# freeze: denied here, before every ask below, so no ask ever hides it. A folder
+# (`tests/services`) is not a named test file and keeps the formatter's ask.
+FORMAT_FIX_RE='[[:space:]](--fix|--fix-only|--fix=[^[:space:]]*|--unsafe-fixes)([[:space:]]|$)'
+set -f
+while IFS= read -r SEG; do
+    [[ "$SEG" =~ ^[[:space:]]*(git|echo|printf)[[:space:]] ]] && continue
+    TOOL_ARGS=$(echo "$SEG" | grep -oE '\b(eslint|ruff[[:space:]]+check)\b.*' || true)
+    [[ -n "$TOOL_ARGS" && "$TOOL_ARGS" =~ $FORMAT_FIX_RE ]] || continue
+    for word in $TOOL_ARGS; do
+        [[ "$word" == -* ]] && continue
+        if [[ "$word" =~ $CWK_TEST_FILE_RE ]]; then
+            set +f
+            deny "BLOCKED: ${TOOL_ARGS%% *} with a fix flag rewrites the test file $word in place.\\n\\n$GUARD_TEST_WHY Fix it with Edit, or run the fix on the implementation files only."
+        fi
+    done
+done < <(cwk_segments "$COMMAND")
+set +f
 
 # The text fallback's ask half: a guarded name, a heredoc, a redirect or a writer verb.
 guard_text_writes() {
@@ -481,6 +607,9 @@ guard_text_writes() {
     grep -qE '(^|[^[:alnum:]_.-])(tee|cp|mv|install|rsync|ln|patch|rm|rmdir|unlink|shred|truncate|touch|chmod|chown|sed|perl|ruby|python[0-9.]*|node|bash|sh|zsh|eval|find|rg)([^[:alnum:]_.-]|$)' <<<"$COMMAND"
 }
 
+if [[ -n "$SECRET_ASK" ]]; then
+    ask "This read may print a secret: ${SECRET_ASK:0:300}.\\n\\nSay what it searches and why, then let the user decide. A search that honours .gitignore (plain grep -r, rg without -u/--no-ignore/--hidden) skips .env."
+fi
 if [[ "$GUARD_FAILED" == 1 ]] && guard_text_writes; then
     ask "shell guard unavailable: shell_targets.py is missing, broken or python3 is absent, so the write targets of this command cannot be resolved.\\n\\nApprove only if it writes nothing under the kit's guardrails (.claude/, package.json, tsconfig*, vite/vitest/eslint configs, .github/workflows/). Run /kit:doctor."
 fi
@@ -489,6 +618,12 @@ if [[ -n "$GUARD_ASK_G" ]]; then
 fi
 if [[ -n "$GUARD_ASK_P" ]]; then
     ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. Approve only if this subtree is meant to go."
+fi
+if [[ -n "$GUARD_ASK_F" ]]; then
+    ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."
+fi
+if [[ -n "$GUARD_ASK_O" ]]; then
+    ask "This writes outside the project ($GUARD_ASK_O): no guardrail of the kit covers that path. Say what it writes and why, then let the user decide."
 fi
 if [[ -n "$GUARD_ASK_U" ]]; then
     ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails."
@@ -514,12 +649,19 @@ while IFS= read -r SEG; do
     [[ "$SEG" =~ ^[[:space:]]*(git|echo|printf)[[:space:]] ]] && continue
     [[ "$SEG" =~ (^|[[:space:]])xargs[[:space:]] ]] && continue
     [[ "$SEG" == *'$('* || "$SEG" == *'`'* ]] && continue
+    if [[ "$SEG" =~ (^|[[:space:]])(pnpm|npm|yarn)([[:space:]]+run)?[[:space:]]+(lint[^[:space:]]*) ]]; then
+        LINT_SCRIPT="${BASH_REMATCH[4]}"
+        if [[ "$SEG" =~ $FORMAT_FIX_RE ]]; then
+            FORMAT_WIDE="the $LINT_SCRIPT script's own targets"
+            break
+        fi
+    fi
     TOOL_ARGS=$(echo "$SEG" | grep -oE '\b(prettier|eslint|ruff[[:space:]]+(format|check)|biome[[:space:]]+(format|check|lint))\b.*' || true)
     [[ -z "$TOOL_ARGS" ]] && continue
     case "$TOOL_ARGS" in
         prettier*) [[ "$TOOL_ARGS" =~ [[:space:]](--write|-w)([[:space:]]|$) ]] || continue ;;
-        eslint*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
-        ruff*check*) [[ "$TOOL_ARGS" =~ [[:space:]]--fix([[:space:]]|$) ]] || continue ;;
+        eslint*) [[ "$TOOL_ARGS" =~ $FORMAT_FIX_RE ]] || continue ;;
+        ruff*check*) [[ "$TOOL_ARGS" =~ $FORMAT_FIX_RE ]] || continue ;;
         ruff*) [[ "$TOOL_ARGS" =~ [[:space:]](--check|--diff)([[:space:]]|$) ]] && continue ;;
         biome*) [[ "$TOOL_ARGS" =~ [[:space:]]--write([[:space:]]|$) ]] || continue ;;
     esac

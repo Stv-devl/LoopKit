@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-11-03T14:00:59.534253Z",
+    "reason": "3/3: test Majors only (X24.175-177 wrong layer, unpinned batch-2 behaviours, Q15 carve-outs, A4 matrix); no code Major survived"
+  }
+}

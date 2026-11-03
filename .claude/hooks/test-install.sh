@@ -147,11 +147,85 @@ p1_strip "$HB"
 HB_OUT="$(p1_rerun "$HB")"
 p1_absent "$HB"
 grep -Fq 'P1 held back: .claude/hooks/enforce-git-workflow.sh' <<<"$HB_OUT"
+# (a, A0) the held-back message names the .new copy to merge.
+grep -Fq 'merge .claude/hooks/enforce-git-workflow.sh.new' <<<"$HB_OUT"
+# (a, A0) the pnpm gate wildcards go too, the bare forms and pnpm audit * stay.
+gates_wild_none() {
+    jq -e '[.permissions.allow[]? | select(IN("Bash(pnpm build *)", "Bash(pnpm test:run *)",
+            "Bash(pnpm test:coverage *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"))] | length == 0' \
+        "$1/.claude/settings.json" >/dev/null
+}
+gates_wild_all() {
+    jq -e '[.permissions.allow[]? | select(IN("Bash(pnpm build *)", "Bash(pnpm test:run *)",
+            "Bash(pnpm test:coverage *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"))] | length == 5' \
+        "$1/.claude/settings.json" >/dev/null
+}
+gates_wild_none "$HB"
+jq -e '.permissions.allow | index("Bash(pnpm build)") and index("Bash(pnpm audit *)")' \
+    "$HB/.claude/settings.json" >/dev/null
+# (a, A0) the held-back settings still satisfy the doctor's gate allowlist.
+python3 "$HB/.claude/hooks/kit-doctor.py" | grep -q 'ok          gate-allowlist'
 # (b) its .new copies merged in, the re-run adds P1.
 while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HB" -name '*.new')
 HB_OUT="$(p1_rerun "$HB")"
 p1_present "$HB"
+gates_wild_all "$HB"
 if grep -Fq 'P1 held back' <<<"$HB_OUT"; then exit 1; fi
+
+# (A0) tdd-require-red.sh and auto-approve-config.sh are guard files: without
+# their api line P1 and the gate wildcards are held back, merged they come back.
+for guard in tdd-require-red.sh auto-approve-config.sh; do
+    HA0="$SCRATCH/hold-a0-$guard"
+    p1_fresh "$HA0"
+    sed -i '/^# cwk-guard-api:/d' "$HA0/.claude/hooks/$guard"
+    HA0_OUT="$(p1_rerun "$HA0")"
+    p1_absent "$HA0"
+    gates_wild_none "$HA0"
+    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA0_OUT"
+    while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HA0" -name '*.new')
+    p1_rerun "$HA0" >/dev/null
+    p1_present "$HA0"
+    gates_wild_all "$HA0"
+done
+
+# (A2) enforce-git-workflow.sh left at its previous api, 1, is held back.
+HA2="$SCRATCH/hold-a2"
+p1_fresh "$HA2"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA2/.claude/hooks/enforce-git-workflow.sh"
+HA2_OUT="$(p1_rerun "$HA2")"
+p1_absent "$HA2"
+gates_wild_none "$HA2"
+grep -Fq 'P1 held back: .claude/hooks/enforce-git-workflow.sh' <<<"$HA2_OUT"
+
+# (A3) hook-guarded.sh left at its previous api, 1, is held back.
+HA3="$SCRATCH/hold-a3"
+p1_fresh "$HA3"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA3/.claude/hooks/hook-guarded.sh"
+HA3_OUT="$(p1_rerun "$HA3")"
+p1_absent "$HA3"
+gates_wild_none "$HA3"
+grep -Fq 'P1 held back: .claude/hooks/hook-guarded.sh' <<<"$HA3_OUT"
+
+# (A4) shell_targets.py, prevent-destructive-commands.sh and hook-lib.sh left at
+# their previous api, 1, are held back.
+for guard in shell_targets.py prevent-destructive-commands.sh hook-lib.sh; do
+    HA4="$SCRATCH/hold-a4-$guard"
+    p1_fresh "$HA4"
+    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA4/.claude/hooks/$guard"
+    HA4_OUT="$(p1_rerun "$HA4")"
+    p1_absent "$HA4"
+    gates_wild_none "$HA4"
+    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA4_OUT"
+done
+
+# (A7) protect-files.sh left at its previous api, 1, is held back.
+HA7="$SCRATCH/hold-a7"
+p1_fresh "$HA7"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA7/.claude/hooks/protect-files.sh"
+HA7_OUT="$(p1_rerun "$HA7")"
+p1_absent "$HA7"
+gates_wild_none "$HA7"
+grep -Fq 'P1 held back: .claude/hooks/protect-files.sh' <<<"$HA7_OUT"
 
 # (c) a fresh install carries P1 and keeps it on a re-run.
 HC="$SCRATCH/hold-c"
@@ -185,6 +259,33 @@ p1_rerun "$HE" >/dev/null
 jq -e '.permissions.defaultMode == "default" and (.permissions.allow | index("Bash(make *)"))
        and (.permissions.allow | index("Bash(git add *)") | not)' "$HE/.claude/settings.json" >/dev/null
 
+# (DA1) a target's own permissions.deny keeps its entries, first, and gains the
+# kit's missing ones in the kit's order, so `Read(!.env.example)` still follows
+# `Read(.env.*)`. A re-run adds nothing; a held-back install keeps the deny.
+KIT_DENY="$(jq -c '.permissions.deny // []' "$ROOT/.claude/settings.json")"
+jq -e 'index("Read(.env.*)") < index("Read(!.env.example)")' <<<"$KIT_DENY" >/dev/null
+for carve in 'Read(!.env.*.example)' 'Read(!.env.*.sample)' 'Read(!.env.*.template)'; do
+    jq -e --arg carve "$carve" 'index("Read(.env.*)") < index($carve)' <<<"$KIT_DENY" >/dev/null
+done
+HG="$SCRATCH/deny-own"
+p1_fresh "$HG"
+jq -e --argjson kit "$KIT_DENY" '.permissions.deny == $kit' "$HG/.claude/settings.json" >/dev/null
+jq '.permissions.deny = ["Bash(curl *)", "Read(.env.*)"]' "$HG/.claude/settings.json" >"$SCRATCH/deny.json"
+cp "$SCRATCH/deny.json" "$HG/.claude/settings.json"
+p1_rerun "$HG" >/dev/null
+jq -e --argjson kit "$KIT_DENY" \
+    '.permissions.deny == (["Bash(curl *)", "Read(.env.*)"] + ($kit - ["Read(.env.*)"]))
+     and (.permissions.deny | index("Read(.env.*)") < index("Read(!.env.example)"))' \
+    "$HG/.claude/settings.json" >/dev/null
+HG_DENY="$(jq -c '.permissions.deny' "$HG/.claude/settings.json")"
+p1_rerun "$HG" >/dev/null
+[[ "$(jq -c '.permissions.deny' "$HG/.claude/settings.json")" == "$HG_DENY" ]]
+HGH="$SCRATCH/deny-held"
+p1_fresh "$HGH"
+sed -i '/^# cwk-guard-api:/d' "$HGH/.claude/hooks/enforce-git-workflow.sh"
+grep -Fq 'P1 held back' <<<"$(p1_rerun "$HGH")"
+jq -e --argjson kit "$KIT_DENY" '.permissions.deny == $kit' "$HGH/.claude/settings.json" >/dev/null
+
 # (f) hook-lib.sh that no longer sources hook-guarded.sh holds P1 back.
 HF="$SCRATCH/hold-f"
 p1_fresh "$HF"
@@ -216,6 +317,7 @@ grep -Fq 'P1 held back: .claude/hooks/protect-files.sh' <<<"$HH_OUT"
 # I3 hold-back removes a P1 the target already holds: the five kit allows and an
 # acceptEdits mode go, everything else the target has stays.
 P1_KIT="$(sed -n "/^P1_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^P1_ALLOWS='//; s/'\$//")"
+jq -e 'length == 5' <<<"$P1_KIT" >/dev/null
 p1_none() {
     jq -e --argjson p1 "$P1_KIT" \
         '(.permissions.defaultMode != "acceptEdits") and ([.permissions.allow[]? | select(IN($p1[]))] | length == 0)' \

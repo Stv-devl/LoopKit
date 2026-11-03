@@ -441,8 +441,8 @@ hook qui en a besoin appelle `cwk_is_guarded` au lieu de la recopier :
 - `.claude/hooks/*` (fixtures et `hook-lib.sh` compris), `.claude/scripts/*`,
   `.claude/settings.json`, `.claude/settings.local.json`, `.claude/.tdd-unfrozen`, `.claude/.size-exempt` ;
 - `vitest.config.*`, `eslint.config.*`, `vite.config.*` (le plancher de
-  couverture), `package.json` (les scripts des gates), `tsconfig*.json`,
-  `.github/workflows/*` ;
+  couverture), `playwright.config.*`, `package.json` (les scripts des gates),
+  `tsconfig*.json`, `.github/workflows/*` ;
 - les dossiers qui les contiennent (`.claude`, `.github`, la racine).
 
 Un `Write` ou un `Edit` sur l'un d'eux **demande ton accord**, depuis l'arbre
@@ -496,22 +496,49 @@ refusé lui aussi).
 **À la fusion.** `install.sh` fait l'union de `allow` (les tiennes restent, les
 cinq s'ajoutent) et garde ton `defaultMode` s'il en a un : ta clé gagne toujours.
 
+**Les secrets refusés nativement.** Le kit livre aussi un `permissions.deny` :
+`Read(.env)`, `Read(.env.*)`, `Read(!.env.example)`, `Read(!.env.sample)`,
+`Read(!.env.template)`, `Read(!.env.*.example)`, `Read(!.env.*.sample)`,
+`Read(!.env.*.template)` (un modèle comme `.env.local.example` reste lisible),
+`Read(*.pem)`, `Read(*.key)`, `Read(credentials.*)`, `Read(.credentials.*)`. L'ordre compte : une entrée `!` ne retire que des
+entrées écrites avant elle, dans le même fichier. `install.sh` en fait l'union
+dans l'ordre : tes entrées d'abord, puis celles du kit qui manquent, sans tri
+(un tri mettrait les `!` en tête, où ils ne retirent rien). La retenue P1 ne le
+retire jamais. Mesuré le 2026-11-01 sur Claude Code 2.1.316 : l'outil Read et
+`cat` sont refusés sur `.env` et `.env.local`, `.env.example` reste lisible.
+Ce refus ne lie que les commandes que Claude Code reconnaît et les cibles de
+redirection : un interpréteur qui ouvre le fichier lui-même, ou un `grep -r`
+lancé depuis le dossier, n'est pas couvert. `prevent-destructive-commands.sh`
+rattrape les formes connues (glob, contournement du wrapper de `grep`, `rg -uu`,
+`printenv`), sans être un bac à sable. Le bac à sable de Claude Code
+(`sandbox.enabled`, avec `bubblewrap` et `socat` sous Linux) couvrirait aussi
+les sous-processus, mais le kit ne l'active pas : `autoAllowBashIfSandboxed`
+vaut `true` par défaut et retire les invites des commandes Bash, et son effet
+sur un `ask` de hook n'est pas mesuré. Active-le toi-même si tu en as besoin.
+
 **La retenue.** P1 sans les hooks qui le surveillent serait un `acceptEdits`
-nu. Les six fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
+nu. Les huit fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
 `shell_targets.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
-`enforce-git-workflow.sh`) portent une ligne `# cwk-guard-api: N`. Si dans ton
+`enforce-git-workflow.sh`, `tdd-require-red.sh`, `auto-approve-config.sh`)
+portent une ligne `# cwk-guard-api: N`. Si dans ton
 projet l'un d'eux manque, n'a pas cette ligne ou porte un numéro plus bas que
 celui du kit, ou si `hook-lib.sh` ne source plus `hook-guarded.sh`, `install.sh`
 n'ajoute ni le `defaultMode` ni les cinq autorisations ; s'ils sont déjà là
 (une installation précédente), ils sont retirés — le `defaultMode` seulement
-s'il vaut `acceptEdits`. Il affiche :
+s'il vaut `acceptEdits`. Les cinq jokers de gate, `Bash(pnpm build *)`,
+`Bash(pnpm test:run *)`, `Bash(pnpm test:coverage *)`, `Bash(pnpm lint *)` et
+`Bash(pnpm typecheck *)`, sont retirés avec eux, même si tu les avais ajoutés
+toi-même : leurs drapeaux (`--outDir`, `--root`…) ne sont surveillés que par
+les hooks à jour. Leurs formes nues (`pnpm build`, `pnpm test:run`…) et
+`Bash(pnpm audit *)` restent, donc les gates tournent toujours sans invite. Il
+affiche :
 
 ```
-P1 held back: <fichiers> — merge their .new copies, then re-run install.sh
+P1 held back: <fichiers> — merge <fichiers>.new, then re-run install.sh
 ```
 
 Fusionne les `.new` de ces fichiers (en gardant tes réglages, `PROTECTED_DIRS`,
-`PROTECTED_BRANCHES`), puis relance `install.sh`. Seuls ces six réglages du kit
+`PROTECTED_BRANCHES`), puis relance `install.sh`. Seuls ces onze réglages du kit
 sont retirés ; tes autres autorisations et un `defaultMode` choisi par toi
 restent. Tes propres modifications de ces hooks ne déclenchent jamais la retenue
 tant que la ligne d'api est à jour. `install.sh` ne touche pas

@@ -1,6 +1,20 @@
 {
   "permissions": {
     "defaultMode": "acceptEdits",
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Read(!.env.sample)",
+      "Read(!.env.template)",
+      "Read(!.env.*.example)",
+      "Read(!.env.*.sample)",
+      "Read(!.env.*.template)",
+      "Read(*.pem)",
+      "Read(*.key)",
+      "Read(credentials.*)",
+      "Read(.credentials.*)"
+    ],
     "allow": [
       "Bash(grep *)",
       "Bash(rg *)",

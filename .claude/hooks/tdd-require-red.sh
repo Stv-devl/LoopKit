@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: tdd-require-red
 # Event: PreToolUse (Write|Edit)
@@ -120,6 +121,17 @@ deny() {
     exit 0
 }
 
+# A marker with no digest, an empty one, or `unavailable` written on a machine
+# that can hash now, proves a red on no particular version of the test: an
+# empty file written by hand passes as one. `unavailable` stays valid only
+# where no hash tool exists at all. Reads MARKED_DIGEST and CURRENT_DIGEST.
+require_marker_digest() {
+    if [[ -z "$MARKED_DIGEST" ]] \
+       || [[ "$MARKED_DIGEST" == "unavailable" && "$CURRENT_DIGEST" != "unavailable" ]]; then
+        deny "Test-first: marker without digest, re-save the test. The RED marker for '$TEST_PATH' records no usable sha256 of the test it ran, so it proves no red for '$FILE_PATH' (.claude/rules/05-testing.md).\n\nRe-save '$TEST_PATH': tdd-prove-red runs it again and records a marker with its digest. A marker is never written by hand."
+    fi
+}
+
 is_unfrozen() {
     local target="$1" list="$PROJECT_DIR/.claude/.tdd-unfrozen" line
     [[ -f "$list" ]] || return 1
@@ -188,7 +200,8 @@ if [[ -f "$FILE_PATH" ]]; then
 
     MARKED_DIGEST=$(grep -m1 '^sha256:' "$MARKER" 2>/dev/null | cut -d: -f2)
     CURRENT_DIGEST=$(file_digest "$TEST_PATH")
-    if [[ -n "$MARKED_DIGEST" && "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
+    require_marker_digest
+    if [[ "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
           && "$MARKED_DIGEST" != "$CURRENT_DIGEST" ]]; then
         deny "Test-first: the RED marker for '$TEST_PATH' was recorded on a different version of that file, so it proves nothing about $ADDED_LIST as things stand now (.claude/rules/05-testing.md).\n\nRe-save the test file: tdd-prove-red runs it again and records a fresh verdict. Read that verdict before writing '$FILE_PATH' — anything other than 'RED confirmed' means the red was not real."
     fi
@@ -229,7 +242,8 @@ fi
 # and rewritten at the same path.
 MARKED_DIGEST=$(grep -m1 '^sha256:' "$MARKER" 2>/dev/null | cut -d: -f2)
 CURRENT_DIGEST=$(file_digest "$TEST_PATH")
-if [[ -n "$MARKED_DIGEST" && "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
+require_marker_digest
+if [[ "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
       && "$MARKED_DIGEST" != "$CURRENT_DIGEST" ]]; then
     deny "Test-first: the RED marker for '$TEST_PATH' was recorded on a different version of that file, so it proves nothing about the test as it stands now (.claude/rules/05-testing.md).\n\nRe-save the test file: tdd-prove-red runs it again and records a fresh verdict. Read that verdict before creating '$FILE_PATH' — anything other than 'RED confirmed' means the red was not real."
 fi

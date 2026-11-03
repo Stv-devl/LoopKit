@@ -154,7 +154,22 @@ Les invites qui restent : `git push`, `gh pr`, un commit avec `--amend` (ou
 autre appel qui nomme `git` et `add`, `stage`, `commit` ou `switch`, un
 `switch`/`checkout` avec
 `--discard-changes` (ou `--force`, `-C`), un `rm -r`, et les écritures sur les
-chemins gardés (`docs/ADAPTATION.md` § 14). Un projet dont les hooks de garde ne
+chemins gardés (`docs/ADAPTATION.md` § 14). Les appels git qui perdent du
+travail demandent aussi : `git clean` sans `-n` effectif (le dernier de
+`-n`/`--dry-run`/`--no-dry-run` gagne), `reset --hard`, `checkout`/`restore`
+qui écrasent des fichiers modifiés, `stash drop`/`clear`, `branch -D`/`-M`/`-f`,
+`update-ref` sur `HEAD` ou une branche, un `worktree add` passé par un alias
+(hors `.claude/worktrees/` ou forcé), et `fetch`/`pull`/`clone`/`ls-remote`
+avec `--upload-pack` (ou une abréviation, `-u`). Côté shell, demandent : une option
+d'outil qui écrit ou charge ailleurs que dans le projet (`--outDir`, `--config`,
+`-p`…), une lecture qui pourrait afficher un secret (`printenv`, `env`,
+`rg -uu`, un `grep -r` hors du wrapper, un glob vers un fichier `.env` dans un
+dossier inconnu, une forme de glob que le hook ne sait pas lire), un
+dossier hors projet. Sont refusés : un `rm -rf` de la racine du projet ou
+d'un dossier au-dessus, toute écriture dans `.git/` (sauf un `rm` simple de
+`*.lock`, y compris sous `.git/worktrees/<nom>/`), un `eslint --fix` ou `ruff --fix` nommant un fichier de test, un
+glob ou un nom qui atteint un secret (`.env*`, `*.pem`, `*.key`, `credentials*`,
+hors `.env.example|sample|template`). Un projet dont les hooks de garde ne
 sont pas à jour garde toutes ses invites, et perd le P1 qu'une installation
 précédente lui avait donné (§ 15).
 

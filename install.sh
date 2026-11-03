@@ -204,9 +204,12 @@ copy_tree() {
 }
 
 GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
-             prevent-destructive-commands.sh enforce-git-workflow.sh)
+             prevent-destructive-commands.sh enforce-git-workflow.sh
+             tdd-require-red.sh auto-approve-config.sh)
 P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
             "Bash(git branch --show-current)", "Bash(git worktree list)"]'
+P1_GATE_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
+                 "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"]'
 
 # guard_api_number <file>
 # The file's `# cwk-guard-api: N` number, empty when the file or the line is absent.
@@ -239,9 +242,14 @@ guard_api_missing() {
 # settings.json is the one kit file that must merge on every update: a .new here
 # means newly added hooks stay mute. User keys win; selected hook groups merge by
 # event + matcher and commands remain unique. Re-running is byte-stable.
+# permissions.deny is a union in order, never `unique`: the target's entries
+# first, then the kit's missing ones, so `Read(!.env.example)` stays after
+# `Read(.env.*)` (sorting would put the `!` first and carve nothing). Never held back.
 # P1 (defaultMode + the narrow git allows) is held back while a guard hook of the
 # target is not current: the kit side loses it, and a P1 an earlier install left
-# in the target goes too (the five allows, an acceptEdits mode); nothing else does.
+# in the target goes too (the five allows, an acceptEdits mode), with the five
+# `pnpm <gate> *` wildcards whose flags those hooks police; the bare gate forms
+# and everything else stay.
 install_settings() {
     local target="$1" react="$2" selected tmp held
     selected="$(mktemp)"
@@ -266,12 +274,14 @@ install_settings() {
 
     held="$(guard_api_missing "$TARGET")"
     if [[ -n "$held" ]]; then
-        jq --argjson p1 "$P1_ALLOWS" \
-            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1)' \
+        jq --argjson p1 "$P1_ALLOWS" --argjson gates "$P1_GATE_ALLOWS" \
+            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1 - $gates)' \
             "$selected" > "$tmp"
         mv "$tmp" "$selected"
         tmp="$(mktemp)"
-        echo "P1 held back: $held — merge their .new copies, then re-run install.sh"
+        local merge="" f
+        for f in $held; do merge+="${merge:+, }$f.new"; done
+        echo "P1 held back: $held — merge $merge, then re-run install.sh"
     fi
 
     mkdir -p "$(dirname "$target")"
@@ -282,7 +292,7 @@ install_settings() {
         return
     fi
 
-    jq -s --argjson p1 "$P1_ALLOWS" --arg held "$held" '
+    jq -s --argjson p1 "$P1_ALLOWS" --argjson gates "$P1_GATE_ALLOWS" --arg held "$held" '
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
@@ -291,8 +301,11 @@ install_settings() {
       .[0] as $old | .[1] as $new
       | ($new * $old)
       | .permissions.allow = ((($old.permissions.allow // []) + ($new.permissions.allow // [])) | unique)
+      | ($old.permissions.deny // []) as $own
+      | .permissions.deny = ($own + [($new.permissions.deny // [])[] | . as $x | select($own | any(. == $x) | not)])
+      | if .permissions.deny == [] then del(.permissions.deny) else . end
       | if $held == "" then . else
-          .permissions.allow -= $p1
+          .permissions.allow -= ($p1 + $gates)
           | if .permissions.defaultMode == "acceptEdits" then del(.permissions.defaultMode) else . end
         end
       | .hooks =(reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};

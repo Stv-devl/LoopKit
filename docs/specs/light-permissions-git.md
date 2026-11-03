@@ -28,7 +28,7 @@ Threat model: a **mistaken** agent in `acceptEdits` with the allow list below. P
   - **Smoke, before merge.** Scratch target: `git init -b main`, a `package.json` with `"test:run": "true"`, a seed commit, `git switch -c feat/x`, then `install.sh` into it. Headless `claude -p --output-format json --max-turns 2 --tools <Write|Bash>` (no `--allowedTools`, no `--permission-mode`: the installed mode applies), one call each, in order: Write `src/x.ts`; `git add src/x.ts`; `git commit -m "x"`; `pnpm test:run` → absent from `permission_denials`, effect observed; `git push`, `gh pr list`, `git commit -m x --amend`, `git switch -c y --discard-changes` → present, the last two with the hook's own ask reason. No remote, no gh auth.
   - **Docs.** `docs/ADAPTATION.md`: `install.sh` unions `allow` and keeps the user's `defaultMode`; the hold-back and how to clear it; the measure method — permission-prompt dead time on a light pass, from the session transcript: the gaps between a `tool_use` and its `tool_result` on calls that prompted (`docs/measuring-the-loop.md:28-30`), summed per pass, "before" from an existing light-pass transcript, "after" from the next one. `docs/Claude_Workflows.md` (French): the prompts left on a light pass (`git push`, `gh pr`, `--amend`, `--discard-changes`, guarded paths).
 - OUT :
-  - No change to the loop's human gates (`docs/specs/light-fewer-gates.md`). No kit `permissions.deny`/`ask` array (the install merge would replace a target's).
+  - No change to the loop's human gates (`docs/specs/light-fewer-gates.md`). No kit `permissions.ask` array. A kit `permissions.deny` arrived later, with `harness-hooks` DA1 (2026-11-02), once `install.sh` unions it in order instead of replacing a target's.
 
 ## Data model
 none
