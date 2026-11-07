@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 2
+# cwk-guard-api: 3
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -452,7 +452,7 @@ fi
 # the strongest verdict over the whole command. R: acceptEdits auto-approves
 # `rm`, so any other recursive delete inside the project asks.
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
-GUARD_ASK_F="" GUARD_ASK_O="" GUARD_INLINE_TDD=""
+GUARD_ASK_F="" GUARD_ASK_O="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
 GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
 GUARD_PROJECT_REAL=""
@@ -505,11 +505,20 @@ guard_classify_tool() {
 }
 
 guard_classify() {
-    local verb="$1" target="$2" rel text plain=1
+    local verb="$1" target="$2" rel text slot="" plain=1
     case "$target" in
         '?inline:'* | '?unknown:'*)
             text="${target#*:}"
-            if [[ "$text" == *.claude/.tdd-red* ]]; then
+            case "$verb" in
+                snapshot) slot=GUARD_ASK_S ;;
+                cfg-write) slot=GUARD_ASK_C ;;
+                cache-clear) slot=GUARD_ASK_K ;;
+                option) slot=GUARD_ASK_W ;;
+                kit-cwd) slot=GUARD_ASK_Q ;;
+            esac
+            if [[ -n "$slot" ]]; then
+                [[ -n "${!slot}" ]] || printf -v "$slot" '%s' "${text:0:200}"
+            elif [[ "$text" == *.claude/.tdd-red* ]]; then
                 if [[ -z "$GUARD_DENY" ]]; then
                     GUARD_DENY="$verb ${text:0:200}"
                     GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.tdd-red)"
@@ -610,11 +619,41 @@ guard_text_writes() {
 if [[ -n "$SECRET_ASK" ]]; then
     ask "This read may print a secret: ${SECRET_ASK:0:300}.\\n\\nSay what it searches and why, then let the user decide. A search that honours .gitignore (plain grep -r, rg without -u/--no-ignore/--hidden) skips .env."
 fi
+guard_runs_tool() {
+    local word
+    local -a words
+    read -ra words <<< "${COMMAND//$'\n'/ }"
+    for word in "${words[@]}"; do
+        case "${word##*/}" in
+            pnpm | npm | npx | yarn | bunx | vitest | vite | tsc | playwright) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+if [[ "$GUARD_FAILED" == 1 ]] && guard_runs_tool; then
+    ask "The shell guard could not parse this command (an unclosed quote or an escape it cannot read), and it runs a package runner or a test/build tool whose options can write anywhere.\\n\\nShow the exact call, then let the user decide; quoting it plainly avoids this prompt."
+fi
 if [[ "$GUARD_FAILED" == 1 ]] && guard_text_writes; then
-    ask "shell guard unavailable: shell_targets.py is missing, broken or python3 is absent, so the write targets of this command cannot be resolved.\\n\\nApprove only if it writes nothing under the kit's guardrails (.claude/, package.json, tsconfig*, vite/vitest/eslint configs, .github/workflows/). Run /kit:doctor."
+    ask "shell guard unavailable: shell_targets.py is missing, broken or python3 is absent, so the write targets of this command cannot be resolved.\\n\\nApprove only if it writes nothing under the kit's guardrails (.claude/, package.json, tsconfig*, vite/vitest/eslint configs, .github/workflows/, the root launchers install.sh, workflow.py, workflow.sh, codex-handoff.sh, addons/). Run /kit:doctor."
 fi
 if [[ -n "$GUARD_ASK_G" ]]; then
-    ask "guarded path: $GUARD_ASK_G (kit guardrail; approve only if you meant to change it)."
+    ask "guarded path: $GUARD_ASK_G (kit guardrail; approve only if you meant to change it).\\n\\nWrite files with the Write/Edit tool instead."
+fi
+if [[ -n "$GUARD_ASK_S" ]]; then
+    ask "This test run rewrites the snapshots ($GUARD_ASK_S).\\n\\n.claude/rules/05-testing.md forbids snapshot updates that bypass Write/Edit. Approve only if the user asked for it."
+fi
+if [[ -n "$GUARD_ASK_C" ]]; then
+    ask "This tool option writes a guarded config ($GUARD_ASK_C): tsc --init writes tsconfig.json, coverage.thresholds.autoUpdate rewrites the vitest config. Approve only if you meant to change it."
+fi
+if [[ -n "$GUARD_ASK_K" ]]; then
+    ask "This run deletes Vitest's caches ($GUARD_ASK_K) instead of running tests. Say why, then let the user decide."
+fi
+if [[ -n "$GUARD_ASK_W" ]]; then
+    ask "'${GUARD_ASK_W#* }' is not on the hook's safe-option list for ${GUARD_ASK_W%% *}: an unknown option or spelling may load a config, rewrite snapshots, or write or delete files. Spell it as listed, or let the user decide."
+fi
+if [[ -n "$GUARD_ASK_Q" ]]; then
+    ask "kit-cwd: this kit script ($GUARD_ASK_Q) is run by a relative path where the directory is not the project root or a registered worktree, or is not provably so: a nested copy of the kit script would run instead of the project's own.\\n\\nRun it as the first command, from the project root or a registered worktree (or after a lone 'cd <absolute root> &&'). Approve only if that copy is the one you mean."
 fi
 if [[ -n "$GUARD_ASK_P" ]]; then
     ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. Approve only if this subtree is meant to go."
@@ -626,7 +665,7 @@ if [[ -n "$GUARD_ASK_O" ]]; then
     ask "This writes outside the project ($GUARD_ASK_O): no guardrail of the kit covers that path. Say what it writes and why, then let the user decide."
 fi
 if [[ -n "$GUARD_ASK_U" ]]; then
-    ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails."
+    ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
 fi
 if [[ -n "$GUARD_ASK_R" ]]; then
     ask "This rm deletes recursively ($GUARD_ASK_R). Say what it removes and why, then let the user decide."
@@ -694,7 +733,7 @@ if [[ -n "$FORMAT_WIDE" ]]; then
 fi
 
 if [[ "$SRC_WRITE_SEEN" == "1" ]]; then
-    ask "This writes a TypeScript source from the shell, so no PreToolUse guardrail sees it (no-any, forbidden icons, architecture layering all run on Write|Edit only).\\n\\nIf this is authored code, write it with the Write/Edit tool instead. If it is genuine codegen (generated DB types), say what it generates and where — then let the user decide."
+    ask "This writes a TypeScript source from the shell, so no PreToolUse guardrail sees it (no-any, forbidden icons, architecture layering all run on Write|Edit only).\\n\\nIf this is authored code, write it with the Write/Edit tool instead. If it is genuine codegen (generated DB types), say what it generates and where — then let the user decide.\\n\\nWrite files with the Write/Edit tool instead."
 fi
 
 exit 0

@@ -574,7 +574,7 @@ def check_ignored_loop_paths() -> list[Finding]:
         ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
     }
     try:
-        result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", *probes],
+        result = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "check-ignore", *probes],
                                 capture_output=True, text=True)
     except FileNotFoundError:
         return skip("ignored-loop-paths", "git")
@@ -1271,7 +1271,7 @@ def main() -> int:
     if source_mode:
         try:
             tag = subprocess.run(
-                ["git", "-C", str(ROOT), "describe", "--tags", "--exact-match", "HEAD"],
+                ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "describe", "--tags", "--exact-match", "HEAD"],
                 check=True, capture_output=True, text=True,
             ).stdout.strip()
         except (FileNotFoundError, subprocess.CalledProcessError):

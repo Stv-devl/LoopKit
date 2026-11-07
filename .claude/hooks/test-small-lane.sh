@@ -283,6 +283,15 @@ group_plan() {
     run "$SCRATCH/kit-q5/.claude/scripts/small-plan.sh" small-d
     check small-plan "Q5 unknown layer kept" "a path of an unknown layer was dropped" \
         grep -Fxq -- '- unmapped: src/features/a/selectors.ts' docs/work/small-d/plan.md
+
+    # Q6 (ship audit C1): a planted root module is never imported by the script's Python.
+    for q6_mod in re pathlib json; do
+        printf 'open(%s, "w").close()\n' "'$SCRATCH/q6-$q6_mod-ran'" >"$repo/$q6_mod.py"
+    done
+    run "$SCRIPTS/small-plan.sh" small-a
+    check small-plan "Q6 planted module" "a planted root re.py/pathlib.py/json.py ran" \
+        test ! -e "$SCRATCH/q6-re-ran" -a ! -e "$SCRATCH/q6-pathlib-ran" -a ! -e "$SCRATCH/q6-json-ran"
+    rm -f "$repo/re.py" "$repo/pathlib.py" "$repo/json.py"
     cd "$KIT" || return
 }
 
@@ -561,7 +570,7 @@ group_clear() {
     check clear "N1 other root names the feature" "got [$RUN_OUT]" grep -Fq 'Next feature (topmost READY): feature x' <<<"$RUN_OUT"
 
     for slug in "docs/specs/small/a.md=small-a" "docs/specs/x.md=x" "docs/stories/inbox/1.2.md=inbox-1.2"; do
-        RUN_OUT="$(python3 - "$hook" "${slug%%=*}" <<'PY' 2>/dev/null
+        RUN_OUT="$(python3 -I - "$hook" "${slug%%=*}" <<'PY' 2>/dev/null
 import importlib.util
 import sys
 

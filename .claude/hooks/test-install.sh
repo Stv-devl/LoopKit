@@ -155,11 +155,6 @@ gates_wild_none() {
             "Bash(pnpm test:coverage *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"))] | length == 0' \
         "$1/.claude/settings.json" >/dev/null
 }
-gates_wild_all() {
-    jq -e '[.permissions.allow[]? | select(IN("Bash(pnpm build *)", "Bash(pnpm test:run *)",
-            "Bash(pnpm test:coverage *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"))] | length == 5' \
-        "$1/.claude/settings.json" >/dev/null
-}
 gates_wild_none "$HB"
 jq -e '.permissions.allow | index("Bash(pnpm build)") and index("Bash(pnpm audit *)")' \
     "$HB/.claude/settings.json" >/dev/null
@@ -169,7 +164,7 @@ python3 "$HB/.claude/hooks/kit-doctor.py" | grep -q 'ok          gate-allowlist'
 while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HB" -name '*.new')
 HB_OUT="$(p1_rerun "$HB")"
 p1_present "$HB"
-gates_wild_all "$HB"
+gates_wild_none "$HB"
 if grep -Fq 'P1 held back' <<<"$HB_OUT"; then exit 1; fi
 
 # (A0) tdd-require-red.sh and auto-approve-config.sh are guard files: without
@@ -185,7 +180,7 @@ for guard in tdd-require-red.sh auto-approve-config.sh; do
     while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HA0" -name '*.new')
     p1_rerun "$HA0" >/dev/null
     p1_present "$HA0"
-    gates_wild_all "$HA0"
+    gates_wild_none "$HA0"
 done
 
 # (A2) enforce-git-workflow.sh left at its previous api, 1, is held back.
@@ -217,6 +212,28 @@ for guard in shell_targets.py prevent-destructive-commands.sh hook-lib.sh; do
     gates_wild_none "$HA4"
     grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA4_OUT"
 done
+
+# (A8) shell_targets.py, prevent-destructive-commands.sh and enforce-git-workflow.sh
+# left at api 2, before the harness-prompts B0 fixes, are held back.
+for guard in shell_targets.py prevent-destructive-commands.sh enforce-git-workflow.sh; do
+    HA8="$SCRATCH/hold-a8-$guard"
+    p1_fresh "$HA8"
+    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HA8/.claude/hooks/$guard"
+    HA8_OUT="$(p1_rerun "$HA8")"
+    p1_absent "$HA8"
+    gates_wild_none "$HA8"
+    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA8_OUT"
+done
+
+# (A9) hook-guarded.sh left at api 2, before the root launchers and addons/ joined
+# CWK_GUARDED (harness-prompts ship-audit C2), is held back.
+HA9="$SCRATCH/hold-a9-guarded"
+p1_fresh "$HA9"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HA9/.claude/hooks/hook-guarded.sh"
+HA9_OUT="$(p1_rerun "$HA9")"
+p1_absent "$HA9"
+gates_wild_none "$HA9"
+grep -Fq 'P1 held back: .claude/hooks/hook-guarded.sh' <<<"$HA9_OUT"
 
 # (A7) protect-files.sh left at its previous api, 1, is held back.
 HA7="$SCRATCH/hold-a7"
@@ -412,5 +429,97 @@ echo '# local edit' >>"$I4A/.github/dependabot.yml"
 cd_install "$I4A" --deploy=none
 grep -Fxq '# local edit' "$I4A/.github/dependabot.yml"
 cmp -s "$CD_TEMPLATE" "$I4A/.github/dependabot.yml.new"
+
+# HP-B2 harness-prompts: the prompt allows ride with P1. A current install has
+# them all, a held-back one none, and a hold-back removes the ones an earlier
+# install left while a target's own allow stays.
+HP_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
+  "Bash(git stash list)"]'
+for hp_suite in attempts hooks kit-doctor measure rules-floor small-lane; do
+    HP_ALLOWS="$(jq -c --arg s "$hp_suite" \
+        '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_ALLOWS")"
+done
+jq -e 'length == 23' <<<"$HP_ALLOWS" >/dev/null
+hp_all() {
+    jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w))' \
+        "$1/.claude/settings.json" >/dev/null
+}
+hp_none() {
+    jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w) | not)' \
+        "$1/.claude/settings.json" >/dev/null
+}
+HPA="$SCRATCH/hp-current"
+p1_fresh "$HPA"
+hp_all "$HPA"
+HPB="$SCRATCH/hp-held"
+mkdir -p "$HPB"
+"$ROOT/install.sh" "$HPB" --no-ci >/dev/null 2>&1
+jq '.permissions.allow += ["Bash(make *)"]' "$HPB/.claude/settings.json" >"$SCRATCH/hp.json"
+cp "$SCRATCH/hp.json" "$HPB/.claude/settings.json"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HPB/.claude/hooks/shell_targets.py"
+grep -Fq 'P1 held back: .claude/hooks/shell_targets.py' <<<"$(p1_rerun "$HPB")"
+hp_none "$HPB"
+jq -e '.permissions.allow | index("Bash(make *)")' "$HPB/.claude/settings.json" >/dev/null
+HPC="$SCRATCH/hp-held-fresh"
+mkdir -p "$HPC/.claude/hooks"
+cp "$ROOT/.claude/hooks/enforce-git-workflow.sh" "$HPC/.claude/hooks/"
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HPC/.claude/hooks/enforce-git-workflow.sh"
+p1_rerun "$HPC" >/dev/null
+hp_none "$HPC"
+
+# HP-A review 5: the argument wildcards of the test, lint, build and typecheck
+# runners are retired. A current install drops the ones an earlier install left,
+# keeps the bare forms and a target's own allow.
+HP_RETIRED='["Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)", "Bash(pnpm typecheck *)",
+  "Bash(pnpm lint *)", "Bash(pnpm build *)", "Bash(pnpm vitest run *)", "Bash(pnpm exec vitest run *)",
+  "Bash(pnpm exec tsc --noEmit *)", "Bash(pnpm exec playwright test *)"]'
+HPR="$SCRATCH/hp-retired"
+p1_fresh "$HPR"
+jq --argjson r "$HP_RETIRED" '.permissions.allow += $r + ["Bash(make *)"]' \
+    "$HPR/.claude/settings.json" >"$SCRATCH/hpr.json"
+cp "$SCRATCH/hpr.json" "$HPR/.claude/settings.json"
+p1_rerun "$HPR" >/dev/null
+jq -e --argjson r "$HP_RETIRED" '(.permissions.allow // []) as $a | all($r[]; . as $w | $a | index($w) | not)' \
+    "$HPR/.claude/settings.json" >/dev/null
+jq -e '.permissions.allow | index("Bash(make *)") and index("Bash(pnpm test:run)") and index("Bash(pnpm build)")' \
+    "$HPR/.claude/settings.json" >/dev/null
+p1_present "$HPR"
+
+# Ship audit C2: the kit-development suites (test-install runs install.sh,
+# test-workflow-contracts runs workflow.py and codex-handoff.sh) never carry an
+# allow into a target: a fresh install has none, a rerun drops an earlier one.
+HP_KITDEV='["Bash(bash .claude/hooks/test-install.sh)", "Bash(bash .claude/hooks/test-install.sh *)",
+  "Bash(bash .claude/hooks/test-workflow-contracts.sh)", "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
+hp_kitdev_none() {
+    jq -e --argjson d "$HP_KITDEV" '(.permissions.allow // []) as $a | all($d[]; . as $w | $a | index($w) | not)' \
+        "$1/.claude/settings.json" >/dev/null
+}
+HPD="$SCRATCH/hp-kitdev"
+p1_fresh "$HPD"
+hp_kitdev_none "$HPD"
+jq --argjson d "$HP_KITDEV" '.permissions.allow += $d' "$HPD/.claude/settings.json" >"$SCRATCH/hpd.json"
+cp "$SCRATCH/hpd.json" "$HPD/.claude/settings.json"
+p1_rerun "$HPD" >/dev/null
+hp_kitdev_none "$HPD"
+p1_present "$HPD"
+
+# (A9) kit-attempts.py without its api line holds P1 and the prompt allows back.
+HA9="$SCRATCH/hold-a9"
+p1_fresh "$HA9"
+sed -i '/^# cwk-guard-api:/d' "$HA9/.claude/hooks/kit-attempts.py"
+grep -Fq 'P1 held back: .claude/hooks/kit-attempts.py' <<<"$(p1_rerun "$HA9")"
+p1_absent "$HA9"
+hp_none "$HA9"
+
+# The FastAPI addon allows the exact uv-run lint and type gates, never `uv run *`.
+for hp_uv in 'Bash(uv run ruff check .)' 'Bash(uv run ruff check app)' 'Bash(uv run ruff check app/)' \
+             'Bash(uv run mypy app)' 'Bash(uv run pyright)'; do
+    jq -e --arg a "$hp_uv" '.permissions.allow | index($a)' "$PY_TARGET/.claude/settings.json" >/dev/null
+done
+if jq -e '.permissions.allow | index("Bash(uv run *)")' "$PY_TARGET/.claude/settings.json" >/dev/null; then exit 1; fi
 
 echo 'install fixtures: green.'

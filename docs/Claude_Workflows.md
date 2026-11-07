@@ -462,6 +462,15 @@ boucle, jamais en gate.
 | `/refactor:types`     | Resserrer des types, éliminer un `any` résiduel                   |
 | `/kit:doctor`         | Les valeurs écrites deux fois (règle + copie appliquée) sont-elles encore d'accord ? Plus les chemins, hooks et commandes morts |
 
+**Les suites du kit** se lancent une par appel, sous la forme
+`bash .claude/hooks/test-hooks.sh`, `bash .claude/hooks/test-install.sh`… (un
+`2>&1` final est accepté) : pas de boucle
+`for`, pas de `bash -x` (le debug se fait à la main), et jamais une suite capturée
+par `$(…)`, où ses pièges de contrôle de job fuient. C'est la forme que l'allowlist
+laisse passer sans demande ; dans un projet cible, `test-install.sh` et
+`test-workflow-contracts.sh` sont des suites de développement du kit (elles
+exécutent des fichiers racine) et ne sont pas autorisées.
+
 <!-- FILL : ajoute ici les commandes propres à ce projet (une skill qui pilote
      ton API, un script de déploiement…). -->
 

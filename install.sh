@@ -205,11 +205,27 @@ copy_tree() {
 
 GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
              prevent-destructive-commands.sh enforce-git-workflow.sh
-             tdd-require-red.sh auto-approve-config.sh)
+             tdd-require-red.sh auto-approve-config.sh kit-attempts.py)
 P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
             "Bash(git branch --show-current)", "Bash(git worktree list)"]'
-P1_GATE_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
-                 "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"]'
+RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
+                 "Bash(pnpm lint *)", "Bash(pnpm typecheck *)", "Bash(pnpm vitest run *)",
+                 "Bash(pnpm exec vitest run *)", "Bash(pnpm exec tsc --noEmit *)",
+                 "Bash(pnpm exec playwright test *)",
+                 "Bash(bash .claude/hooks/test-install.sh)", "Bash(bash .claude/hooks/test-install.sh *)",
+                 "Bash(bash .claude/hooks/test-workflow-contracts.sh)",
+                 "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
+PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
+  "Bash(bash .claude/hooks/test-attempts.sh)", "Bash(bash .claude/hooks/test-attempts.sh *)",
+  "Bash(bash .claude/hooks/test-hooks.sh)", "Bash(bash .claude/hooks/test-hooks.sh *)",
+  "Bash(bash .claude/hooks/test-kit-doctor.sh)", "Bash(bash .claude/hooks/test-kit-doctor.sh *)",
+  "Bash(bash .claude/hooks/test-measure.sh)", "Bash(bash .claude/hooks/test-measure.sh *)",
+  "Bash(bash .claude/hooks/test-rules-floor.sh)", "Bash(bash .claude/hooks/test-rules-floor.sh *)",
+  "Bash(bash .claude/hooks/test-small-lane.sh)", "Bash(bash .claude/hooks/test-small-lane.sh *)"]'
 
 # guard_api_number <file>
 # The file's `# cwk-guard-api: N` number, empty when the file or the line is absent.
@@ -247,8 +263,10 @@ guard_api_missing() {
 # `Read(.env.*)` (sorting would put the `!` first and carve nothing). Never held back.
 # P1 (defaultMode + the narrow git allows) is held back while a guard hook of the
 # target is not current: the kit side loses it, and a P1 an earlier install left
-# in the target goes too (the five allows, an acceptEdits mode), with the five
-# `pnpm <gate> *` wildcards whose flags those hooks police; the bare gate forms
+# in the target goes too (the five allows, an acceptEdits mode). The nine retired
+# argument wildcards of the test/lint/build/typecheck runners go from every target,
+# held back or not, with the two kit-development suite allows (test-install,
+# test-workflow-contracts) that stay in the kit's own settings; the bare gate forms
 # and everything else stay.
 install_settings() {
     local target="$1" react="$2" selected tmp held
@@ -272,10 +290,15 @@ install_settings() {
         ' "$KIT_DIR/.claude/settings.json" > "$selected"
     fi
 
+    jq --argjson retired "$RETIRED_ALLOWS" '.permissions.allow = ((.permissions.allow // []) - $retired)' \
+        "$selected" > "$tmp"
+    mv "$tmp" "$selected"
+    tmp="$(mktemp)"
+
     held="$(guard_api_missing "$TARGET")"
     if [[ -n "$held" ]]; then
-        jq --argjson p1 "$P1_ALLOWS" --argjson gates "$P1_GATE_ALLOWS" \
-            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1 - $gates)' \
+        jq --argjson p1 "$P1_ALLOWS" --argjson retired "$RETIRED_ALLOWS" --argjson prompts "$PROMPT_ALLOWS" \
+            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1 - $retired - $prompts)' \
             "$selected" > "$tmp"
         mv "$tmp" "$selected"
         tmp="$(mktemp)"
@@ -292,7 +315,8 @@ install_settings() {
         return
     fi
 
-    jq -s --argjson p1 "$P1_ALLOWS" --argjson gates "$P1_GATE_ALLOWS" --arg held "$held" '
+    jq -s --argjson p1 "$P1_ALLOWS" --argjson retired "$RETIRED_ALLOWS" --argjson prompts "$PROMPT_ALLOWS" \
+        --arg held "$held" '
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
@@ -304,8 +328,9 @@ install_settings() {
       | ($old.permissions.deny // []) as $own
       | .permissions.deny = ($own + [($new.permissions.deny // [])[] | . as $x | select($own | any(. == $x) | not)])
       | if .permissions.deny == [] then del(.permissions.deny) else . end
+      | .permissions.allow -= $retired
       | if $held == "" then . else
-          .permissions.allow -= ($p1 + $gates)
+          .permissions.allow -= ($p1 + $prompts)
           | if .permissions.defaultMode == "acceptEdits" then del(.permissions.defaultMode) else . end
         end
       | .hooks =(reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
@@ -365,7 +390,9 @@ add_py_hooks() {
               "Bash(python -m pytest)", "Bash(python -m pytest *)",
               "Bash(uv run pytest)", "Bash(uv run pytest *)",
               "Bash(mypy *)", "Bash(pyright *)", "Bash(ruff check .)", "Bash(ruff check app)",
-              "Bash(ruff check app/)", "Bash(uv audit *)"]) | unique)
+              "Bash(ruff check app/)", "Bash(uv audit *)",
+              "Bash(uv run ruff check .)", "Bash(uv run ruff check app)", "Bash(uv run ruff check app/)",
+              "Bash(uv run mypy app)", "Bash(uv run pyright)"]) | unique)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 

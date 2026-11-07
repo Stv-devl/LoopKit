@@ -127,6 +127,8 @@ pytest file no hook will ever prove.
 - One file per layer: the one the latest message hands you. You never write a
   second test file for it, and never any source file that is
   not a test — whatever its extension.
+- Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+  `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**

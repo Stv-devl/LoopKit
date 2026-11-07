@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 2
+# cwk-guard-api: 3
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -31,6 +31,11 @@ CWK_GUARDED=(
     'package.json'               # the gate scripts
     'tsconfig*.json'
     '.github/workflows/*'        # CI repeats the gates
+    'install.sh'                 # the kit-dev suites run these root files
+    'workflow.py'
+    'workflow.sh'
+    'codex-handoff.sh'
+    'addons/*'                   # the allowed test-hooks.sh runs addons/fastapi/hooks/*.py
 )
 
 # Never written by a tool call, whoever asks. Only tdd-prove-red.sh writes a RED

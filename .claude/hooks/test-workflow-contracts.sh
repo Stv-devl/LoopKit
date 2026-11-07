@@ -236,7 +236,7 @@ cat > "$NX/docs/product/backlog.md" <<'BOARD'
 BOARD
 next_ctx clear | grep -q '/loop:orchestrate docs/specs/billing.md'
 if next_ctx clear | grep -q 'checkout/1.2'; then exit 1; fi
-next_ctx clear | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"'
+next_ctx clear | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"'
 [[ -z "$(next_ctx startup)" ]]
 [[ -z "$(next_ctx resume)" ]]
 printf '| checkout 1.1 — cart | docs/stories/checkout/1.1.md | full | IN LOOP | — |\n' >> "$NX/docs/product/backlog.md"
@@ -689,5 +689,71 @@ grep -Fq 'fork' <<<"$cd_comment"
 cd_header="$(section "$CD_DEPLOY" '#   1. Il ne déploie' '#   2. Il déploie')"
 grep -Fq 'push' <<<"$cd_header"
 grep -Eq '# Dispatch manuel.*push' "$CD_DEPLOY"
+# HP-B1 harness-prompts: files are written through Write/Edit, never through an
+# interpreter, and a guarded-path ask is the user's to answer.
+hp_line="$(grep -F '**Never write source from the shell**' -A2 "$ROOT/CLAUDE.md")"
+for hp_needle in 'python3 -' 'node -e' 'perl -i' 'heredoc' 'never by switching tools'; do
+    grep -Fq -- "$hp_needle" <<<"$hp_line"
+done
+for hp_agent in implementer test-writer; do
+    grep -Fq 'never by switching tools' "$ROOT/.claude/agents/$hp_agent.md"
+    grep -Fq 'node -e' "$ROOT/.claude/agents/$hp_agent.md"
+done
+hp_flow="$(section "$ROOT/docs/Claude_Workflows.md" '## Hors boucle' '## ')"
+grep -Fq 'bash .claude/hooks/test-hooks.sh' <<<"$hp_flow"
+grep -Fq '$(…)' <<<"$hp_flow"
+# HP-B2 harness-prompts: the prompt allows, exactly, in settings.json and in
+# install.sh's held-back list; no wide form; every star only trailing.
+HP_WANT='["Bash(pnpm exec tsc --noEmit)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
+  "Bash(git stash list)"]'
+for hp_suite in attempts hooks kit-doctor measure rules-floor small-lane; do
+    HP_WANT="$(jq -c --arg s "$hp_suite" \
+        '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
+done
+HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 23' >/dev/null
+jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
+# Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
+# codex-handoff.sh); their allows stay in the kit and never ride to a target.
+for hp_dev in install workflow-contracts; do
+    for hp_form in "Bash(bash .claude/hooks/test-$hp_dev.sh)" "Bash(bash .claude/hooks/test-$hp_dev.sh *)"; do
+        jq -e --arg a "$hp_form" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
+        if jq -en --argjson kit "$HP_KIT" --arg a "$hp_form" '$kit | index($a)' >/dev/null; then exit 1; fi
+    done
+done
+# Ship audit C1: no kit shell file feeds Python from stdin or -c without -I, which
+# would put the cwd first on sys.path and import a planted root re.py/json.py.
+hp_noi="$(grep -nE 'python3( +-[A-Za-z]+)* +(-c|-)( |$)' "$ROOT/install.sh" "$ROOT/workflow.sh" \
+    "$ROOT/codex-handoff.sh" "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE 'python3( +-[A-Za-z]+)* +-[A-Za-z]*I' || true)"
+if [[ -n "$hp_noi" ]]; then printf 'python3 without -I:\n%s\n' "$hp_noi" >&2; exit 1; fi
+# Review 6: workflow.sh runs workflow.py without its own directory on sys.path, so
+# a root select.py written beside it is never imported by the launcher.
+mkdir -p "$WS/hp-wf/run"
+cp "$ROOT/workflow.sh" "$ROOT/workflow.py" "$WS/hp-wf/"
+printf 'open(%s, "w").close()\n' "'$WS/hp-wf/planted-ran'" > "$WS/hp-wf/select.py"
+(cd "$WS/hp-wf/run" && bash ../workflow.sh --help >/dev/null 2>&1) || true
+if [[ -e "$WS/hp-wf/planted-ran" ]]; then echo 'workflow.sh imported a planted root module' >&2; exit 1; fi
+for hp_wide in 'Bash(pnpm exec *)' 'Bash(uv run *)' 'Bash(python3 *)' 'Bash(node *)' 'Bash(bash *)' \
+               'Bash(bash -x *)' 'Bash(mkdir -p *)' 'Bash(sed -i *)' 'Bash(git switch *)' \
+               'Bash(git branch *)' 'Bash(git worktree add *)' 'Bash(git worktree remove *)' \
+               'Bash(pnpm test:run *)' 'Bash(pnpm test:coverage *)' 'Bash(pnpm typecheck *)' \
+               'Bash(pnpm lint *)' 'Bash(pnpm build *)' 'Bash(pnpm vitest run *)' \
+               'Bash(pnpm exec vitest run *)' 'Bash(pnpm exec tsc --noEmit *)' \
+               'Bash(pnpm exec playwright test *)'; do
+    if jq -e --arg a "$hp_wide" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null; then exit 1; fi
+done
+jq -e '[.permissions.allow[] | select(startswith("Bash(")) | ltrimstr("Bash(") | rtrimstr(")") | rtrimstr(" *")]
+       | all(contains("*") | not)' "$SETTINGS" >/dev/null
+hp_py="$(sed -n '/^add_py_hooks()/,/^}/p' "$ROOT/install.sh")"
+for hp_uv in '"Bash(uv run ruff check .)"' '"Bash(uv run ruff check app)"' '"Bash(uv run ruff check app/)"' \
+             '"Bash(uv run mypy app)"' '"Bash(uv run pyright)"'; do
+    grep -Fq -- "$hp_uv" <<<"$hp_py"
+done
+grep -Fq 'kit-attempts.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
 
 echo 'workflow contract fixtures: green.'

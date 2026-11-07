@@ -443,6 +443,8 @@ hook qui en a besoin appelle `cwk_is_guarded` au lieu de la recopier :
 - `vitest.config.*`, `eslint.config.*`, `vite.config.*` (le plancher de
   couverture), `playwright.config.*`, `package.json` (les scripts des gates),
   `tsconfig*.json`, `.github/workflows/*` ;
+- les lanceurs à la racine (`install.sh`, `workflow.py`, `workflow.sh`,
+  `codex-handoff.sh`) et `addons/*` (les suites du kit les exécutent) ;
 - les dossiers qui les contiennent (`.claude`, `.github`, la racine).
 
 Un `Write` ou un `Edit` sur l'un d'eux **demande ton accord**, depuis l'arbre
@@ -517,20 +519,27 @@ vaut `true` par défaut et retire les invites des commandes Bash, et son effet
 sur un `ask` de hook n'est pas mesuré. Active-le toi-même si tu en as besoin.
 
 **La retenue.** P1 sans les hooks qui le surveillent serait un `acceptEdits`
-nu. Les huit fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
+nu. Les neuf fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
 `shell_targets.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
-`enforce-git-workflow.sh`, `tdd-require-red.sh`, `auto-approve-config.sh`)
+`enforce-git-workflow.sh`, `tdd-require-red.sh`, `auto-approve-config.sh`,
+`kit-attempts.py`)
 portent une ligne `# cwk-guard-api: N`. Si dans ton
 projet l'un d'eux manque, n'a pas cette ligne ou porte un numéro plus bas que
 celui du kit, ou si `hook-lib.sh` ne source plus `hook-guarded.sh`, `install.sh`
 n'ajoute ni le `defaultMode` ni les cinq autorisations ; s'ils sont déjà là
 (une installation précédente), ils sont retirés — le `defaultMode` seulement
-s'il vaut `acceptEdits`. Les cinq jokers de gate, `Bash(pnpm build *)`,
-`Bash(pnpm test:run *)`, `Bash(pnpm test:coverage *)`, `Bash(pnpm lint *)` et
-`Bash(pnpm typecheck *)`, sont retirés avec eux, même si tu les avais ajoutés
-toi-même : leurs drapeaux (`--outDir`, `--root`…) ne sont surveillés que par
-les hooks à jour. Leurs formes nues (`pnpm build`, `pnpm test:run`…) et
-`Bash(pnpm audit *)` restent, donc les gates tournent toujours sans invite. Il
+s'il vaut `acceptEdits`. Le kit ne livre plus aucun joker d'arguments pour ces
+runners : `Bash(pnpm build *)`, `Bash(pnpm test:run *)`,
+`Bash(pnpm test:coverage *)`, `Bash(pnpm lint *)`, `Bash(pnpm typecheck *)`,
+`Bash(pnpm vitest run *)`, `Bash(pnpm exec vitest run *)`,
+`Bash(pnpm exec tsc --noEmit *)` et `Bash(pnpm exec playwright test *)`.
+`install.sh` les retire de ton projet à chaque installation, retenue ou non,
+même si tu les avais ajoutés toi-même : le hook ne peut pas savoir quel
+programme un nom de script lance (reporters à virgule, `-c` collé, globs,
+`tsc -b` positionnel : revue 5). Les formes nues (`pnpm build`, `pnpm test:run`…)
+et `Bash(pnpm audit *)` restent, donc les gates tournent sans invite ; un appel
+avec arguments (`pnpm test:run <chemin>`, `pnpm lint --max-warnings=0`,
+`pnpm exec playwright test …`) demande une confirmation. En cas de retenue, il
 affiche :
 
 ```
@@ -538,8 +547,11 @@ P1 held back: <fichiers> — merge <fichiers>.new, then re-run install.sh
 ```
 
 Fusionne les `.new` de ces fichiers (en gardant tes réglages, `PROTECTED_DIRS`,
-`PROTECTED_BRANCHES`), puis relance `install.sh`. Seuls ces onze réglages du kit
-sont retirés ; tes autres autorisations et un `defaultMode` choisi par toi
+`PROTECTED_BRANCHES`), puis relance `install.sh`. `PROMPT_ALLOWS` (les 23
+autorisations exactes des runners de test, des scripts du kit et de `git fetch`)
+est retenu avec P1 ; les suites de développement du kit `test-install` et `test-workflow-contracts`
+gardent leur autorisation dans le kit seul, jamais dans une cible : une autorisation identique ajoutée par toi est retirée avec
+lui. Seuls ces réglages du kit sont retirés ; tes autres autorisations et un `defaultMode` choisi par toi
 restent. Tes propres modifications de ces hooks ne déclenchent jamais la retenue
 tant que la ligne d'api est à jour. `install.sh` ne touche pas
 `.claude/settings.local.json` : une approbation « don't ask again » qui y est

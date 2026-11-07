@@ -551,3 +551,258 @@
 {"id":"X28.55","verdict":"pass","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.local.s*"}
 {"id":"X28.56","verdict":"pass","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.local.t*"}
 {"id":"X28.57","verdict":"deny","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.d*","reason":"a secret file"}
+{"id":"X24.246","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\","reason":"src written by flag-r"}
+{"id":"X24.247","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory src; true \\","reason":"src written by flag-r"}
+{"id":"X24.248","verdict":"deny","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts \\","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.249","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\\\\","reason":"src written by flag-r"}
+{"id":"X24.250","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\n","reason":"src written by flag-r"}
+{"id":"X24.251","verdict":"ask","command":"pnpm exec vitest run -c \\","reason":"(cfg)"}
+{"id":"X24.252","verdict":"ask","command":"pnpm vitest run --root docs \\","reason":"targets docs (cfg)"}
+{"id":"X24.253","verdict":"ask","command":"pnpm exec vitest run -c docs/v.ts \\","reason":"docs/v.ts"}
+{"id":"X24.254","verdict":"ask","command":"pnpm exec tsc --noEmit -p docs/x.json \\","reason":"docs/x.json"}
+{"id":"X24.255","verdict":"ask","command":"pnpm exec tsc --noEmit false \\","reason":"unresolved write target"}
+{"id":"X24.256","verdict":"ask","command":"pnpm exec playwright test --config=x.ts \\","reason":"x.ts (cfg)"}
+{"id":"X24.257","verdict":"ask","command":"pnpm vitest run -u","reason":"snapshot"}
+{"id":"X24.258","verdict":"ask","command":"pnpm exec vitest run --update","reason":"snapshot"}
+{"id":"X24.259","verdict":"ask","command":"pnpm exec vitest run --update=true","reason":"snapshot"}
+{"id":"X24.260","verdict":"ask","command":"pnpm test:run -u","reason":"snapshot"}
+{"id":"X24.261","verdict":"ask","command":"pnpm exec playwright test --update-snapshots","reason":"snapshot"}
+{"id":"X24.262","verdict":"ask","command":"pnpm exec playwright test --update-snapshots=all","reason":"snapshot"}
+{"id":"X24.263","verdict":"ask","command":"pnpm exec playwright test --update-snapshots=changed","reason":"snapshot"}
+{"id":"X24.264","verdict":"ask","command":"pnpm exec playwright test -u","reason":"snapshot"}
+{"id":"X24.265","verdict":"ask","command":"pnpm vitest run -u \\","reason":"snapshot"}
+{"id":"X24.266","verdict":"deny","command":"pnpm exec tsc --noEmit --generateCpuProfile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.267","verdict":"deny","command":"pnpm exec playwright test --last-failed-file src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.268","verdict":"deny","command":"pnpm exec playwright test --last-failed-file=.git/config","reason":".git/config written by flag-w"}
+{"id":"X24.269","verdict":"ask","command":"pnpm exec tsc --noEmit --generateCpuProfile .claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.270","verdict":"ask","command":"pnpm exec tsc --noEmit --generateCpuProfile package.json","reason":"package.json written by flag-w"}
+{"id":"X24.271","verdict":"ask","command":"pnpm typecheck --generateCpuProfile package.json","reason":"package.json written by flag-w"}
+{"id":"X24.272","verdict":"ask","command":"pnpm exec playwright test --last-failed-file=package.json","reason":"package.json written by flag-w"}
+{"id":"X24.273","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate","reason":"autoUpdate"}
+{"id":"X24.274","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate=true","reason":"autoUpdate"}
+{"id":"X24.275","verdict":"ask","command":"pnpm exec tsc --noEmit --init","reason":"--init"}
+{"id":"X24.276","verdict":"deny","command":"pnpm exec vitest run --attachmentsDir src","reason":"src written by flag-r"}
+{"id":"X24.277","verdict":"ask","command":"pnpm exec vitest run --attachmentsDir=.claude/hooks","reason":".claude/hooks written by flag-r"}
+{"id":"X24.278","verdict":"ask","command":"pnpm exec vitest run --diff docs/x.mjs","reason":"--diff"}
+{"id":"X24.279","verdict":"pass","command":"pnpm exec playwright test --tsconfig docs/t.json"}
+{"id":"X24.280","verdict":"ask","command":"pnpm vitest run --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X24.281","verdict":"ask","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts $'a\\'b'","reason":"could not parse"}
+{"id":"X24.282","verdict":"ask","command":"pnpm vitest run --coverage.reportsDirectory=src\necho 'x","reason":"could not parse"}
+{"id":"X24.283","verdict":"ask","command":"pnpm vitest run \"a\\","reason":"could not parse"}
+{"id":"X24.284","verdict":"ask","command":"pnpm test:coverage --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X24.285","verdict":"ask","command":"timeout 60 pnpm test:run --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X28.58","verdict":"ask","command":"pnpm vitest run $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.59","verdict":"ask","command":"pnpm test:run $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.60","verdict":"ask","command":"ls $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.61","verdict":"ask","command":"pnpm vitest run $(( `rm -rf src` ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.62","verdict":"ask","command":"pnpm vitest run \"$(( $(rm -rf src) ))\"","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.63","verdict":"ask","command":"ls <(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.64","verdict":"ask","command":"cat >(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.65","verdict":"deny","command":"pnpm test:run <(rm -rf .git)","reason":".git written by rm-r"}
+{"id":"X28.66","verdict":"deny","command":"ls <(touch .claude/.tdd-red/m)","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X28.67","verdict":"pass","command":"pnpm vitest run src/a.test.ts \\"}
+{"id":"X28.68","verdict":"pass","command":"ls \\"}
+{"id":"X28.69","verdict":"pass","command":"pnpm exec playwright test --update-snapshots=none"}
+{"id":"X28.70","verdict":"pass","command":"ls $(( 1 + 2 ))"}
+{"id":"X28.71","verdict":"pass","command":"ls \"<(rm -rf src)\""}
+{"id":"X28.72","verdict":"pass","command":"ls $(( 1<(2) ))"}
+{"id":"X28.73","verdict":"pass","command":"pnpm vitest run --ui"}
+{"id":"X28.74","verdict":"ask","command":"pnpm exec vitest run -c \\\\","reason":"(cfg)"}
+{"id":"X28.75","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\\","reason":"src written by flag-r"}
+{"id":"X28.76","verdict":"ask","command":"pnpm vitest run $(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X24.286","verdict":"deny","command":"pnpm exec vitest run --coverage.htmlDir src","reason":"src written by flag-r"}
+{"id":"X24.287","verdict":"deny","command":"pnpm vitest run --coverage.htmlDir=src","reason":"src written by flag-r"}
+{"id":"X24.288","verdict":"ask","command":"pnpm exec vitest run --coverage.htmlDir=.claude/hooks","reason":".claude/hooks written by flag-r"}
+{"id":"X24.289","verdict":"ask","command":"pnpm vitest run --clearCache","reason":"clearCache"}
+{"id":"X24.290","verdict":"ask","command":"pnpm test:run --clearCache","reason":"clearCache"}
+{"id":"X28.77","verdict":"ask","command":"echo x > package.json","reason":"Write files with the Write/Edit tool instead."}
+{"id":"X28.78","verdict":"ask","command":"echo x > \"$OUT\"","reason":"Write files with the Write/Edit tool instead."}
+{"id":"X28.79","verdict":"ask","command":"echo 'export const a = 1' > src/b.ts","reason":"Write files with the Write/Edit tool instead."}
+{"id":"X24.291","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src","reason":"src written by flag-r"}
+{"id":"X24.292","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory src","reason":"src written by flag-r"}
+{"id":"X24.293","verdict":"deny","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.294","verdict":"ask","command":"pnpm exec tsc --noEmit --tsBuildInfoFile=package.json","reason":"package.json written by flag-w"}
+{"id":"X24.295","verdict":"deny","command":"pnpm exec tsc --noEmit --generatecpuprofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.296","verdict":"deny","command":"pnpm exec tsc --noEmit -generateCpuProfile .git/config","reason":".git/config written by flag-w"}
+{"id":"X24.297","verdict":"deny","command":"pnpm exec tsc --noEmit --tsbuildinfofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.298","verdict":"ask","command":"pnpm exec tsc --noEmit --noemit false","reason":"unresolved write target"}
+{"id":"X24.299","verdict":"ask","command":"pnpm exec tsc --noEmit -P docs/x.json","reason":"docs/x.json"}
+{"id":"X24.300","verdict":"ask","command":"pnpm exec tsc --noEmit --INIT","reason":"writes a guarded config"}
+{"id":"X24.301","verdict":"ask","command":"pnpm exec tsc --noEmit @docs/opts.txt","reason":"unresolved write target"}
+{"id":"X24.302","verdict":"deny","command":"pnpm exec tsc -outdir src","reason":"src written by flag-w"}
+{"id":"X24.303","verdict":"deny","command":"pnpm typecheck --tsbuildinfofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.304","verdict":"ask","command":"pnpm vitest run --output-file.json=.claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.305","verdict":"deny","command":"pnpm exec vitest run --output-file.junit=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.306","verdict":"ask","command":"pnpm vitest run -u=all","reason":"snapshot"}
+{"id":"X24.307","verdict":"ask","command":"pnpm vitest run -wu","reason":"snapshot"}
+{"id":"X24.308","verdict":"ask","command":"pnpm vitest run --u","reason":"snapshot"}
+{"id":"X24.309","verdict":"ask","command":"pnpm exec playwright test -uall","reason":"snapshot"}
+{"id":"X24.310","verdict":"ask","command":"pnpm exec playwright test -xu","reason":"snapshot"}
+{"id":"X24.311","verdict":"pass","command":"pnpm exec playwright test -unone"}
+{"id":"X24.312","verdict":"deny","command":"pnpm exec vitest run --attachments-dir src","reason":"src written by flag-r"}
+{"id":"X24.313","verdict":"ask","command":"pnpm vitest run --clear-cache","reason":"deletes Vitest's caches"}
+{"id":"X24.314","verdict":"ask","command":"pnpm vitest run -r docs","reason":"docs"}
+{"id":"X24.315","verdict":"ask","command":"pnpm exec playwright test -cdocs/p.ts","reason":"docs/p.ts"}
+{"id":"X24.316","verdict":"ask","command":"pnpm exec vitest run -cdocs/v.ts","reason":"docs/v.ts"}
+{"id":"X28.80","verdict":"ask","command":"ls $(( 1 + $(( $(rm -rf src) )) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X24.317","verdict":"ask","command":"pnpm exec vitest run --experimental.fsModuleCachePath=src","reason":"--experimental.fsModuleCachePath=src"}
+{"id":"X24.318","verdict":"ask","command":"pnpm test:run --experimental.fsModuleCache --experimental.fsModuleCachePath=.claude/hooks","reason":"--experimental.fsModuleCache"}
+{"id":"X24.319","verdict":"ask","command":"pnpm exec vitest run --execArgv=--import=data:text/javascript,x","reason":"--execArgv=--import=data:text/javascript,x"}
+{"id":"X24.320","verdict":"ask","command":"pnpm vitest run --execArgv=--require=./docs/x.cjs","reason":"safe-option list"}
+{"id":"X24.321","verdict":"ask","command":"pnpm vitest run --clearCache=true","reason":"--clearCache=true"}
+{"id":"X24.322","verdict":"ask","command":"pnpm exec vitest run --clearCache.x","reason":"--clearCache.x"}
+{"id":"X24.323","verdict":"ask","command":"pnpm exec vitest run --clear-cache=1","reason":"--clear-cache=1"}
+{"id":"X24.324","verdict":"ask","command":"pnpm exec vitest run --clearCache","reason":"deletes Vitest's caches"}
+{"id":"X24.325","verdict":"ask","command":"pnpm exec vitest run -wc docs/v.mjs","reason":"-wc"}
+{"id":"X24.326","verdict":"ask","command":"pnpm exec vitest run --config= docs/v.mjs","reason":"--config="}
+{"id":"X24.327","verdict":"ask","command":"pnpm exec vitest run -c= docs/v.mjs","reason":"-c="}
+{"id":"X24.328","verdict":"ask","command":"pnpm exec vitest run -wr docs","reason":"-wr"}
+{"id":"X24.329","verdict":"ask","command":"pnpm vitest run --root= docs","reason":"--root="}
+{"id":"X24.330","verdict":"ask","command":"pnpm test:run ---c docs/v.ts","reason":"---c"}
+{"id":"X24.331","verdict":"ask","command":"pnpm build ---c docs/v.ts","reason":"---c"}
+{"id":"X24.332","verdict":"ask","command":"pnpm exec playwright test -xc docs/p.config.mjs","reason":"-xc"}
+{"id":"X24.333","verdict":"ask","command":"pnpm exec playwright test -xcdocs/p.config.mjs","reason":"-xcdocs/p.config.mjs"}
+{"id":"X24.334","verdict":"ask","command":"pnpm exec vitest run -wc .env.local","reason":"-wc"}
+{"id":"X24.335","verdict":"ask","command":"pnpm exec vitest run --config= .env","reason":"--config="}
+{"id":"X24.336","verdict":"ask","command":"pnpm exec vitest run ---u","reason":"---u"}
+{"id":"X24.337","verdict":"ask","command":"pnpm test:coverage ---u","reason":"---u"}
+{"id":"X24.338","verdict":"ask","command":"pnpm vitest run --update.all","reason":"--update.all"}
+{"id":"X24.339","verdict":"ask","command":"pnpm exec vitest run --update.x","reason":"--update.x"}
+{"id":"X24.340","verdict":"ask","command":"pnpm test:run -wu=all","reason":"-wu=all"}
+{"id":"X24.341","verdict":"ask","command":"pnpm exec vitest run -uw=a","reason":"-uw=a"}
+{"id":"X24.342","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate.x","reason":"--coverage.thresholds.autoUpdate.x"}
+{"id":"X24.343","verdict":"ask","command":"pnpm typecheck @docs/opts.txt","reason":"unresolved write target"}
+{"id":"X24.344","verdict":"ask","command":"pnpm exec vitest run -wu","reason":"snapshot"}
+{"id":"X24.345","verdict":"ask","command":"pnpm vitest run --update","reason":"snapshot"}
+{"id":"X24.346","verdict":"ask","command":"pnpm test:run --update","reason":"snapshot"}
+{"id":"X24.347","verdict":"ask","command":"pnpm exec vitest run -r docs","reason":"docs"}
+{"id":"X24.348","verdict":"ask","command":"pnpm exec tsc --noEmit --Project docs/x.json","reason":"docs/x.json"}
+{"id":"X24.349","verdict":"ask","command":"pnpm typecheck --PROJECT docs/x.json","reason":"docs/x.json"}
+{"id":"X24.350","verdict":"ask","command":"pnpm exec vitest run --reporter=./docs/r.mjs","reason":"--reporter=./docs/r.mjs"}
+{"id":"X24.351","verdict":"ask","command":"pnpm exec playwright test --reporter=./docs/r.mjs","reason":"--reporter=./docs/r.mjs"}
+{"id":"X24.352","verdict":"ask","command":"pnpm exec vitest run --pool=./docs/p.mjs","reason":"--pool=./docs/p.mjs"}
+{"id":"X24.353","verdict":"ask","command":"pnpm vitest run --typecheck.enabled --typecheck.checker ./docs/x.sh","reason":"--typecheck."}
+{"id":"X24.354","verdict":"ask","command":"pnpm exec tsc --noEmit --incremental","reason":"--incremental"}
+{"id":"X24.355","verdict":"pass","command":"pnpm exec vitest run src/a/a.utils.test.ts --reporter=verbose"}
+{"id":"X24.356","verdict":"pass","command":"pnpm test:run -t \"adds two numbers\""}
+{"id":"X24.357","verdict":"pass","command":"pnpm test:coverage --coverage.include=src/features/a"}
+{"id":"X24.358","verdict":"pass","command":"pnpm exec playwright test e2e/login.spec.ts --reporter=list --workers=1"}
+{"id":"X24.359","verdict":"pass","command":"pnpm exec playwright test --grep smoke --trace on"}
+{"id":"X24.360","verdict":"pass","command":"pnpm exec playwright test --last-failed"}
+{"id":"X24.361","verdict":"pass","command":"pnpm exec playwright test --list"}
+{"id":"X24.362","verdict":"pass","command":"pnpm exec tsc --noEmit -p tsconfig.app.json"}
+{"id":"X24.363","verdict":"pass","command":"pnpm vitest run src/a/a.utils.test.ts 2>&1 | tail -20"}
+{"id":"X24.364","verdict":"pass","command":"pnpm build --mode production"}
+{"id":"X24.365","verdict":"pass","command":"pnpm exec vitest run --coverage"}
+{"id":"X24.366","verdict":"pass","command":"pnpm exec playwright test --project=chromium"}
+{"id":"X24.367","verdict":"pass","command":"pnpm exec vitest run --project unit"}
+{"id":"X24.368","verdict":"pass","command":"pnpm test:run src/a/a.utils.test.ts --bail=1"}
+{"id":"X24.369","verdict":"pass","command":"pnpm exec playwright test -g smoke -j 2"}
+{"id":"X24.370","verdict":"ask","command":"pnpm vitest run --outputFile.json --experimental.fsModuleCachePath=src --outputFile.junit --clearCache","reason":"deletes Vitest's caches"}
+{"id":"X24.371","verdict":"ask","command":"pnpm vitest run --outputFile.json -u","reason":"rewrites the snapshots"}
+{"id":"X24.372","verdict":"ask","command":"pnpm test:run --outputFile.json --config=docs/evil.config.mjs","reason":"docs/evil.config.mjs"}
+{"id":"X24.373","verdict":"ask","command":"pnpm exec vitest run --output-file.junit --update","reason":"rewrites the snapshots"}
+{"id":"X24.374","verdict":"ask","command":"pnpm test:coverage --outputFile.json '--execArgv=--import=data:text/javascript,x'","reason":"--execArgv"}
+{"id":"X24.375","verdict":"ask","command":"pnpm test:run --dir -u","reason":"rewrites the snapshots"}
+{"id":"X24.376","verdict":"pass","command":"pnpm vitest run --outputFile.json report.json"}
+{"id":"X24.377","verdict":"ask","command":"pnpm test:run '--diff=data:text/javascript,export default {}'","reason":"--diff"}
+{"id":"X24.378","verdict":"ask","command":"pnpm exec vitest run --diff docs/d.mjs","reason":"--diff"}
+{"id":"X24.379","verdict":"ask","command":"pnpm vitest run --reporter=pay","reason":"pay"}
+{"id":"X24.380","verdict":"ask","command":"pnpm test:run --environment pay","reason":"pay"}
+{"id":"X24.381","verdict":"ask","command":"pnpm exec playwright test --reporter=dot,payf","reason":"payf"}
+{"id":"X24.382","verdict":"pass","command":"pnpm vitest run --reporter=verbose"}
+{"id":"X24.383","verdict":"pass","command":"pnpm test:run --reporter=default,json --environment=jsdom --pool=forks"}
+{"id":"X24.384","verdict":"pass","command":"pnpm exec playwright test --reporter=list,html"}
+{"id":"X24.385","verdict":"ask","command":"pnpm build docs/vx","reason":"docs/vx"}
+{"id":"X24.386","verdict":"ask","command":"pnpm exec vite build docs/vx","reason":"docs/vx"}
+{"id":"X24.387","verdict":"ask","command":"pnpm test:run *","reason":"glob"}
+{"id":"X24.388","verdict":"ask","command":"pnpm exec vitest run ?*","reason":"glob"}
+{"id":"X24.389","verdict":"pass","command":"pnpm test:run src/a/*.test.ts"}
+{"id":"X24.390","verdict":"ask","command":"python3 .claude/hooks/kit-doctor.py docs/r","reason":"kit-doctor"}
+{"id":"X24.391","verdict":"pass","command":"pnpm exec tsc --noEmit --pretty"}
+{"id":"X24.392","verdict":"pass","command":"pnpm exec vite build --mode staging"}
+{"id":"X24.393","verdict":"ask","command":"pnpm lint --output-file -/../.claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.394","verdict":"ask","command":"pnpm typecheck -p -/../docs/x.json","reason":"docs/x.json"}
+{"id":"X24.395","verdict":"ask","command":"pnpm lint -c -/../docs/evil.mjs","reason":"docs/evil.mjs"}
+{"id":"X24.396","verdict":"ask","command":"pnpm e2e --output-file.json -u","reason":"rewrites the snapshots"}
+{"id":"X24.397","verdict":"ask","command":"pnpm test:run --reporter=list","reason":"list"}
+{"id":"X24.398","verdict":"ask","command":"pnpm test:coverage --reporter=github","reason":"github"}
+{"id":"X24.399","verdict":"ask","command":"pnpm vitest run --reporter=basic","reason":"basic"}
+{"id":"X24.400","verdict":"pass","command":"pnpm test:run --reporter=agent"}
+{"id":"X24.401","verdict":"ask","command":"pnpm exec playwright test --reporter -x","reason":"-x"}
+{"id":"X24.402","verdict":"ask","command":"pnpm exec playwright test --reporter --list","reason":"--list"}
+{"id":"X24.403","verdict":"pass","command":"pnpm exec playwright test --reporter dot -x"}
+{"id":"X24.404","verdict":"ask","command":"pnpm vitest run -c *","reason":"glob"}
+{"id":"X24.405","verdict":"ask","command":"pnpm test:run --outputFile.json *","reason":"glob"}
+{"id":"X24.406","verdict":"ask","command":"pnpm lint *","reason":"glob"}
+{"id":"X24.407","verdict":"ask","command":"pnpm e2e ?x","reason":"glob"}
+{"id":"X24.408","verdict":"pass","command":"pnpm lint src/*.ts"}
+{"id":"X24.409","verdict":"pass","command":"pnpm playwright test --reporter=line"}
+{"id":"X24.410","verdict":"pass","command":"pnpm typecheck --pretty"}
+{"id":"X24.411","verdict":"ask","command":"echo x > install.sh","reason":"guarded path:"}
+{"id":"X24.412","verdict":"ask","command":"cp /tmp/x workflow.py","reason":"guarded path:"}
+{"id":"X24.413","verdict":"ask","command":"echo x > addons/fastapi/hooks/tdd_py_lib.py","reason":"guarded path:"}
+{"id":"X24.414","verdict":"ask","command":"cp /tmp/x workflow.sh","reason":"guarded path:"}
+{"id":"X24.415","verdict":"ask","command":"echo x > codex-handoff.sh","reason":"guarded path:"}
+{"id":"X24.416","verdict":"ask","command":"cd docs/x && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.417","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.418","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"python3 .claude/hooks/kit-attempts.py show docs/work/a/b","reason":"kit-cwd"}
+{"id":"X24.419","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":".claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.420","verdict":"ask","command":"cd docs/x && python3 -I .claude/hooks/kit-doctor.py","reason":"kit-cwd"}
+{"id":"X24.421","verdict":"ask","command":"pushd docs/x && bash .claude/hooks/test-install.sh","reason":"kit-cwd"}
+{"id":"X24.422","verdict":"ask","command":"env -C docs/x bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.423","verdict":"ask","command":"cd docs/x; sh .claude/hooks/test-small-lane.sh","reason":"kit-cwd"}
+{"id":"X24.424","verdict":"ask","command":"cd \"$D\" && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.425","verdict":"ask","command":"echo docs/evil | xargs python3 .claude/hooks/kit-doctor.py","reason":"kit-doctor"}
+{"id":"X24.426","verdict":"ask","command":"xargs -a docs/list python3 .claude/hooks/kit-doctor.py","reason":"kit-doctor"}
+{"id":"X24.427","verdict":"pass","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.428","verdict":"pass","command":".claude/scripts/small-scope.sh abc"}
+{"id":"X24.429","verdict":"ask","cwd":"__PROJECT_ROOT__/.claude/worktrees/x","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.430","verdict":"ask","command":"cd .claude/worktrees/x && .claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.431","verdict":"pass","cwd":"__PROJECT_ROOT__/docs/x","command":"ls .claude/hooks"}
+{"id":"X24.432","verdict":"ask","command":"cd docs/x && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.433","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/w","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.434","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/w && .claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.435","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.436","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.437","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/copy && python3 .claude/hooks/kit-doctor.py","reason":"kit-cwd"}
+{"id":"X24.438","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/ghost && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.439","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -P node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.440","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -P; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.441","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -o physical && cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.442","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"env -C node_modules/foo/../.. bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.443","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -L -P node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.444","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.445","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -P node_modules/foo && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.446","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -P && cd node_modules/foo && set +P && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.447","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd node_modules/foo && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.448","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.449","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/w && .claude/scripts/small-scope.sh abc"}
+{"id":"X24.450","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.451","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil; ls || cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.452","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"pushd .claude/worktrees/evil; ls || popd && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.453","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"ls | cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.454","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil; ls |& cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.455","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -eo physical; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.456","verdict":"ask","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"shopt -so physical; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.457","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"! cd __FIXTURE_ROOT__/ghost/.. 2>/dev/null && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.458","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && cd .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.459","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ || bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.460","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__; bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.461","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"ls && cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.462","verdict":"pass","setup":"kitwtrel","cwd":"__FIXTURE_ROOT__/.claude/worktrees/w","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.463","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"function ls { cd .claude/worktrees/evil; }; ls && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.464","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"trap \"cd .claude/worktrees/evil\" DEBUG; bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.465","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"source docs/s.sh && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.466","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"BASH_ENV=docs/s.sh bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.467","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"$'cd' .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.468","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"find .claude/worktrees/evil -maxdepth 1 -name .claude -execdir bash .claude/hooks/test-hooks.sh \\;","reason":"kit-cwd"}
+{"id":"X24.469","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"git status && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.470","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"env -iC .claude/worktrees/evil bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.471","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"timeout 600 bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.472","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"CI=1 bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.473","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"cd /proc/self/cwd && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.474","verdict":"ask","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/stale && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.475","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"not the project root or a registered worktree"}
+{"id":"X24.476","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh 2>&1 | tail -3"}
+{"id":"X24.477","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"bash .claude/hooks/test-hooks.sh; echo done"}

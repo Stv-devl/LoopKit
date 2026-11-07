@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cwk-guard-api: 2
+# cwk-guard-api: 3
 """Resolve the write targets of a Bash command: `python3 -B shell_targets.py <cmd> <base>`.
 
 Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
@@ -74,10 +74,69 @@ EXEC_VALUE_OPTS = {"-p", "--package", "--filter"}
 EXEC_SHELL_OPTS = {"-c", "--call"}
 FLAG_TOOLS = {"vite", "vitest", "playwright", "tsc"}
 FLAG_WRITE = {"--outputFile", "--output-file", "--outFile", "--declarationDir", "--generateTrace",
-              "--tsBuildInfoFile"}
-FLAG_RECURSIVE = {"--out-dir", "--emptyOutDir", "--coverage.reportsDirectory"}
+              "--tsBuildInfoFile", "--generateCpuProfile", "--last-failed-file"}
+FLAG_RECURSIVE = {"--out-dir", "--emptyOutDir", "--coverage.reportsDirectory", "--attachmentsDir",
+                  "--coverage.htmlDir"}
 CFG_PROJECT = {"-p", "--project"}
 CFG_TOOL = {"-c", "--config", "--root", "--dir"}
+VALUE = "value"
+
+
+class Names(frozenset):
+    """The built-in names a NAME option accepts, alone or as a comma list."""
+
+
+VITEST_REPORTERS = Names({"default", "agent", "minimal", "blob", "verbose", "dot", "json", "tap", "tap-flat",
+                          "junit", "tree", "hanging-process", "github-actions", "html"})
+PLAYWRIGHT_REPORTERS = Names({"list", "line", "dot", "json", "junit", "html", "blob", "github", "null",
+                              "perfetto"})
+COVERAGE_REPORTERS = Names({"text", "text-summary", "html", "lcov", "lcovonly", "json", "json-summary",
+                            "clover", "cobertura", "teamcity", "none"})
+ENVIRONMENTS = Names({"node", "jsdom", "happy-dom", "edge-runtime"})
+POOLS = Names({"threads", "forks", "vmThreads", "vmForks"})
+VITE_COMMANDS = {"build", "dev", "serve", "preview", "optimize"}
+SAFE_VITEST = {
+    "-t": VALUE, "--testNamePattern": VALUE, "--reporter": VITEST_REPORTERS, "--project": VALUE,
+    "--coverage": None,
+    "--coverage.enabled": None, "--coverage.include": VALUE, "--coverage.exclude": VALUE,
+    "--coverage.reporter": COVERAGE_REPORTERS, "--bail": VALUE, "--retry": VALUE, "--silent": None,
+    "--passWithNoTests": None, "--ui": None, "--run": None, "--watch": None, "-w": None,
+    "--shard": VALUE, "--sequence.shuffle": None, "--sequence.seed": VALUE, "--maxWorkers": VALUE,
+    "--minWorkers": VALUE, "--pool": POOLS, "--environment": ENVIRONMENTS, "--testTimeout": VALUE,
+    "--hookTimeout": VALUE, "--teardownTimeout": VALUE, "--changed": VALUE, "--mode": VALUE,
+    "--exclude": VALUE, "--hideSkippedTests": None, "--logHeapUsage": None, "--globals": None,
+    "--allowOnly": None, "--no-color": None, "--color": None,
+    "--update": frozenset({"false"}), "--help": None, "-h": None, "--version": None, "-v": None,
+}
+SAFE_PLAYWRIGHT = {
+    "--reporter": PLAYWRIGHT_REPORTERS, "-j": VALUE, "--workers": VALUE, "-g": VALUE, "--grep": VALUE,
+    "--grep-invert": VALUE, "-gv": VALUE, "--last-failed": None, "--list": None, "--trace": VALUE,
+    "--project": VALUE, "--headed": None, "--debug": None, "--retries": VALUE,
+    "--repeat-each": VALUE, "-x": None, "--max-failures": VALUE, "--timeout": VALUE,
+    "--global-timeout": VALUE, "--forbid-only": None, "--fully-parallel": None, "--quiet": None,
+    "--pass-with-no-tests": None, "--shard": VALUE, "--ui": None, "--no-deps": None,
+    "--browser": VALUE, "--tsconfig": VALUE, "--update-snapshots": frozenset({"none"}),
+    "-unone": None, "--help": None, "-h": None, "--version": None, "-V": None,
+}
+SAFE_TSC = {
+    "--pretty": None, "--skipLibCheck": None, "--extendedDiagnostics": None, "--diagnostics": None,
+    "--listFiles": None, "--explainFiles": None, "--traceResolution": None,
+    "--noErrorTruncation": None, "--showConfig": None, "--strict": None, "--noUnusedLocals": None,
+    "--noUnusedParameters": None, "--all": None, "--help": None, "-h": None, "--version": None,
+    "-v": None,
+}
+SAFE_VITE = {
+    "--mode": VALUE, "-m": VALUE, "--minify": VALUE, "--sourcemap": VALUE, "--logLevel": VALUE,
+    "-l": VALUE, "--base": VALUE, "--help": None, "-h": None, "--version": None, "-v": None,
+}
+CHECKED_TSC = FLAG_WRITE - {"--outputFile", "--output-file", "--last-failed-file"} | {
+    "--outDir", "--noEmit", "--init", "--project"}
+TSC_OPTIONS = {n.lstrip("-").lower(): n for n in CHECKED_TSC | SAFE_TSC.keys() if n.startswith("--")}
+TSC_OPTIONS["p"] = "-p"
+SAFE_SCRIPTS = {"test:run", "test:coverage", "typecheck", "build"}
+TOOL_SAFE = {"vitest": SAFE_VITEST, "playwright": SAFE_PLAYWRIGHT, "tsc": SAFE_TSC, "vite": SAFE_VITE}
+SCRIPT_TOOL = {"test:run": "vitest", "test:coverage": "vitest", "vitest": "vitest", "build": "vite",
+               "vite": "vite", "typecheck": "tsc", "tsc": "tsc", "playwright": "playwright"}
 
 MAX_GLOB = 256
 GLOB_BUDGET = 1.8
@@ -154,8 +213,15 @@ class Scan:
                 i += 1
                 continue
             if text.startswith("$((", i):
-                i = self.arith_end(i + 3)
+                end = self.arith_end(i + 3)
+                self.body_subs(text[i + 3:end - 2])
+                i = end
                 out.append(ARITH)
+                continue
+            if not dq and text.startswith(("<(", ">("), i):
+                inner, i = self.region(i + 2, ")")
+                self.subs.append(inner)
+                out.append(SUB + str(len(self.subs) - 1) + SUB_END)
                 continue
             if text.startswith("$(", i):
                 inner, i = self.region(i + 2, ")")
@@ -261,12 +327,14 @@ class Scan:
         return i
 
     def body_subs(self, body):
-        """An unquoted heredoc body expands its `$(…)` and backticks: lift them out."""
+        """An unquoted heredoc or arithmetic body expands its `$(…)` and backticks: lift them out."""
         nested = Scan(body, self.subs, self.heredocs, self.mark)
         j = 0
         while j < len(body):
             if body.startswith("$((", j):
-                j = nested.arith_end(j + 3)
+                end = nested.arith_end(j + 3)
+                self.body_subs(body[j + 3:end - 2])
+                j = end
             elif body.startswith("$(", j):
                 inner, j = nested.region(j + 2, ")")
                 self.subs.append(inner)
@@ -275,6 +343,12 @@ class Scan:
                 self.subs.append(inner)
             else:
                 j += 1
+
+
+def close_dangling_backslash(text):
+    """Bash reads a final unpaired backslash as a literal one; shlex refuses it."""
+    run = len(text) - len(text.rstrip("\\"))
+    return text + "\\" if run % 2 else text
 
 
 def tokens(text):
@@ -390,21 +464,36 @@ class Walker:
     mark = False
 
     def __init__(self, command):
-        self.command = command
+        self.command = close_dangling_backslash(command)
         self.heredocs = []
         self.rows = []
         self.subs = []
         self.walked = set()
         self.prior = False
+        self.start = None
+        self.seq = 0
+        self.first = None
+        self.after = None
+        self.top = False
+        self.kits = []
 
     def walk(self, state):
+        self.start = state.dir
         flat = Scan(self.command, self.subs, self.heredocs, self.mark).run()
-        self.walk_flat(flat, state)
+        self.walk_flat(flat, state, True)
         for index, sub in enumerate(self.subs):
             if index not in self.walked:
                 self.walk_flat(sub, state.copy())
+        self.rows.extend(self.kit_cwd_rows())
 
-    def walk_flat(self, flat, state):
+    def walk_flat(self, flat, state, top=False):
+        outer, self.top = self.top, top
+        try:
+            self.walk_segments(flat, state)
+        finally:
+            self.top = outer
+
+    def walk_segments(self, flat, state):
         stack, seg, pending = [state], Segment(False), None
         for tok in tokens(flat):
             seg.subs.extend(int(n) for n in SUB_REF.findall(tok))
@@ -412,6 +501,7 @@ class Walker:
                 self.redirect(seg, pending, tok)
                 pending = None
             elif tok in CONTROL or tok == "}":
+                self.after = tok
                 self.finish(seg, stack[-1])
                 if tok == "(":
                     stack.append(stack[-1].copy())
@@ -426,7 +516,37 @@ class Walker:
                 seg.words.append(tok)
         if pending is not None:
             raise Unreadable("redirect without target")
+        self.after = None
         self.finish(seg, stack[-1])
+
+    def note_kit(self, seg, words, chdir):
+        """Record, for the `kit-cwd` rule, this segment's place and whether it names a kit script."""
+        number = None
+        if self.top:
+            number = self.seq
+            self.seq += 1
+            if number == 0:
+                self.first = (list(seg.words), self.after)
+        if kit_mention(seg.words, words):
+            plain = chdir is None and list(seg.words) == list(words) and kit_shape(words)
+            self.kits.append((number if plain else None, " ".join(show(w) for w in seg.words)))
+
+    def kit_cwd_rows(self):
+        """One `kit-cwd` row for a kit script run by relative path from an unproven directory.
+
+        An allowlist of positions, no bash cwd model: the kit script is the command's first
+        segment and the hook cwd is the project root or a registered worktree; or the first
+        segment is `cd <absolute root>` joined by `&&` to the kit script as second segment.
+        What follows the kit script does not matter. Any other occurrence asks.
+        """
+        for number, text in self.kits:
+            if number == 0 and kit_cwd_ok(self.start):
+                continue
+            if number == 1 and self.first is not None and self.first[1] == "&&" \
+                    and cd_to_root(self.first[0]):
+                continue
+            return [("kit-cwd", "?unknown:" + text)]
+        return []
 
     def redirect(self, seg, op, word):
         if op in (">&", "<&") and (word.isdigit() or word == "-"):
@@ -453,6 +573,7 @@ class Walker:
                     where = State(where.resolve(chdir))
                 verb = os.path.basename(unhide(words[0]))
                 rows.extend(self.verb_rows(verb, words[1:], seg, where, implicit))
+        self.note_kit(seg, words, chdir)
         unique = []
         for row in rows:
             if row not in unique:
@@ -481,10 +602,13 @@ class Walker:
     def verb_rows(self, verb, args, seg, state, implicit):
         rows = output_rows(verb, args, state)
         text = " ".join(show(w) for w in [verb] + args)
+        if PYTHON.match(verb) and kit_doctor_args(args, implicit):
+            rows.append(("kit-doctor", "?unknown:" + text))
         if verb in RUNNERS:
             rows.extend(self.runner_rows(verb, args, seg, state, implicit, text))
         elif verb in FLAG_TOOLS:
-            rows.extend(tool_rows(verb, args, package_base(state.dir), False, self.prior, text))
+            rows.extend(tool_rows(verb, args, package_base(state.dir), False, self.prior, text,
+                                  positional="vite" if verb == "vite" else None))
         elif verb == "rg":
             if any(a in ("--pre", "--hostname-bin") or a.startswith(("--pre=", "--hostname-bin="))
                    for a in args):
@@ -519,12 +643,16 @@ class Walker:
         if sub is None:
             return []
         directory = state.dir if base is None else resolve_in(base, state.dir)
+        name = sub
         if sub in ("run", "run-script"):
-            rest = rest[1:]
+            name, rest = (rest[0] if rest else None), rest[1:]
         elif sub in RUNNER_BUILTINS:
             return []
         script_base = directory if directory != state.dir else package_base(directory)
-        return tool_rows("script", rest, script_base, True, self.prior, text)
+        return tool_rows("script", rest, script_base, True, self.prior, text,
+                         name in SAFE_SCRIPTS or name in FLAG_TOOLS,
+                         positional={"build": "build", "vite": "vite"}.get(name),
+                         parser=SCRIPT_TOOL.get(name))
 
     def interpreter(self, verb, args, seg, state, implicit):
         if verb in ("perl", "ruby"):
@@ -960,7 +1088,7 @@ def flag_kind(tool, name, script):
     """The row label a tool option gets: flag-r, flag-w, cfg, noemit, or None."""
     if name == "--noEmit":
         return "noemit" if tool == "tsc" or script else None
-    if name in FLAG_WRITE or name.startswith("--outputFile."):
+    if name in FLAG_WRITE or name.startswith(("--outputFile.", "--output-file.")):
         return "flag-w"
     if name == "--outDir":
         return "flag-w" if tool == "tsc" else "flag-r"
@@ -972,7 +1100,159 @@ def flag_kind(tool, name, script):
         return "cfg" if tool == "tsc" or script else None
     if name in CFG_TOOL:
         return "cfg" if tool in ("vite", "vitest", "playwright") or script else None
+    if name == "-r":
+        return "cfg" if tool == "vitest" or script else None
     return None
+
+
+def canon_option(tool, script, arg):
+    """tsc folds option case and takes a single dash: `-OutDir=x` becomes `--outDir=x`, `-P` becomes `-p`."""
+    if tool != "tsc" and not script:
+        return arg
+    name, equals, value = arg.partition("=")
+    dashes = re.match(r"-{1,2}(?=[^-])", name)
+    known = TSC_OPTIONS.get(name[dashes.end():].lower()) if dashes else None
+    return known + equals + value if known else arg
+
+
+def camel_option(name):
+    """cac accepts kebab for the first segment of an option: `--clear-cache` is `--clearCache`."""
+    head, dot, rest = name.partition(".")
+    bare = head.lstrip("-")
+    return head[:len(head) - len(bare)] + re.sub(r"-([a-z])", lambda m: m.group(1).upper(), bare) + dot + rest
+
+
+def snapshot_flag(tool, arg, script):
+    """vitest `-u`/`--update`, playwright `-u`/`--update-snapshots` (but `=none`): snapshots rewritten."""
+    name, _, value = arg.partition("=")
+    vitest, playwright = tool == "vitest" or script, tool == "playwright" or script
+    if name == "-u":
+        return (vitest and value != "false") or (playwright and value != "none")
+    if name == "--update":
+        return vitest and value != "false"
+    if name == "--update-snapshots":
+        return playwright and value != "none"
+    return False
+
+
+def config_write_flag(tool, arg, script):
+    """tsc `--init` and vitest `--coverage.thresholds.autoUpdate`: they rewrite a guarded config."""
+    name, _, value = arg.partition("=")
+    if name == "--coverage.thresholds.autoUpdate":
+        return (tool == "vitest" or script) and value != "false"
+    return name == "--init" and (tool == "tsc" or script)
+
+
+def kit_doctor_args(args, implicit=False):
+    """True when a python call runs kit-doctor.py with any argument after the script.
+
+    Under xargs the operands are implicit, so the call counts with no written argument.
+    """
+    names = [os.path.basename(unhide(a)) for a in args]
+    if "kit-doctor.py" not in names:
+        return False
+    return implicit or names.index("kit-doctor.py") + 1 < len(args)
+
+
+def kit_path(word):
+    """True when the word is a relative path whose first segments are .claude/hooks or .claude/scripts."""
+    raw = unhide(word)
+    if raw.startswith("/"):
+        return False
+    return os.path.normpath(raw).startswith((".claude/hooks/", ".claude/scripts/"))
+
+
+def kit_relative(words):
+    """True when the command runs a kit script through a relative path (as verb or script operand)."""
+    verb = os.path.basename(unhide(words[0]))
+    if kit_path(words[0]):
+        return True
+    return (verb in SHELLS or bool(PYTHON.match(verb))) and any(kit_path(a) for a in words[1:])
+
+
+def kit_mention(raw_words, words):
+    """True when a segment runs or hands over a relative kit path: as the command, a script
+    operand, or any word of a segment with a wrapper, assignment, find, xargs, runner or shell."""
+    if not any(kit_path(w) for w in raw_words):
+        return False
+    if words and kit_relative(words):
+        return True
+    if list(raw_words) != list(words) or not words or kit_path(words[0]):
+        return True
+    verb = os.path.basename(unhide(words[0]))
+    return verb in SHELLS or verb in RUNNERS or verb in ("find", "xargs") or bool(PYTHON.match(verb))
+
+
+def kit_shape(words):
+    """True when the words are the kit path itself or a shell/python verb whose first operand is it."""
+    if not words:
+        return False
+    if kit_path(words[0]):
+        return True
+    verb = os.path.basename(unhide(words[0]))
+    if verb not in SHELLS and not PYTHON.match(verb):
+        return False
+    operand = next((w for w in words[1:] if not w.startswith("-")), None)
+    return operand is not None and kit_path(operand)
+
+
+def cd_to_root(words):
+    """True when the words are literally `cd <absolute path>` and that path is a root or worktree."""
+    if len(words) != 2 or words[0] != "cd":
+        return False
+    arg = words[1]
+    raw = unhide(arg)
+    return not (has_live(arg) or arg.startswith("~") or is_glob(arg)) and raw.startswith("/") \
+        and ".." not in raw.split("/") and kit_cwd_ok(raw)
+
+
+def kit_cwd_ok(directory):
+    """True when `directory` is known and is, lexically and by realpath, the project root or a registered worktree root.
+
+    A worktree root counts only when some `<project>/.git/worktrees/<name>/gitdir` names it
+    AND its own `.git` file names that entry back (a stale entry asks); a project whose
+    `.git` is not a folder (itself a linked worktree) accepts only its root.
+    """
+    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if directory is None or not project:
+        return False
+    top, here = os.path.realpath(project), os.path.realpath(directory)
+    lexical = os.path.normpath(directory)
+    roots = {os.path.normpath(project), top}
+    if lexical in roots:
+        return here == top
+    if os.path.dirname(lexical) not in {os.path.join(r, ".claude", "worktrees") for r in roots} \
+            or os.path.dirname(here) != os.path.join(top, ".claude", "worktrees"):
+        return False
+    registry = os.path.join(top, ".git", "worktrees")
+    if os.path.islink(os.path.join(top, ".git")) or not os.path.isdir(registry):
+        return False
+    try:
+        names = os.listdir(registry)
+    except OSError:
+        return False
+    for name in names:
+        entry = os.path.join(registry, name)
+        try:
+            with open(os.path.join(entry, "gitdir"), encoding="utf-8") as f:
+                named = f.read(4096).strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not named or os.path.realpath(os.path.join(entry, os.path.dirname(named))) != here:
+            continue
+        marker = os.path.join(here, ".git")
+        if os.path.islink(marker) or not os.path.isfile(marker):
+            continue
+        try:
+            with open(marker, encoding="utf-8") as f:
+                lines = f.read(4096).splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            if line.startswith("gitdir:") and \
+                    os.path.realpath(os.path.join(here, line[7:].strip())) == os.path.realpath(entry):
+                return True
+    return False
 
 
 def not_a_path(value, base, prior):
@@ -981,30 +1261,114 @@ def not_a_path(value, base, prior):
     return not prior and "/" not in value and "." not in value and not on_disk
 
 
-def tool_rows(tool, args, base, script, prior, text):
-    """The rows of the options that write a folder or file, or load a config, from `base`."""
-    rows, j = [], 0
+def safe_option(table, name, equals, value, following, consumes=False):
+    """None when `name` is a listed safe option spelled right, else the word to quote.
+
+    A boolean takes no value; a value option takes `=value` or the next word; a name
+    option takes only built-in names (`Names`), alone or as a comma list. With `consumes`
+    (a commander or tsc parser) a next word starting with `-` is the value, not an option.
+    """
+    if name not in table:
+        return name + equals + value
+    spec = table[name]
+    if spec is None:
+        return None if not equals else name + equals + value
+    if isinstance(spec, Names):
+        given = value if equals else following
+        if given and (equals or consumes or not given.startswith("-")) and not set(given.split(",")) <= spec:
+            return name + equals + value if equals else given
+        return None
+    if isinstance(spec, frozenset):
+        return None if not equals or value in spec else name + equals + value
+    return None
+
+
+def takes_value(table, name, equals, following, consumes=False):
+    """True when the safe option `name`, spelled without `=`, consumes the word `following`.
+
+    A word starting with `-` is consumed only when `consumes` (commander or tsc parser).
+    """
+    spec = table.get(name)
+    return (spec is not None and not isinstance(spec, frozenset) or isinstance(spec, Names)) \
+        and not equals and following is not None and (consumes or not following.startswith("-"))
+
+
+def tool_rows(tool, args, base, script, prior, text, listed=True, positional=None, parser=None):
+    """The rows of the options that write a folder or file, or load a config, from `base`.
+
+    A word starting with `-` must be a checked option (its row) or a safe option of the
+    tool (`TOOL_SAFE`); any other asks. `listed` false (unknown script program): no list.
+    `positional` is `vite` or `build` when a bare word is a project root to ask about.
+    `parser` is the tool a script runs (`SCRIPT_TOOL`): mri (vite, vitest) leaves a next
+    `-` word alone, commander and tsc consume it, an unknown one is checked both ways.
+    A leading unquoted glob word always asks.
+    """
+    rows, j, value_at, seen = [], 0, -1, False
+    kind_tool = parser or tool
+    table = TOOL_SAFE.get(kind_tool, {})
+    mri = kind_tool in ("vite", "vitest")
+    unknown = script and parser is None
+    consumes = not mri and not unknown
     while j < len(args):
-        arg = args[j]
+        arg = canon_option(tool, script, args[j])
+        following = args[j + 1] if j + 1 < len(args) else None
+        if args[j][:1] in ("*", "?", "["):
+            rows.append(("glob", "?unknown:" + text))
+            j += 1
+            continue
+        if listed and positional and not arg.startswith("-") and j != value_at:
+            first, seen = not seen, True
+            if not (first and positional == "vite" and arg in VITE_COMMANDS):
+                rows.append(("option", "?unknown:" + tool + " " + arg))
         j += 1
-        if not arg.startswith("-") or arg == "--":
+        if arg.startswith("@") and (tool == "tsc" or (script and listed)):
+            rows.append(("cfg", "?unknown:" + text))
+            continue
+        if not arg.startswith("-") or arg in ("-", "--"):
+            continue
+        if snapshot_flag(tool, arg, script):
+            rows.append(("snapshot", "?unknown:" + text))
+            continue
+        if config_write_flag(tool, arg, script):
+            rows.append(("cfg-write", "?unknown:" + text))
+            continue
+        if camel_option(arg) == "--clearCache" and (tool == "vitest" or script):
+            rows.append(("cache-clear", "?unknown:" + text))
             continue
         name, equals, value = arg.partition("=")
-        kind = flag_kind(tool, name, script)
-        if kind is None:
+        if equals and not value and listed:
+            rows.append(("option", "?unknown:" + tool + " " + arg))
             continue
-        following = args[j] if j < len(args) else None
+        if (tool == "playwright" or script) and re.match(r"-c[^-=]", name):
+            name, equals, value = "-c", "=", arg[2:]
+        kind = flag_kind(tool, name, script)
+        if kind is None and (tool in ("vite", "vitest") or script):
+            kind = flag_kind(tool, camel_option(name), script)
+            name = camel_option(name) if kind else name
+        if kind is None:
+            bad = safe_option(table, name, equals, value, following, consumes) if listed else None
+            if bad is not None:
+                rows.append(("option", "?unknown:" + tool + " " + bad))
+            elif listed and takes_value(table, name, equals, following, consumes):
+                value_at = j
+            continue
         if kind == "noemit":
             if (value if equals else following) == "false":
                 rows.append(("noemit", "?unknown:" + text))
+            elif following in ("true", "false"):
+                value_at = j
             continue
         if not equals:
             if name == "--emptyOutDir" and (following is None or following.startswith("-")):
                 continue
-            if following is None:
+            if following is None or (mri and following.startswith("-")):
                 continue
             value = following
-            j += 1
+            if not (unknown and following.startswith("-")):
+                j += 1
+            if following[:1] in ("*", "?", "["):
+                rows.append(("glob", "?unknown:" + text))
+                continue
         if name == "--emptyOutDir" and value in ("true", "false", ""):
             continue
         if kind == "cfg" and script and not_a_path(value, base, prior):

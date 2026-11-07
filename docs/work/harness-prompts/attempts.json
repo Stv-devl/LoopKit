@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-11-05T08:08:34.539912Z",
+    "reason": "3 Critical (outputFile.<x> swallows next -option under mri: rm -r/execArgv/-u/config reopened; --diff=data: inline code; kit-doctor.py <dir> runs planted core.fsmonitor) + 4 Major (NAME loads local module, script positional vite root config, glob expands to options, git fetch value-option tables unpinned)"
+  }
+}

@@ -44,6 +44,8 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 - Follow `.claude/rules/` and the template or pattern the plan names; read
   `.claude/skills/project-rules/SKILL.md` to find it. The guardrail hooks run on
   every write; a deny is information, never something to work around.
+- Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+  `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
 - No refactor beyond the batch, no new behaviour the plan does not name.
 
 ## Return

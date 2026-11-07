@@ -57,7 +57,7 @@ semantic_verdict() {
         printf crash
         return
     fi
-    python3 - "$stdout_file" <<'PY'
+    python3 -I - "$stdout_file" <<'PY'
 import json
 import pathlib
 import sys
@@ -75,7 +75,7 @@ PY
 }
 
 deny_has_reason() {
-    python3 - "$1" "$2" <<'PY'
+    python3 -I - "$1" "$2" <<'PY'
 import json
 import pathlib
 import sys
@@ -94,7 +94,7 @@ PY
 
 # A fixture may carry "_expect_reason": the decision's reason must contain it.
 reason_has_expected() {
-    python3 - "$1" "$2" <<'PY'
+    python3 -I - "$1" "$2" <<'PY'
 import json
 import pathlib
 import sys
@@ -248,6 +248,41 @@ run_case() {
                 printf 'K=\n' >"$tmp/.env.local.template"
                 printf 'K=v\n' >"$tmp/.env.development.local"
                 printf 'n\n' >"$tmp/notes.txt"
+                project_dir="$tmp"
+                ;;
+            # `kitwt`: a git project $tmp with a real linked worktree .claude/worktrees/w,
+            # a plain folder .claude/worktrees/evil (a `cp -r` of a nested copy) and
+            # .claude/worktrees/copy (a `cp -r` of w, its .git file still naming w).
+            kitwt)
+                git -C "$tmp" init -q -b main
+                git -C "$tmp" -c user.email=fixture@loopkit.invalid -c user.name=Fixture \
+                    commit -q --allow-empty -m seed
+                git -C "$tmp" worktree add -q "$tmp/.claude/worktrees/w" -b feat/w
+                mkdir -p "$tmp/.claude/worktrees/evil/.claude/hooks"
+                cp -r "$tmp/.claude/worktrees/w" "$tmp/.claude/worktrees/copy"
+                # `stale`: registered (gitdir names it) but its folder holds no .git
+                # file, as `git worktree list` shows a prunable entry.
+                mkdir -p "$tmp/.git/worktrees/stale" "$tmp/.claude/worktrees/stale/.claude/hooks"
+                printf '%s\n' "$tmp/.claude/worktrees/stale/.git" >"$tmp/.git/worktrees/stale/gitdir"
+                project_dir="$tmp"
+                ;;
+            # `kitwtrel`: the real worktree .claude/worktrees/w registered with a relative
+            # gitdir (git >= 2.48 `worktree.useRelativePaths`), written relative to
+            # .git/worktrees/w as git does.
+            kitwtrel)
+                git -C "$tmp" init -q -b main
+                git -C "$tmp" -c user.email=fixture@loopkit.invalid -c user.name=Fixture \
+                    commit -q --allow-empty -m seed
+                git -C "$tmp" worktree add -q "$tmp/.claude/worktrees/w" -b feat/w
+                printf '%s\n' '../../../.claude/worktrees/w/.git' >"$tmp/.git/worktrees/w/gitdir"
+                project_dir="$tmp"
+                ;;
+            # `pnpmlink`: a pnpm layout in the project $tmp, node_modules/foo a symlink
+            # to .pnpm/foo@1/node_modules/foo, so `foo/../..` is the root logically
+            # and node_modules/.pnpm/foo@1 physically.
+            pnpmlink)
+                mkdir -p "$tmp/node_modules/.pnpm/foo@1/node_modules/foo" "$tmp/node_modules/.pnpm/foo@1/.claude/hooks"
+                ln -s .pnpm/foo@1/node_modules/foo "$tmp/node_modules/foo"
                 project_dir="$tmp"
                 ;;
             '') ;;

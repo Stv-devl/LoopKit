@@ -51,7 +51,7 @@ while IFS= read -r path; do
 done < <(small_spec_files "$spec")
 
 SMALL_ROWS="$rows" SMALL_RED_GREEN="$CWK_TDD_LAYERS" SMALL_TEST_RE="$CWK_TDD_TEST_RE" SMALL_DATE="$(date +%F)" \
-    python3 - "$mode" "$spec" "$plan" "$slug" <<'PY'
+    python3 -I - "$mode" "$spec" "$plan" "$slug" <<'PY'
 import os
 import re
 import sys

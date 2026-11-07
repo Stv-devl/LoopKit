@@ -33,7 +33,7 @@ cd "$main_tree"
 
 in_loop_slugs() {
     [[ -f docs/product/backlog.md ]] || return 0
-    python3 -B - "$SMALL_DIR/../hooks/next-feature-on-clear.py" docs/product/backlog.md <<'PY'
+    python3 -I -B - "$SMALL_DIR/../hooks/next-feature-on-clear.py" docs/product/backlog.md <<'PY'
 import importlib.util
 import sys
 from pathlib import Path

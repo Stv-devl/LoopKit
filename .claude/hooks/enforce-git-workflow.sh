@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 2
+# cwk-guard-api: 3
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
@@ -226,6 +226,30 @@ NETWORK_VALUE_LONG = {"depth", "deepen", "shallow-since", "shallow-exclude", "jo
                       "refmap", "origin", "branch", "template", "reference", "separate-git-dir",
                       "config", "strategy", "strategy-option"}
 NETWORK_VALUE_SHORT = {"fetch": "jo", "pull": "josX", "clone": "bocju", "ls-remote": "o"}
+FETCH_COMPLETION = (
+    "--verbose --quiet --all --set-upstream --append --atomic --upload-pack= --force --multiple "
+    "--tags --jobs= --prefetch --prune --prune-tags --recurse-submodules --dry-run --porcelain "
+    "--write-fetch-head --keep --update-head-ok --progress --depth= --shallow-since= "
+    "--shallow-exclude= --deepen= --unshallow --refetch --submodule-prefix= "
+    "--recurse-submodules-default= --update-shallow --refmap= --server-option= --ipv4 --ipv6 "
+    "--negotiation-tip= --negotiate-only --filter= --auto-maintenance --auto-gc "
+    "--show-forced-updates --write-commit-graph --stdin --no-verbose -- --no-quiet --no-all "
+    "--no-set-upstream --no-append --no-atomic --no-upload-pack --no-force --no-multiple "
+    "--no-tags --no-jobs --no-prefetch --no-prune --no-prune-tags --no-recurse-submodules "
+    "--no-dry-run --no-porcelain --no-write-fetch-head --no-keep --no-update-head-ok "
+    "--no-progress --no-depth --no-shallow-since --no-shallow-exclude --no-deepen "
+    "--no-submodule-prefix --no-recurse-submodules-default --no-update-shallow "
+    "--no-server-option --no-negotiation-tip --no-negotiate-only --no-filter "
+    "--no-auto-maintenance --no-auto-gc --no-show-forced-updates --no-write-commit-graph "
+    "--no-stdin"
+)
+FETCH_LONG = {w[2:].rstrip("=") for w in FETCH_COMPLETION.split() if w != "--"}
+FETCH_LONG_VALUE = {w[2:-1] for w in FETCH_COMPLETION.split() if w.endswith("=")}
+FETCH_SHORT = "afjkmnopPqtuv46"
+FETCH_SHORT_VALUE = "jo"
+FETCH_SHORT_LONG = {"P": "prune-tags", "f": "force", "u": "update-head-ok", "o": "server-option"}
+REMOTE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+FETCH_SHALLOW = {"depth", "deepen", "shallow-since", "shallow-exclude", "unshallow", "update-shallow"}
 RESET_KNOWN = {"soft", "mixed", "merge", "keep", "quiet", "no-quiet", "patch", "intent-to-add",
                "pathspec-from-file", "pathspec-file-nul", "recurse-submodules",
                "no-recurse-submodules", "refresh", "no-refresh"}
@@ -282,8 +306,15 @@ def strip_comments(text):
     return "".join(out)
 
 
+def close_dangling_backslash(text):
+    """Bash reads a final unpaired backslash as a literal one; shlex refuses it."""
+    run = len(text) - len(text.rstrip("\\"))
+    return text + "\\" if run % 2 else text
+
+
 def tokens(text):
-    lexer = shlex.shlex(strip_comments(text), posix=True, punctuation_chars="();<>|&\n")
+    lexer = shlex.shlex(close_dangling_backslash(strip_comments(text)), posix=True,
+                        punctuation_chars="();<>|&\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -764,12 +795,53 @@ def refspec_destination(spec):
     return spec.split(":", 1)[1]
 
 
-def network_rule(sub, args, directory, ctx):
-    upload = ask(f"This git {sub} sets the upload-pack program: it runs an arbitrary command.")
-    head_ok = ask(f"This git {sub} uses --update-head-ok: it can move the checked-out branch, "
-                  "and the work tree no longer matches it.")
-    short_values = NETWORK_VALUE_SHORT[sub]
-    positional, refmaps, i = [], [], 0
+def fetch_long_name(name):
+    """The fetch option a long name spells, exactly or by a prefix only it has; "" otherwise."""
+    if name in FETCH_LONG:
+        return name
+    hits = [c for c in FETCH_LONG if c.startswith(name)] if name else []
+    return hits[0] if len(hits) == 1 else ""
+
+
+def fetch_option_ask(name, upload, head_ok):
+    if name == "upload-pack":
+        return upload
+    if name == "update-head-ok":
+        return head_ok
+    if name == "server-option":
+        return ask("This git fetch uses a server option (-o / --server-option): it sends a free "
+                   "string to the remote, a channel for data to leave the machine. Show the "
+                   "call, then let the user decide.")
+    if name == "prune-tags":
+        return ask("This git fetch uses --prune-tags (-P): it deletes the local tags the remote "
+                   "no longer has. Show the call, then let the user decide.")
+    if name == "force":
+        return ask("This git fetch uses --force (-f): a refspec may overwrite a local tag or ref "
+                   "without a fast-forward, and the old one is lost. Show the call, then let the "
+                   "user decide.")
+    if name == "set-upstream":
+        return ask("This git fetch uses --set-upstream: it writes the branch's upstream into "
+                   ".git/config. Show the call, then let the user decide.")
+    if name in FETCH_SHALLOW:
+        return ask(f"This git fetch uses --{name}: it changes the repository's shallow state "
+                   "(which history is kept locally). Show the call, then let the user decide.")
+    if name == "filter":
+        return ask("This git fetch uses --filter: it turns the repository into a partial clone "
+                   "(repositoryformatversion, remote.<r>.promisor and partialclonefilter written "
+                   "into .git/config). Show the call, then let the user decide.")
+    if name == "stdin":
+        return ask("This git fetch uses --stdin: it reads refspecs the hook cannot see, which "
+                   "may write any local ref. Show the refspecs, then let the user decide.")
+    return "-"
+
+
+def fetch_rule(args, upload, head_ok, directory="."):
+    def unknown(arg):
+        return ask(f"This git fetch uses '{arg}', an unknown or ambiguous option for the hook "
+                   "(git 2.43's list): it cannot tell what it writes. Spell the option out in "
+                   "full, then let the user decide.")
+
+    positional, refmaps, multiple, i = [], [], False, 0
     while i < len(args):
         arg = args[i]
         i += 1
@@ -777,17 +849,75 @@ def network_rule(sub, args, directory, ctx):
             positional += args[i:]
             break
         if is_long(arg):
-            name, eq, value = arg[2:].partition("=")
+            spelled, eq, value = arg[2:].partition("=")
+            name = fetch_long_name(spelled)
+            if not name:
+                return unknown(arg)
+            if name == "multiple":
+                multiple = True
+            verdict = fetch_option_ask(name, upload, head_ok)
+            if verdict != "-":
+                return verdict
+            if not eq and name in FETCH_LONG_VALUE:
+                value = args[i] if i < len(args) else ""
+                i += 1
+            if name == "refmap":
+                refmaps.append(value)
+            continue
+        if is_short(arg):
+            for k, letter in enumerate(arg[1:], 1):
+                if letter not in FETCH_SHORT:
+                    return unknown(arg)
+                verdict = fetch_option_ask(FETCH_SHORT_LONG.get(letter, ""), upload, head_ok)
+                if verdict != "-":
+                    return verdict
+                if letter in FETCH_SHORT_VALUE:
+                    if k == len(arg) - 1:
+                        i += 1
+                    break
+            continue
+        positional.append(arg)
+    for repo in (positional if multiple else positional[:1]):
+        if repo == ".":
+            continue
+        if not REMOTE_NAME.match(repo) or os.path.exists(os.path.join(directory, repo)):
+            return ask(f"This git fetch names '{repo}', not a bare remote name: a URL or a path "
+                       "can send data off the machine and pull untrusted content. Fetch a "
+                       "configured remote instead.")
+    for spec in refmaps + positional[1:]:
+        dst = refspec_destination(spec)
+        if dst and (dst.startswith("refs/heads/") or not dst.startswith("refs/")):
+            return ask(f"This git fetch writes '{dst}', a local branch: it moves or force-rewinds "
+                       "it outside the merge ask. Fetch into refs/remotes/ instead.")
+        if dst and not dst.startswith("refs/remotes/"):
+            return ask(f"This git fetch writes '{dst}', a ref outside refs/remotes/ (a tag, the "
+                       "stash, notes or another local ref): it can move or replace it. Fetch "
+                       "into refs/remotes/ instead.")
+    return "-"
+
+
+def network_rule(sub, args, directory, ctx):
+    upload = ask(f"This git {sub} sets the upload-pack program: it runs an arbitrary command.")
+    head_ok = ask(f"This git {sub} uses --update-head-ok: it can move the checked-out branch, "
+                  "and the work tree no longer matches it.")
+    if sub == "fetch":
+        return fetch_rule(args, upload, head_ok, directory)
+    short_values = NETWORK_VALUE_SHORT[sub]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            break
+        if is_long(arg):
+            name, eq, _ = arg[2:].partition("=")
             hits = long_hits(arg, NETWORK_LONG, NETWORK_KNOWN | NETWORK_VALUE_LONG)
             if "upload-pack" in hits:
                 return upload
             if "update-head-ok" in hits:
                 return head_ok
             if not eq and ("refmap" in hits or name in NETWORK_VALUE_LONG):
-                value = args[i] if i < len(args) else ""
                 i += 1
-            if "refmap" in hits:
-                refmaps.append(value)
             continue
         if is_short(arg):
             letters = short_letters(arg, short_values)
@@ -795,14 +925,6 @@ def network_rule(sub, args, directory, ctx):
                 return upload if sub in ("clone", "ls-remote") else head_ok
             if letters[-1] in short_values and len(letters) == len(arg) - 1:
                 i += 1
-            continue
-        positional.append(arg)
-    if sub == "fetch":
-        for spec in refmaps + positional[1:]:
-            dst = refspec_destination(spec)
-            if dst and (dst.startswith("refs/heads/") or not dst.startswith("refs/")):
-                return ask(f"This git fetch writes '{dst}', a local branch: it moves or force-rewinds "
-                           "it outside the merge ask. Fetch into refs/remotes/ instead.")
     return "-"
 
 
@@ -1332,6 +1454,9 @@ if [[ "$PARSE_FAILED" -eq 1 ]]; then
        || { echo "$COMMAND" | LC_ALL=C grep -qE '\bcommit\b' \
             && echo "$COMMAND" | LC_ALL=C grep -qE '(^|[[:space:]])(-C|--git-dir|--work-tree)|GIT_DIR|GIT_WORK_TREE'; }; then
         ask "The hook could not read which git command runs here. Show the exact git calls, then let the user decide."
+    fi
+    if echo "$COMMAND" | LC_ALL=C grep -qE '(^|[^A-Za-z0-9_-])fetch($|[^A-Za-z0-9_-])'; then
+        ask "The hook could not parse this git fetch (an unclosed quote or an escape it cannot read), so it cannot see which refs it writes. Show the exact call, then let the user decide."
     fi
 fi
 
