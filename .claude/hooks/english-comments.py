@@ -477,7 +477,7 @@ def main() -> None:
                 )
 
             prev_line = next(
-                (l for l in reversed(lines[: line_no - 1]) if l.strip()), None
+                (ln for ln in reversed(lines[: line_no - 1]) if ln.strip()), None
             )
             if prev_line is not None and PY_BLOCK_STATEMENT.match(prev_line):
                 deny(
@@ -527,7 +527,7 @@ def main() -> None:
     for i, text in line_comments:
         banner = SECTION_RULE.match(text) or {i - 1, i + 1} & ruled
         following = next(
-            (l for l in lines[i + 1:] if not re.match(r"^\s*//\s*eslint-", l)), ""
+            (ln for ln in lines[i + 1:] if not re.match(r"^\s*//\s*eslint-", ln)), ""
         )
         if MEMO_REASON.match(text) and MEMOIZED.search(following):
             continue
@@ -583,7 +583,7 @@ def main() -> None:
             )
 
         nxt = next(
-            (l for l in lines[start + len(blines):] if l.strip()),
+            (ln for ln in lines[start + len(blines):] if ln.strip()),
             None,
         )
         if nxt is not None and STATEMENT.match(nxt):

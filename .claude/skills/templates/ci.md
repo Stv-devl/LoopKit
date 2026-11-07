@@ -121,6 +121,23 @@ happened for weeks. `workflow-names` compares all three.
 The thresholds are not a twin here: the coverage floor lives in
 `vite.config.ts`, and the YAML only calls the script that reads it.
 
+## Repository settings
+
+A workflow that runs is not yet a gate: GitHub merges a red pull request unless
+the repository says otherwise. Set these once, by hand, in the repository's
+settings (`/kit:doctor` reports, informational only, when `main` has neither a
+ruleset nor classic protection):
+
+- **A ruleset on `main`**: a pull request is required before merging, the
+  required status check is `Gates` (the `ci.yml` job), no force push, no
+  deletion.
+- **`CODEOWNERS`**: `install.sh` ships `.github/CODEOWNERS` with the CI. It
+  covers `.claude/hooks/`, `.claude/settings.json`, `.github/workflows/` and
+  itself (`.github/CODEOWNERS`); replace `@OWNER`, then turn on "Require review from Code Owners" in the same
+  ruleset, so a change to the guardrails needs its owner.
+- **An environment `production`** with a required reviewer: `deploy.yml` runs in
+  it, so a deploy waits for a human even after a green push.
+
 ## The one gate a runner cannot decide
 
 `pnpm audit --prod --audit-level=high` red, **with no fix published**, is the case

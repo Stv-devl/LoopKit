@@ -222,6 +222,19 @@ copie, pour la seule chose que `/loop:ship` ne peut pas couvrir : une machine qu
 n'est pas la tienne. Le jour où tu pousses, relance l'installeur avec
 `--deploy=<cible>`.
 
+Avec le CI, `install.sh` dépose aussi `.github/CODEOWNERS` (remplace `@OWNER` ; il couvre les hooks, `settings.json`, les workflows et lui-même), et les réglages du
+dépôt qui rendent les gates bloquantes (ruleset sur `main`, check requis
+`Gates`, environnement `production`) sont décrits dans
+`.claude/skills/templates/ci.md`, « Repository settings ». Dans le dépôt du kit
+lui-même, le check requis `kit` (`kit-ci.yml`) s'ajoute à `Gates` : il n'existe
+que là, `kit-ci.yml` n'étant jamais installé chez toi, donc ne l'exige jamais
+dans ton projet.
+
+Un pre-push local est optionnel : `--lefthook` (ou *oui* à la question posée
+dans un terminal) dépose `lefthook.yml`, qui relance typecheck, lint et
+`test:run` avant chaque push ; active-le avec
+`pnpm add -D lefthook && pnpm exec lefthook install`.
+
 Sinon, `install.sh` a déposé deux fichiers, et ils dépendent entièrement des
 scripts que tu viens de déclarer en §4 — un nom de script différent chez toi et le CI casse
 au premier push, pas plus tard.
@@ -324,7 +337,8 @@ merge d'une track) vit dans `.claude/agents/github.md`, sa copie unique.
 
 Ce qui la tient n'est pas le texte mais
 `.claude/hooks/enforce-git-workflow.sh` : commit sur `main`/`master` **refusé**,
-signature et trailer `Co-Authored-By` **refusés**, et `git push`, `gh pr`,
+signature et trailer `Co-Authored-By` **refusés** (dans un commit comme dans un
+corps, un titre ou un `--body-file` envoyé par `gh`), et `git push`, `gh pr`,
 `gh issue`, tout commentaire et tout merge dans une branche protégée repassent
 par ta validation, quels que soient les options globales, le `-C` ou l'alias de
 l'appel git. Si tes branches protégées ne s'appellent pas `main`/`master`,
@@ -467,6 +481,9 @@ approuve si le changement est voulu.
 Si `hook-guarded.sh` disparaît, les cinq hooks de garde refusent tout (exit 2)
 plutôt que de laisser passer ; rétablis-le depuis un terminal :
 `git checkout -- .claude/hooks/hook-guarded.sh`.
+
+Les sept branchements des hooks de garde (`protect-files.sh` ×3, `prevent-destructive-commands.sh`, `enforce-git-workflow.sh`, `tdd-require-red.sh`, `tdd-freeze-tests.sh`) portent `"onFailure": "block"` : un hook qui dépasse son timeout ou plante bloque l'appel au lieu de le laisser passer.
+Mesuré sur Claude Code 2.1.316 ; une version plus ancienne est supposée ignorer la clé, ce n'est pas testé.
 
 ## 15. Permissions étroites (P1) et leur retenue
 

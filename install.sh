@@ -3,7 +3,7 @@
 # LoopKit — installe le kit dans un projet cible.
 #
 #   ./install.sh /chemin/vers/mon-projet [--react-ts] [--supabase] [--fastapi]
-#                                        [--no-ci]
+#                                        [--no-ci] [--lefthook]
 #                                        [--deploy=none|netlify|vercel|pages|ssh|ghcr]
 #
 # Sans profil, installe le core agnostique. --react-ts ajoute les hooks front ;
@@ -17,6 +17,10 @@
 # --deploy  choisit la cible du CD. Omis dans un terminal, la question est posee ;
 #           omis dans un script (pas de TTY), c'est `none` — le workflow echoue
 #           alors volontairement tant que personne n'a choisi.
+#
+# --lefthook  installe lefthook.yml (pre-push : typecheck, lint, test:run).
+#           Omis dans un terminal, la question est posee, non par defaut ;
+#           sans terminal, rien n'est installe.
 #
 # Ne remplace jamais un fichier existant : il écrit `<fichier>.new` à côté.
 # Exception volontaire : settings.json fusionne les hooks sélectionnés dans le
@@ -32,9 +36,11 @@ WITH_FASTAPI=false
 WITH_REACT_TS=false
 DEPLOY_TARGET=""
 NO_CI=false
+WITH_LEFTHOOK=false
 
 for arg in "$@"; do
     case "$arg" in
+        --lefthook) WITH_LEFTHOOK=true ;;
         --react-ts) WITH_REACT_TS=true ;;
         --supabase) WITH_SUPABASE=true ;;
         --fastapi)  WITH_FASTAPI=true ;;
@@ -639,6 +645,18 @@ else
     DEPLOY_TARGET="none"
 fi
 
+# Le pre-push local est optionnel : demande seulement dans un terminal, non par
+# defaut. Une fin d'entree (Ctrl-D) vaut non, sans faire echouer `set -e`.
+if ! $WITH_LEFTHOOK && [[ -t 0 ]]; then
+    echo
+    echo "Installer un hook pre-push local (lefthook) ? Il relance typecheck, lint"
+    echo "et test:run avant chaque push."
+    read -r -p "  [o/N] : " answer || answer=""
+    case "$answer" in
+        [oOyY]*) WITH_LEFTHOOK=true ;;
+    esac
+fi
+
 echo "Installation du kit dans : $TARGET"
 
 copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
@@ -676,7 +694,13 @@ if $NO_CI; then
 else
     copy_file "$KIT_DIR/templates/github/ci.yml" "$TARGET/.github/workflows/ci.yml"
     copy_file "$KIT_DIR/templates/github/dependabot.yml" "$TARGET/.github/dependabot.yml"
+    copy_file "$KIT_DIR/templates/github/CODEOWNERS" "$TARGET/.github/CODEOWNERS"
     install_deploy "$DEPLOY_TARGET"
+fi
+
+if $WITH_LEFTHOOK; then
+    copy_file "$KIT_DIR/templates/lefthook.yml" "$TARGET/lefthook.yml"
+    echo "  lefthook: pnpm add -D lefthook && pnpm exec lefthook install"
 fi
 
 if $WITH_SUPABASE; then

@@ -3,6 +3,7 @@
 # Read-only: every function prints to stdout and writes nothing.
 
 SMALL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034  # read by the sourced hook-lib.sh
 CWK_HOOK_TIMING=0
 # shellcheck source=../hooks/hook-lib.sh
 source "$SMALL_LIB_DIR/../hooks/hook-lib.sh"

@@ -1,0 +1,7 @@
+# FILL: replace @OWNER with the GitHub user or team who must review changes to
+# the guardrails, then turn on "Require review from Code Owners" in the main
+# ruleset (.claude/skills/templates/ci.md, "Repository settings").
+/.claude/hooks/ @OWNER
+/.claude/settings.json @OWNER
+/.github/workflows/ @OWNER
+/.github/CODEOWNERS @OWNER

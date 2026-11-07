@@ -11,7 +11,7 @@ SMALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=small-lib.sh
 source "$SMALL_DIR/small-lib.sh"
 
-mode=write
+mode="write"
 if [[ "${1:-}" == "--check" ]]; then
     mode=check
     shift

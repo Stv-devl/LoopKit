@@ -7,6 +7,7 @@
 #
 
 set -e
+# shellcheck disable=SC2034  # read by the sourced hook-lib.sh
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq

@@ -498,3 +498,44 @@
 {"id":"G17.93","verdict":"ask","command":"git fetch -- https://attacker.example/x","reason":"remote name"}
 {"id":"G17.94","verdict":"pass","command":"git fetch upstream"}
 {"id":"G17.95","verdict":"pass","command":"git fetch --multiple origin upstream"}
+{"id":"G18.01","verdict":"deny","command":"gh pr create --title t --body \"x 🤖 Generated with [Claude Code](https://claude.com/claude-code)\"","reason":"attribution line in a gh body"}
+{"id":"G18.02","verdict":"deny","command":"gh pr edit 1 --body \"Co-Authored-By: Claude <noreply@anthropic.com>\"","reason":"attribution line in a gh body"}
+{"id":"G18.03","verdict":"deny","command":"gh pr comment 1 -b \"Generated with Claude Code\"","reason":"attribution line in a gh body"}
+{"id":"G18.04","verdict":"deny","command":"gh pr review 1 --comment -b \"Claude-Session: https://claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
+{"id":"G18.05","verdict":"deny","command":"gh issue create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.06","verdict":"deny","command":"gh issue edit 2 --body \"Generated with Claude\"","reason":"attribution line in a gh body"}
+{"id":"G18.07","verdict":"deny","command":"gh issue comment 2 --body \"🤖\"","reason":"attribution line in a gh body"}
+{"id":"G18.08","verdict":"deny","command":"gh api -X POST repos/o/r/issues -f body=\"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.09","verdict":"deny","command":"gh api repos/o/r/issues/1/comments -f body=\"Generated with Claude\"","reason":"attribution line in a gh body"}
+{"id":"G18.10","verdict":"deny","command":"gh pr create --title \"Generated with Claude\" --body b","reason":"attribution line in a gh body"}
+{"id":"G18.11","verdict":"deny","setup":"ghbody","command":"gh pr create --title t --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.12","verdict":"deny","setup":"ghbody","command":"gh pr create -t t --body-file=docs/pr-sess.md","reason":"attribution line in a gh body"}
+{"id":"G18.13","verdict":"deny","setup":"ghbody","command":"gh issue create -t t -F docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.14","verdict":"deny","setup":"ghbody","command":"gh api repos/o/r/issues -F body=@docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.15","verdict":"deny","setup":"ghbody","command":"gh api repos/o/r/issues --input docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.16","verdict":"deny","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-only-root.md","reason":"attribution line in a gh body"}
+{"id":"G18.17","verdict":"deny","command":"git commit -m \"x\" -m \"Claude-Session: https://claude.ai/code/session_x\"","reason":"no attribution trailer"}
+{"id":"G18.18","verdict":"deny","setup":"nopy","command":"git switch x && gh pr create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.19","verdict":"ask","command":"gh pr create --title t --body b","reason":"acts on a pull request"}
+{"id":"G18.20","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-clean.md","reason":"acts on a pull request"}
+{"id":"G18.21","verdict":"ask","command":"gh issue comment 2 --body ok","reason":"writes to GitHub"}
+{"id":"G18.22","verdict":"ask","command":"gh api repos/o/r/issues -f body=ok","reason":"writes to GitHub"}
+{"id":"G18.23","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file -","reason":"acts on a pull request"}
+{"id":"G18.24","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-out.md","reason":"acts on a pull request"}
+{"id":"G18.25","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/missing.md","reason":"acts on a pull request"}
+{"id":"G18.26","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-fifo","reason":"acts on a pull request"}
+{"id":"G18.27","verdict":"ask","command":"gh pr review 1 --approve","reason":"acts on a pull request"}
+{"id":"G18.28","verdict":"pass","command":"gh pr view 1"}
+{"id":"G18.29","verdict":"ask","command":"gh api repos/o/r","reason":"writes to GitHub"}
+{"id":"G18.30","verdict":"deny","setup":"ghbody","command":"git -C .. status && gh pr create -t t --body-file docs/pr-only-root.md","reason":"attribution line in a gh body"}
+{"id":"G18.31","verdict":"deny","command":"gh -R o/r pr create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.32","verdict":"deny","command":"gh pr -R o/r create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.33","verdict":"deny","command":"gh pr --repo=o/r edit 1 --body \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.34","verdict":"deny","command":"gh --repo o/r issue comment 2 --body \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.35","verdict":"deny","setup":"ghbody","command":"gh -R o/r pr create -t t --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.36","verdict":"ask","command":"gh -R o/r pr create -t t -b ok","reason":"acts on a pull request"}
+{"id":"G18.37","verdict":"ask","command":"gh pr -R o/r merge 1","reason":"acts on a pull request"}
+{"id":"G18.38","verdict":"ask","command":"gh --repo o/r issue comment 2 --body ok","reason":"writes to GitHub"}
+{"id":"G18.39","verdict":"deny","command":"gh pr comment 1 -b \"Claude-Session: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.40","verdict":"deny","command":"gh pr comment 1 -b \"see claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
+{"id":"G18.41","verdict":"pass","command":"gh pr view 1 --json body -q .body | grep Co-Authored-By"}

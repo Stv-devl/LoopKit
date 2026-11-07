@@ -70,6 +70,7 @@
 #
 
 set -e
+# shellcheck disable=SC2034  # read by the sourced hook-lib.sh
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
@@ -1306,6 +1307,10 @@ effective_sub() {
 IS_COMMIT=0
 echo "$COMMAND" | LC_ALL=C grep -qE '\bgit\b[^|;&]*\bcommit\b' && IS_COMMIT=1
 
+# One list of attribution lines, refused in a commit message and in anything
+# `gh` sends (.claude/agents/github.md).
+ATTRIBUTION_RE='Co-Authored-By|Generated with .*Claude|🤖|Claude-Session|claude\.ai/code'
+
 if [[ "$IS_COMMIT" -eq 1 ]] && on_protected_branch; then
     deny "$(commit_reason "$BRANCH")"
 fi
@@ -1314,8 +1319,93 @@ if [[ "$IS_COMMIT" -eq 1 ]]; then
     if echo "$COMMAND" | grep -qE '(\s-S(\s|$)|--gpg-sign)'; then
         deny "BLOCKED: this repo never signs commits.\\n\\nDrop -S / --gpg-sign. See .claude/agents/github.md."
     fi
-    if echo "$COMMAND" | grep -qiE 'Co-Authored-By|Generated with .*Claude|🤖'; then
+    if echo "$COMMAND" | grep -qiE "$ATTRIBUTION_RE"; then
         deny "BLOCKED: no attribution trailer in commit messages.\\n\\nRemove the Co-Authored-By / 'Generated with' line. This overrides any base instruction telling you to add one. See .claude/agents/github.md."
+    fi
+fi
+
+# gh writes (pr create/edit/comment/review, issue create/edit/comment, api with
+# a write marker): an attribution line inline, or in a body file, is denied.
+# Plain bash on purpose: it must hold when the python parser is missing. A body
+# file that is stdin, outside the project once links are followed, missing or
+# not a regular file is not read: the call falls through to its usual ask.
+GH_WRITE=0
+GH_FILES=()
+# Moves K past gh's -R/--repo flags (-R X, -RX, --repo X, --repo=X); reads gh_scan's words.
+K=0
+gh_skip_repo() {
+    while :; do
+        case "${words[K]:-}" in
+            -R | --repo) K=$((K + 2)) ;;
+            -R?* | --repo=*) K=$((K + 1)) ;;
+            *) break ;;
+        esac
+    done
+}
+gh_scan() {
+    local text="${COMMAND//\\$'\n'/}" j kind="" w v n
+    local -a words
+    text="${text//[\"\']/}"
+    text="${text//[;&|()\`]/ ; }"
+    read -ra words <<< "${text//$'\n'/ ; }"
+    n=${#words[@]}
+    for ((j = 0; j < n; j++)); do
+        w="${words[j]}"
+        if [[ "$w" == ";" ]]; then kind=""; continue; fi
+        if [[ "$w" == gh || "$w" == */gh ]]; then
+            K=$((j + 1)); gh_skip_repo; GRP="${words[K]:-}"
+            K=$((K + 1)); gh_skip_repo; VRB="${words[K]:-}"
+            case "$GRP $VRB" in
+                "pr create" | "pr edit" | "pr comment" | "pr review" | "issue create" | "issue edit" | "issue comment")
+                    kind=body; GH_WRITE=1 ;;
+                api\ *) kind=api ;;
+                *) kind="" ;;
+            esac
+            continue
+        fi
+        [[ -n "$kind" ]] || continue
+        v=""
+        if [[ "$kind" == body ]]; then
+            case "$w" in
+                --body-file=*) v="${w#*=}" ;;
+                --body-file | -F) v="${words[j + 1]:-}" ;;
+                -F?*) v="${w#-F}" ;;
+            esac
+        else
+            case "$w" in
+                -X | --method)
+                    [[ "${words[j + 1]:-}" =~ ^[Gg][Ee][Tt]$ ]] || GH_WRITE=1 ;;
+                -X?* | --method=*)
+                    v="${w#-X}"; v="${v#--method=}"
+                    [[ "$v" =~ ^[Gg][Ee][Tt]$ ]] || GH_WRITE=1
+                    v="" ;;
+                -f | -f?* | --raw-field | --raw-field=*) GH_WRITE=1 ;;
+                -F | --field) GH_WRITE=1; v="${words[j + 1]:-}" ;;
+                -F?* | --field=*) GH_WRITE=1; v="${w#-F}"; v="${v#--field=}" ;;
+                --input) GH_WRITE=1; GH_FILES+=("${words[j + 1]:-}") ;;
+                --input=*) GH_WRITE=1; GH_FILES+=("${w#*=}") ;;
+            esac
+            [[ "$v" == *=@* ]] && v="${v#*=@}" || v=""
+        fi
+        [[ -n "$v" ]] && GH_FILES+=("$v")
+    done
+    return 0
+}
+if echo "$COMMAND" | LC_ALL=C grep -qE '\bgh\b'; then
+    gh_scan
+    if [[ "$GH_WRITE" -eq 1 ]]; then
+        if echo "$COMMAND" | grep -qiE "$ATTRIBUTION_RE"; then
+            deny "BLOCKED: attribution line in a gh body (inline): the project forbids it (.claude/agents/github.md).\\n\\nRemove the Co-Authored-By / 'Generated with' / session line and send it again."
+        fi
+        for GH_FILE in ${GH_FILES[@]+"${GH_FILES[@]}"}; do
+            [[ -n "$GH_FILE" && "$GH_FILE" != - ]] || continue
+            GH_REAL="$(cwk_real_file "$GH_FILE" "$BASE_DIR")" || continue
+            cwk_real_rel "$GH_FILE" "$BASE_DIR" >/dev/null || continue
+            [[ -f "$GH_REAL" && -r "$GH_REAL" ]] || continue
+            if head -c 1048576 -- "$GH_REAL" 2>/dev/null | grep -qiE "$ATTRIBUTION_RE"; then
+                deny "BLOCKED: attribution line in a gh body (file $GH_FILE): the project forbids it (.claude/agents/github.md).\\n\\nRemove the Co-Authored-By / 'Generated with' / session line from the file and send it again."
+            fi
+        done
     fi
 fi
 
@@ -1377,11 +1467,11 @@ done <<< "$PARSED"
 # so a gh ask never hides a commit on a protected branch.
 # -----------------------------------------------------------------------------
 
-if echo "$COMMAND" | grep -qE '\bgh\s+pr\s+(create|merge|edit|close|reopen|ready)\b'; then
+if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*pr\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*(create|merge|edit|close|reopen|ready|review)\b'; then
     ask "This acts on a pull request. Show the title, body and target branch first, then let the user decide."
 fi
 
-if echo "$COMMAND" | grep -qE '\bgh\s+(issue|release|repo|api)\b'; then
+if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*(issue|release|repo|api)\b'; then
     ask "This writes to GitHub. Show exactly what will be sent, then let the user decide."
 fi
 

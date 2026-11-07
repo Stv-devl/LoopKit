@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRATCH="$(mktemp -d)"
 trap 'rm -r "$SCRATCH"' EXIT
+# No install below reaches a terminal question (lefthook, remote, CD) when the
+# suite itself runs from a terminal; the tty cases get theirs from `script`.
+# The doctor runs offline: no `gh` call from the suite.
+exec </dev/null
+export CWK_DOCTOR_OFFLINE=1
 TARGET="$SCRATCH/target"
 mkdir -p "$TARGET"
 
@@ -407,6 +412,10 @@ cmp -s "$CD_TEMPLATE" "$I4A/.github/dependabot.yml"
 I4B="$SCRATCH/cd-no-ci"
 cd_install "$I4B" --no-ci
 [ ! -e "$I4B/.github/dependabot.yml" ]
+# (I5a) CODEOWNERS arrives with the CI, equal to its template.
+cmp -s "$ROOT/templates/github/CODEOWNERS" "$I4A/.github/CODEOWNERS"
+# (I5b) and not without it.
+[ ! -e "$I4B/.github/CODEOWNERS" ]
 # (I4c) every target, each on a fresh directory, since copy_file keeps a first deploy.yml.
 for fragment in "$ROOT"/templates/github/publish/*.yml; do
     target="$(basename "$fragment" .yml)"
@@ -521,5 +530,44 @@ for hp_uv in 'Bash(uv run ruff check .)' 'Bash(uv run ruff check app)' 'Bash(uv 
     jq -e --arg a "$hp_uv" '.permissions.allow | index($a)' "$PY_TARGET/.claude/settings.json" >/dev/null
 done
 if jq -e '.permissions.allow | index("Bash(uv run *)")' "$PY_TARGET/.claude/settings.json" >/dev/null; then exit 1; fi
+
+# (I6) harness-kit-ci K4: the lefthook pre-push is optional, asked only on a
+# terminal, default no. `script` gives the install a terminal, fed from a pipe.
+LH_TEMPLATE="$ROOT/templates/lefthook.yml"
+LH_QUESTION='pre-push local'
+lh_tty() {
+    mkdir -p "$1"
+    printf '%s' "$2" | script -qec "\"$ROOT/install.sh\" \"$1\" --no-ci" /dev/null
+}
+# (I6a) terminal, Enter → the question is asked, nothing installed.
+I6A="$SCRATCH/lh-tty-enter"
+I6A_OUT="$(lh_tty "$I6A" $'\n')"
+grep -Fq "$LH_QUESTION" <<<"$I6A_OUT"
+[ ! -e "$I6A/lefthook.yml" ]
+[ -f "$I6A/.claude/settings.json" ]
+# (I6b) no terminal → no question, nothing installed.
+I6B="$SCRATCH/lh-no-tty"
+mkdir -p "$I6B"
+I6B_OUT="$("$ROOT/install.sh" "$I6B" --no-ci 2>&1 </dev/null)"
+if grep -Fq "$LH_QUESTION" <<<"$I6B_OUT"; then exit 1; fi
+[ ! -e "$I6B/lefthook.yml" ]
+[ -f "$I6B/.claude/settings.json" ]
+# (I6c) --lefthook → installed, equal to the template, no question.
+I6C="$SCRATCH/lh-flag"
+mkdir -p "$I6C"
+I6C_OUT="$("$ROOT/install.sh" "$I6C" --lefthook --no-ci 2>&1 </dev/null)"
+cmp -s "$LH_TEMPLATE" "$I6C/lefthook.yml"
+if grep -Fq "$LH_QUESTION" <<<"$I6C_OUT"; then exit 1; fi
+[ -f "$I6C/.claude/settings.json" ]
+# (I6d) terminal, answer o → installed.
+I6D="$SCRATCH/lh-tty-yes"
+lh_tty "$I6D" $'o\n' >/dev/null
+cmp -s "$LH_TEMPLATE" "$I6D/lefthook.yml"
+[ -f "$I6D/.claude/settings.json" ]
+# (I6e) terminal, input ends before an answer → exit 0, nothing installed.
+I6E="$SCRATCH/lh-tty-eof"
+lh_tty "$I6E" '' >/dev/null
+[ ! -e "$I6E/lefthook.yml" ]
+[ -f "$I6E/.claude/settings.json" ]
 
 echo 'install fixtures: green.'

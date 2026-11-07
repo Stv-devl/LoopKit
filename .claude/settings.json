@@ -108,12 +108,14 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-freeze-tests.sh",
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           },
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-require-red.sh",
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           }
         ]
       },

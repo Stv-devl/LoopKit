@@ -253,16 +253,21 @@ cwk_segments() {
 CWK_TDD_LAYERS="repository|services|mapper|utils"
 
 # Implementation module, matched on a path (Write|Edit hooks).
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TDD_IMPL_RE="(^|[/.])(${CWK_TDD_LAYERS})\.tsx?$"
 # Frozen test file, matched on a path (Write|Edit hooks).
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TDD_TEST_RE="(^|[/.])(${CWK_TDD_LAYERS})\.test\.tsx?$"
 # Any test-first target named inside a shell command (Bash hook). The trailing
 # alternative keeps every *.test.ts* in scope, whatever its layer word.
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TDD_SHELL_TARGET_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.tsx?|\.test\.tsx?"
 # A frozen test file named inside a shell command (Bash hook).
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TDD_SHELL_FROZEN_TEST_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.test\.tsx?"
 # Any test file, TypeScript or Python, on a path relative to the project root:
 # what tdd-freeze-tests.sh freezes and what a shell tool option may never write.
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_test|conftest)\.py$'
 
 # ------------------------------------------------------ CWK_TDD_PY_TARGET_RE
@@ -285,4 +290,5 @@ CWK_TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_tes
 # `app/services/` package AND the flat `app/services.py` a small service ends up
 # with. Covering only the package would leave the flat one frozen by the hooks
 # and writable from the shell — the mismatch is silent, which is the worst kind.
+# shellcheck disable=SC2034  # read by the hooks that source this file
 CWK_TDD_PY_TARGET_RE="(^|[/[:space:]\"'])(app/services(/[A-Za-z0-9_./-]*)?\.py|tests/(services/[A-Za-z0-9_./-]*)?test_[A-Za-z0-9_]*\.py)"

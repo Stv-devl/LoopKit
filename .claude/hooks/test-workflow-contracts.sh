@@ -533,6 +533,12 @@ jq -e '[.hooks[][].hooks[]
                             or endswith("enforce-git-workflow.sh"))]
        | length >= 5 and all(.onFailure == "block")
          and ([.[].command | sub(".*/"; "")] | unique | length == 3)' "$ROOT/.claude/settings.json" >/dev/null
+# K1g the two TDD guards fail closed too: a timeout or a crash must not let a
+# module through before its RED, or a frozen test be rewritten.
+jq -e '[.hooks[][].hooks[]
+        | select(.command | endswith("tdd-require-red.sh") or endswith("tdd-freeze-tests.sh"))]
+       | length == 2 and all(.onFailure == "block")
+         and ([.[].command | sub(".*/"; "")] | unique | length == 2)' "$ROOT/.claude/settings.json" >/dev/null
 # HC harness-cd: a deploy leaves only from a green push of this repository's
 # default branch, on pinned actions and CLIs, to a host whose key is known.
 CD_DIR="$ROOT/templates/github"
@@ -675,6 +681,7 @@ for needle in 'runs the file of the chosen ref' '"Deployment branches and tags"'
 done
 cd_adapt="$(section "$ROOT/docs/ADAPTATION.md" '**`deploy.yml`** est **assemblé**' 'Puis **`CLAUDE.md`, section `Environment`**')"
 cd_adapt_flat="$(tr -s ' \n' ' ' <<<"$cd_adapt")"
+# shellcheck disable=SC1112  # the French apostrophe in a needle is literal on purpose
 for needle in 'DEPLOY_KNOWN_HOSTS' 'statique' 'dependabot' 'doit fusionner le `deploy.yml.new`' 'son propre `--deploy=<cible>`' 'hors terminal le défaut est `none`' 'cette fusion rend `DEPLOY_KNOWN_HOSTS` obligatoire' 'à la main' 'majeures' 'Deployment branches and tags' 'secrets d’environnement' 'GitHub Free' '`ghcr` n'"'"'a aucun secret' 'sur qui a l'"'"'accès en écriture' 'ce point n'"'"'est pas tranché'; do
     grep -Fq -- "$needle" <<<"$cd_adapt_flat"
 done
@@ -755,5 +762,61 @@ for hp_uv in '"Bash(uv run ruff check .)"' '"Bash(uv run ruff check app)"' '"Bas
     grep -Fq -- "$hp_uv" <<<"$hp_py"
 done
 grep -Fq 'kit-attempts.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
+# K3a harness-kit-ci: ci.md, shipped to every target, names the repository
+# settings that make the gates binding.
+K3_CI_MD="$ROOT/.claude/skills/templates/ci.md"
+k3_settings="$(awk '/^## Repository settings/ { f = 1; next } f && /^## / { exit } f' "$K3_CI_MD")"
+grep -Fq 'ruleset' <<<"$k3_settings"
+grep -Fq '`main`' <<<"$k3_settings"
+grep -Fq 'pull request' <<<"$k3_settings"
+grep -Fq '`Gates`' <<<"$k3_settings"
+grep -Fq 'force push' <<<"$k3_settings"
+grep -Fq 'deletion' <<<"$k3_settings"
+grep -Fq 'CODEOWNERS' <<<"$k3_settings"
+grep -Fq '`production`' <<<"$k3_settings"
+grep -Fq 'required reviewer' <<<"$k3_settings"
+# K3b `kit` is this repo's own check: never a required check of a target.
+if grep -Fq '`kit`' "$K3_CI_MD"; then exit 1; fi
+grep -Fq 'check requis `kit`' "$ROOT/docs/ADAPTATION.md"
+# K3c the CODEOWNERS template covers the three guarded paths.
+for k3_path in /.claude/hooks/ /.claude/settings.json /.github/workflows/; do
+    grep -Eq "^${k3_path//./\\.}[[:space:]]+@" "$ROOT/templates/github/CODEOWNERS"
+done
+# K3d CODEOWNERS owns itself: a PR that empties it needs the owner too.
+grep -Eq '^/\.github/CODEOWNERS[[:space:]]+@' "$ROOT/templates/github/CODEOWNERS"
+# K2a harness-kit-ci: the kit's own CI lints what it ships and keeps every suite.
+K2_CI="$ROOT/.github/workflows/kit-ci.yml"
+grep -Fq 'shellcheck -S warning .claude/hooks/*.sh .claude/scripts/*.sh' "$K2_CI"
+grep -Fq 'args: check --select E4,E7,E9,F' "$K2_CI"
+grep -Fq 'src: .claude/hooks' "$K2_CI"
+grep -Eq '^[[:space:]]+run: actionlint \.github/workflows/\*\.yml$' "$K2_CI"
+grep -Fq 'for f in templates/github/publish/*.yml; do' "$K2_CI"
+grep -Fq -- './install.sh "$d" --deploy="$t" </dev/null' "$K2_CI"
+grep -Fq 'actionlint "$d"/.github/workflows/*.yml' "$K2_CI"
+for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-workflow-contracts test-rules-floor test-measure; do
+    grep -Eq "^[[:space:]]+run: \.claude/hooks/${k2_suite}\.sh$" "$K2_CI"
+done
+grep -Eq '^[[:space:]]+run: python3 \.claude/hooks/kit-doctor\.py$' "$K2_CI"
+# K2b every `uses:` of the kit CI is pinned to a full SHA with its exact tag.
+k2_uses="$(grep -E '^[^#]*\buses:' "$K2_CI")"
+[ "$(wc -l <<<"$k2_uses")" -eq 2 ]
+if grep -Ev '^[[:space:]]*(- )?uses: [^[:space:]@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$k2_uses"; then exit 1; fi
+# K2c a hung step cannot hold the runner, and the checkout token is not kept.
+grep -Eq '^[[:space:]]+timeout-minutes: 30$' "$K2_CI"
+grep -Eq '^[[:space:]]+persist-credentials: false$' "$K2_CI"
+# K2d each tarball is checked against a literal digest of the very file that is
+# downloaded and extracted, and no step is allowed to fail quietly.
+k2_sums="$(sed -nE 's/^.*"[0-9a-f]{64}  ([A-Za-z0-9._-]+\.tar\.gz)" \| sha256sum -c -$/\1/p' "$K2_CI")"
+[ "$(wc -l <<<"$k2_sums")" -eq 2 ]
+grep -Fxq 'shellcheck-v0.11.0.linux.x86_64.tar.gz' <<<"$k2_sums"
+grep -Fxq 'actionlint_1.7.12_linux_amd64.tar.gz' <<<"$k2_sums"
+while IFS= read -r k2_tar; do
+    grep -Eq "^[[:space:]]+curl -fsSLO https://github\.com/[^[:space:]]+/${k2_tar//./\\.}$" "$K2_CI"
+    grep -Fq "tar -xzf $k2_tar " "$K2_CI"
+done <<<"$k2_sums"
+if grep -Eq '\|\| true|continue-on-error' "$K2_CI"; then exit 1; fi
+# K2e ruff is the pinned version, checked against a literal digest.
+grep -Eq '^[[:space:]]+version: 0\.17\.4$' "$K2_CI"
+grep -Eq '^[[:space:]]+checksum: [0-9a-f]{64}$' "$K2_CI"
 
 echo 'workflow contract fixtures: green.'

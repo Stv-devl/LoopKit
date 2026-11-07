@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# No `gh` call from the suite unless a case puts its shim first on PATH.
+export CWK_DOCTOR_OFFLINE=1
 
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_OUTPUT="$(python3 "$HOOKS_DIR/kit-doctor.py")"
@@ -80,5 +82,87 @@ SHIPPED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q '\.claude/nonexistent-x\.md' <<<"$SHIPPED_OUTPUT"
 if grep -q '\.claude/worktrees/small' <<<"$SHIPPED_OUTPUT"; then exit 1; fi
 rm "$SCRATCH/.claude/commands/loop/small-probe.md"
+
+# KD harness-kit-ci: github-protection, informational only, through a gh shim
+# driven by GH_SHIM_RULES / GH_SHIM_PROT / GH_SHIM_AUTH / GH_SHIM_HANG, every
+# call logged to $GH_SHIM_LOG.
+GH_WS="$SCRATCH/ghws"
+mkdir -p "$GH_WS/bin" "$GH_WS/nogh"
+cat > "$GH_WS/bin/gh" <<'SHIM'
+#!/bin/sh
+printf '%s\n' "$*" >> "$GH_SHIM_LOG"
+case "$1" in
+    auth) exit "${GH_SHIM_AUTH:-0}" ;;
+    api)
+        [ "${GH_SHIM_HANG:-0}" = 1 ] && exec sleep 30
+        case "$*" in
+            *rules/branches*) printf '%s' "${GH_SHIM_RULES:-[]}"; exit 0 ;;
+            *protection*)
+                printf 'HTTP/2.0 %s X\n\n{}\n' "${GH_SHIM_PROT:-404}"
+                [ "${GH_SHIM_PROT:-404}" = 200 ] && exit 0
+                exit 1 ;;
+        esac ;;
+esac
+exit 1
+SHIM
+chmod +x "$GH_WS/bin/gh"
+ln -s "$(python3 -I -c 'import sys; print(sys.executable)')" "$GH_WS/nogh/python3"
+ln -s "$(command -v git)" "$GH_WS/nogh/git"
+export GH_SHIM_LOG="$GH_WS/gh.log"
+# kd_run <env assignments...>: the doctor on the scratch kit, online, shim first.
+kd_run() {
+    : > "$GH_SHIM_LOG"
+    env -u CWK_DOCTOR_OFFLINE PATH="$GH_WS/bin:$PATH" "$@" \
+        python3 "$SCRATCH/.claude/hooks/kit-doctor.py"
+}
+# KD1 a ruleset applies to main → nothing.
+KD_OUT="$(kd_run GH_SHIM_RULES='[{"type":"deletion"}]' || true)"
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+grep -q 'rules/branches/main' "$GH_SHIM_LOG"
+# KD2 no ruleset, classic protection present (200) → nothing.
+set +e; KD_OUT="$(kd_run GH_SHIM_RULES='[]' GH_SHIM_PROT=200)"; KD2_CODE=$?; set -e
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+# KD3 neither (404) → one INFO line, exit code unchanged.
+set +e; KD_OUT="$(kd_run GH_SHIM_RULES='[]' GH_SHIM_PROT=404)"; KD3_CODE=$?; set -e
+[ "$(grep -c 'INFO        github-protection' <<<"$KD_OUT")" -eq 1 ]
+grep -q 'main has no ruleset and no classic protection' <<<"$KD_OUT"
+[ "$KD3_CODE" -eq "$KD2_CODE" ]
+# KD3b the INFO line never counts as a divergence: same count line with and without it.
+KD3B_WITHOUT="$(kd_run GH_SHIM_RULES='[]' GH_SHIM_PROT=200 || true)"
+KD3B_WITH="$(kd_run GH_SHIM_RULES='[]' GH_SHIM_PROT=404 || true)"
+grep -q 'INFO        github-protection' <<<"$KD3B_WITH"
+KD3B_COUNT="$(grep -E '^[0-9]+ divergence\(s\)' <<<"$KD3B_WITHOUT")"
+[ "$(grep -E '^[0-9]+ divergence\(s\)' <<<"$KD3B_WITH")" == "$KD3B_COUNT" ]
+# KD4 protection not readable (403) → one INFO line naming it.
+KD_OUT="$(kd_run GH_SHIM_RULES='[]' GH_SHIM_PROT=403 || true)"
+[ "$(grep -c 'INFO        github-protection' <<<"$KD_OUT")" -eq 1 ]
+grep -q 'not readable' <<<"$KD_OUT"
+# KD5 no gh on PATH → nothing.
+KD_OUT="$(env -u CWK_DOCTOR_OFFLINE PATH="$GH_WS/nogh" python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+# KD5b that run reached the wiring section: a doctor that never started proves nothing.
+grep -qx 'WIRING' <<<"$KD_OUT"
+# KD6 gh not authenticated → nothing, and no api call.
+KD_OUT="$(kd_run GH_SHIM_AUTH=1 GH_SHIM_PROT=404 || true)"
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+if grep -q '^api' "$GH_SHIM_LOG"; then exit 1; fi
+# KD7 gh hangs → nothing, and the doctor returns within 12 s.
+KD_START="$(date +%s)"
+KD_OUT="$(kd_run GH_SHIM_HANG=1 || true)"
+[ $(( $(date +%s) - KD_START )) -le 12 ]
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+# KD8 offline → nothing, and no gh call at all.
+: > "$GH_SHIM_LOG"
+KD_OUT="$(PATH="$GH_WS/bin:$PATH" CWK_DOCTOR_OFFLINE=1 GH_SHIM_RULES='[]' GH_SHIM_PROT=404 \
+    python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
+[ ! -s "$GH_SHIM_LOG" ]
+# KD9 an unfilled CODEOWNERS owner is a placeholder, in the kit template and on a target.
+mkdir -p "$SCRATCH/.github"
+printf '%s\n' '# FILL: replace @OWNER' '/.claude/hooks/ @OWNER' > "$SCRATCH/templates/github/CODEOWNERS"
+cp "$SCRATCH/templates/github/CODEOWNERS" "$SCRATCH/.github/CODEOWNERS"
+KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -Eq '(^|[[:space:]])templates/github/CODEOWNERS[[:space:]]+\(1\)' <<<"$KD_OUT"
+grep -Eq '(^|[[:space:]])\.github/CODEOWNERS[[:space:]]+\(1\)' <<<"$KD_OUT"
 
 echo 'kit-doctor version fixtures: green.'

@@ -151,6 +151,7 @@ jobs:
         run: |
           set -o pipefail
           test -d src/ || { echo "src/ introuvable — scan impossible"; exit 1; }
+          # shellcheck disable=SC2046  # an absent .env.example must expand to no word
           if grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
                src/ $( [ -f .env.example ] && echo .env.example ) \
              | grep -vE '(ANON|PUBLIC|PUBLISHABLE)_KEY'; then

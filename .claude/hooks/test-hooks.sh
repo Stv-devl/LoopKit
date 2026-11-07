@@ -492,6 +492,25 @@ run_case() {
                         fi
                         hook_path="$tmp/.bin"
                     fi
+                    # `-ghbody-`: the project is the fixture repo, so a gh body
+                    # file resolves inside it; the files sit in the feat tree's
+                    # docs/. pr-only-root.md carries the trailer only in the
+                    # feat tree (its project-root twin is clean), and pr-out.md
+                    # links out of the project to a file that carries it, in the
+                    # case file's own scratch dir (removed by its caller).
+                    if [[ "$fixture_name" == *-ghbody-* ]]; then
+                        project_dir="$tmp"
+                        mkdir -p "$tmp/.feat/docs" "$tmp/docs"
+                        printf '%s\n' 'Summary.' '' '🤖 Generated with [Claude Code](https://claude.com/claude-code)' \
+                            >"$tmp/.feat/docs/pr-sign.md"
+                        printf '%s\n' 'Summary.' >"$tmp/.feat/docs/pr-clean.md"
+                        printf '%s\n' 'Summary.' 'Claude-Session: https://claude.ai/code/session_x' >"$tmp/.feat/docs/pr-sess.md"
+                        printf '%s\n' 'Summary.' 'Co-Authored-By: x' >"$tmp/.feat/docs/pr-only-root.md"
+                        printf '%s\n' 'Summary.' >"$tmp/docs/pr-only-root.md"
+                        printf '%s\n' 'Summary.' 'Co-Authored-By: x' >"$(dirname "$fixture")/outside-trailer.md"
+                        ln -s "$(dirname "$fixture")/outside-trailer.md" "$tmp/.feat/docs/pr-out.md"
+                        mkfifo "$tmp/.feat/docs/pr-fifo"
+                    fi
                     ;;
             esac
             ;;
@@ -676,8 +695,30 @@ guard_rel_expect() {
         || fail hook-guarded.sh "cwk_guard_rel $*" "expected '$want' exit $want_code, got '$out' exit $code"
 }
 
+# W1's check, shared by T1/T2: sourcing <hook> writes no log line, prints
+# nothing, sets no trap and leaves extglob off. On a side effect it prints the
+# failure text (captured by the caller) and returns 1.
+guarded_side_effects() {
+    local hook="$1" dir before after out code
+    dir="$(mktemp -d)"
+    mkdir -p "$dir/.claude"
+    printf 'seed\n' > "$dir/.claude/.hook-timings.log"
+    before="$(sha256sum < "$dir/.claude/.hook-timings.log")"
+    set +e
+    out="$(CLAUDE_PROJECT_DIR="$dir" CWK_HOOK_TIMING=1 bash -c \
+        'b="$(trap -p)"; source "$1" || exit 99; a="$(trap -p)"
+         [[ "$a" == "$b" ]] || echo trap-changed; shopt -p extglob || true' _ "$hook" 2>&1)"
+    code=$?
+    set -e
+    after="$(sha256sum < "$dir/.claude/.hook-timings.log")"
+    rm -r "$dir"
+    [[ "$code" -eq 0 && "$out" == "shopt -u extglob" && "$before" == "$after" ]] && return 0
+    printf "expected exit 0, no trap, extglob off, log unchanged; got exit %s, '%s'" "$code" "$out"
+    return 1
+}
+
 run_guarded_cases() {
-    local p="$PROJECT_ROOT" tmp rel out code hook before after
+    local p="$PROJECT_ROOT" tmp rel out code hook before after msg
     # W1 the set, folders above it, and the denied set
     for rel in .claude/scripts/a.sh .claude/hooks .github .claude . package.json tsconfig.app.json; do
         guard_expect 0 cwk_is_guarded "$rel"
@@ -694,18 +735,22 @@ run_guarded_cases() {
 
     # W1 sourcing it has no side effect: no log line, no output, no trap, no shopt
     tmp="$(mktemp -d)"
-    mkdir -p "$tmp/.claude"
-    printf 'seed\n' > "$tmp/.claude/.hook-timings.log"
-    before="$(sha256sum "$tmp/.claude/.hook-timings.log")"
     CASES=$((CASES + 1))
-    set +e
-    out="$(CLAUDE_PROJECT_DIR="$tmp" CWK_HOOK_TIMING=1 bash -c \
-        'source "$1" || exit 99; trap -p; shopt -p extglob || true' _ "$HOOKS_DIR/hook-guarded.sh" 2>&1)"
-    code=$?
-    set -e
-    after="$(sha256sum "$tmp/.claude/.hook-timings.log")"
-    [[ "$code" -eq 0 && "$out" == "shopt -u extglob" && "$before" == "$after" ]] \
-        || fail hook-guarded.sh side-effects "expected exit 0, no trap, extglob off, log unchanged; got exit $code, '$out'"
+    msg="$(guarded_side_effects "$HOOKS_DIR/hook-guarded.sh")" \
+        || fail hook-guarded.sh side-effects "$msg"
+
+    # T1 a SIGPIPE ignore inherited from the caller (GitHub runners) is not a side effect
+    CASES=$((CASES + 1))
+    msg="$( (trap '' PIPE; guarded_side_effects "$HOOKS_DIR/hook-guarded.sh") )" \
+        || fail hook-guarded.sh "T1 side-effects, inherited SIGPIPE ignore" "$msg"
+
+    # T2 a trap set by the sourced file itself is still caught
+    cp "$HOOKS_DIR/hook-guarded.sh" "$tmp/trap-guarded.sh"
+    printf "trap 'true' EXIT\n" >> "$tmp/trap-guarded.sh"
+    CASES=$((CASES + 1))
+    if guarded_side_effects "$tmp/trap-guarded.sh" > /dev/null; then
+        fail hook-guarded.sh "T2 side-effects, trap set by the hook" "a trap set by the sourced file passed"
+    fi
 
     # W2 cwk_guard_rel
     ln -s "$p" "$tmp/alias"

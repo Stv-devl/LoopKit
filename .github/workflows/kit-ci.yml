@@ -10,12 +10,47 @@ permissions:
 jobs:
   kit:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Install hook prerequisites
         run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install lint tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz
+          echo "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6  shellcheck-v0.11.0.linux.x86_64.tar.gz" | sha256sum -c -
+          tar -xzf shellcheck-v0.11.0.linux.x86_64.tar.gz -C bin --strip-components=1 shellcheck-v0.11.0/shellcheck
+          curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint_1.7.12_linux_amd64.tar.gz" | sha256sum -c -
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz -C bin actionlint
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Validate settings JSON
         run: jq empty .claude/settings.json
+      - name: Lint hook scripts
+        run: shellcheck -S warning .claude/hooks/*.sh .claude/scripts/*.sh
+      - name: Lint hook Python
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
+        with:
+          version: 0.17.4
+          checksum: 3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
+          args: check --select E4,E7,E9,F
+          src: .claude/hooks
+      - name: Lint kit workflows
+        run: actionlint .github/workflows/*.yml
+      - name: Lint assembled target workflows
+        run: |
+          set -euo pipefail
+          for f in templates/github/publish/*.yml; do
+            t="$(basename "$f" .yml)"
+            d="$(mktemp -d)"
+            ./install.sh "$d" --deploy="$t" </dev/null >/dev/null
+            actionlint "$d"/.github/workflows/*.yml
+          done
       - name: Replay hook fixtures
         run: .claude/hooks/test-hooks.sh
       - name: Exercise installer fixtures
@@ -30,5 +65,7 @@ jobs:
         run: .claude/hooks/test-workflow-contracts.sh
       - name: Enforce hot rules floor
         run: .claude/hooks/test-rules-floor.sh
+      - name: Test hook timing measure
+        run: .claude/hooks/test-measure.sh
       - name: Detect kit divergence
         run: python3 .claude/hooks/kit-doctor.py

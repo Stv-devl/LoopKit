@@ -123,7 +123,10 @@ executable. The standalone scripts (`hook-lib.sh` and `tdd_py_lib.py`, the two
 shared libraries; `hook-guarded.sh`; `shell_targets.py`;
 `hook-timings-report.sh`; `kit-doctor.py`) are known and not reported. A shell
 hook without `+x` **fails open**: the guardrail does not run and the write goes
-through.
+through. `github-protection` prints `INFO` when `gh` is authenticated and `main`
+has neither a ruleset nor classic protection (or the latter is unreadable, HTTP
+403): informational, never a divergence, silent offline or without `gh`. The fix
+is `.claude/skills/templates/ci.md`, "Repository settings".
 
 **Links** — `shipped-paths`, `command-refs`, `agent-refs`: every `.claude/**`
 path, every backticked slash-command and every `` `x` agent `` named by a doc has a

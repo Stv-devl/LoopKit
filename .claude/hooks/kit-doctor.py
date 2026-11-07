@@ -33,7 +33,7 @@ from pathlib import Path
 # --------------------------------------------------------------- infrastructure
 
 OK, DIVERGENCE, MISSING, FILL, SKIP = "ok", "DIVERGENCE", "MISSING", "FILL", "skip"
-OVER = "OVER"
+OVER, INFO = "OVER", "INFO"
 # Only these three mean "a human has something to decide". The rest is reporting.
 FAILING = (DIVERGENCE, MISSING, OVER)
 
@@ -188,7 +188,7 @@ def check_composition_roots() -> list[Finding]:
     if arch is None or hook is None:
         return skip("composition-roots", "02-architecture.md", "enforce-architecture.py")
 
-    row = next((l for l in arch.splitlines() if "composition root:" in l), None)
+    row = next((ln for ln in arch.splitlines() if "composition root:" in ln), None)
     tup = re.search(r"COMPOSITION_ROOTS = \(([^)]*)\)", hook, re.S)
     if row is None or not tup:
         return [Finding("composition-roots", MISSING, "one side no longer parses — the row or the constant moved")]
@@ -844,6 +844,55 @@ def check_hook_wiring() -> list[Finding]:
     return findings
 
 
+def check_github_protection() -> list[Finding]:
+    """`main` with neither a ruleset nor classic protection merges a red PR.
+
+    Informational only, and silent whenever it cannot know: offline
+    (CWK_DOCTOR_OFFLINE=1), no `gh`, not authenticated, any error or timeout.
+    A 403 on the classic-protection read means "not readable without admin",
+    never "unprotected". Fix: ci.md, "Repository settings".
+    """
+    import os
+    import shutil
+
+    if os.environ.get("CWK_DOCTOR_OFFLINE") == "1" or not shutil.which("gh"):
+        return []
+    env = {**os.environ, "GH_PROMPT_DISABLED": "1"}
+
+    def gh(*args: str) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(["gh", *args], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    auth = gh("auth", "status")
+    if auth is None or auth.returncode != 0:
+        return []
+    rules = gh("api", "repos/{owner}/{repo}/rules/branches/main")
+    if rules is None or rules.returncode != 0:
+        return []
+    try:
+        active = json.loads(rules.stdout)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(active, list) or active:
+        return []
+    prot = gh("api", "--include", "repos/{owner}/{repo}/branches/main/protection")
+    if prot is None:
+        return []
+    status = next((m.group(1) for line in prot.stdout.splitlines()
+                   if (m := re.match(r"^HTTP/\S+ (\d{3})", line))), None)
+    if status == "404":
+        return [Finding("github-protection", INFO, "main has no ruleset and no classic protection",
+                        [".claude/skills/templates/ci.md — Repository settings"])]
+    if status == "403":
+        return [Finding("github-protection", INFO,
+                        "main has no ruleset; classic protection not readable (HTTP 403, needs admin)",
+                        [".claude/skills/templates/ci.md — Repository settings"])]
+    return []
+
+
 def check_shipped_paths() -> list[Finding]:
     """Every `.claude/**` path a doc names must exist. Paths under docs/ are not
     checked: `CLAUDE.md` declares them produced by the loop, so absent is normal."""
@@ -1023,13 +1072,9 @@ def check_fill_markers() -> list[Finding]:
     for folder in (".claude/rules", ".claude/commands", ".claude/skills/templates", ".claude/skills/patterns"):
         targets += sorted((ROOT / folder).rglob("*.md")) if (ROOT / folder).is_dir() else []
 
-    # The workflows are the only non-markdown thing shipped with a placeholder,
-    # and it is the one that fails closed: `deploy.yml`'s `Publish` step is an
-    # `exit 1` until a target is named. Scanning only `*.md` reported "no
-    # placeholder left" on a project whose CD could not deploy — the marker was
-    # there, in a file nothing looked at.
     for folder in ("templates/github", ".github/workflows"):
         targets += sorted((ROOT / folder).rglob("*.yml")) if (ROOT / folder).is_dir() else []
+    targets += [ROOT / "templates/github/CODEOWNERS", ROOT / ".github/CODEOWNERS"]
 
     counts: list[str] = []
     total = 0
@@ -1256,7 +1301,7 @@ CHECKS = [
                check_ignored_loop_paths,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
-    ("wiring", [check_hook_prerequisites, check_hook_wiring]),
+    ("wiring", [check_hook_prerequisites, check_hook_wiring, check_github_protection]),
     ("links", [check_shipped_paths, check_command_references,
                check_command_references_plain, check_agent_references]),
     ("placeholders", [check_fill_markers]),

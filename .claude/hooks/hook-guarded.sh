@@ -174,7 +174,7 @@ cwk_real_path() {
 # while it is a symlink (40 hops at most), so a link names the file it opens.
 # cwk_real_path alone stops at the link: right for `rm`, which removes the link.
 cwk_real_file() {
-    local path hops=0 link fdir fbase rd
+    local path hops=0 link fdir fbase
     path="$(cwk_real_path "$1" "${2:-}")" || return 1
     while [[ -L "$path" ]]; do
         hops=$((hops + 1))
