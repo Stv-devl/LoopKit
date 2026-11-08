@@ -1,4 +1,4 @@
-<!-- budget: 150 lines · /kit:doctor rules-budget -->
+<!-- budget: 150 lines · addon +105 · /kit:doctor rules-budget -->
 # Technical Stack
 
 <!-- OVERRIDE of `.claude/rules/01-stack.md`: install.sh copies this file OVER the core one.

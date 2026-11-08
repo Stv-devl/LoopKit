@@ -1,4 +1,4 @@
-<!-- budget: 290 lines · /kit:doctor rules-budget -->
+<!-- budget: 290 lines · addon +290 · /kit:doctor rules-budget -->
 # Backend — FastAPI + Python
 
 <!-- FILL: Python version, package manager (pip / uv / poetry), and the real

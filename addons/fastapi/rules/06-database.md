@@ -1,4 +1,4 @@
-<!-- budget: 110 lines · /kit:doctor rules-budget -->
+<!-- budget: 110 lines · addon +85 · /kit:doctor rules-budget -->
 # Database & Migrations — PostgreSQL + SQLAlchemy + Alembic
 
 <!-- OVERRIDE of `.claude/rules/06-database.md`: install.sh copies this file OVER the core one.

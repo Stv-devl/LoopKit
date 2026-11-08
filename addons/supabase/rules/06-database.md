@@ -1,4 +1,4 @@
-<!-- budget: 140 lines · /kit:doctor rules-budget -->
+<!-- budget: 140 lines · addon +115 · /kit:doctor rules-budget -->
 # Database & Migrations
 
 <!-- OVERRIDE of `.claude/rules/06-database.md`: install.sh copies this file OVER the core one.
