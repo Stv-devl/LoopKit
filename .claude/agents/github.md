@@ -127,7 +127,9 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
 3. Draft the commit subject. Commit locally (no signature), exactly
    `git commit -m "<one line>"` — no heredoc, no `$(...)`, no `-a`, no `$`,
    backtick or `\` in the message. That form runs without a prompt, and so do
-   `git commit -m '<one line>'` and an unquoted `git commit -m <word>`; a new branch is `git switch -c <branch>`, alone too. The git hook asks
+   `git commit -m '<one line>'`, an unquoted `git commit -m <word>` and, for another tree,
+   `git -C <tree> commit -m "<one line>"`; a new branch is `git switch -c <branch>`, alone too.
+   Whatever the caller hands you, a body asked by the caller goes into the PR body, never into the commit. The git hook asks
    on anything else that names add, stage, commit or switch, including `--amend`,
    `--no-verify`, `--all`, `--include`, `--only`, `--patch`, `--interactive`
    and a pathspec.

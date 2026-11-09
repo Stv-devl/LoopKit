@@ -46,6 +46,7 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
   every write; a deny is information, never something to work around.
 - Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
   `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
+  Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
 - No refactor beyond the batch, no new behaviour the plan does not name.
 
 ## Return

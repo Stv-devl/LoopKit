@@ -462,7 +462,8 @@ for allow in 'Bash(git add *)' 'Bash(git commit -m *)' 'Bash(git switch -c *)' \
              'Bash(git branch --show-current)' 'Bash(git worktree list)'; do
     jq -e --arg a "$allow" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
 done
-for wide in 'Bash(git commit *)' 'Bash(git switch *)' 'Bash(git branch *)' 'Bash(git push *)' 'Bash(git *)'; do
+for wide in 'Bash(git commit *)' 'Bash(git switch *)' 'Bash(git branch *)' 'Bash(git push *)' 'Bash(git *)' \
+            'Bash(git -C *)' 'Bash(git -C * commit *)' 'Bash(git -C * commit -m *)'; do
     if jq -e --arg a "$wide" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null; then exit 1; fi
 done
 grep -Fq 'git commit -m "<one line>"' "$GITHUB_AGENT"
@@ -698,8 +699,8 @@ grep -Fq 'push' <<<"$cd_header"
 grep -Eq '# Dispatch manuel.*push' "$CD_DEPLOY"
 # HP-B1 harness-prompts: files are written through Write/Edit, never through an
 # interpreter, and a guarded-path ask is the user's to answer.
-hp_line="$(grep -F '**Never write source from the shell**' -A2 "$ROOT/CLAUDE.md")"
-for hp_needle in 'python3 -' 'node -e' 'perl -i' 'heredoc' 'never by switching tools'; do
+hp_line="$(grep -F '**Never write any file from the shell**' -A2 "$ROOT/CLAUDE.md")"
+for hp_needle in 'python3 -' 'node -e' 'perl -i' 'heredoc' 'never by switching tools' 'auto-memory included'; do
     grep -Fq -- "$hp_needle" <<<"$hp_line"
 done
 for hp_agent in implementer test-writer; do
@@ -818,5 +819,34 @@ if grep -Eq '\|\| true|continue-on-error' "$K2_CI"; then exit 1; fi
 # K2e ruff is the pinned version, checked against a literal digest.
 grep -Eq '^[[:space:]]+version: 0\.17\.4$' "$K2_CI"
 grep -Eq '^[[:space:]]+checksum: [0-9a-f]{64}$' "$K2_CI"
+
+# C1-C9 fewer-asks: the prompt half of the pass. Each needle is the rule an agent
+# reads; the hooks enforce what they can, these lines say the rest.
+fa_orch="$ROOT/.claude/commands/loop/orchestrate.md"
+grep -Fq 'kit scripts run from the project root by relative path, never behind `cd x;`' "$fa_orch"
+grep -Fq 'work artifacts are written with Write/Edit, never from the shell' "$fa_orch"
+grep -Fq 'all the entries a gate needs go in one Edit' "$fa_orch"
+grep -Fq "the chat never asks again what the hook's ask asks" "$fa_orch"
+grep -Fq '# U2, U5:' "$fa_orch"
+grep -Fq 'hand the `github` agent the subject only' "$ROOT/.claude/commands/loop/ship.md"
+grep -Fq 'remove the applied `.tdd-unfrozen` entries in one Edit' "$ROOT/.claude/commands/loop/ship.md"
+grep -Fq 'a body asked by the caller goes into the PR body, never into the commit' "$ROOT/.claude/agents/github.md"
+grep -Fq 'git -C <tree> commit -m "<one line>"' "$ROOT/.claude/agents/github.md"
+for fa_agent in implementer test-writer e2e-tester; do
+    grep -Fq 'no no-op probe' "$ROOT/.claude/agents/$fa_agent.md"
+    grep -Fq 'never redirect gate output to a file' "$ROOT/.claude/agents/$fa_agent.md"
+done
+grep -Fq 'never by switching tools' "$ROOT/.claude/agents/e2e-tester.md"
+grep -Fq 'node -e' "$ROOT/.claude/agents/e2e-tester.md"
+for fa_cmd in loop/spec bmad/pm; do
+    grep -Fq 'printed, not asked' "$ROOT/.claude/commands/$fa_cmd.md"
+    grep -Fq 'loosens a kit guard' "$ROOT/.claude/commands/$fa_cmd.md"
+    if grep -Fq 'asked alone and asked always' "$ROOT/.claude/commands/$fa_cmd.md"; then exit 1; fi
+done
+for fa_cmd in interface plan; do
+    grep -Fq "exactly the user's own words is recorded, not asked again" "$ROOT/.claude/commands/loop/$fa_cmd.md"
+done
+grep -Fq 'je lance' "$ROOT/CLAUDE.md"
+grep -Fq 'cd dir;' "$ROOT/CLAUDE.md"
 
 echo 'workflow contract fixtures: green.'

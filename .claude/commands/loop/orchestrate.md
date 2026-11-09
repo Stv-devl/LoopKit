@@ -66,6 +66,10 @@ A new session does not reset the counter; a successful gate does. (Small: exit 3
 
 ## Phase 0 — Read & decide
 
+Shell discipline for the whole pass:
+- kit scripts run from the project root by relative path, never behind `cd x;` (`cd <absolute root> && …` at most);
+- work artifacts are written with Write/Edit, never from the shell (`plan.md`, `handoff.md`, `design.md`; appending `## Gate` is an Edit).
+
 1. **Small pipeline**, picked before anything else, so before the resume
    branching of step 2. Select it when the entry is under `docs/specs/small/`, the
    plan header says `Pipeline: small`, or a resumed handoff body has `Entry:`
@@ -260,7 +264,8 @@ the `.tdd-unfrozen` write asks the user (a guarded path), and a headless run
 cannot answer, so it stops there. The agent that hits the freeze stops and
 reports; you print the case id, the old and new case line and the reason, write
 `.claude/.tdd-unfrozen` citing the id (`<path>  # U2: <reason>`, several as
-`# U2, U5: …`) once the user approves the prompt, make the edit yourself —
+`# U2, U5: …`) once the user approves the prompt — all the entries a gate needs go in one Edit,
+and the chat never asks again what the hook's ask asks — make the edit yourself —
 never through `implementer` or `test-writer`, whose contracts forbid rewriting a
 frozen case — then rewrite the plan line with the same id and append
 `amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The user

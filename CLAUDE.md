@@ -47,9 +47,10 @@ names (not values) or check `.env.example`.
 - `git worktree remove --force`, or deleting a worktree with `rm` — use
   `git worktree remove` (it refuses a dirty tree, and that refusal is the point)
 
-**Never write source from the shell** (redirection, `tee`, `sed -i`, `perl -i`,
-heredocs, `python3 -`/`-c`, `node -e`): it goes around every `Write|Edit` guardrail. A
-guarded-path ask is the user's to answer, never by switching tools. Delete specific files, never whole folders.
+**Never write any file from the shell** (redirection, `tee`, `sed -i`, `perl -i`, heredocs, `python3 -`/`-c`,
+`node -e`), auto-memory included: it goes around every `Write|Edit` guardrail. A guarded-path ask is
+the user's to answer, never by switching tools. Delete specific files, never whole folders.
+No `cd dir; …` (absolute paths, or Read/Grep/Glob); never end a turn on "je lance X ?" when X is the next local, reversible step asked.
 
 ## Non-negotiables
 

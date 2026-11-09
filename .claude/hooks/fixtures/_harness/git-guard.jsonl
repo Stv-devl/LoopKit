@@ -161,7 +161,7 @@
 {"id":"G14.35","verdict":"pass","command":"git -C __FEAT_TREE__ add src/x.ts"}
 {"id":"G14.81","verdict":"pass","command":"git commit -m \"été\""}
 {"id":"G14.91","verdict":"pass","command":"git add src/x.ts .env.example"}
-{"id":"G14.14","verdict":"ask","command":"git -C __FEAT_TREE__ commit -m \"spec: small x\"","reason":"not a plain git call"}
+{"id":"G14.14","verdict":"allow","command":"git -C __FEAT_TREE__ commit -m \"spec: small x\"","reason":"one-line commit in another tree"}
 {"id":"G14.16","verdict":"ask","command":"git add src","reason":"not a plain git call"}
 {"id":"G14.36","verdict":"ask","command":"git -C __FEAT_TREE__ add src","reason":"not a plain git call"}
 {"id":"G14.74","verdict":"ask","setup":"ignored","cwd":"__MAIN_TREE__","command":"git -C __FEAT_TREE__ add certs","reason":"not a plain git call"}
@@ -539,3 +539,6 @@
 {"id":"G18.39","verdict":"deny","command":"gh pr comment 1 -b \"Claude-Session: x\"","reason":"attribution line in a gh body"}
 {"id":"G18.40","verdict":"deny","command":"gh pr comment 1 -b \"see claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
 {"id":"G18.41","verdict":"pass","command":"gh pr view 1 --json body -q .body | grep Co-Authored-By"}
+{"id":"G14.143","verdict":"pass","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\""}
+{"id":"G14.144","verdict":"ask","setup":"proj","cwd":"__FEAT_TREE__/src","command":"git -C .. commit -m x","reason":"not a plain git call"}
+{"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}

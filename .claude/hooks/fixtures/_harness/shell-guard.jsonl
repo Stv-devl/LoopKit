@@ -10,7 +10,7 @@
 {"id":"X1.10","verdict":"ask","command":"ln -sf x .claude/hooks/a.sh","reason":"guarded path:"}
 {"id":"X1.11","verdict":"ask","command":"install x .claude/hooks/a.sh","reason":"guarded path:"}
 {"id":"X1.12","verdict":"ask","command":"rsync x .claude/hooks/","reason":"guarded path:"}
-{"id":"X1.13","verdict":"ask","command":"truncate -s0 vite.config.ts","reason":"guarded path:"}
+{"id":"X1.13","verdict":"deny","command":"truncate -s0 vite.config.ts","reason":"Use Write/Edit"}
 {"id":"X1.14","verdict":"ask","command":"patch package.json p.diff","reason":"guarded path:"}
 {"id":"X1.15","verdict":"ask","command":"sed -n -i 's/a/b/' .claude/settings.json","reason":"guarded path:"}
 {"id":"X1.16","verdict":"ask","command":"sed --in-place 's/a/b/' tsconfig.json","reason":"guarded path:"}
@@ -89,7 +89,7 @@
 {"id":"X7.02","verdict":"ask","command":"nice -n 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
 {"id":"X7.03","verdict":"ask","command":"timeout -k 1 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
 {"id":"X7.04","verdict":"ask","command":"sudo sed -i 's/a/b/' package.json","reason":"guarded path:"}
-{"id":"X7.05","verdict":"ask","command":"time sed -i 's/a/b/' vite.config.ts","reason":"guarded path:"}
+{"id":"X7.05","verdict":"deny","command":"time sed -i 's/a/b/' vite.config.ts","reason":"Use Write/Edit"}
 {"id":"X7.06","verdict":"ask","command":"(cd .claude/hooks && sed -i 's/a/b/' a.sh)","reason":"guarded path:"}
 {"id":"X7.07","verdict":"ask","command":"(cd src); sed -i 's/a/b/' package.json","reason":"guarded path:"}
 {"id":"X7.08","verdict":"ask","command":"{ sed -i 's/a/b/' package.json; }","reason":"guarded path:"}
@@ -740,7 +740,7 @@
 {"id":"X24.409","verdict":"pass","command":"pnpm playwright test --reporter=line"}
 {"id":"X24.410","verdict":"pass","command":"pnpm typecheck --pretty"}
 {"id":"X24.411","verdict":"ask","command":"echo x > install.sh","reason":"guarded path:"}
-{"id":"X24.412","verdict":"ask","command":"cp /tmp/x workflow.py","reason":"guarded path:"}
+{"id":"X24.412","verdict":"deny","command":"cp /tmp/x workflow.py","reason":"Use Write/Edit"}
 {"id":"X24.413","verdict":"ask","command":"echo x > addons/fastapi/hooks/tdd_py_lib.py","reason":"guarded path:"}
 {"id":"X24.414","verdict":"ask","command":"cp /tmp/x workflow.sh","reason":"guarded path:"}
 {"id":"X24.415","verdict":"ask","command":"echo x > codex-handoff.sh","reason":"guarded path:"}
@@ -806,3 +806,89 @@
 {"id":"X24.475","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"not the project root or a registered worktree"}
 {"id":"X24.476","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh 2>&1 | tail -3"}
 {"id":"X24.477","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"bash .claude/hooks/test-hooks.sh; echo done"}
+{"id":"X29.01","verdict":"pass","command":"sed -n 196,262p e2e/takeoff-measurement-lines.public.spec.ts"}
+{"id":"X29.02","verdict":"pass","command":"sed -n 1,5p src/features/a/services/a-line.repository.ts"}
+{"id":"X29.03","verdict":"pass","command":"sed -n 1p app/services/a-list.py"}
+{"id":"X29.04","verdict":"pass","command":"node scripts/x-p.ts"}
+{"id":"X30.01","verdict":"deny","command":"sed -i 's/a/b/' src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.02","verdict":"deny","command":"sed -i.bak 's/a/b/' x.ts","reason":"Use Write/Edit"}
+{"id":"X30.03","verdict":"deny","command":"perl -pi -e 's/a/b/' x.ts","reason":"Use Write/Edit"}
+{"id":"X30.04","verdict":"deny","command":"sed '-i' s/a/b/ src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.05","verdict":"deny","command":"sed \"-i\" s/a/b/ src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.06","verdict":"deny","command":"cp /tmp/x src/a.tsx","reason":"Use Write/Edit"}
+{"id":"X30.07","verdict":"deny","command":"echo x | tee src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.08","verdict":"deny","command":"cp /tmp/x app/x.py","reason":"Use Write/Edit"}
+{"id":"X30.09","verdict":"deny","command":"sed '-i' s/a/b/ src/features/a/services/a.utils.ts","reason":"test-first"}
+{"id":"X30.10","verdict":"deny","command":"sed \"-i\" s/a/b/ src/features/a/services/a.mapper.ts","reason":"test-first"}
+{"id":"X30.11","verdict":"deny","command":"sed -i 's/a/b/' src/features/a/services/a.utils.ts","reason":"test-first"}
+{"id":"X31.01","verdict":"deny","command":"python3 -c \"open('docs/a.md','w').write('x')\"","reason":"inline programs are not used here"}
+{"id":"X31.02","verdict":"deny","command":"node -p \"require('./.claude/settings.json').permissions\"","reason":"inline programs are not used here"}
+{"id":"X31.03","verdict":"deny","command":"python3 - <<'EOF'\nprint(open(\".claude/hooks/hook-lib.sh\").read())\nEOF","reason":"inline programs are not used here"}
+{"id":"X31.04","verdict":"deny","command":"python3 - <<'EOF'\nopen('docs/work/x/plan.md','w')\nEOF","reason":"inline programs are not used here"}
+{"id":"X31.05","verdict":"deny","command":"python3 -c \"open('.claude/.tdd-red/m','w')\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X32.01","verdict":"ask","command":"python3 -c \"print(1)\"","reason":"unresolved write target"}
+{"id":"X32.02","verdict":"ask","command":"python3 -c \"print('a.ts')\"","reason":"unresolved write target"}
+{"id":"X32.03","verdict":"ask","command":"node -p \"process.version.split('.')[0]\"","reason":"unresolved write target"}
+{"id":"X32.04","verdict":"ask","command":"python3 -c \"print(''.join(['a']))\"","reason":"unresolved write target"}
+{"id":"X32.05","verdict":"ask","command":"python3 - <<'EOF'\nprint(\"noop\")\nEOF","reason":"unresolved write target"}
+{"id":"X32.06","verdict":"ask","command":"node -e \"1\"","reason":"unresolved write target"}
+{"id":"X32.07","verdict":"ask","command":"echo x > src/a.ts","reason":"writes a TypeScript source"}
+{"id":"X32.08","verdict":"ask","command":"cat >> src/a.ts <<'EOF'\nx\nEOF","reason":"writes a TypeScript source"}
+{"id":"X32.09","verdict":"pass","command":"cat >> docs/work/x/plan.md <<'EOF'\nx\nEOF"}
+{"id":"X33.01","verdict":"ask","command":"mv src/features/x/a.ts /tmp/","reason":"moves a path under a protected dir"}
+{"id":"X33.02","verdict":"ask","command":"mv src/a.ts src/b.ts","reason":"moves a path under a protected dir"}
+{"id":"X33.03","verdict":"ask","command":"rm -rf src/features/x","reason":"recursive delete/move under a protected dir"}
+{"id":"X34.01","verdict":"pass","command":"prettier --write src/a.ts >/dev/null"}
+{"id":"X34.02","verdict":"pass","command":"prettier --write src/a.ts 2>&1"}
+{"id":"X34.03","verdict":"pass","command":"prettier --write src/a.ts > /dev/null"}
+{"id":"X34.04","verdict":"pass","command":"prettier --write src/a.ts >/dev/null 2>&1"}
+{"id":"X34.05","verdict":"pass","command":"prettier --write src/a.ts >&2"}
+{"id":"X34.06","verdict":"ask","command":"prettier --write src/a.ts 2>&1 .","reason":"whole folder"}
+{"id":"X34.07","verdict":"ask","command":"prettier --write src/a.ts 2>&1 src/","reason":"whole folder"}
+{"id":"X34.08","verdict":"ask","command":"prettier --write src/a.ts >&2 .","reason":"whole folder"}
+{"id":"X34.09","verdict":"ask","command":"prettier --write src/a.ts 1>&2 src/","reason":"whole folder"}
+{"id":"X34.10","verdict":"ask","command":"prettier --write src/a.ts > out.log .","reason":"whole folder"}
+{"id":"X34.11","verdict":"ask","command":"prettier --write src/a.ts &>/dev/null .","reason":"whole folder"}
+{"id":"X34.12","verdict":"ask","command":"prettier --write .","reason":"whole folder"}
+{"id":"X35.01","verdict":"pass","command":"sed -n \"1,$((3+2))p\" x.py"}
+{"id":"X35.02","verdict":"pass","command":"sed -n '$p' x.py"}
+{"id":"X35.03","verdict":"pass","command":"sed -n \"/x$/p\" f"}
+{"id":"X35.04","verdict":"pass","command":"sed \"s/ *$//\" f"}
+{"id":"X35.05","verdict":"ask","command":"sed -n \"$(echo 1w src/a.ts)\" x.py","reason":"could not parse this command: command substitution in sed script: $(…)"}
+{"id":"X35.06","verdict":"ask","command":"sed -n \"${n},$((n+22))p\" x.py","reason":"could not parse this command: live expansion in sed script: ${…}"}
+{"id":"X35.07","verdict":"ask","command":"sed -n \"${n}\" x.py","reason":"could not parse this command: live expansion in sed script: ${…}"}
+{"id":"X36.01","verdict":"deny","command":"sed \"$(true)w .claude/.tdd-red/m\" x","reason":"and it names .claude/.tdd-red/"}
+{"id":"X37.01","verdict":"pass","command":"cd __PROJECT_ROOT__ && python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test"}
+{"id":"X39.01","verdict":"deny","command":"sed '-i' \"s/$a/b/\" src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.02","verdict":"deny","command":"sed \"-i\" \"s/${a}/b/\" src/features/a/services/a.utils.test.ts","reason":"writing a test-first layer"}
+{"id":"X39.03","verdict":"deny","command":"sed \\-i \"s/$a/b/\" src/features/a/services/a.utils.test.ts","reason":"writing a test-first layer"}
+{"id":"X39.04","verdict":"deny","command":"sed --in''-place \"s/$a/b/\" src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.05","verdict":"deny","command":"sed '-i' \"s/$a/b/\" app/services/x_service.py","reason":"Python test-first layer"}
+{"id":"X39.06","verdict":"deny","command":"python3 '-c' \"open('app/services/x_service.py','w')\"","reason":"test-first"}
+{"id":"X39.07","verdict":"pass","command":"sed -n '1,5p' docs/notes.md"}
+{"id":"X39.08","verdict":"pass","command":"sed -n '/```/p' docs/x.md"}
+{"id":"X39.09","verdict":"ask","command":"sed -n \"/`id`/p\" src/features/a/services/a.utils.test.ts","reason":"could not parse this command"}
+{"id":"X39.10","verdict":"deny","command":"sed -i '/```/d' src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.20","verdict":"ask","command":"git status;>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X39.21","verdict":"ask","command":"echo hi;>/dev/null prettier --write .","reason":"whole folder"}
+{"id":"X39.22","verdict":"ask","command":"git status\n>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X39.23","verdict":"pass","command":"prettier --write src/a.ts &>/dev/null"}
+{"id":"X40.01","verdict":"ask","setup":"notmp","command":"cp /tmp/x .claude/settings.json","reason":"guarded path"}
+{"id":"X40.03","verdict":"deny","setup":"notmp","command":"cp x .git/config","reason":".git"}
+{"id":"X40.04","verdict":"deny","setup":"notmp","command":"sed -i s/a/b/ src/App.ts","reason":"written by sed"}
+{"id":"X41.01","verdict":"pass","command":"grep -n \"=>\" src/features/a/a.utils.ts"}
+{"id":"X41.02","verdict":"pass","command":"grep '=>' app/services/x_service.py"}
+{"id":"X41.03","verdict":"pass","command":"grep \"=>\" src/App.tsx"}
+{"id":"X41.04","verdict":"deny","command":"python3 $'-c' \"open('app/services/x_service.py','w')\"","reason":"Python test-first layer"}
+{"id":"X41.05","verdict":"deny","command":"sed $'-i' \"s/a/b/\" src/features/a/services/a.utils.ts","reason":"BLOCKED"}
+{"id":"X41.06","verdict":"ask","command":"echo \"&>/dev/null ruff format .\";>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X41.07","verdict":"ask","command":"echo \\>;2>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X40.02","verdict":"deny","setup":"notmp","command":"sed '-i' s/a/b/ src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X37.02","verdict":"ask","command":"cd __PROJECT_ROOT__; python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test","reason":"kit-cwd"}
+{"id":"X42.01","verdict":"deny","command":"echo x >src/features/a/a.utils.t's'","reason":"writing a test-first layer"}
+{"id":"X42.02","verdict":"deny","command":"echo x >src/features/a/a.test.t's'","reason":"writing a test-first layer"}
+{"id":"X42.03","verdict":"deny","command":"echo x >app/services/x_servic''e.py","reason":"Python test-first layer"}
+{"id":"X42.04","verdict":"ask","command":"echo x >src/App.t's'","reason":"TypeScript source from the shell"}
+{"id":"X42.05","verdict":"ask","command":"echo x >src/App.ts","reason":"TypeScript source from the shell"}
+{"id":"X42.06","verdict":"pass","command":"echo x >/dev/null"}
+{"id":"X42.07","verdict":"pass","command":"ls > /tmp/claude-x/out.txt"}

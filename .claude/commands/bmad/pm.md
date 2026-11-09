@@ -19,18 +19,16 @@ planning. You don't write code, you don't design the technical architecture (tha
    assumption at the step-5 pause, not silently. Offer reasonable defaults, don't
    drown them.
 
-   **The token profile is a question of its own, asked alone and asked always.**
-   Does this feature touch payment, authorization, or a destructive data change?
-   Yes → the PRD's `Token profile` is `critical`. Three of the four triggers are
-   here; the fourth is the user asking for it outright, which needs no question.
-   `11-token-budget.md` holds the only copy of that list, `/loop:ship` arms one
-   `/audit:security` surface on it, and the profile rides the stories
-   (`/bmad:sm` carries it verbatim) all the way to the commit.
-
-   It gets its own `AskUserQuestion` call, with the two answers spelled out,
-   rather than a clause inside a paragraph of scope questions. This interview is
-   where the answer is known; no later step can re-derive it, and the cost of a
-   wrong `economy` is an audit nobody notices is missing.
+   **The token profile is inferred, then printed, not asked** — unless the PRD
+   touches payment, authorization, a destructive data change, or
+   loosens a kit guard / widens what runs without a prompt. On one of those, ask it alone in its
+   own `AskUserQuestion` call, two answers spelled out: does it need `critical`?
+   Otherwise print the PRD's `Token profile: economy` for the user to validate.
+   `11-token-budget.md` holds the only copy of the `critical` list (the user asking
+   outright is the fourth trigger), `/loop:ship` arms one `/audit:security` surface
+   on it, and the profile rides the stories (`/bmad:sm` carries it verbatim) all
+   the way to the commit. No later step can re-derive it, so a trigger is never
+   answered by a default.
 2. **Read `docs/product/brief.md` first, if it exists.** It is the product frame
    `/loop:product` wrote for exactly this moment: `Current surface` already answers
    most of "what exists today", `Out of product` bounds your OUT section, and

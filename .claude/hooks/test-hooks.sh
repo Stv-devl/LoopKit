@@ -114,12 +114,12 @@ PY
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
     local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT"
-    local hook_path="$PATH" real_git hook_home="$HOME"
+    local hook_path="$PATH" real_git hook_home="$HOME" hook_tmp="${TMPDIR:-/tmp}" hook_pwd="$PWD"
     tmp="$(mktemp -d)"
     fixture_name="$(basename "$fixture")"
     stdout_file="$tmp/stdout"
     stderr_file="$tmp/stderr"
-    input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g; s|__MAIN_TREE__|$tmp|g; s|__FEAT_TREE__|$tmp/.feat|g" "$fixture")"
+    input="$(sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g; s|__FIXTURE_ROOT__|$tmp|g; s|__MAIN_TREE__|$tmp|g; s|__FEAT_TREE__|$tmp/.feat|g; s|__OUT_TREE__|$tmp/out|g" "$fixture")"
 
     # A shell-guard row's `setup` key, matched whole, never as a substring.
     # `aliasdir`: the project dir is a symlink to $tmp/real, the cwd its physical path.
@@ -160,6 +160,8 @@ run_case() {
                 ;;
             cfgempty) project_dir="$tmp" ;;
             noproject) project_dir="" ;;
+            # `notmp`: TMPDIR names a folder that does not exist, so mktemp fails.
+            notmp) hook_tmp="/nonexistent-dir" ;;
             # Fake secrets for the glob rows, all in the project $tmp. `secrets`:
             # .env, .env.example, server.pem, credentials.json, notes.txt, sub/.env.
             # `secrets-home`: .env only in $tmp/home, the hook's HOME. `secrets-sub`:
@@ -435,6 +437,20 @@ run_case() {
                     git -C "$tmp" add src/x.ts .env.example
                     git -C "$tmp" commit -q -m seed
                     git -C "$tmp" worktree add -q "$tmp/.feat" -b feat/x
+                    # The `-C` commit allow is limited to the project tree and its
+                    # worktrees: these fixtures run with the fixture repo as project,
+                    # and `__OUT_TREE__` is a separate repo on a feature branch.
+                    # `-noproj-`: no CLAUDE_PROJECT_DIR, the hook runs inside the outside repo;
+                    # `-projpwd-`: the hook runs in the project tree itself.
+                    if [[ "$fixture_name" == *-fa[0-9]-* || "$fixture_name" == *-proj-* || "$fixture_name" == G14.14-* \
+                          || "$fixture_name" == *-noproj-* || "$fixture_name" == *-projpwd-* ]]; then
+                        project_dir="$tmp"
+                        git init -q -b feat/y "$tmp/out"
+                        git -C "$tmp/out" -c user.email=fixture@loopkit.invalid -c user.name=Fixture \
+                            commit -q --allow-empty -m seed
+                        [[ "$fixture_name" != *-noproj-* ]] || { project_dir=""; hook_pwd="$tmp/out"; }
+                        [[ "$fixture_name" != *-projpwd-* ]] || hook_pwd="$tmp"
+                    fi
                     if [[ "$fixture_name" == *-secrets-* ]]; then
                         mkdir -p "$tmp/.feat/certs"
                         printf '%s\n' key >"$tmp/.feat/certs/a.pem"
@@ -517,8 +533,8 @@ run_case() {
     esac
 
     set +e
-    printf '%s' "$input" | PATH="$hook_path" HOME="$hook_home" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
-        ${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"} "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file"
+    ( cd "$hook_pwd" && printf '%s' "$input" | PATH="$hook_path" HOME="$hook_home" TMPDIR="$hook_tmp" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+        ${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"} "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file" )
     code=$?
     set -e
     verdict="$(semantic_verdict "$code" "$stdout_file")"
@@ -791,6 +807,52 @@ run_guarded_cases() {
     rm -r "$tmp"
 }
 
+# P1-P2 (fewer-asks V4): a Write/Edit of .tdd-unfrozen that only removes entries or
+# comments them out passes; anything that adds or changes an active line asks.
+unfrozen_case() {
+    local id="$1" want="$2" tool="$3" input="$4" root="$5" out code
+    CASES=$((CASES + 1))
+    set +e
+    out="$(jq -cn --arg t "$tool" --arg f "$root/.claude/.tdd-unfrozen" --arg c "$root" \
+              --argjson i "$input" '{tool_name:$t, cwd:$c, tool_input:($i + {file_path:$f})}' \
+        | CLAUDE_PROJECT_DIR="$root" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/protect-files.sh" 2>&1)"
+    code=$?
+    set -e
+    if [[ "$want" == pass ]]; then
+        [[ "$code" -eq 0 && -z "$out" ]] || fail protect-files.sh "$id" "expected pass, got exit $code: ${out:0:200}"
+    else
+        [[ "$code" -eq 0 && "$out" == *'"ask"'* && "$out" == *"guarded path:"* ]] \
+            || fail protect-files.sh "$id" "expected ask 'guarded path:', got exit $code: ${out:0:200}"
+    fi
+}
+
+run_unfrozen_removal_cases() {
+    local tmp line1='src/a.test.ts  # U1: r' line2='src/b.test.ts  # U2: r'
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/.claude"
+    printf '%s\n%s\n' "$line1" "$line2" > "$tmp/.claude/.tdd-unfrozen"
+    unfrozen_case P1.01 pass Edit "$(jq -cn --arg o "$line1"$'\n' '{old_string:$o, new_string:""}')" "$tmp"
+    unfrozen_case P1.02 pass Edit "$(jq -cn --arg o "$line1" '{old_string:$o, new_string:""}')" "$tmp"
+    unfrozen_case P1.03 pass Edit "$(jq -cn --arg o "$line1" --arg n "# $line1" '{old_string:$o, new_string:$n}')" "$tmp"
+    unfrozen_case P1.04 pass Edit "$(jq -cn --arg o "$line1"$'\n'"$line2" --arg n "# $line1"$'\n'"# $line2" \
+        '{old_string:$o, new_string:$n}')" "$tmp"
+    unfrozen_case P1.05 pass Write "$(jq -cn --arg c "$line2"$'\n' '{content:$c}')" "$tmp"
+    unfrozen_case P1.06 pass Write '{"content":""}' "$tmp"
+    unfrozen_case P2.01 ask Edit "$(jq -cn --arg o "$line2" --arg n "$line2"$'\n''src/c.test.ts  # U3: r' \
+        '{old_string:$o, new_string:$n}')" "$tmp"
+    unfrozen_case P2.02 ask Edit "$(jq -cn --arg o "$line1" '{old_string:$o, new_string:"src/a.test.ts  # U1: r2"}')" "$tmp"
+    unfrozen_case P2.03 ask Write "$(jq -cn --arg c "$line1"$'\n'"$line2"$'\n''src/c.test.ts' '{content:$c}')" "$tmp"
+    unfrozen_case P2.04 ask Edit '{"old_string":"not in the file","new_string":""}' "$tmp"
+    unfrozen_case P2.05 ask Edit "$(jq -cn --arg o "$line1" '{old_string:$o, new_string:"src/a.test.ts # commented"}')" "$tmp"
+    unfrozen_case P2.06 ask Write "$(jq -cn --arg c "$line1"$'\n'"$line1"$'\n' '{content:$c}')" "$tmp"
+    # P2.08: a line break only Python knows (\x1c) is not a line of the file
+    printf '# note\034src/evil.test.ts\n' > "$tmp/.claude/.tdd-unfrozen"
+    unfrozen_case P2.08 ask Write "$(jq -cn --arg c 'src/evil.test.ts'$'\n' '{content:$c}')" "$tmp"
+    rm "$tmp/.claude/.tdd-unfrozen"
+    unfrozen_case P2.07 ask Write '{"content":"x"}' "$tmp"
+    rm -r "$tmp"
+}
+
 guard_hook_run() {
     local dir="$1" hook="$2" input="$3"
     printf '%s' "$input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$dir/$hook" 2>&1
@@ -934,7 +996,7 @@ run_git_guard_cases() {
     for line in "${lines[@]}"; do
         [[ -z "$line" ]] && continue
         if ! jq -e 'type == "object" and (.id | type == "string") and (.command | type == "string")
-                    and (.verdict | IN("ask", "deny", "pass"))' <<<"$line" >/dev/null 2>&1; then
+                    and (.verdict | IN("ask", "deny", "pass", "allow"))' <<<"$line" >/dev/null 2>&1; then
             fail enforce-git-workflow.sh git-guard.jsonl "unparsable or incomplete line: ${line:0:60}"
             continue
         fi
@@ -1496,6 +1558,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_missing_jq_cases
     run_guarded_cases
     run_guarded_hardening_cases
+    run_unfrozen_removal_cases
     run_freeze_partial_install_case
     run_shell_guard_cases
     run_shell_guard_failure_cases

@@ -196,6 +196,58 @@ REL=$(cwk_guard_rel "$FILE_PATH" "$CWD") || exit 0
 if cwk_is_guard_denied "$REL"; then
     deny "BLOCKED: $REL is never written by hand.\n\n$(cwk_guard_denied_why "$REL")"
 fi
+
+# A Write/Edit of .tdd-unfrozen that only deletes entries or comments them out
+# narrows the freeze's escape hatch: it passes with no prompt. The resulting file is
+# computed from the current one; every non-blank resulting line must be a distinct
+# current line, as is or prefixed with `#`. Anything else, an absent file or an
+# unreadable input keeps the guarded ask below.
+unfrozen_removal_only() {
+    local abs="$FILE_PATH"
+    [[ "$abs" == /* ]] || abs="${CWD:-$PWD}/$abs"
+    command -v python3 >/dev/null 2>&1 || return 1
+    python3 -I -c '
+import json, sys
+data = json.load(sys.stdin)
+ti = data.get("tool_input") or {}
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        current = fh.read()
+except OSError:
+    sys.exit(1)
+if data.get("tool_name") == "Write":
+    result = ti.get("content")
+    if not isinstance(result, str):
+        sys.exit(1)
+else:
+    old, new = ti.get("old_string"), ti.get("new_string")
+    if not isinstance(old, str) or not isinstance(new, str) or not old or old not in current:
+        sys.exit(1)
+    result = current.replace(old, new) if ti.get("replace_all") is True else current.replace(old, new, 1)
+def file_lines(text):
+    return [part[:-1] if part.endswith("\r") else part for part in text.split("\n")]
+pool = file_lines(current)
+used = [False] * len(pool)
+for line in file_lines(result):
+    if not line.strip():
+        continue
+    body = line.lstrip()
+    forms = [line]
+    if body.startswith("#"):
+        forms += [body[1:], body[1:][1:] if body[1:].startswith(" ") else body[1:]]
+    for k, cur in enumerate(pool):
+        if not used[k] and cur in forms:
+            used[k] = True
+            break
+    else:
+        sys.exit(1)
+sys.exit(0)
+' "$abs" <<<"$INPUT"
+}
+if [[ "$REL" == .claude/.tdd-unfrozen && ( "$TOOL_NAME" == Write || "$TOOL_NAME" == Edit ) ]] \
+    && unfrozen_removal_only; then
+    exit 0
+fi
 if cwk_is_guarded "$REL"; then
     ask "guarded path: $REL (kit guardrail; approve only if you meant to change it)"
 fi

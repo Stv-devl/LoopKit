@@ -367,9 +367,9 @@ done < <(cwk_segments "$COMMAND")
 SEG_HEAD="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(sudo[[:space:]]+)?"
 
 SRC_WRITE_RE=">>?\|?[[:space:]]*[\"']?[^|;&<>\`[:space:]\"']*\.tsx?[\"']?([[:space:]]|;|\$)"
-SRC_WRITE_RE="$SRC_WRITE_RE|${SEG_HEAD}(tee|cp|mv|install|rsync|ln|patch|truncate).*\.tsx?"
-SRC_WRITE_RE="$SRC_WRITE_RE|${SEG_HEAD}(sed|perl)\b.*(-[a-zA-Z]*i|--in-place).*\.tsx?"
-SRC_WRITE_RE="$SRC_WRITE_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(-c|-e|--eval|-p)\b.*\.tsx?"
+SRC_VERB_RE="${SEG_HEAD}(tee|cp|mv|install|rsync|ln|patch|truncate).*\.tsx?"
+SRC_VERB_RE="$SRC_VERB_RE|${SEG_HEAD}(sed|perl)\b.*(^|[[:space:]])(-[a-zA-Z]*i|--in-place).*\.tsx?"
+SRC_VERB_RE="$SRC_VERB_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(^|[[:space:]])(-c|-e|--eval|-p)\b.*\.tsx?"
 
 # `TDD_TARGET_RE` is defined above, and shared with the snapshot rule.
 
@@ -378,27 +378,39 @@ SRC_WRITE_RE="$SRC_WRITE_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(-c|
 # nothing else: an ordinary `.py` written from the shell is not this rule's
 # business. Inert on a repo with no Python service layer.
 PY_WRITE_RE=">>?\|?[[:space:]]*[\"']?[^|;&<>[:space:]\"']*\.py[\"']?([[:space:]]|;|$)"
-PY_WRITE_RE="$PY_WRITE_RE|${SEG_HEAD}(tee|cp|mv|install|rsync|ln|patch|truncate).*\.py"
-PY_WRITE_RE="$PY_WRITE_RE|${SEG_HEAD}(sed|perl)\b.*(-[a-zA-Z]*i|--in-place).*\.py"
-PY_WRITE_RE="$PY_WRITE_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(-c|-e|--eval|-p)\b.*\.py"
+PY_VERB_RE="${SEG_HEAD}(tee|cp|mv|install|rsync|ln|patch|truncate).*\.py"
+PY_VERB_RE="$PY_VERB_RE|${SEG_HEAD}(sed|perl)\b.*(^|[[:space:]])(-[a-zA-Z]*i|--in-place).*\.py"
+PY_VERB_RE="$PY_VERB_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(^|[[:space:]])(-c|-e|--eval|-p)\b.*\.py"
 
 PY_WRITE_SEEN=0
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
-    echo "$SEG" | grep -qE "$PY_WRITE_RE" || continue
-    echo "$SEG" | grep -qE "$CWK_TDD_PY_TARGET_RE" || continue
+    # Quotes and backslashes dropped for the verb and flag only: `sed '-i'`, `sed $'-i'`,
+    # `sed \-i` and `--in''-place` are the flag. The redirect alternative reads the raw
+    # segment, where a quoted `"=>"` is not a redirection.
+    SEG_N="${SEG//\$\'/\'}"
+    SEG_N="${SEG_N//\$\"/\"}"
+    SEG_N="${SEG_N//[\'\"\\]/}"
+    { echo "$SEG" | grep -qE "$PY_WRITE_RE"; } || { echo "$SEG_N" | grep -qE "$PY_VERB_RE"; } || continue
+    echo "$SEG_N" | grep -qE "$CWK_TDD_PY_TARGET_RE" || echo "$SEG" | grep -qE "$CWK_TDD_PY_TARGET_RE" || continue
     PY_WRITE_SEEN=1
 done < <(cwk_segments "$COMMAND")
 
+PY_TDD_DENY="BLOCKED: writing the Python test-first layer from the shell.\\n\\nThe three Python TDD hooks (tdd-require-red-py, tdd-freeze-tests-py, tdd-prove-red-py) only see the Write and Edit tools, exactly like their TypeScript twins. A redirection bypasses all three: app/services/ would be created with no RED ever observed, and a frozen tests/services/test_*.py rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed. To correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/07-backend.md)."
+TS_TDD_DENY="BLOCKED: writing a test-first layer or a test file from the shell.\\n\\nThe TDD hooks (tdd-require-red, tdd-freeze-tests, tdd-prove-red) only see the Write and Edit tools. A redirection bypasses all three: the RED phase is never observed and a frozen test can be rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed and nothing will block you. If you genuinely need to correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/05-testing.md)."
+
 if [[ "$PY_WRITE_SEEN" == "1" ]]; then
-    deny "BLOCKED: writing the Python test-first layer from the shell.\\n\\nThe three Python TDD hooks (tdd-require-red-py, tdd-freeze-tests-py, tdd-prove-red-py) only see the Write and Edit tools, exactly like their TypeScript twins. A redirection bypasses all three: app/services/ would be created with no RED ever observed, and a frozen tests/services/test_*.py rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed. To correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/07-backend.md)."
+    deny "$PY_TDD_DENY"
 fi
 
 SRC_WRITE_SEEN=0
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
-    echo "$SEG" | grep -qE "$SRC_WRITE_RE" || continue
+    SEG_N="${SEG//\$\'/\'}"
+    SEG_N="${SEG_N//\$\"/\"}"
+    SEG_N="${SEG_N//[\'\"\\]/}"
+    { echo "$SEG" | grep -qE "$SRC_WRITE_RE"; } || { echo "$SEG_N" | grep -qE "$SRC_VERB_RE"; } || continue
     SRC_WRITE_SEEN=1
-    if echo "$SEG" | grep -qE "$TDD_TARGET_RE"; then
-        deny "BLOCKED: writing a test-first layer or a test file from the shell.\\n\\nThe TDD hooks (tdd-require-red, tdd-freeze-tests, tdd-prove-red) only see the Write and Edit tools. A redirection bypasses all three: the RED phase is never observed and a frozen test can be rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed and nothing will block you. If you genuinely need to correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/05-testing.md)."
+    if echo "$SEG_N" | grep -qE "$TDD_TARGET_RE" || echo "$SEG" | grep -qE "$TDD_TARGET_RE"; then
+        deny "$TS_TDD_DENY"
     fi
 done < <(cwk_segments "$COMMAND")
 
@@ -416,9 +428,26 @@ done < <(cwk_segments "$COMMAND")
 # =============================================================================
 
 GUARD_FAILED=0
+GUARD_DENY_RAW=""
+GUARD_PARSE=""
 GUARD_OUT=""
 if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
-    GUARD_OUT="$(python3 -B "$HOOK_DIR/shell_targets.py" "$COMMAND" "$GUARD_BASE" 2>/dev/null)" || GUARD_FAILED=1
+    # No temp file: the resolver still runs, only its parse reason is lost.
+    GUARD_ERR_FILE="$(mktemp 2>/dev/null)" || GUARD_ERR_FILE=/dev/null
+    GUARD_STATUS=0
+    GUARD_OUT="$(python3 -B "$HOOK_DIR/shell_targets.py" "$COMMAND" "$GUARD_BASE" 2>"$GUARD_ERR_FILE")" || GUARD_STATUS=$?
+    if [[ "$GUARD_STATUS" == 3 ]]; then
+        # Exit 3 is a construct the resolver cannot follow, named on stderr; any other
+        # nonzero exit is a crash and keeps the "unavailable" path below.
+        GUARD_PARSE="$(head -c 300 "$GUARD_ERR_FILE" | tr '\n' ' ')"
+        GUARD_PARSE="${GUARD_PARSE#shell_targets: }"
+        GUARD_PARSE="${GUARD_PARSE% }"
+        [[ -n "$GUARD_PARSE" ]] || GUARD_PARSE="unreadable construct"
+        GUARD_FAILED=1
+    elif [[ "$GUARD_STATUS" != 0 ]]; then
+        GUARD_FAILED=1
+    fi
+    [[ "$GUARD_ERR_FILE" == /dev/null ]] || rm -f "$GUARD_ERR_FILE"
 else
     GUARD_FAILED=1
 fi
@@ -453,7 +482,7 @@ fi
 # the strongest verdict over the whole command. R: acceptEdits auto-approves
 # `rm`, so any other recursive delete inside the project asks.
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
-GUARD_ASK_F="" GUARD_ASK_O="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
+GUARD_ASK_F="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
 GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
 GUARD_PROJECT_REAL=""
@@ -462,6 +491,7 @@ if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
 fi
 GUARD_ROOT_WHY="It is the project root or a folder above it: deleting or emptying it loses the whole project."
 GUARD_TEST_WHY="A test-first module or a test file is written only with Write/Edit, where the TDD hooks see it (.claude/rules/05-testing.md)."
+GUARD_SOURCE_WRITERS=" sed perl cp tee install rsync ln patch truncate "
 
 guard_note_deny() {
     [[ -n "$GUARD_DENY" ]] && return 0
@@ -525,7 +555,7 @@ guard_classify() {
                     GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.tdd-red)"
                 fi
             elif [[ "$target" == '?inline:'* ]] \
-                && grep -qE "$TDD_TARGET_RE|$TDD_FROZEN_TEST_RE" <<<"$text"; then
+                && grep -qE "$TDD_TARGET_RE|$TDD_FROZEN_TEST_RE|$CWK_TDD_PY_TARGET_RE" <<<"$text"; then
                 [[ -n "$GUARD_INLINE_TDD" ]] || GUARD_INLINE_TDD="$verb ${text:0:200}"
             else
                 [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb ${text:0:200}"
@@ -557,11 +587,41 @@ guard_classify() {
         return 0
     elif cwk_is_guard_denied "$rel"; then
         guard_note_deny "$rel written by $verb" "$(cwk_guard_denied_why "$rel")"
+    elif [[ "$verb" == inline-path ]]; then
+        # An inline program naming a repo path: sent back to Read/Grep or Write/Edit. A
+        # test-first or test file keeps the GUARD_INLINE_TDD deny and its own text.
+        [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE ]] && return 0
+        guard_note_deny "inline programs are not used here: $rel" "Read/Grep to read, Write/Edit to write."
+    elif [[ "$verb" == '>' || "$verb" == '>>' ]]; then
+        # A redirect whose filename carries a quote is invisible to the raw-text rules above;
+        # the resolved target gets the same decision the unquoted spelling gets there.
+        if [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE ]]; then
+            [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$TS_TDD_DENY"
+        elif [[ -n "${CWK_TDD_PY_TARGET_RE:-}" && "$rel" =~ $CWK_TDD_PY_TARGET_RE ]]; then
+            [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$PY_TDD_DENY"
+        else
+            [[ "$rel" =~ \.tsx?$ ]] && SRC_WRITE_SEEN=1
+            if cwk_is_guarded "$rel"; then
+                [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
+            fi
+        fi
+    elif [[ "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$rel" =~ \.(tsx?|py)$ ]]; then
+        # An in-place or copy write of a source goes around every Write/Edit guardrail:
+        # denied, so the agent retries with Edit instead of asking the user. A redirect
+        # (`>`) keeps its ask below, and `mv` keeps the protected-dir ask (no rename tool).
+        if [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE \
+              || ( -n "${CWK_TDD_PY_TARGET_RE:-}" && "$rel" =~ $CWK_TDD_PY_TARGET_RE ) ]]; then
+            guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
+        else
+            guard_note_deny "$rel written by $verb" "This edits a source from the shell, around every Write/Edit guardrail. Use Write/Edit."
+        fi
     elif [[ "$verb" == flag-r || "$verb" == flag-w || "$verb" == cfg ]]; then
         guard_classify_tool "$verb" "$target" "$rel"
     elif cwk_is_guarded "$rel"; then
         [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
-    elif [[ ( "$verb" == rm-r || "$verb" == mv ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+    elif [[ "$verb" == mv && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+        [[ -n "$GUARD_ASK_M" ]] || GUARD_ASK_M="$rel"
+    elif [[ "$verb" == rm-r && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
     elif [[ "$verb" == rm-r ]]; then
         [[ -n "$GUARD_ASK_R" ]] || GUARD_ASK_R="$rel"
@@ -577,6 +637,12 @@ fi
 
 if [[ -n "$GUARD_DENY" ]]; then
     deny "BLOCKED: $GUARD_DENY.\\n\\n$GUARD_DENY_WHY"
+fi
+if [[ -n "$GUARD_DENY_RAW" ]]; then
+    deny "$GUARD_DENY_RAW"
+fi
+if [[ -n "$GUARD_PARSE" && "$COMMAND" == *.claude/.tdd-red* ]]; then
+    deny "BLOCKED: the shell guard could not parse this command ($GUARD_PARSE) and it names .claude/.tdd-red/, which only tdd-prove-red.sh writes.\\n\\nWrite it plainly, without the construct, or leave RED markers to tdd-prove-red.sh."
 fi
 if [[ "$GUARD_FAILED" == 1 && "$COMMAND" == *.claude/.tdd-red* ]]; then
     deny "BLOCKED: shell guard unavailable and the command names .claude/.tdd-red/.\\n\\nshell_targets.py is missing, broken or python3 is absent, so this write cannot be resolved; a RED marker is created only by the tdd-prove-red.sh script. Run /kit:doctor."
@@ -632,6 +698,9 @@ guard_runs_tool() {
     return 1
 }
 
+if [[ -n "$GUARD_PARSE" ]] && { guard_runs_tool || guard_text_writes; }; then
+    ask "the shell guard could not parse this command: $GUARD_PARSE.\\n\\nShow the exact command, then let the user decide; writing it without that construct avoids this prompt."
+fi
 if [[ "$GUARD_FAILED" == 1 ]] && guard_runs_tool; then
     ask "The shell guard could not parse this command (an unclosed quote or an escape it cannot read), and it runs a package runner or a test/build tool whose options can write anywhere.\\n\\nShow the exact call, then let the user decide; quoting it plainly avoids this prompt."
 fi
@@ -659,6 +728,9 @@ fi
 if [[ -n "$GUARD_ASK_P" ]]; then
     ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. Approve only if this subtree is meant to go."
 fi
+if [[ -n "$GUARD_ASK_M" ]]; then
+    ask "this moves a path under a protected dir: $GUARD_ASK_M.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. A move out of the tree is a deletion from it; Write/Edit cannot rename, so the user decides."
+fi
 if [[ -n "$GUARD_ASK_F" ]]; then
     ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."
 fi
@@ -684,8 +756,30 @@ fi
 # target under `tests/` is asked like a folder.
 # =============================================================================
 FORMAT_WIDE=""
-set -f
+# cwk_segments splits at every `&`, so `2>&1 .`, `>&2 .` and `&>/dev/null .` reach
+# this loop cut in two, the folder target in a segment with no formatter word. The
+# `&` is restored first: a segment ending in `N>` followed by one starting with a
+# digit, or any segment followed by one starting with `>`, is one redirection.
+FORMAT_SEGS=()
 while IFS= read -r SEG; do
+    FORMAT_LAST=$((${#FORMAT_SEGS[@]} - 1))
+    FORMAT_PREV_SKIPPED=0
+    # A git/echo/printf part is skipped below, so a rejoin must never hide the next part inside it.
+    [[ "$FORMAT_LAST" -lt 0 || ! "${FORMAT_SEGS[$FORMAT_LAST]}" =~ ^[[:space:]]*(git|echo|printf)[[:space:]] ]] || FORMAT_PREV_SKIPPED=1
+    if [[ "$FORMAT_LAST" -ge 0 && "$FORMAT_PREV_SKIPPED" == 0 ]] \
+        && [[ "${FORMAT_SEGS[$FORMAT_LAST]}" =~ [0-9]*\>[[:space:]]*$ && "$SEG" =~ ^[0-9] ]]; then
+        FORMAT_SEGS[$FORMAT_LAST]="${FORMAT_SEGS[$FORMAT_LAST]%"${FORMAT_SEGS[$FORMAT_LAST]##*[![:space:]]}"}&$SEG"
+    elif [[ "$FORMAT_LAST" -ge 0 && "$FORMAT_PREV_SKIPPED" == 0 && "$SEG" =~ ^\> && "$COMMAND" == *"&$SEG"* ]]; then
+        # Joined only when the split was on an `&` right before the `>`, never on `;` or a newline.
+        FORMAT_SEGS[$FORMAT_LAST]="${FORMAT_SEGS[$FORMAT_LAST]%"${FORMAT_SEGS[$FORMAT_LAST]##*[![:space:]]}"} &$SEG"
+    else
+        FORMAT_SEGS+=("$SEG")
+    fi
+done < <(cwk_segments "$COMMAND")
+FORMAT_GLUED_RE='^[0-9]*(>|>>|>\||&>|&>>)[^[:space:]]+$'
+FORMAT_BARE_RE='^[0-9]*(>|>>|>\||&>|&>>)$'
+set -f
+for SEG in ${FORMAT_SEGS[@]+"${FORMAT_SEGS[@]}"}; do
     [[ "$SEG" =~ ^[[:space:]]*(git|echo|printf)[[:space:]] ]] && continue
     [[ "$SEG" =~ (^|[[:space:]])xargs[[:space:]] ]] && continue
     [[ "$SEG" == *'$('* || "$SEG" == *'`'* ]] && continue
@@ -710,6 +804,8 @@ while IFS= read -r SEG; do
     SKIP_NEXT=0
     for word in $(echo "$TOOL_ARGS" | sed -E 's/^(ruff[[:space:]]+(format|check)|biome[[:space:]]+(format|check|lint)|prettier|eslint)//'); do
         if [[ "$SKIP_NEXT" == 1 ]]; then SKIP_NEXT=0; continue; fi
+        [[ "$word" =~ $FORMAT_GLUED_RE ]] && continue
+        if [[ "$word" =~ $FORMAT_BARE_RE ]]; then SKIP_NEXT=1; continue; fi
         case "$word" in
             --max-warnings|--log-level|--config|-c|--cache-location|--ignore-path|--plugin|--rule|--ext|--format|-f|--parser|--output-file|-o|--resolve-plugins-relative-to|--select|--ignore|--line-length|--target-version)
                 SKIP_NEXT=1; continue ;;
@@ -726,7 +822,7 @@ while IFS= read -r SEG; do
     done
     [[ "$TARGETS" -eq 0 ]] && FORMAT_WIDE="the default, every file"
     [[ -n "$FORMAT_WIDE" ]] && break
-done < <(cwk_segments "$COMMAND")
+done
 set +f
 
 if [[ -n "$FORMAT_WIDE" ]]; then

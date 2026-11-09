@@ -103,7 +103,8 @@ You **do not write code here**.
    - **The contract, unless the interface already took it.** Ask it when
      `design.md` is absent, or when its `Contract:` line reads `amended:` — then
      print the amended sections first, so the user checks your rewrite of their
-     words. Print the spec's `Objective`, `Scope` IN/OUT and `Acceptance criteria`
+     words. An amendment that is
+     exactly the user's own words is recorded, not asked again (`amended: … (user's own)`): the go already covers it. Print the spec's `Objective`, `Scope` IN/OUT and `Acceptance criteria`
      verbatim under `Contract (validated by this go)`, research's `Traps` one line
      each, and ask it as its own question in the same `AskUserQuestion` call as
      the test plan: `as written` (→ `kit-attempts.py pass` on `contract`) or free

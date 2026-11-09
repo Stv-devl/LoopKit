@@ -59,7 +59,11 @@ mocked. Read it before writing a line, and apply the matching rule:
    already covers better; say which ones you skipped and why.
 2. Write your spec at the given path, following the skill's naming convention
    (the suffix decides whether it needs a session).
-3. Run **only your file**: `pnpm exec playwright test <your file>`.
+3. Run **only your file**: `pnpm exec playwright test <your file>`. Write files
+   with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+   `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer,
+   never by switching tools. Also: no no-op probe (`python3 - <<EOF print("noop")`,
+   an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact command and read its output.
 4. On failure, diagnose before reporting: **is the app broken, or is the spec
    wrong?** A bad selector is your bug, not a finding. Fix your spec, run again.
    A real defect is a finding — capture the evidence from the trace.

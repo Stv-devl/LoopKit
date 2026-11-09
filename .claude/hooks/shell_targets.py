@@ -35,6 +35,8 @@ HEREDOC = ""
 
 SUB_END = ""
 
+LIVE_PARAM = re.compile("\\$[A-Za-z_0-9{@*#?!" + HIDE["{"] + HIDE["*"] + HIDE["?"] + "-]")
+QUOTED_TOKEN = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 ESCAPED_WORD_START = ""
 
 PUNCTUATION = ";&|()<>\n"
@@ -623,6 +625,9 @@ class Walker:
             rows.extend(sed_rows(args, state, implicit, text))
         elif verb in WRITERS:
             rows.extend(writer_rows(verb, args, state, implicit, text))
+        for _, tgt in list(rows):
+            if tgt.startswith("?inline:"):
+                rows.extend(("inline-path", p) for p in inline_paths(tgt[len("?inline:"):], state.dir))
         return rows
 
     def runner_rows(self, verb, args, seg, state, implicit, text):
@@ -1578,6 +1583,11 @@ def sed_rows(args, state, implicit, text):
         scripts.append(files.pop(0))
     rows = []
     for script in scripts:
+        if SUB in script:
+            raise Unreadable("command substitution in sed script: $(…)")
+        if LIVE_PARAM.search(script):
+            raise Unreadable("live expansion in sed script: ${…}")
+        script = script.replace(ARITH, "1")
         for what, name in sed_writes(unhide(script)):
             rows.append(("sed", target(name, state.dir) if what == "w" else "?unknown:" + text))
     if inplace:
@@ -1688,8 +1698,36 @@ def sed_writes(script):
             while i < n and (script[i].isdigit() or script[i] in " \t"):
                 i += 1
         else:
-            raise Unreadable("unknown sed command " + cmd)
+            raise Unreadable("unknown sed command " + readable(cmd))
     return out
+
+
+def readable(text):
+    """Placeholders shown as the construct they stand for, never as a private-use char."""
+    return unhide(text).replace(SUB_END, "").replace(SUB, "$(…)").replace(ARITH, "$((…))") \
+        .replace(HEREDOC, "<<…").replace(ESCAPED_WORD_START, "")
+
+
+def inline_paths(program, directory):
+    """Absolute paths under the project that a quoted token of an inline program names."""
+    root = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if not root.startswith("/"):
+        return []
+    root = os.path.normpath(root)
+    found = []
+    for match in QUOTED_TOKEN.finditer(program):
+        token = (match.group(1) if match.group(1) is not None else match.group(2)).strip()
+        if not token or "$" in token or "`" in token or token.startswith("~"):
+            continue
+        if not token.startswith("/") and directory is None:
+            continue
+        path = os.path.normpath(os.path.join(directory or "/", token))
+        if path == root or not path.startswith(root + "/"):
+            continue
+        first = os.path.relpath(path, root).split("/", 1)[0]
+        if (os.path.exists(path) or os.path.exists(os.path.join(root, first))) and path not in found:
+            found.append(path)
+    return found
 
 
 def has_live(word):
@@ -1766,6 +1804,9 @@ def main(argv):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv))
-    except (Unreadable, ValueError, IndexError, RecursionError) as exc:
-        print(f"shell_targets: {exc}", file=sys.stderr)
+    except Unreadable as exc:
+        print(f"shell_targets: {readable(str(exc))}", file=sys.stderr)
+        sys.exit(3)
+    except (ValueError, IndexError, RecursionError) as exc:
+        print(f"shell_targets: {readable(str(exc))}", file=sys.stderr)
         sys.exit(1)

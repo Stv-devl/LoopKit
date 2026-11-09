@@ -113,7 +113,10 @@ Announce what needs deploying and **ask** before running it.
 
 ### 4. Commit
 
-Delegate to the **`github` agent**: it stages, writes the Conventional Commit
+First remove the applied `.tdd-unfrozen` entries in one Edit (delete the lines
+or comment them out: that Edit narrows the freeze and does not ask). Then
+hand the `github` agent the subject only — never body bullets; a body belongs
+to the PR. Delegate to the **`github` agent**: it stages, writes the Conventional Commit
 message, commits locally, and never signs. It commits **on a branch, never on
 `main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>` if it has one, a fresh
 one otherwise. Anything remote (push, PR) waits for the user's explicit
@@ -136,7 +139,8 @@ track ran in a worktree.
    `## Gate` (section 2 above) — id, old and new case line, reason, and the test hunk
    from the diff, so the user confirms the change itself, not its description —
    and the exact merge command, and **wait for the go-ahead**. Merging is as gated
-   as pushing.
+   as pushing. A refused amendment first re-adds its
+   `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
    Otherwise, **mind who is standing where**:
    - the session is **inside** the worktree → `ExitWorktree` (`remove`). Git

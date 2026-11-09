@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__/src","tool_input":{"command":"git -C .. commit -m x"},"_expect_reason":"not a plain git call"}

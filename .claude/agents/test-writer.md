@@ -129,6 +129,7 @@ pytest file no hook will ever prove.
   not a test — whatever its extension.
 - Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
   `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
+  Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**

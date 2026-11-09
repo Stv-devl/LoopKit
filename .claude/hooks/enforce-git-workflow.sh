@@ -1579,7 +1579,7 @@ grammar_strict() {
     local safe='[A-Za-z0-9._/@+-]+' word='[A-Za-z0-9._/@+:-]+' branch='[A-Za-z0-9._/-]+'
     local double='"[^"$`\\]+"' single="'[^'\$\`\\\\]+'"
     local add_form="^git( -C ($safe))? (add|stage)( --)?(( $safe)+)\$"
-    local commit_form="^git commit -m ($double|$single|$word)\$"
+    local commit_form="^git( -C ($safe))? commit -m ($double|$single|$word)\$"
     local switch_form="^git switch -c ($branch)\$"
     text="${text#"${text%%[! $'\t']*}"}"
     text="${text%"${text##*[! $'\t']}"}"
@@ -1587,7 +1587,9 @@ grammar_strict() {
     if [[ "$text" =~ $add_form ]]; then
         grammar_add_ok "${BASH_REMATCH[2]}" "${BASH_REMATCH[5]}"
     elif [[ "$text" =~ $commit_form ]]; then
-        [[ "${BASH_REMATCH[1]}" != -* ]]
+        # Group 3 is the message; group 2 the -C tree, checked like `git -C <tree> add`'s.
+        [[ "${BASH_REMATCH[3]}" != -* ]] || return 1
+        [[ -z "${BASH_REMATCH[2]}" ]] || grammar_value_ok "${BASH_REMATCH[2]}"
     elif [[ "$text" =~ $switch_form ]]; then
         [[ "${BASH_REMATCH[1]}" != -* ]]
     else
@@ -1599,7 +1601,35 @@ grammar_decide() {
     # Under a UTF-8 locale, [A-Za-z0-9] in a bash regex also matches non-ASCII letters.
     local LC_ALL=C
     grammar_triggered "$COMMAND" || grammar_triggered "$NORM" || return 0
-    grammar_strict "$COMMAND" && return 0
+    if grammar_strict "$COMMAND"; then
+        # `git -C <tree> commit -m "<one line>"` has no settings allow (no inner `*` in
+        # an allow): every deny above has run, so the strict form is allowed here.
+        # Only a tree that is the project or one of its worktrees; any other repo gets no decision.
+        if [[ "$COMMAND" =~ ^[[:space:]]*git\ -C\ ([^[:space:]]+)\ commit\ -m\  ]]; then
+            local c_tree="${BASH_REMATCH[1]}" c_real p_real w_line w_real
+            c_tree="${c_tree#[\"\']}"
+            c_tree="${c_tree%[\"\']}"
+            [[ "$c_tree" == /* ]] || c_tree="$BASE_DIR/$c_tree"
+            c_real="$(cd "$c_tree" 2>/dev/null && pwd -P)" || c_real=""
+            p_real=""
+            if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+                p_real="$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)" || p_real=""
+            fi
+            if [[ -n "$c_real" && -n "$p_real" ]]; then
+                if [[ "$c_real" == "$p_real" ]]; then
+                    decide allow "a one-line commit in another tree of the project (here the project tree itself), the strict form the git hook polices"
+                fi
+                while IFS= read -r w_line; do
+                    [[ "$w_line" == "worktree "* ]] || continue
+                    w_real="$(cd "${w_line#worktree }" 2>/dev/null && pwd -P)" || continue
+                    if [[ "$c_real" == "$w_real" ]]; then
+                        decide allow "a one-line commit in another tree of the project (a worktree), the strict form the git hook polices"
+                    fi
+                done < <(git -C "$p_real" worktree list --porcelain 2>/dev/null)
+            fi
+        fi
+        return 0
+    fi
     ask "This is not a plain git call: only \`git add <paths>\`, \`git commit -m \"<one line>\"\` and \`git switch -c <branch>\` run without a prompt, each alone in its call. Show the exact call, then let the user decide."
 }
 

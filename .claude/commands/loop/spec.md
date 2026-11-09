@@ -15,18 +15,16 @@ Produce a **spec on disk** that will serve as the single source of truth for
    need, front surface, acceptance criteria. Propose reasonable defaults, don't
    overwhelm.
 
-   **The token profile is a question of its own, asked alone and asked always.**
-   Does this feature touch payment, authorization, or a destructive data change?
-   Yes → `Token profile: critical`. Three of the four triggers are here; the
-   fourth is the user asking for it outright, which needs no question.
-   `11-token-budget.md` holds the only copy of that list, and `/loop:ship` reads the
-   profile off this file to arm one `/audit:security` surface before the commit.
-
-   It gets its own `AskUserQuestion` call, with the two answers spelled out, and
-   it is not folded into a paragraph with the four others. This interview is the
-   only moment the fact is known — nothing downstream can re-derive it, and
-   defaulting to `economy` disarms the audit **silently**. A closed answer is what
-   makes that impossible to do by accident.
+   **The token profile is inferred, then printed, not asked** — unless the spec
+   touches payment, authorization, a destructive data change, or
+   loosens a kit guard / widens what runs without a prompt. On one of those, ask it alone in its
+   own `AskUserQuestion` call, two answers spelled out: does it need `critical`?
+   Otherwise print `Token profile: economy` in the summary the user validates.
+   `11-token-budget.md` holds the only copy of the `critical` list (the user asking
+   outright is the fourth trigger), and `/loop:ship` reads the profile off this
+   file to arm one `/audit:security` surface before the commit. This interview is
+   the only moment the fact is known — nothing downstream can re-derive it, so a
+   trigger is never answered by a default.
 2. **Read `docs/product/brief.md` if it exists**, before anything else — the
    product frame `/loop:product` wrote: `Current surface` says what already exists,
    `Out of product` is the boundary this spec may not cross, and `Product

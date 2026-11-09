@@ -97,7 +97,9 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
      `Business logic` amendment keeps the design and the graft:
      write `design.md` (step 6) first, with `Contract: amended: …`, then hand
      back — Phase 3 reads
-     it and re-asks the contract on the amended sections. Contract rounds are not
+     it and re-asks the contract on the amended sections. An amendment that is
+     exactly the user's own words is recorded, not asked again: write it as
+     `Contract: amended: <their words> (user's own)`. Contract rounds are not
      design rounds: they do not count toward the cap above.
 
    Nothing downstream happens until the user validates. **Do not continue on
