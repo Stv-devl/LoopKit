@@ -1487,7 +1487,7 @@ if echo "$COMMAND" | grep -qE '\bgit\s+push\b'; then
     ask "$PUSH_REASON"
 fi
 
-if echo "$COMMAND" | grep -qE '\bgit\s+(merge|rebase)\b' && on_protected_branch; then
+if echo "$COMMAND" | grep -qE '\bgit\s+(merge|rebase)($|[^-[:alnum:]_])' && on_protected_branch; then
     ask "$(merge_reason "$BRANCH")"
 fi
 

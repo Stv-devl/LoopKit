@@ -73,7 +73,7 @@ Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/
   - The root-row deny reasons name the target as typed, not the resolved path.
   - The settings carve-outs (`Read(!.env.*.example|sample|template)`) are pinned as strings only: `test-install.sh` does not run Claude Code's matcher.
   - A hook path read with `$(…)` loses a trailing newline (`FILE_PATH` of `auto-approve-config.sh`, `protect-files.sh`): a file whose name ends in a newline reads as its stripped name. `cwk_real_path` refuses a resolved path that ends in one, but the input path is cut before it gets there.
-  - Any glob that matches more than 256 entries (or a brace list that expands past 256 words) now asks in secret mode, even when no secret is among them; the cap is `MAX_GLOB` in `shell_targets.py`.
+  - ~~Any glob that matches more than 256 entries now asks in secret mode, even when no secret is among them.~~ Fixed 2026-11-10 (EcoCrew measure: `grep … src/features/takeoff/services/*.ts`, 283 files): the scan reads every match under its time budget and only a secret name decides (X28.81-82; X28.31-32 amended ask → deny). A brace list past 256 words (`MAX_GLOB`) still asks.
 - From the `harness-hooks` review 3/3 (2026-11-03), Minors, no code in the test-only batch (one line each):
   - A trailing `\` or other unparsable input drops the verdicts in secret and flag-row modes, not only for git.
   - `$((…))` hides a `$(…)` inside it from the shell guard.

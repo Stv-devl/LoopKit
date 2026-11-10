@@ -221,7 +221,7 @@ run_case() {
                 ;;
             # `secrets-many`: 300 folders m001-m300 holding x, 300 files .e001-.e300,
             # .env, cfg/server.pem and notes.txt: `*/*` and `.e*` list 301 entries,
-            # one past the scan's cap of 256, in whatever order the filesystem gives.
+            # more than 256, in whatever order the filesystem gives; the scan reads all.
             secrets-many)
                 mkdir -p "$tmp/cfg"
                 for ((n = 1; n <= 300; n++)); do

@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__MAIN_TREE__","tool_input":{"command":"git rev-parse --short HEAD; git merge-base --is-ancestor HEAD main && echo \"D in main\"; git branch --show-current"}}

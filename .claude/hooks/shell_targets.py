@@ -14,7 +14,6 @@ back to its text rules. Contract: docs/work/guard-shell/plan.md.
 """
 
 import glob
-import itertools
 import os
 import re
 import shlex
@@ -161,7 +160,7 @@ class GlobBudget(Exception):
 
 
 class GlobCap(Exception):
-    """A glob or a brace list gave more than MAX_GLOB entries: the scan cannot list them all."""
+    """A brace list gave more than MAX_GLOB words: the scan cannot list them all."""
 
 
 class Unreadable(Exception):
@@ -828,19 +827,13 @@ class SecretWalker(Walker):
                     continue
                 full = pattern if root is None else os.path.join(glob.escape(root), pattern)
                 try:
-                    matches = bounded_glob(full, self.deadline)
+                    name = bounded_glob(full, self.deadline)
                 except GlobBudget:
                     self.ask(f"{verb} {show(word)}: the glob scan exceeded its time budget")
                     return
-                except GlobCap:
-                    self.ask(f"{verb}: the glob matches more than {MAX_GLOB} entries, so the scan "
-                             f"cannot list them all: {show(word)}")
-                    continue
-                for match in matches:
-                    name = os.path.basename(match.rstrip("/"))
-                    if is_secret_name(name):
-                        self.deny(f"{verb} {show(word)} reads {name}")
-                        return
+                if name is not None:
+                    self.deny(f"{verb} {show(word)} reads {name}")
+                    return
 
     def deny(self, text):
         self.verdicts.append(("deny", flat_text(text)))
@@ -849,27 +842,28 @@ class SecretWalker(Walker):
         self.verdicts.append(("ask", flat_text(text)))
 
 
-def capped_glob(pattern):
-    """The matches of a glob; GlobCap past MAX_GLOB, never a truncated list passed off as complete."""
-    matches = list(itertools.islice(glob.iglob(pattern), MAX_GLOB + 1))
-    if len(matches) > MAX_GLOB:
-        raise GlobCap()
-    return matches
+def secret_in_glob(pattern):
+    """The first secret file name among every match of a glob, or None once all are read."""
+    for match in glob.iglob(pattern):
+        name = os.path.basename(match.rstrip("/"))
+        if is_secret_name(name):
+            return name
+    return None
 
 
 def bounded_glob(pattern, deadline):
-    """The matches of a glob, at most MAX_GLOB; GlobBudget past GLOB_EACH seconds or the `deadline`.
+    """The first secret name a glob matches, or None; GlobBudget past GLOB_EACH seconds or the `deadline`.
 
-    A timer interrupts the listing, so a pattern that lists a huge or looping tree
-    cannot hold the hook past its timeout; the next glob still gets its own slice,
-    so a later operand naming a secret is still denied. More than MAX_GLOB matches
-    raise GlobCap: the caller asks instead of trusting a partial list.
+    Every match is read, however many: only a name that is a secret decides. A
+    timer interrupts the listing, so a pattern that lists a huge or looping tree
+    cannot hold the hook past its timeout and asks instead; the next glob still
+    gets its own slice, so a later operand naming a secret is still denied.
     """
     left = min(deadline - time.monotonic(), GLOB_EACH)
     if left <= 0:
         raise GlobBudget()
     if not hasattr(signal, "setitimer"):
-        return capped_glob(pattern)
+        return secret_in_glob(pattern)
 
     def stop(signum, frame):
         raise GlobBudget()
@@ -877,7 +871,7 @@ def bounded_glob(pattern, deadline):
     previous = signal.signal(signal.SIGALRM, stop)
     signal.setitimer(signal.ITIMER_REAL, left)
     try:
-        return capped_glob(pattern)
+        return secret_in_glob(pattern)
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
