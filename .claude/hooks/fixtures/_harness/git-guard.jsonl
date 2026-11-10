@@ -539,6 +539,6 @@
 {"id":"G18.39","verdict":"deny","command":"gh pr comment 1 -b \"Claude-Session: x\"","reason":"attribution line in a gh body"}
 {"id":"G18.40","verdict":"deny","command":"gh pr comment 1 -b \"see claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
 {"id":"G18.41","verdict":"pass","command":"gh pr view 1 --json body -q .body | grep Co-Authored-By"}
-{"id":"G14.143","verdict":"pass","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\""}
+{"id":"G14.143","verdict":"ask","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\"","reason":"outside the project"}
 {"id":"G14.144","verdict":"ask","setup":"proj","cwd":"__FEAT_TREE__/src","command":"git -C .. commit -m x","reason":"not a plain git call"}
 {"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}

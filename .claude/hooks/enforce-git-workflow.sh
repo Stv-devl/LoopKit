@@ -13,8 +13,10 @@
 #          brace characters) is not resolved and denies as unconfirmed
 #   ask  → a `git add` aimed at a directory that is not a repository the hook
 #          can read safely (its git dir is not `.git`, `.git/worktrees/<name>` or
-#          `.git/modules/<path>`: a bare-clone worktree, `--separate-git-dir`, a
-#          planted git dir, a missing or non-repo directory): no dry-run, because
+#          `.git/modules/<path>`, or its common dir is not the project's (the
+#          project's own, a worktree or a submodule of it): a bare-clone worktree,
+#          `--separate-git-dir`, a planted git dir, a `git init` repository inside
+#          the project, a missing or non-repo directory): no dry-run, because
 #          the git dir's own config could run code. The ask names the directory
 #          and says the hook did not check what is staged. An argument naming a
 #          secret (`.env*`, `*.pem`, `*.key`, `[.]credentials[.*]`) still denies there,
@@ -23,8 +25,12 @@
 #          a commit with --amend, --no-verify, --all, --include, --only,
 #          --patch, --interactive or a pathspec; a switch/checkout that
 #          discards or resets
+#   foreign (python, every git call but add/stage): ask when a cd earlier in the
+#          call moved it, or when it runs in a repository whose common dir is not
+#          the project's: that repository's config can run programs on status/diff
 #   destructive (python, on the parsed call, a non-`!` alias expanded up to 5
-#          hops): ask on clean without -n/-i, reset --hard, stash clear|drop,
+#          hops): ask on git init, on a git config that is not a full-spelling
+#          read (--get*, --list, get, list, one key), on clean without -n/-i, reset --hard, stash clear|drop,
 #          branch -D/-M/-C/-f, update-ref on HEAD/refs/heads or --stdin, a
 #          checkout/restore that overwrites `.`, `:/`, a glob, a directory or a
 #          named file with uncommitted changes (`git diff --quiet HEAD`, under the
@@ -48,10 +54,8 @@
 #
 # Deliberate limits:
 #   - the branch is read from the tool call's cwd, or from each git call's own
-#     `-C`. `cd elsewhere && git commit` is best-effort for the branch check: a
-#     bare `cd` is not followed (a `cd` before a `git add` denies it instead).
-#     A call that names add, stage, commit or switch is no longer best-effort
-#     there: the grammar ask below makes it ask.
+#     `-C`. A bare `cd` is not followed: a `cd` before a `git add` denies it,
+#     before any other git call asks (the foreign rule).
 #   - wrappers that take options (`nice -n 5 git`, `env -i git`, `sudo git`) are
 #     not unwrapped; the whole-text rules decide them.
 #   - a `$(...)` or `bash -c` string shlex cannot read is skipped by the parsing
@@ -278,7 +282,7 @@ MAX_ALIAS_HOPS = 5
 LOST_UNCOMMITTED = "every uncommitted change there is lost, and no commit or stash holds it"
 rows = []
 state = {"capped": False, "unread": False, "deadline": None, "cd": False, "prior": False,
-         "builtins": None}
+         "builtins": None, "common": {}}
 
 
 def strip_comments(text):
@@ -441,6 +445,27 @@ def lock_held(directory):
     return os.path.exists(os.path.join(directory, lock))
 
 
+def common_dir(directory):
+    """The physical git common dir of the repository holding <directory>, or None."""
+    if directory not in state["common"]:
+        res = quick_git(directory, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        value = None
+        if res is not None and res.returncode == 0:
+            text = res.stdout.decode(errors="replace").strip()
+            value = os.path.realpath(text) if text else None
+        state["common"][directory] = value
+    return state["common"][directory]
+
+
+def project_repo(directory):
+    """True when <directory> is in the project's repository, a worktree or a submodule of it."""
+    project = common_dir(os.environ.get("CLAUDE_PROJECT_DIR") or sys.argv[2])
+    here = common_dir(directory)
+    if project is None or here is None:
+        return False
+    return here == project or here.startswith(project + os.sep + "modules" + os.sep)
+
+
 def readable_git_dir(directory):
     try:
         res = subprocess.run(["git", "-C", directory, "rev-parse", "--absolute-git-dir"],
@@ -451,9 +476,22 @@ def readable_git_dir(directory):
     if res.returncode != 0:
         return False
     parts = os.path.normpath(res.stdout.decode(errors="replace").strip()).split(os.sep)
-    if parts[-1] == ".git" or parts[-3:-1] == [".git", "worktrees"]:
-        return True
-    return any(parts[k] == ".git" and parts[k + 1] == "modules" for k in range(len(parts) - 2))
+    if not (parts[-1] == ".git" or parts[-3:-1] == [".git", "worktrees"]
+            or any(parts[k] == ".git" and parts[k + 1] == "modules" for k in range(len(parts) - 2))):
+        return False
+    return project_repo(directory)
+
+
+def foreign_verdict(sub, directory, moved):
+    """`-` or an ask: a git call that a cd moved, or that runs in another repository."""
+    if moved:
+        return ask(f"'git {sub}' follows a cd earlier in the same call: the hook cannot tell which "
+                   "repository it lands in, and another repository's own config can run programs "
+                   "(core.fsmonitor, filters, hooks). Run it alone, with -C <dir> if needed.")
+    if common_dir(directory) is None or project_repo(directory):
+        return "-"
+    return ask(f"'git {sub}' runs in {directory}, a repository outside the project: its own config "
+               "can run programs (core.fsmonitor, filters, hooks) that nothing here has vetted.")
 
 
 def dry_run(directory, args):
@@ -929,6 +967,37 @@ def network_rule(sub, args, directory, ctx):
     return "-"
 
 
+CONFIG_READ_MARKS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l"}
+CONFIG_READ_OPTS = CONFIG_READ_MARKS | {
+    "--show-origin", "--show-scope", "--name-only", "--null", "-z", "--local", "--global",
+    "--system", "--worktree", "--includes", "--no-includes", "--bool", "--int", "--bool-or-int",
+    "--path", "--expiry-date", "--all", "--regexp"}
+CONFIG_READ_VALUED = ("--type=", "--default=", "--url=", "--value=")
+
+
+def config_rule(sub, args, directory, ctx):
+    """A git config call passes only when every option is a read option spelled in full."""
+    positional, marked = [], False
+    for arg in args:
+        if arg == "--" or not arg.startswith("-") or arg == "-":
+            positional.append(arg)
+        elif arg in CONFIG_READ_OPTS or arg.startswith(CONFIG_READ_VALUED):
+            marked = marked or arg in CONFIG_READ_MARKS
+        else:
+            positional = None
+            break
+    if positional is not None and (
+            marked or (positional and positional[0] in ("get", "list")) or len(positional) == 1):
+        return "-"
+    return ask("git config writes change what later git calls run (core.fsmonitor, core.hooksPath, "
+               "filters, aliases). Only full-spelling reads (--get, --list, get, list) pass.")
+
+
+def init_rule(sub, args, directory, ctx):
+    return ask("git init creates or re-initialises a repository: its template can plant hooks and "
+               "config that later git calls run.")
+
+
 def worktree_rule(sub, args, directory, ctx):
     if not ctx["via_alias"] or not args or args[0] != "add":
         return "-"
@@ -966,7 +1035,7 @@ def worktree_rule(sub, args, directory, ctx):
 DESTRUCTIVE_RULES = {"clean": clean_rule, "reset": reset_rule, "stash": stash_rule,
                      "branch": branch_rule, "update-ref": update_ref_rule,
                      "checkout": checkout_rule, "restore": checkout_rule,
-                     "worktree": worktree_rule,
+                     "worktree": worktree_rule, "config": config_rule, "init": init_rule,
                      **{s: network_rule for s in NETWORK_SUBS}}
 
 
@@ -1055,6 +1124,8 @@ def parse_git(seg, start, base, assigns):
         destr = destructive_verdict(sub, args, directory, {
             "configs": configs, "other_globals": other_globals, "git_env": git_env,
             "dir_unread": dir_unread, "moved": state["cd"] or state["prior"]})
+    if sub != HIDDEN and sub not in ADD_SUBS and destr == "-":
+        destr = foreign_verdict(sub, directory, state["cd"])
     destr = destr.replace("\t", " ").replace("\n", " ")
     rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}\t{flags_column(args)}"
                 f"\t{addv.replace(chr(10), ' ')}\t{destr}")

@@ -421,6 +421,8 @@ run_case() {
                 # `-nopy-`, `-badpy-`, `-ignored-`, `-envkeep-`, `-stalias-`
                 # are described where they are built below.
                 enforce-git-workflow.sh:*)
+                    # The fixture repo is the project: only the project's repository is trusted.
+                    project_dir="$tmp"
                     git -C "$tmp" init -q -b main
                     git -C "$tmp" config user.email fixture@loopkit.invalid
                     git -C "$tmp" config user.name Fixture
@@ -1120,13 +1122,14 @@ make_untrusted_repo() {
 }
 
 # Runs the hook on <command> with <cwd> in the payload, from <run_dir> as process cwd.
-# Prints the verdict, then the hook's stdout.
+# The project is $PROBE_PROJECT, else <cwd>, never the session's. Prints the verdict,
+# then the hook's stdout.
 git_hook_probe() {
     local command="$1" cwd="$2" run_dir="$3" input out code
     input="$(jq -cn --arg command "$command" --arg cwd "$cwd" \
         '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}')"
     set +e
-    out="$(cd "$run_dir" && printf '%s' "$input" | CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    out="$(cd "$run_dir" && printf '%s' "$input" | CLAUDE_PROJECT_DIR="${PROBE_PROJECT:-$cwd}" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
     code=$?
     set -e
     printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
@@ -1356,6 +1359,64 @@ run_git_restore_planted_case() {
     rm -r "$tmp"
 }
 
+# G15.33-G15.48: only the project's repository (its worktrees and submodules too) is trusted.
+# A repository the agent made inside the project with a planted core.fsmonitor runs nothing:
+# a git add there asks with no dry-run, any other git call there asks, a cd before git asks.
+# git init and git config writes ask; git config reads still pass.
+run_git_foreign_repo_cases() {
+    local tmp proj marker out
+    tmp="$(mktemp -d)"
+    proj="$tmp/proj"
+    marker="$tmp/MARKER"
+    make_seed_repo "$proj"
+    git init -q -b main "$proj/sub"
+    printf 'a\n' >"$proj/sub/a.txt"
+    git -C "$proj/sub" config core.fsmonitor "touch $marker"
+
+    out="$(git_hook_probe "git -C sub add a.txt" "$proj" "$tmp")"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.33 "the planted core.fsmonitor ran inside the hook"
+    g15_expect G15.33 ask "$out" "$UNSAFE_PHRASE" "$proj/sub"
+    rm -f "$marker"
+    out="$(PROBE_PROJECT="$proj" git_hook_probe "git add a.txt" "$proj/sub" "$tmp")"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.34 "the planted core.fsmonitor ran inside the hook"
+    g15_expect G15.34 ask "$out" "$UNSAFE_PHRASE"
+    rm -f "$marker"
+    out="$(PROBE_PROJECT="$proj" git_hook_probe "git status" "$proj/sub" "$tmp")"
+    g15_expect G15.35 ask "$out" "outside the project" "$proj/sub"
+    out="$(git_hook_probe "git -C sub diff" "$proj" "$tmp")"
+    g15_expect G15.36 ask "$out" "outside the project" "$proj/sub"
+    out="$(git_hook_probe "cd sub && git status" "$proj" "$tmp")"
+    g15_expect G15.37 ask "$out" "a cd earlier"
+    out="$(git_hook_probe "git config core.fsmonitor x" "$proj" "$tmp")"
+    g15_expect G15.38 ask "$out" "git config writes"
+    out="$(git_hook_probe "git init x" "$proj" "$tmp")"
+    g15_expect G15.39 ask "$out" "git init"
+    out="$(git_hook_probe "git config --get user.name" "$proj" "$tmp")"
+    g15_expect G15.40 pass "$out"
+    out="$(git_hook_probe "git config user.name" "$proj" "$tmp")"
+    g15_expect G15.41 pass "$out"
+    out="$(git_hook_probe "git status" "$proj" "$tmp")"
+    g15_expect G15.42 pass "$out"
+    out="$(git_hook_probe "git config get user.name" "$proj" "$tmp")"
+    g15_expect G15.43 pass "$out"
+    out="$(git_hook_probe "git config --list --show-origin" "$proj" "$tmp")"
+    g15_expect G15.44 pass "$out"
+    out="$(git_hook_probe "git config --unset user.name" "$proj" "$tmp")"
+    g15_expect G15.45 ask "$out" "git config writes"
+    out="$(git_hook_probe "git config --global core.hooksPath x" "$proj" "$tmp")"
+    g15_expect G15.46 ask "$out" "git config writes"
+
+    git -C "$proj" worktree add -q "$proj/.feat" -b feat/x
+    out="$(PROBE_PROJECT="$proj" git_hook_probe "git status" "$proj/.feat" "$tmp")"
+    g15_expect G15.47 pass "$out"
+    make_seed_repo "$tmp/lib"
+    git -C "$proj" -c protocol.file.allow=always submodule add -q "$tmp/lib" lib >/dev/null 2>&1
+    out="$(PROBE_PROJECT="$proj" git_hook_probe "git status" "$proj/lib" "$tmp")"
+    g15_expect G15.48 pass "$out"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.48 "the planted core.fsmonitor ran"
+    rm -r "$tmp"
+}
+
 # G10.04: a reason past 4000 characters is cut and says so.
 run_git_reason_cut_case() {
     local tmp feat out reason i pad
@@ -1576,6 +1637,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_git_expanded_dir_cases
     run_git_unsafe_edge_cases
     run_git_restore_planted_case
+    run_git_foreign_repo_cases
     run_git_reason_cut_case
     run_locale_cases
     run_prove_red_symbols
