@@ -528,7 +528,7 @@ ensure_gitignore() {
         local line
         for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
             .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
-            '*.pem' '*.key' 'credentials.*'; do
+            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md'; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
@@ -561,6 +561,10 @@ __pycache__/
 # handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
 docs/work/*/handoff.md
 handoff-codex.md
+# Captures d'écran de PR (e2e-tester) : publiées sur la branche pr-assets, jamais ici.
+.pr-shots/
+# Le corps de PR de /loop:ship : écrit une fois, périmé après la PR, et non suivi il bloque `git worktree remove`.
+docs/work/*/pr-body.md
 # Clés et identifiants : protect-files.sh refuse de les lire, git add les refuse
 # aussi ; ignorés ici pour qu'un `git add .` ne les liste même pas.
 *.pem

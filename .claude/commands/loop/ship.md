@@ -124,6 +124,13 @@ go-ahead — that gate belongs to the agent, don't bypass it. A push or PR asked
 for before 4bis shows first, in its preview, every `amended` line of `## Gate`
 with its test hunk: nothing leaves the machine before the user has seen them.
 
+Also hand the agent the `Screenshots run:` dir from `## Gate` (or `none`) and
+`<base>`. The order, when a PR is opened: (a) the agent commits; (b) on a PR with
+a recorded run, the agent runs Publish steps 1-5 (`github.md`, "PR screenshots on
+`pr-assets`") and returns the `section` text; (c) the main thread then writes
+`docs/work/<slug>/pr-body.md` with Write, `Screenshots` block included; (d) the
+agent is called again to run `gh pr create ... --body-file`.
+
 ### 4bis. Integrate
 
 Every loop pass ends on a branch, worktree or not — so this step always applies.
@@ -176,6 +183,12 @@ In the main tree, after 4bis — the product files never change in a worktree.
   move on. Nothing else writes `Current surface`.
 
 - Write nothing to `docs/work/<slug>/` — it stays as the trace of the loop.
+- **`pr-assets` cleanup**, when the repo has a remote `pr-assets` branch: list the
+  `MERGED` PRs (`gh pr list --state merged --json number,headRefName`). Skip any
+  branch name that still has an open PR (`gh pr list --state open --head <B>`).
+  For each of the others, offer the cleanup: `kit-pr-assets.py drop` on that
+  PR's body, as in `github.md`. Each `gh` call and the push keep their default
+  prompt.
 
 ### 6. Next feature
 

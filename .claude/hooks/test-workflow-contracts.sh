@@ -874,4 +874,29 @@ for f in "$ROOT"/.claude/hooks/*.sh "$ROOT/install.sh"; do
     fi
 done
 
+# pr-screenshots: the PR body order, the pr-assets publishing and cleanup, the
+# capture contract, and no other image host.
+pr_template=$(section "$GITHUB_AGENT" '**Body**: in this order' '### The rules that make it short')
+pr_last=0
+for pr_needle in '<One line: what this does' '**Where to look**' '**Uncertain**' '- `<sha>`' '**Screenshots** —'; do
+    pr_line=$(grep -Fn -- "$pr_needle" <<<"$pr_template" | head -n 1 | cut -d: -f1)
+    [[ -n "$pr_line" && "$pr_line" -gt "$pr_last" ]] || { echo "PR body order broken at: $pr_needle" >&2; exit 1; }
+    pr_last=$pr_line
+done
+for pr_needle in 'one line per commit' '--body-file' 'kit-pr-assets.py commit' 'kit-pr-assets.py drop' 'pr-assets'; do
+    grep -Fq -- "$pr_needle" "$GITHUB_AGENT"
+done
+for pr_needle in PR_SHOTS PR_SHOTS_DIR .pr-shots/ emulateMedia PW_BASE_URL; do
+    grep -Fq -- "$pr_needle" "$ROOT/.claude/skills/e2e-playwright/SKILL.md"
+done
+grep -Fq 'Screenshots:' "$ROOT/.claude/agents/e2e-tester.md"
+for pr_needle in 'kit-pr-assets.py ui' 'ls-files --others --exclude-standard' 'PR_SHOTS=before'; do
+    grep -Fq -- "$pr_needle" "$REVIEW"
+done
+grep -Fq 'kit-pr-assets.py drop' "$SHIP"
+grep -Fq 'MERGED' "$SHIP"
+for pr_file in "$GITHUB_AGENT" "$ROOT/.claude/skills/e2e-playwright/SKILL.md" "$ROOT/.claude/agents/e2e-tester.md"; do
+    if grep -Eiq 'imgur|supabase|upload-artifact|s3\.' "$pr_file"; then echo "foreign image host in $pr_file" >&2; exit 1; fi
+done
+
 echo 'workflow contract fixtures: green.'

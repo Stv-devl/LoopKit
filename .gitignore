@@ -114,3 +114,11 @@ docs/audits/
 # fresh worktree gets no untracked file (.claude/guides/10-worktrees.md).
 docs/work/*/handoff.md
 handoff-codex.md
+
+# The PR body /loop:ship hands to `gh pr create --body-file`: written once per
+# ship, obsolete after the PR exists, and untracked it would block worktree removal.
+docs/work/*/pr-body.md
+
+# PR screenshots captured by e2e-tester, one dir per review run. Published as
+# blobs on the orphan `pr-assets` branch by kit-pr-assets.py, never committed here.
+.pr-shots/

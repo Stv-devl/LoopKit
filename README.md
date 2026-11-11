@@ -69,6 +69,14 @@ tests. Projects without a remote use `--no-ci`: the gates stay in `/loop:ship`.
 
 Every step is callable on its own, so you can rejoin mid-loop.
 
+A pass whose diff touches UI gets PR screenshots: `/loop:review` has
+`e2e-tester` capture the key steps (light/dark × desktop/mobile, test data only,
+plus a "before" image on a bugfix) into the git-ignored `.pr-shots/`. The
+`github` agent publishes them as blobs on the orphan branch `pr-assets`, embeds
+them in the PR body (summary, `Where to look`, `Uncertain`, one line per commit,
+`Screenshots`), and removes them once the PR is `MERGED`, from the tip of
+`pr-assets` only: they stay in its git history. Every push asks first.
+
 `/loop:small` dispatches a bounded, non-foundation change into a dedicated
 worktree after one spec approval; it then follows the normal plan, execute,
 review and ship path and merges one ticket at a time. Its `.claude/scripts/small-*`

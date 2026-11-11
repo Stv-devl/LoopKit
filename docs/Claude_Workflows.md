@@ -330,6 +330,17 @@ Limite : l'étage 0 ne juge pas le mouvement (captures fixes) et le détecteur
 d'Impeccable ne voit que des motifs de code connus, pas la fluidité : il faut
 regarder la page. Guides : `patterns/motion.md`, `patterns/gsap.md`.
 
+**Captures d'écran de PR.** Quand le diff touche l'UI (décision prise sur l'arbre
+de travail par `kit-pr-assets.py ui`), `/loop:review` lance `e2e-tester` avec
+`PR_SHOTS=after`. Il capture les étapes clés en clair/sombre × desktop/mobile,
+sur données de test uniquement, plus un « avant » sur un bugfix. Les images
+restent dans `.pr-shots/` (ignoré par git). À la PR, l'agent `github` les publie
+en blobs sur la branche orpheline `pr-assets` (`<branche>/<sha7>/`), puis les
+retire quand la PR est `MERGED`, de la pointe de `pr-assets` seulement : elles
+restent dans son historique git. Chaque push et chaque appel `gh` passent par
+une demande d'autorisation. Le corps de PR suit cet ordre : résumé,
+`Where to look`, `Uncertain`, une ligne par commit, `Screenshots`.
+
 Deux commandes bornées vivent autour de cette boucle : `/loop:spike` tranche une
 question fermée (ou retourne `indeterminate` avec la preuve manquante), et
 `/kit:recipe` transforme une procédure déjà prouvée en guide froid cité par un

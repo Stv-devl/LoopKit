@@ -61,6 +61,8 @@ jobs:
         run: .claude/hooks/test-small-lane.sh
       - name: Test loop attempt counter
         run: .claude/hooks/test-attempts.sh
+      - name: Test PR screenshot assets
+        run: .claude/hooks/test-pr-assets.sh
       - name: Pin workflow contracts
         run: .claude/hooks/test-workflow-contracts.sh
       - name: Enforce hot rules floor

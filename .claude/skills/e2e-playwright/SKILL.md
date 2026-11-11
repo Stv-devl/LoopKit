@@ -141,6 +141,66 @@ is a spec hiding a race.
 **Isolation.** One `test` = one user-visible outcome. No shared state between
 tests; `fullyParallel` is on, so two specs may run at the same time.
 
+## PR screenshots
+
+`/loop:review` turns capture on for a pass whose diff touches UI, through two env
+variables that the main thread sets. A spec never sets them itself:
+
+- `PR_SHOTS=after|before`: the capture mode. Unset → capture nothing.
+- `PR_SHOTS_DIR=.pr-shots/<slug>/<run-id>/`: the run dir (`<run-id>` is UTC
+  `YYYYMMDDTHHMMSS`, one per review run). It is git-ignored and never written
+  anywhere else. `kit-pr-assets.py` later publishes it as blobs on the orphan
+  `pr-assets` branch.
+
+**Where it may run.** Only on test data: case A, case B on data the suite owns,
+or a flow that runs fully mocked through MSW. Never on real data. If the backend
+section above is unfilled, there is no capture, and the output line says so.
+
+**Names.** `<flow>/<NN>-<step>-<theme>-<viewport>[-before].png`, with `flow` and
+`step` in `[a-z0-9-]`, `NN` two digits, at most 3 key steps per flow and 32
+images per run. Any other file in the run dir makes publishing refuse. Pass
+`name` without the `-before` suffix: `shot()` appends it itself when
+`PR_SHOTS === "before"`, and a before image is light desktop only.
+
+```typescript
+import path from "node:path";
+import type { Page } from "@playwright/test";
+
+const shot = async (page: Page, name: string) => {
+  const dir = process.env.PR_SHOTS_DIR;
+  const suffix = process.env.PR_SHOTS === "before" ? "-before" : "";
+  if (process.env.PR_SHOTS && dir) await page.screenshot({ path: path.join(dir, `${name}${suffix}.png`), fullPage: true });
+};
+```
+
+**When.** In **after** mode, take the shot **after the step's assertions**: they
+are what waits for the UI to settle, so no skeleton or spinner gets published.
+In **before** mode, call `await <step anchor>.waitFor()` (it doesn't assert),
+then take the shot, then run the assertions. That way, a base run that fails at
+the buggy step has already captured it.
+
+**Variants.** After mode covers light, plus dark when the project has a dark
+theme, × desktop 1280×800 and mobile 390×844. Before mode is desktop-light only.
+Read the dark mechanism from `docs/design-system.md`:
+
+- `media` → `page.emulateMedia({ colorScheme: 'dark' })`;
+- `class:<name>` or `attribute:<a>=<v>` → set it on `<html>` through
+  `page.locator('html').evaluate(…)`.
+
+If there is no design system, or no dark theme is declared, capture light only
+and say why in the output line.
+
+**Before images need `PW_BASE_URL`.** The project's Playwright config must take
+the base URL from it and skip `webServer` when it is set:
+
+```typescript
+const baseURL = process.env.PW_BASE_URL ?? "http://localhost:5173";
+export default defineConfig({ use: { baseURL }, webServer: process.env.PW_BASE_URL ? undefined : { /* … */ } });
+```
+
+Without it, there are no before images (`before: none (no PW_BASE_URL)`).
+`e2e-tester` never edits the config to add it.
+
 ## What E2E is for, and what it isn't
 
 E2E is slow and brittle relative to the unit runner. Use it only for what unit

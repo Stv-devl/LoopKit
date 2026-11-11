@@ -50,8 +50,8 @@ to send.
   explaining the bug, the fix and the tests underneath it, however tempting
   the diff makes that. Add a body only if the user explicitly asks for one on
   that commit.
-- **PR descriptions: a one-line summary, then one line per commit.** No prose
-  padding, no restating what the diff already shows. See the template below.
+- **PR descriptions: a one-line summary, where to look, then one line per commit.**
+  No prose padding, no restating what the diff already shows. See the template below.
 - Replies to the user follow the project's user language; the artifacts you
   write into Git/GitHub stay in **English**.
 
@@ -60,17 +60,28 @@ to send.
 **Title**: `<type>: <what changed>`, imperative, **60 characters max**. No scope
 soup, no colon chains.
 
-**Body**: a one-line summary, then one line per commit, in this shape and
-nothing else:
+**Body**: in this order, and nothing else:
 
 ```markdown
 <One line: what this does. No preamble, no framing, no "this PR".>
 
+**Where to look**: <1-3 lines: the file or decision a reviewer should open first>
+
+**Uncertain**: <only when something is: what you are not sure of, one line each>
+
 - `<sha>` <what it changes, one line>
 - `<sha>` <what it changes, one line>
 
-<Optional: one line for the single thing a reviewer must know.>
+**Screenshots** — <flow>  ← the section output as is, its own header; nothing added around it; only when the caller hands you a `Screenshots run:` dir
 ```
+
+The body goes to a file, `docs/work/<slug>/pr-body.md`. The order is fixed: you
+commit; on a PR with a recorded run you publish (steps 1-5 below) and return the
+`section` text; the main thread then writes that file with Write (you have no
+Write tool), `Screenshots` block included; and you are called again to send it with
+`gh pr create --title "<short>" --body-file docs/work/<slug>/pr-body.md`, never
+an inline `--body`. Drop `Uncertain` when it is empty, and `Screenshots` when no
+run is recorded.
 
 ### The rules that make it short
 
@@ -134,8 +145,43 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
    `--no-verify`, `--all`, `--include`, `--only`, `--patch`, `--interactive`
    and a pathspec.
 4. If push/PR was requested: draft the message, **show it, ask, then run**.
-5. For a PR: `gh pr create --title "<short>" --body "<markdown>"` — base `main`
-   unless told otherwise. Show the title + body first.
+5. For a PR, in this order: commit (step 3); on a recorded run, Publish steps 1-5
+   below and return the `section` text; the main thread writes
+   `docs/work/<slug>/pr-body.md`; then, called again,
+   `gh pr create --title "<short>" --body-file docs/work/<slug>/pr-body.md`
+   — base `main` unless told otherwise. Show the title + body first.
+
+### PR screenshots on `pr-assets`
+
+Images never land on the work branch. They go as blobs on the orphan branch
+`pr-assets`, under `<branch>/<sha7>/`, and only the `Screenshots run:` dir the
+caller hands you is published. `kit-pr-assets.py` writes only
+`refs/heads/pr-assets`, never pushes, and has no allow, so every call prompts.
+
+**Publish**, after the ship commit (`--sha` is that commit's short sha):
+
+1. `git fetch origin`
+2. `python3 .claude/hooks/kit-pr-assets.py plan --dir <run dir> --branch <B> --sha <sha> --repo <owner/name>`
+3. Show the image list and its URLs. **Ask.** On a public repo the pushed images
+   are world-readable: test data only.
+4. `python3 .claude/hooks/kit-pr-assets.py commit` with the same args, then
+   `git push origin refs/heads/pr-assets` (asks).
+5. `python3 .claude/hooks/kit-pr-assets.py section` with the same args, and hand
+   the output back for the `Screenshots` block of `pr-body.md`.
+
+Exit 2 is a refusal with its reason on stderr: report it, never retry around it.
+
+**Clean up** when the PR is `MERGED`:
+
+1. `git fetch origin`
+2. `gh pr view <n> --json body --jq .body | python3 .claude/hooks/kit-pr-assets.py drop --branch <B>`.
+   The folders it removes are the ones the merged PR's body published, so a rebase or a squash at merge changes nothing.
+3. Show the removed folders (`git show --stat refs/heads/pr-assets`). **Ask**, then
+   `git push origin refs/heads/pr-assets`.
+
+`drop` removes the images from the tip of `pr-assets` only: they stay in its git
+history. `nothing to clean` means there is nothing to push. Never put any other image
+host in a PR body.
 
 ### Merging a track back
 

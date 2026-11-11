@@ -70,6 +70,13 @@ mocked. Read it before writing a line, and apply the matching rule:
 5. Never loosen an assertion to get green. If the app is wrong, the red is the
    deliverable.
 
+## PR screenshots
+
+When `PR_SHOTS` is set, follow the skill's "PR screenshots" section in your own
+spec: an inline `shot()`, the names, the after/before timing, the variants and
+the dark mechanism. You write images only under `PR_SHOTS_DIR`. In before mode a
+failing run is expected and is not a finding. Never capture on real data.
+
 ## Output format (mandatory)
 
 ```
@@ -81,6 +88,8 @@ mocked. Read it before writing a line, and apply the matching rule:
 - Findings: <path or screen> — <defect + how it reproduces>   (or "none")
 - Spec health: <anything fragile you had to do — a testid you added, a wait you
   wish you didn't need>
+- Screenshots: <PR_SHOTS_DIR> (<n> files; dark: <mechanism|none: why>; before: <n|none: why>)
+  — or `Screenshots: none (<why>)` when PR_SHOTS was unset or capture was not allowed
 ```
 
 Report the real run output. A green line you did not observe is worse than no

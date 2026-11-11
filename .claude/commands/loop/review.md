@@ -150,6 +150,32 @@ its place only where a unit test cannot reach.
 > skill, not here. On a read-only surface a criterion that needs a mutation comes
 > back as "not coverable" — that is a legitimate result, not a gap in the review.
 
+**PR screenshots (decided on the main thread, before the launch).** `<base>` is
+`git merge-base HEAD <plan Base:, else the default branch>`. The decision reads
+the working tree, untracked files included, never `<base>...HEAD`: before the
+ship commit, that range is empty.
+
+```bash
+{ git -c core.quotePath=false diff --name-only <base>; git ls-files --others --exclude-standard; } | python3 .claude/hooks/kit-pr-assets.py ui
+```
+
+- `none` → no capture, and no `Screenshots run:` line.
+- `ui` → launch the tester with `PR_SHOTS=after` and a fresh
+  `PR_SHOTS_DIR=.pr-shots/<slug>/<run-id>/` (UTC `YYYYMMDDTHHMMSS`). Even when no
+  flow earned a tester, launch one for the changed screen. Then record
+  `Screenshots run: <dir>` in `plan.md`'s `## Gate`, **replacing** any earlier
+  `Screenshots run:` line: a re-review after fixes captures again, and the last
+  run is the one shipped. Older run dirs stay on disk, git-ignored, and are
+  never published.
+- `ui` on a bugfix pass (a `BUG` entry or a `debug.md` entry): the tester runs
+  first with `PR_SHOTS=after` and writes its spec and the after images. Then the
+  MAIN THREAD runs `git worktree add .claude/worktrees/<slug>-base <base>`,
+  installs, serves it on a free port, and runs that tester's spec file itself
+  with `PR_SHOTS=before PW_BASE_URL=<that url>` into the same `PR_SHOTS_DIR`. Its
+  failing exit is expected and is not a finding. Stop that server, then `git worktree remove
+  .claude/worktrees/<slug>-base`. If `git worktree add` or `remove` refuses,
+  stop and report: never `--force`, never `rm`.
+
 Barrier: gather the verdicts and the run outputs.
 
 ### Stage 2 — REFUTE (parallel fan-out)

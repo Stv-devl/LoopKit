@@ -97,12 +97,17 @@ grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
 
 # The kit's runtime files are ignored on a fresh install, and back-filled into an
 # older kit's block (a worktree's scope check would otherwise see them as drift).
-for ignored in .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/; do
+for ignored in .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ .pr-shots/ 'docs/work/*/pr-body.md'; do
     grep -qxF "$ignored" "$PY_TARGET/.gitignore"
 done
-sed -i '/^\.claude\/\.kit-health\.jsonl$/d; /^\.ruff_cache\/$/d' "$PY_TARGET/.gitignore"
+# pr-screenshots AC6: no allow for the pr-assets script, a push or a gh pr call.
+for pr_allow in kit-pr-assets 'Bash(git push' 'Bash(gh pr'; do
+    if jq -e --arg a "$pr_allow" '[.permissions.allow[]? | select(contains($a))] | length > 0' \
+        "$PY_TARGET/.claude/settings.json" >/dev/null; then exit 1; fi
+done
+sed -i '/^\.claude\/\.kit-health\.jsonl$/d; /^\.ruff_cache\/$/d; /^\.pr-shots\/$/d; /^docs\/work\/\*\/pr-body.md$/d' "$PY_TARGET/.gitignore"
 "$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci >/dev/null 2>&1
-for ignored in .claude/.kit-health.jsonl .ruff_cache/; do
+for ignored in .claude/.kit-health.jsonl .ruff_cache/ .pr-shots/ 'docs/work/*/pr-body.md'; do
     [[ "$(grep -cxF "$ignored" "$PY_TARGET/.gitignore")" -eq 1 ]]
 done
 
