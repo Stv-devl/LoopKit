@@ -1,0 +1,7 @@
+{
+  "plan-critic": {
+    "count": 2,
+    "last": "2026-11-10T14:38:41.496546Z",
+    "reason": "pass 2 68/42: test setup vs own-dir config (Critical), ~12 Majors; user re-split 2a into 3 passes"
+  }
+}

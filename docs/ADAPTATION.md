@@ -453,7 +453,18 @@ des gates. Leur liste est unique, dans `.claude/hooks/hook-guarded.sh`, et tout
 hook qui en a besoin appelle `cwk_is_guarded` au lieu de la recopier :
 
 - `.claude/hooks/*` (fixtures et `hook-lib.sh` compris), `.claude/scripts/*`,
-  `.claude/settings.json`, `.claude/settings.local.json`, `.claude/.tdd-unfrozen`, `.claude/.size-exempt` ;
+  `.claude/settings.json`, `.claude/settings.local.json`, `.claude/.tdd-unfrozen`, `.claude/.size-exempt`,
+  `.claude/project.json` ;
+- sous chaque **app root** déclaré dans `.claude/project.json` (`app_roots`, par
+  exemple `frontend`), les mêmes fichiers de config que la racine : `frontend/vite.config.*`,
+  `frontend/package.json`, `frontend/tsconfig*.json`… Une option `-p`/`--root`/`--config`
+  qui vise un app root déclaré passe alors sans demander (`tsc -p .` depuis `frontend/`).
+  Une redirection shell (`>`, `>>`) vers un `.ts`/`.tsx`/`.py` est **refusée** (« Use
+  Write/Edit »), sauf depuis un générateur listé dans `codegen_commands` (par exemple
+  `["supabase","gen","types"]`), qui demande. Un `project.json` absent ou invalide ne
+  déclare rien. L'absent est normal : le doctor répond `ok`. Seul un fichier invalide,
+  ou un app root déclaré qui n'existe pas, est signalé par `/kit:doctor`
+  (`project-config`) ; `/kit:init` le remplit ;
 - `vitest.config.*`, `eslint.config.*`, `vite.config.*` (le plancher de
   couverture), `playwright.config.*`, `package.json` (les scripts des gates),
   `tsconfig*.json`, `.github/workflows/*` ;
@@ -536,8 +547,8 @@ vaut `true` par défaut et retire les invites des commandes Bash, et son effet
 sur un `ask` de hook n'est pas mesuré. Active-le toi-même si tu en as besoin.
 
 **La retenue.** P1 sans les hooks qui le surveillent serait un `acceptEdits`
-nu. Les neuf fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
-`shell_targets.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
+nu. Les dix fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
+`shell_targets.py`, `project_config.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
 `enforce-git-workflow.sh`, `tdd-require-red.sh`, `auto-approve-config.sh`,
 `kit-attempts.py`)
 portent une ligne `# cwk-guard-api: N`. Si dans ton
@@ -627,9 +638,10 @@ echo '{"tool_name":"Grep","tool_input":{"pattern":"useQuery","path":"src","glob"
 # les contourne tous. Si tu n'as pas l'addon FastAPI, les deux dernières lignes
 # passent — c'est normal, ces chemins n'existent pas chez toi.
 H=.claude/hooks/prevent-destructive-commands.sh
+export CLAUDE_PROJECT_DIR=$PWD   # sans projet, le garde ne classe aucune cible
 echo '{"tool_name":"Bash","tool_input":{"command":"echo x > features/a/a.utils.test.tsx"}}' | bash $H  # DENY
 echo '{"tool_name":"Bash","tool_input":{"command":"echo x > app/services/project.py"}}'     | bash $H  # DENY
-echo '{"tool_name":"Bash","tool_input":{"command":"echo x > app/api/routes.py"}}'           | bash $H  # silence
+echo '{"tool_name":"Bash","tool_input":{"command":"echo x > app/api/routes.py"}}'           | bash $H  # DENY (Use Write/Edit)
 
 # DENY — créer un module test-first sans test vu échouer
 echo '{"tool_input":{"file_path":"src/features/a/services/a.repository.ts"}}' | bash .claude/hooks/tdd-require-red.sh
@@ -645,8 +657,9 @@ Un hook ne se teste pas comme les autres : **l'écriture d'un `.ts` depuis le
 shell** (`prevent-destructive-commands.sh`). Lui envoyer son propre motif est
 impossible — la commande de test contient le motif, donc c'est elle qui se fait
 refuser. Ce refus **est** le test. Sur une couche test-first ou un fichier de
-test c'est un `deny`, sur n'importe quel autre `.ts` c'est un `ask` (la génération
-de types passe, mais par toi).
+test c'est un `deny`, sur n'importe quel autre `.ts`/`.tsx`/`.py` c'est aussi un
+`deny` (« Use Write/Edit ») ; seul un générateur listé dans `codegen_commands`
+(la génération de types) passe, mais par un `ask` : par toi.
 
 Le trio TDD se vérifie surtout **en marche** : écris un
 `x.repository.test.ts`, regarde `tdd-prove-red` annoncer `RED confirmed`, puis

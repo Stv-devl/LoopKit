@@ -188,7 +188,7 @@ done
 # The list and the resolver live in hook-guarded.sh (sourced by hook-lib.sh).
 # A relative file_path resolves against the session's cwd from the input, never
 # against this process's directory. Outside the project: nothing to guard.
-if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why cwk_real_file >/dev/null 2>&1; then
+if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why cwk_real_file cwk_app_roots >/dev/null 2>&1; then
     deny "BLOCKED: the guarded-path functions are not loaded (hook-lib.sh and protect-files.sh are out of step, or hook-guarded.sh is broken), so this guard refuses rather than passes.\n\nThe user restores the kit from a terminal: git checkout -- .claude/hooks/ (or re-copy .claude/hooks/ from the kit)."
 fi
 REL=$(cwk_guard_rel "$FILE_PATH" "$CWD") || exit 0

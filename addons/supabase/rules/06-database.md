@@ -85,6 +85,7 @@ supabase migration list                 # Migration state (local vs remote)
 supabase db diff --linked               # Drift between remote and migrations
 supabase db pull <name> --yes           # Capture drift into a new migration
 supabase gen types --linked > src/types/database.types.ts   # Generated DB types
+# The redirect needs ["supabase","gen","types"] in .claude/project.json codegen_commands (/kit:init proposes it), else the shell guard denies it.
 
 # Inspection (read-only)
 supabase inspect db table-sizes         # Table sizes

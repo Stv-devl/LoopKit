@@ -849,4 +849,29 @@ done
 grep -Fq 'je lance' "$ROOT/CLAUDE.md"
 grep -Fq 'cd dir;' "$ROOT/CLAUDE.md"
 
+# W1-W4 (app-roots-codegen): /kit:init writes .claude/project.json; the doctor and the
+# adaptation guide name it; every project_config.py call runs python3 -I.
+KIT_INIT="$ROOT/.claude/commands/kit/init.md"
+for needle in '.claude/project.json' 'app_roots' 'codegen_commands' 'pyproject.toml'; do
+    grep -Fq "$needle" "$KIT_INIT"
+done
+grep -Fq 'project-config' "$ROOT/.claude/commands/kit/doctor.md"
+grep -Fq '.claude/project.json' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'frontend/vite.config.' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'project_config.py' "$ROOT/.claude/hooks/hook-guarded.sh"
+
+# W5: no rule line was added for this pass; counted as test-rules-floor.sh counts the core total.
+RULES_TOTAL="$(wc -l "$ROOT/CLAUDE.md" "$ROOT"/.claude/rules/*.md | tail -1 | awk '{print $1}')"
+[[ "$RULES_TOTAL" -le 516 ]] || {
+    echo "W5: the session floor is $RULES_TOTAL lines, over the 516 this pass started from" >&2
+    exit 1
+}
+for f in "$ROOT"/.claude/hooks/*.sh "$ROOT/install.sh"; do
+    [[ "$(basename "$f")" == test-* ]] && continue
+    if grep -n 'project_config\.py' "$f" | grep -v '^[0-9]*:[[:space:]]*#' \
+        | grep 'roots\|check' | grep -qv 'python3 -I'; then
+        exit 1
+    fi
+done
+
 echo 'workflow contract fixtures: green.'

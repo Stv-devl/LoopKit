@@ -41,7 +41,16 @@ Build an evidence table with `value`, `evidence path`, and `confidence` for:
 6. Git repository, current branch convention visible in branches/docs, and
    whether a remote exists (`git remote`, without contacting it);
 7. installed addons and existing GitHub workflows;
-8. user-facing language and existing icon library/usage from authored code.
+8. user-facing language and existing icon library/usage from authored code;
+9. app roots: directories at most 2 levels below the root (`node_modules`, `.git`,
+   `.claude` excluded) that hold their own `package.json` plus one root config
+   (`vite.config.*`, `vitest.config.*`, `eslint.config.*`, `playwright.config.*`,
+   `tsconfig*.json`), or their own `pyproject.toml`; and codegen candidates:
+   `package.json` scripts whose text holds `gen types`, `generate`, `codegen` or
+   `openapi`, each as the argv prefix of the generator up to its first option or
+   redirect (`supabase gen types --local > x` → `["supabase","gen","types"]`);
+   generators named in installed addon rules are proposed too (supabase:
+   `["supabase","gen","types"]`).
 
 Absence is evidence only for optional capability (`no backend detected`, `no
 remote detected`). It is not permission to invent the missing value.
@@ -59,7 +68,8 @@ explicit options and an `leave open` option:
 - forbidden icon set: keep LoopKit's default, provide a replacement set, or open;
 - protected branches: `main`, `master`, both, or an explicit list;
 - user-facing language and log/error language;
-- backend/database policy when those surfaces exist.
+- backend/database policy when those surfaces exist;
+- app roots and codegen commands to declare: the detected candidates, a subset, or none.
 
 If two plausible package managers, clients, roots, or scripts remain, ask between
 those observed candidates. Do not add a synthetic recommendation.
@@ -91,6 +101,8 @@ For every section, re-read that section immediately before editing it:
 11. icon rule and `no-forbidden-icons.sh` together.
 12. worktree base and branch convention.
 13. review level-zero browser capability; report absence, never fake it.
+14. `.claude/project.json`: the chosen `app_roots` and `codegen_commands` (a guarded
+    file: the write asks). Probe: `/kit:doctor` `project-config`.
 
 After each section, run only its deterministic probe from `docs/ADAPTATION.md`.
 Do not run an application gate until its command has been resolved.

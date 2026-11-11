@@ -4,7 +4,10 @@ The spec reviewed on 2026-11-08 (3 reviewers + 2 verifiers, then 2 reviewers on 
 | # | Spec | Items | Token profile |
 | --- | --- | --- | --- |
 | 1 | `docs/specs/fewer-asks.md` | V1 (minus `APP_ROOTS`), V2, V3 (minus `CODEGEN_COMMANDS`), V4, V6, V11, V12 (one-line `git -C` commit, from V5) | standard |
-| 2 | `docs/specs/kit-boundary.md` | V9, `APP_ROOTS` (V1), `CODEGEN_COMMANDS` (V3) | critical |
+| 2a-1 | `docs/specs/app-roots-codegen.md` | `APP_ROOTS` (V1), `CODEGEN_COMMANDS` (V3), `.claude/project.json` created | critical |
+| 2a-2 | `docs/specs/project-config.md` | V9's prerequisite: every hook value moved into `project.json` | critical |
+| 2a-3 | `docs/specs/kit-boundary.md` | V9 minus the prompts: kit code denied in an installed project (re-split 2026-11-10, user) | critical |
+| 2b | `docs/specs/kit-prompts.md` | V9's prompts: FILL adaptations moved out, then denied (split 2026-11-10, user) | critical |
 | 3 | `docs/specs/loop-to-pr.md` | V5, the hook-written record (V7), V10 | critical |
 | 4 | `docs/specs/auto-mode.md` | V7, V8 | critical |
 

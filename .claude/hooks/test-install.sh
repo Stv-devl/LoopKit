@@ -570,4 +570,16 @@ lh_tty "$I6E" '' >/dev/null
 [ ! -e "$I6E/lefthook.yml" ]
 [ -f "$I6E/.claude/settings.json" ]
 
+# IN1-IN3 (app-roots-codegen): the kit's .claude/project.json ships, a filled one survives a
+# re-install, and project_config.py is a guard file.
+cmp -s "$ROOT/.claude/project.json" "$TARGET/.claude/project.json"
+printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' > "$TARGET/.claude/project.json"
+cp "$TARGET/.claude/project.json" "$SCRATCH/project.json.filled"
+rm -f "$TARGET/.claude/project.json.new"
+"$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
+cmp -s "$SCRATCH/project.json.filled" "$TARGET/.claude/project.json"
+[ -f "$TARGET/.claude/project.json.new" ]
+grep -Fq 'project_config.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
+grep -q '^# cwk-guard-api: [0-9]' "$TARGET/.claude/hooks/project_config.py"
+
 echo 'install fixtures: green.'

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cwk-guard-api: 3
+# cwk-guard-api: 4
 """Resolve the write targets of a Bash command: `python3 -B shell_targets.py <cmd> <base>`.
 
 Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
@@ -7,10 +7,14 @@ Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
 `#end\t<line count>`.
 
 Prints `<verb>\t<target>` rows, then always `#end\t<row count>`. A target is an
-absolute normalised path, `?glob:<abs folder>`, `?unknown:<text>` or
+absolute normalised path, `?glob:<abs folder>` (then a unit separator and the word's last segment pattern), `?unknown:<text>` or
 `?inline:<program>`. It resolves, never classifies: prevent-destructive-commands.sh
 asks hook-guarded.sh about each row. Any failure exits nonzero and the hook falls
 back to its text rules. Contract: docs/work/guard-shell/plan.md.
+
+Two exceptions classify here, because only the parse knows: `kit_cwd_rows`, and the
+verb `>cg`, a redirect whose own segment starts with a generator listed in
+`.claude/project.json` `codegen_commands` (docs/work/app-roots-codegen/plan.md, Q2).
 """
 
 import glob
@@ -21,8 +25,49 @@ import signal
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import project_config
+except ImportError:
+    project_config = None
+
 MAX_ROWS = 64
+GLOB_NAME_SEP = "\x1f"
 MAX_DIRS = 8
+CODEGEN = []
+
+
+def codegen_commands():
+    """The project's listed generators, read once; none when the file is absent or bad."""
+    if not CODEGEN:
+        commands = ()
+        if project_config is not None:
+            try:
+                commands = project_config.load(os.environ.get("CLAUDE_PROJECT_DIR", "")).codegen_commands
+            except project_config.ConfigError:
+                commands = ()
+        CODEGEN.append(commands)
+    return CODEGEN[0]
+
+
+CODEGEN_RUNNERS = (("pnpm",), ("pnpm", "exec"), ("pnpm", "dlx"), ("npx",), ("npm", "exec"),
+                   ("yarn",), ("yarn", "dlx"), ("bunx",), ("bun", "x"))
+
+
+def redirect_verb(words):
+    """`>cg` when the segment's own words start with a listed generator, else `>`.
+
+    One package-runner prefix (`pnpm exec`, `npx`...) may come before the listed words.
+    """
+    plain = [unhide(word) for word in words]
+    for prefix in codegen_commands():
+        listed = list(prefix)
+        if plain[:len(listed)] == listed:
+            return ">cg"
+        for runner in CODEGEN_RUNNERS:
+            if plain[:len(runner) + len(listed)] == list(runner) + listed:
+                return ">cg"
+    return ">"
 NUMERIC_STACK = re.compile(r"^[+-][0-9]+$")
 SUB_REF = re.compile("([0-9]+)")
 
@@ -566,8 +611,9 @@ class Walker:
     def finish(self, seg, state):
         words, implicit, chdir = strip_prefixes(seg.words)
         rows = []
+        redirect = redirect_verb(words) if seg.redirects else ">"
         for directory in state.dirs:
-            rows.extend((">", target(word, directory)) for word in seg.redirects)
+            rows.extend((redirect, target(word, directory)) for word in seg.redirects)
             if words:
                 where = State(directory)
                 if chdir is not None:
@@ -1762,7 +1808,8 @@ def target(word, directory):
         prefix = os.path.dirname(unhide(word[:min(cuts)]))
         if not prefix.startswith("/") and directory is None:
             return "?unknown:" + show(word)
-        return "?glob:" + flat_text(os.path.normpath(os.path.join(directory or "/", prefix)))
+        folder = flat_text(os.path.normpath(os.path.join(directory or "/", prefix)))
+        return "?glob:" + folder + GLOB_NAME_SEP + flat_text(unhide(word).rsplit("/", 1)[-1])
     raw = unhide(word)
     if not raw.startswith("/") and directory is None:
         return "?unknown:" + show(word)

@@ -211,7 +211,7 @@ copy_tree() {
 
 GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
              prevent-destructive-commands.sh enforce-git-workflow.sh
-             tdd-require-red.sh auto-approve-config.sh kit-attempts.py)
+             tdd-require-red.sh auto-approve-config.sh kit-attempts.py project_config.py)
 P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
             "Bash(git branch --show-current)", "Bash(git worktree list)"]'
 RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",

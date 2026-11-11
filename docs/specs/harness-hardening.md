@@ -24,6 +24,18 @@ Second review and refutation on 2026-10-30 (3 reviewers, 3 verifiers), corrected
 - `harness-kit-ci`: one proof per K1 branch, `kit` no longer required in targets, and a named `--lefthook` option.
 
 ## Open follow-ups
+- From `app-roots-codegen` (2026-11-10, plan Q5 and critic Minors):
+  - Gate configs not guarded:
+    - `pyproject.toml` (ruff, pytest, coverage) is guarded neither at the root nor under an app root when the fastapi addon is installed;
+    - `eslint -c/--config` is not recognised as a cfg option (no row, pass).
+  - Aliases that slip past the guard:
+    - the app-root guard is lexical: `ln -s frontend fe`, then an Edit of `fe/vite.config.ts`, passes (same gap as the root configs);
+    - case-insensitive filesystems are unhandled.
+  - The `.ts/.tsx/.py` redirect deny has gaps:
+    - `.mts`/`.cts`/`.pyi` and uppercase spellings (`src/a.Ts`) pass;
+    - on case-insensitive filesystems that reaches `a.utils.ts`.
+  - `shell_targets.py` `package_base` resolves the cfg target of a bare or `npx` tool against the package root, but `tsc -p .`/`vitest --root .` read the cwd (`frontend/src`). `pnpm exec` is correct. The gap predates app roots: the option-less form already passes.
+  - The shell guard runs `shell_targets.py` as `python3 -B` without `-I` (`prevent-destructive-commands.sh:438`), so a `PYTHONPATH` plant reaches its imports, `project_config` now included.
 Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/…` → A3; the worktree re-check → A2 and `harness-prompts` B2; `LC_ALL=C`, `--git-dir`/`--work-tree` and the truncation marker → A2. Still open and undecided: the premise of `readable_git_dir`, `mv`/`cp -r`/`mkdir -p` into `x/.git`, `git status`/`git diff` running a planted repository's config. All three closed 2026-11-10 by the project-repository rule (see the review 6 follow-up below): a repository other than the project's is no longer trusted, wherever its git dir sits.
 
 - From `harness-hooks` A6 (2026-11-02): the Bash tool's `grep` function also falls back to the real grep on `-z`, `--null-data`, `--config`, `--pager`, `--view`, `--filter`, `--format-open`, `--save-config`, `---*` and `-@*` (read with `type grep` on 2.1.316, `docs/research-cache/claude-code-permissions.md` 7b). A6 asks on `-Z`/`--null` and the wrapper bypasses only, as the spec says; a recursive grep with those other forms gets no verdict. Extending the rows was declined during EXECUTE: it is the user's call.
@@ -130,6 +142,15 @@ Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/
   - Tests: K2d does not check `sha256sum -c` comes before `tar`; K3a greps the word `CODEOWNERS`, not its paths, in `ci.md`; `test-install.sh` `lh_tty` has no time bound.
   - `install.sh` suggests an unpinned `pnpm add -D lefthook` (the lockfile pins it afterwards).
   - `uv tool run ruff@0.17.4` exits 0 printing nothing on the dev machine: a local lint run through uv proves nothing; use the release binary.
+- From `app-roots-codegen` fix batch 5 (2026-11-11), not fixed in the pass:
+  - Pre-existing: writers that take an output option bypass the guard (same family as `dd of=`): `curl -so src/a.utils.ts URL`, `wget -O src/a.ts URL`, `sort -o src/a.ts f` all pass.
+  - Batch-4 trade-off: the extglob ask is command-wide, so a quoted or commented `!(` / `+(` gives a false ask (`awk '!(NR%2)' f > docs/x.md`).
+  - kit-doctor scans `.claude/worktrees/*` stray folders: an untracked `.claude/worktrees/pr-screenshots` produced 3 false divergences.
+- From the `app-roots-codegen` batch-5 security re-review (2026-11-11), pre-existing at HEAD, shipped as follow-ups by user decision:
+  - **Major, next pass first**: a glob before `..` in a `/tmp` target passes any in-project write and skips the glob/extglob checks: `echo x > /tmp/claude-1*/../../<project>/.claude/settings.json` passes, so do `src/a.py` and `src/a.utils.t?` (proven in real bash). When `cwk_guard_rel` fails on a glob target it falls back to the pre-glob prefix `/tmp`, and the exemption (`prevent-destructive-commands.sh:608-616`) returns first. Fix: the `/tmp` and `/dev/fd/*` exemptions apply only to a plain target with no glob and no `..` component.
+  - A directory fd: `exec 9<"$PROJECT"; echo x > /dev/fd/9/.claude/settings.json` passes (the `/dev/fd/*` exemption is textual; real bash wrote through `/dev/fd/9/src/a.py`).
+  - Aliases that write: `shopt -s expand_aliases⏎alias w='echo x > src/a.py'⏎w` passes (line 134 covers `cd` aliases only).
+  - Minor: `cmd_joined` is not declared `local` in `guard_classify` (no verdict effect).
 
 ## Where each old item went
 Older docs cite these ids (`docs/work/small-lane/plan.md`, `docs/specs/light-permissions.md`, `docs/work/light-permissions-git/prior-gate.md`).

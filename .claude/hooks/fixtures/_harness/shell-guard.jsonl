@@ -617,7 +617,7 @@
 {"id":"X24.290","verdict":"ask","command":"pnpm test:run --clearCache","reason":"clearCache"}
 {"id":"X28.77","verdict":"ask","command":"echo x > package.json","reason":"Write files with the Write/Edit tool instead."}
 {"id":"X28.78","verdict":"ask","command":"echo x > \"$OUT\"","reason":"Write files with the Write/Edit tool instead."}
-{"id":"X28.79","verdict":"ask","command":"echo 'export const a = 1' > src/b.ts","reason":"Write files with the Write/Edit tool instead."}
+{"id":"X28.79","verdict":"deny","command":"echo 'export const a = 1' > src/b.ts","reason":"Use Write/Edit"}
 {"id":"X24.291","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src","reason":"src written by flag-r"}
 {"id":"X24.292","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory src","reason":"src written by flag-r"}
 {"id":"X24.293","verdict":"deny","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
@@ -741,7 +741,7 @@
 {"id":"X24.410","verdict":"pass","command":"pnpm typecheck --pretty"}
 {"id":"X24.411","verdict":"ask","command":"echo x > install.sh","reason":"guarded path:"}
 {"id":"X24.412","verdict":"deny","command":"cp /tmp/x workflow.py","reason":"Use Write/Edit"}
-{"id":"X24.413","verdict":"ask","command":"echo x > addons/fastapi/hooks/tdd_py_lib.py","reason":"guarded path:"}
+{"id":"X24.413","verdict":"deny","command":"echo x > addons/fastapi/hooks/tdd_py_lib.py","reason":"Use Write/Edit"}
 {"id":"X24.414","verdict":"ask","command":"cp /tmp/x workflow.sh","reason":"guarded path:"}
 {"id":"X24.415","verdict":"ask","command":"echo x > codex-handoff.sh","reason":"guarded path:"}
 {"id":"X24.416","verdict":"ask","command":"cd docs/x && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
@@ -832,8 +832,8 @@
 {"id":"X32.04","verdict":"ask","command":"python3 -c \"print(''.join(['a']))\"","reason":"unresolved write target"}
 {"id":"X32.05","verdict":"ask","command":"python3 - <<'EOF'\nprint(\"noop\")\nEOF","reason":"unresolved write target"}
 {"id":"X32.06","verdict":"ask","command":"node -e \"1\"","reason":"unresolved write target"}
-{"id":"X32.07","verdict":"ask","command":"echo x > src/a.ts","reason":"writes a TypeScript source"}
-{"id":"X32.08","verdict":"ask","command":"cat >> src/a.ts <<'EOF'\nx\nEOF","reason":"writes a TypeScript source"}
+{"id":"X32.07","verdict":"deny","command":"echo x > src/a.ts","reason":"Use Write/Edit"}
+{"id":"X32.08","verdict":"deny","command":"cat >> src/a.ts <<'EOF'\nx\nEOF","reason":"Use Write/Edit"}
 {"id":"X32.09","verdict":"pass","command":"cat >> docs/work/x/plan.md <<'EOF'\nx\nEOF"}
 {"id":"X33.01","verdict":"ask","command":"mv src/features/x/a.ts /tmp/","reason":"moves a path under a protected dir"}
 {"id":"X33.02","verdict":"ask","command":"mv src/a.ts src/b.ts","reason":"moves a path under a protected dir"}
@@ -888,8 +888,8 @@
 {"id":"X42.01","verdict":"deny","command":"echo x >src/features/a/a.utils.t's'","reason":"writing a test-first layer"}
 {"id":"X42.02","verdict":"deny","command":"echo x >src/features/a/a.test.t's'","reason":"writing a test-first layer"}
 {"id":"X42.03","verdict":"deny","command":"echo x >app/services/x_servic''e.py","reason":"Python test-first layer"}
-{"id":"X42.04","verdict":"ask","command":"echo x >src/App.t's'","reason":"TypeScript source from the shell"}
-{"id":"X42.05","verdict":"ask","command":"echo x >src/App.ts","reason":"TypeScript source from the shell"}
+{"id":"X42.04","verdict":"deny","command":"echo x >src/App.t's'","reason":"Use Write/Edit"}
+{"id":"X42.05","verdict":"deny","command":"echo x >src/App.ts","reason":"Use Write/Edit"}
 {"id":"X42.06","verdict":"pass","command":"echo x >/dev/null"}
 {"id":"X42.07","verdict":"pass","command":"ls > /tmp/claude-x/out.txt"}
 {"id":"X28.81","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat m*/x"}

@@ -39,7 +39,9 @@ git clone <this-repo> loopkit && cd loopkit
 `install.sh` writes existing kit files as `.new`; the sole exception is
 `.claude/settings.json`, whose selected hook blocks are merged idempotently while
 preserving user keys. `/kit:init` adapts the markers it can prove, asks closed questions
-for choices, and reports every marker it must leave open with its exact path.
+for choices, and reports every marker it must leave open with its exact path. It also
+writes `.claude/project.json`: the app roots (`frontend/`, `backend/`) whose configs are
+guarded like the root's, and the code generators allowed to redirect into a source.
 
 **Updating** an installed project is the same command: new kit files land
 directly, changed ones as `.new` beside your adapted copy, and `settings.json`

@@ -1,30 +1,56 @@
-# Spec: Kit boundary — the project config file, kit code off-limits in an installed project, app roots and codegen
-Status: DRAFT — pass 2 of 4, split from `docs/specs/fewer-validations.md` on 2026-11-09 (V9, V1's `APP_ROOTS`, V3's `CODEGEN_COMMANDS`, as reviewed 2026-11-08). Depends on `fewer-asks.md` shipped. Next: `loop-to-pr.md`, `auto-mode.md`.
-Token profile: critical (it moves guard values out of the hooks into a file that judges — protected branches, the RED test command — and changes what is denied in every installed project)
+# Spec: Kit boundary — kit code off-limits in an installed project
+Status: DRAFT. This is pass 2a-3.
+- **Origin.** Split from `docs/specs/fewer-validations.md` on 2026-11-09 (V9, as reviewed 2026-11-08).
+- **Narrowed twice on 2026-11-10 (user).**
+  - The kit prompts moved to `kit-prompts.md` (2b), because about 20 of them still carry per-project FILL adaptations (verifier C1).
+  - After plan-critic pass 2, `APP_ROOTS`/`CODEGEN_COMMANDS` moved to `app-roots-codegen.md` (2a-1), and the move of the values to `project-config.md` (2a-2).
+- **Depends on** 2a-1 and 2a-2 being shipped: by then no hook holds a project value, so a hook can be denied without blocking an adaptation.
+- **Next:** `kit-prompts.md`, then `loop-to-pr.md`, then `auto-mode.md`.
+- **The earlier plan** (`docs/work/kit-boundary/plan.md`, plan-critic 2/3, both passes recorded there) is superseded. Its findings on git routes and the installed check carry over to this pass's plan.
+
+Token profile: critical (it changes what is denied in every installed project)
 
 ## Objective
-A project built with the kit never changes the kit: kit code and kit prompts change in the LoopKit repo and reach a project through `install.sh`. The values a project adapts move out of the hooks into one project config file the hooks read, so no feature and no `/kit:init` run edits a hook; that file is itself a judge and is protected like kit code. With it, the configs of app subdirectories (`frontend/`, `backend/`) become guarded, `tsc -p .` from them stops asking, and shell redirections onto sources are denied except for declared codegen.
+A project built with the kit never changes the kit's code. Hooks, scripts and launchers change in the LoopKit repo and reach a project through `install.sh`. In an installed project, every tool the hooks see is denied a write to kit code and to `.claude/project.json`. Those files change only through `install.sh`, or through a `/kit:init` proposal that the user applies in their own terminal.
 
 ## Evidence
-Shared with `docs/specs/fewer-asks.md` (*Evidence*). Owned here: `pnpm exec tsc --noEmit -p .` from `frontend/` asked "targets frontend (cfg)" 3 times over parts A and C; and the hole found while analysing it: `frontend/vite.config.ts` (the coverage floor), `frontend/eslint.config.*`, `frontend/tsconfig*.json`, `frontend/package.json` (the gate scripts) are written in EcoCrew with **no ask at all**, because `CWK_GUARDED` is anchored at the repo root (`hook-guarded.sh:20-38`).
+Shared with `docs/specs/fewer-asks.md` (*Evidence*). Plan-critic passes 1 and 2 of 2026-11-10 (`docs/work/kit-boundary/plan.md` `## Plan critic`) list which routes write kit code today.
 
 ## Scope
 - IN :
-  - **V9. The kit code is off-limits in an installed project, in every mode** (user, 2026-11-08). `install.sh` edits with `perl -pi` outside Claude Code, so it is unaffected.
-    - **Kit code** = `.claude/hooks/*` (hooks, `hook-lib.sh`, `hook-guarded.sh`, `shell_targets.py`, fixtures, suites), `.claude/scripts/*`, `workflow.py`, `workflow.sh`, `codex-handoff.sh`, `install.sh`, and the kit's prompts: `.claude/agents/*`, `.claude/commands/*`, `.claude/skills/*`, `.claude/guides/*` (user, 2026-11-09: a feature never changes the kit outside the LoopKit repo; an agent or skill is improved in LoopKit, then reinstalled). Only exception: `/kit:init` and `/kit:recipe` write the paths they own, outside a feature pass (how the hook tells "outside a pass" is decided in the plan).
-    - **Denied** in an installed project (today: an ask, or nothing for the prompts), through every tool the hooks see: Write/Edit, the shell resolver, and git commands that write kit paths (`git apply`, `git am`, `git checkout <ref> -- <kit path>`, `git restore --source`, `stash pop` / `merge` / `switch` bringing kit changes). Deny text: "kit code changes in the LoopKit repo, then `install.sh`". Creating `install.sh` or `addons/` is denied too.
-    - **Installed vs kit repo** is not read from forgeable files (`kit-doctor.py:793-794` checks `install.sh` + `addons/`): `install.sh` stamps `CWK_INSTALLED=1` into `hook-guarded.sh` (kit code, so denied); present → installed. In the LoopKit repo nothing changes.
-    - **Adaptation values** that live inside hooks move to the project config file: `DATA_CLIENT_MODULE`, `DATA_CLIENT_OWN_PATH`, `COMPOSITION_ROOTS`, `SHARED_DIRS` (`enforce-architecture.py:82-101`), `PROTECTED_DIRS` (`prevent-destructive-commands.sh`), `PROTECTED_BRANCHES` (`enforce-git-workflow.sh:93-94`, `github.md:28`), the test command (`tdd-prove-red.sh:35`), the formatter (`format-on-save.sh:6`), `ENV_TEMPLATE_RE` (`protect-files.sh:97`), and the new `APP_ROOTS` and `CODEGEN_COMMANDS` (below). `/kit:init`, `kit-doctor.py` twins and `CLAUDE.md`'s "change both together" lines follow.
-    - **The project config file is a judge.** It holds `PROTECTED_BRANCHES`, the test command `tdd-prove-red.sh` runs, `APP_ROOTS` and `CODEGEN_COMMANDS`: one Edit could widen the `cfg` pass, fake a RED, or unprotect `main`. It is named in the plan (under `.claude/`), added to `CWK_GUARDED`, **denied** in an installed project like kit code (it changes through `/kit:init` or `install.sh`); ask in the kit repo. `install.sh` writes it on first install and migrates the values already filled in the hooks of an existing install.
-  - **`APP_ROOTS`** (from V1). The project config file declares the app roots (EcoCrew: `frontend`, `backend`). **The hole first:** `hook-guarded.sh` guards `<app root>/<pattern>` for every root-level config pattern, in `protect-files.sh` and the shell guard alike. Once they are guarded, a `cfg` option (`-p`, `--dir`, `--config` on a known config name) resolving to a declared app root passes; anywhere else keeps its ask; no `APP_ROOTS` declared → today's behaviour. `/kit:init` detects and proposes them.
-  - **`CODEGEN_COMMANDS`** (from V3). The project config file lists the commands that legitimately write a source through a redirection (e.g. `supabase gen types`). A redirection (`>`/`>>`, `cat >> x <<EOF`) onto a `.ts`/`.tsx`/`.py` under the project from a listed command keeps its ask; from any other command it is **denied** "use Write/Edit". `.md` redirections stay to the instruction (`fewer-asks.md` V3). `/kit:init` proposes the entries it finds in `package.json` scripts.
+  - **V9. Kit code is off-limits in an installed project, in every mode** (user, 2026-11-08). `install.sh` edits with `perl -pi` outside Claude Code, so it is unaffected.
+    - **What counts as kit code:**
+      - `.claude/hooks/*` (hooks, `hook-lib.sh`, `hook-guarded.sh`, `shell_targets.py`, fixtures, suites);
+      - `.claude/scripts/*`;
+      - `addons/*/hooks/*` once installed;
+      - `workflow.py`, `workflow.sh`, `codex-handoff.sh`, `install.sh`;
+      - `.claude/project.json` and the stamp.
+      - The prompts count as kit code too (user, 2026-11-09), but they wait for `kit-prompts.md`.
+    - **What is denied** in an installed project (today: an ask). A write to kit code is denied through Write/Edit, through the shell resolver (symlinks followed, `ln -s` included), and through every git command that writes the work tree or the index at a kit path:
+      - `apply` and `am`: unified and git patches, with paths prefixed by `-C`/cwd; unreadable or ambiguous input asks;
+      - `checkout [<ref>] -- <path>` and `restore`;
+      - `rm` and `mv`, including directory operands and pathspec magic;
+      - `stash pop|apply`, untracked part included;
+      - `merge-file`, `checkout-index`, `read-tree -u`, `reset --keep|--merge`;
+      - for any other git subcommand that writes the work tree, the plan proves that it is covered.
+
+      Deny text: "kit code changes in the LoopKit repo, then `install.sh`". Creating `install.sh` or `addons/` is denied too, including a copy into `.`.
+    - **Calls that bring kit changes ask:** `merge`, `pull`, `rebase`, `cherry-pick`, `revert`, `reset --hard`, `switch`/`checkout <branch>`.
+      - Each one reads the change it brings. A switch compares the whole tree; a merge compares since the merge base.
+      - This amends the 2026-11-08 deny for merge and switch: a deny would block merging `main` after a kit upgrade. The user confirms it at the plan gate.
+    - **Installed vs kit repo.** `install.sh` writes the stamp on every run.
+      - **Installed** = the stamp is present, **OR** `install.sh` and `addons/` are not both present (verifier C2). A dropped stamp never downgrades the deny.
+      - The check must be testable: a fixture points the hooks at a tmp project, with the same base as `project-config.md`.
+      - In the LoopKit repo nothing changes.
+  - **`/kit:init` in an installed project** writes a proposal outside kit code. It prints one command for the user to run in their own terminal, and that command applies the proposal. The agent is denied running that command, however the command is spelled (the resolved script path, not the text).
+  - **`install.sh` upgrade.** Kit code is overwritten from the kit, after a backup of the files that differ. Prompts, rules, `CLAUDE.md` and settings keep their `.new` / merge path. The "P1 held back" logic that the overwrite makes dead is removed, together with **every** test row that depends on it. Those rows are listed at the gate.
 - OUT :
-  - Push, PR, the record, V10: `docs/specs/loop-to-pr.md`.
-  - Auto mode and its guarded-path split (which reuses `APP_ROOTS`): `docs/specs/auto-mode.md`.
+  - App roots and codegen: `app-roots-codegen.md`. Values and migration: `project-config.md`.
+  - Kit prompts: `kit-prompts.md`.
+  - Push, PR, the record, V10: `loop-to-pr.md`. Auto mode: `auto-mode.md`.
 
 ## Open questions
-- Where the project config file lives and its format (`.claude/project.conf` sourced by shell and read by Python, or JSON read by both): decide in the plan.
-- How `/kit:init` and `/kit:recipe` are allowed to write kit prompts in an installed project while a feature pass cannot (a marker only those commands set, outside the agent's Write/Edit; or they print the change for the user to apply): decide in the plan.
+- The stamp's form (a file under `.claude/`, written every run): confirm in the plan. A line in `hook-guarded.sh` is lost on re-install.
 
 ## Data model
 none
@@ -34,30 +60,29 @@ NONE, kit tooling.
 
 ## Front surface
 No app code. Expected files:
-- Hooks: `hook-guarded.sh`, `protect-files.sh`, `prevent-destructive-commands.sh`, `shell_targets.py`, `enforce-git-workflow.sh`, `enforce-architecture.py`, `tdd-prove-red.sh`, `format-on-save.sh`, `addons/fastapi/hooks/*`, `kit-doctor.py`, their fixtures, `test-hooks.sh`, `test-install.sh`.
-- `install.sh` (the `CWK_INSTALLED` stamp, the project config file, migration of existing values).
-- Commands: `.claude/commands/kit/{init,doctor,recipe}.md`.
-- Rules and docs: `CLAUDE.md` and `01-stack.md` / `02-architecture.md` ("change both together" lines point to the config file), `docs/ADAPTATION.md`, `README.md`.
+- `hook-guarded.sh`, `protect-files.sh`, `prevent-destructive-commands.sh`, `shell_targets.py`, `enforce-git-workflow.sh`;
+- `install.sh`, `kit-doctor.py`;
+- `.claude/commands/kit/{init,doctor}.md`, `docs/ADAPTATION.md`, `README.md`;
+- the suites and fixtures.
 
 ## Business logic to cover
-- F3b a redirect onto `src/types/database.types.ts` from a `CODEGEN_COMMANDS` entry: ask; from an unlisted command (`echo x > src/a.ts`): deny.
-- F7 installed project: write / `git apply` / `git checkout -- ` on `.claude/hooks/x` and on `.claude/commands/loop/ship.md`: deny; creating `install.sh`: deny; the same in the kit repo: ask (hooks) / pass (prompts).
-- F10 with `APP_ROOTS = frontend` (which has its own `package.json`): Edit of `frontend/vite.config.ts`, `frontend/package.json`: ask (today: no prompt); `pnpm exec tsc --noEmit -p .` with cwd `frontend/`, and `-p frontend` from the root: pass; cwd an undeclared directory with its own `package.json`: ask; no `APP_ROOTS`: today's ask. The project config file: Write/Edit/shell write deny in an installed project, ask in the kit repo.
-- Each adaptation value: the hook reads it from the config file; a missing file fails closed with a message naming `/kit:init`.
-- `test-install.sh`: a fresh install writes the stamp and the config file; an upgrade migrates filled values without loss.
+- F7 in an installed project: each of the following on `.claude/hooks/x` is denied: a Write, a shell write, a symlink alias, `git apply` (git and unified patches), `checkout --`, `rm -r .claude/hooks`, `mv`, `stash pop -u`, `merge-file`.
+- Creating `install.sh`, or copying it into `.`, is denied.
+- With the stamp dropped and no `install.sh` + `addons/`, every write is still denied.
+- The same calls in the kit repo ask.
+- `switch` to a branch cut before a kit upgrade asks.
+- Running `/kit:init`'s apply command from a tool call is denied, whatever the spelling.
+- An upgrade overwrites kit code, backs it up, and leaves prompts and rules on `.new`.
 
 ## Acceptance criteria
-- [ ] F7: kit code and kit prompts are denied in an installed project through Write/Edit, shell and git; the installed check reads the `CWK_INSTALLED` stamp; the kit repo keeps today's behaviour.
-- [ ] Adaptation values are read from the project config file; no hook holds a project value; `kit-doctor.py` checks the twins against the file.
-- [ ] F10: app-root configs are guarded; a `cfg` option on a declared app root passes; the project config file is guarded and denied in an installed project.
-- [ ] F3b: shell redirections onto `.ts`/`.tsx`/`.py` are denied except from a listed codegen command, which keeps its ask.
-- [ ] `install.sh` upgrades an existing project (EcoCrew) with no lost value.
+- [ ] F7: kit code is denied in an installed project through Write/Edit, shell and git. The installed check is the stamp OR the missing kit markers, and it is tested through a fixture project. The kit repo keeps today's behaviour.
+- [ ] `install.sh` overwrites kit code with a backup. No dead hold-back path is left.
 - [ ] `test-hooks.sh`, `test-workflow-contracts.sh`, `test-install.sh`, `kit-doctor.py` and `test-rules-floor.sh` pass.
 
 ## Measure after
-On the next EcoCrew feature: no `tsc -p .` ask from `frontend/`; any Edit of `frontend/vite.config.ts` or `package.json` now asks; no agent edit of the kit succeeded.
+On the next EcoCrew feature, no agent edit of kit code succeeded.
 
 ## Next work
 At `/loop:ship`, once the commit is done, propose this to the user as the next step (do not start it without their go):
-1. **Update EcoCrew with `install.sh`** and check `/kit:doctor` there (config file filled, stamp present).
-2. **Then `docs/specs/loop-to-pr.md`** (pass 3 of 4): the loop goes to the PR without asking, the hook-written record, and V10 (tests validated in one read). Before scheduling it, settle its open question with the user: lift the grants parking for `.tdd-unfrozen` only.
+1. Update EcoCrew with `install.sh`, and check `/kit:doctor` there (stamp present).
+2. Then `docs/specs/kit-prompts.md` (2b).

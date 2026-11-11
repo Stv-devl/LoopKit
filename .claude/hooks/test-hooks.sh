@@ -1417,6 +1417,609 @@ run_git_foreign_repo_cases() {
     rm -r "$tmp"
 }
 
+# Runs <hook> on <input json> with <project> as CLAUDE_PROJECT_DIR. Prints the verdict, then stdout.
+project_hook_probe() {
+    local hook="$1" project="$2" input="$3" out code
+    local -a cap=(${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"})
+    [[ -z "${PROBE_SECONDS:-}" || "${#cap[@]}" -eq 0 ]] || cap[3]="$PROBE_SECONDS"
+    set +e
+    out="$(printf '%s' "$input" | CLAUDE_PROJECT_DIR="$project" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+        ${cap[@]+"${cap[@]}"} "$HOOKS_DIR/$hook" 2>/dev/null)"
+    code=$?
+    set -e
+    printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
+}
+
+# Writes <json text> into <project>/.claude/project.json.
+write_project_json() {
+    mkdir -p "$1/.claude"
+    printf '%s\n' "$2" >"$1/.claude/project.json"
+}
+
+# Fails <id> unless `project_config.py roots <project>` exits <code> and prints exactly <stdout>.
+pc_roots_expect() {
+    local id="$1" project="$2" code="$3" want="$4" out rc
+    CASES=$((CASES + 1))
+    out="$(python3 -I -B "$HOOKS_DIR/project_config.py" roots "$project" 2>/dev/null; printf x)"
+    out="${out%x}"
+    rc="$(python3 -I -B "$HOOKS_DIR/project_config.py" roots "$project" >/dev/null 2>&1; echo $?)"
+    [[ "$rc" == "$code" ]] || { fail project_config.py "$id" "expected exit $code, got $rc"; return 0; }
+    [[ "$out" == "$want" ]] || fail project_config.py "$id" "expected stdout '$want', got '$out'"
+    return 0
+}
+
+# PC1-PC15 (app-roots-codegen step 1): the one reader of .claude/project.json. Absent is
+# empty; anything malformed exits 3 with nothing on stdout, so no caller widens a pass.
+run_project_config_cases() {
+    local tmp out rc root bad deep i
+    tmp="$(mktemp -d)"
+    write_project_json "$tmp/p1" '{"schema_version":1,"app_roots":["frontend","backend"],"codegen_commands":[]}'
+    pc_roots_expect PC1 "$tmp/p1" 0 $'frontend\nbackend\n'
+
+    write_project_json "$tmp/p2" '{"schema_version":1,"app_roots":[],"codegen_commands":[["supabase","gen","types"]]}'
+    CASES=$((CASES + 1))
+    out="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import project_config as p; print(p.load(sys.argv[2]).codegen_commands)' \
+        "$HOOKS_DIR" "$tmp/p2" 2>&1)" || true
+    [[ "$out" == "(('supabase', 'gen', 'types'),)" ]] || fail project_config.py PC2 "load returned '$out'"
+
+    mkdir -p "$tmp/p3"
+    pc_roots_expect PC3 "$tmp/p3" 0 ""
+    CASES=$((CASES + 1))
+    python3 -I -B "$HOOKS_DIR/project_config.py" check "$tmp/p3" >/dev/null 2>&1 \
+        || fail project_config.py PC3 "check on an absent file must exit 0"
+
+    write_project_json "$tmp/p4" '{"schema_version":1,'
+    pc_roots_expect PC4 "$tmp/p4" 3 ""
+    CASES=$((CASES + 1))
+    rc=0
+    out="$(python3 -I -B "$HOOKS_DIR/project_config.py" check "$tmp/p4" 2>&1)" || rc=$?
+    [[ "$rc" == 3 && "$out" == *project.json* ]] || fail project_config.py PC4 "check: rc=$rc '$out'"
+
+    write_project_json "$tmp/p5" '{"schema_version":1,"app_roots":[],"codegen_commands":[],"extra":1}'
+    pc_roots_expect PC5 "$tmp/p5" 3 ""
+    CASES=$((CASES + 1))
+    out="$(python3 -I -B "$HOOKS_DIR/project_config.py" check "$tmp/p5" 2>&1)" || true
+    [[ "$out" == *extra* ]] || fail project_config.py PC5 "reason does not name the key: '$out'"
+
+    write_project_json "$tmp/p6a" '{"schema_version":2,"app_roots":[],"codegen_commands":[]}'
+    pc_roots_expect PC6 "$tmp/p6a" 3 ""
+    write_project_json "$tmp/p6b" '{"app_roots":[],"codegen_commands":[]}'
+    pc_roots_expect PC6 "$tmp/p6b" 3 ""
+
+    i=0
+    for root in '../x' '/abs' '.' 'a/../b' './frontend' 'frontend/' 'front//end' 'front*' 'a\\b' 'a\nb'; do
+        i=$((i + 1))
+        write_project_json "$tmp/p7-$i" "{\"schema_version\":1,\"app_roots\":[\"$root\"],\"codegen_commands\":[]}"
+        pc_roots_expect "PC7[$root]" "$tmp/p7-$i" 3 ""
+    done
+
+    i=0
+    for bad in '"supabase gen types"' '[]' '[""]'; do
+        i=$((i + 1))
+        write_project_json "$tmp/p8-$i" "{\"schema_version\":1,\"app_roots\":[],\"codegen_commands\":[$bad]}"
+        pc_roots_expect "PC8[$bad]" "$tmp/p8-$i" 3 ""
+    done
+
+    write_project_json "$tmp/p13" '{"schema_version":1,"app_roots":["frontend","frontend"],"codegen_commands":[]}'
+    pc_roots_expect PC13 "$tmp/p13" 3 ""
+
+    write_project_json "$tmp/real" '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}'
+    mkdir -p "$tmp/p9/.claude"
+    ln -s "$tmp/real/.claude/project.json" "$tmp/p9/.claude/project.json"
+    pc_roots_expect PC9 "$tmp/p9" 3 ""
+
+    mkdir -p "$tmp/p10/.claude"
+    { printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]'
+      head -c 70000 /dev/zero | tr '\0' ' '
+      printf '}\n'; } >"$tmp/p10/.claude/project.json"
+    pc_roots_expect PC10 "$tmp/p10" 3 ""
+
+    deep="$(printf '[%.0s' $(seq 1 5000))$(printf ']%.0s' $(seq 1 5000))"
+    write_project_json "$tmp/p15a" "$deep"
+    pc_roots_expect PC15 "$tmp/p15a" 3 ""
+    write_project_json "$tmp/p15b" '{"schema_version":true,"app_roots":["frontend"],"codegen_commands":[]}'
+    pc_roots_expect PC15 "$tmp/p15b" 3 ""
+    write_project_json "$tmp/p15c" '{"schema_version":1.0,"app_roots":["frontend"],"codegen_commands":[]}'
+    pc_roots_expect PC15 "$tmp/p15c" 3 ""
+    write_project_json "$tmp/p15d" '["frontend"]'
+    pc_roots_expect PC15 "$tmp/p15d" 3 ""
+    out="$(project_hook_probe prevent-destructive-commands.sh "$tmp/p15a" \
+        "$(jq -cn --arg cwd "$tmp/p15a" '{tool_name:"Bash",tool_input:{command:"echo x > docs/a.md"},cwd:$cwd}')")"
+    g15_expect PC15 pass "$out"
+
+    out="$(project_hook_probe protect-files.sh "$PROJECT_ROOT" \
+        "$(jq -cn --arg f "$PROJECT_ROOT/.claude/project.json" '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"a",new_string:"b"}}')")"
+    g15_expect PC12 ask "$out" "guarded path"
+    out="$(shell_guard_probe "$HOOKS_DIR" "" 'echo {} > .claude/project.json')"
+    g15_expect PC12 ask "$out" "guarded path"
+
+    mkdir -p "$tmp/p16/.claude" "$tmp/p16/frontend"
+    mkfifo "$tmp/p16/.claude/project.json"
+    rc=0
+    timeout 5 python3 -I -B "$HOOKS_DIR/project_config.py" roots "$tmp/p16" >/dev/null 2>&1 || rc=$?
+    CASES=$((CASES + 1))
+    [[ "$rc" == 3 ]] || fail project_config.py PC16 "a FIFO project.json: expected exit 3, got $rc"
+    out="$(PROBE_SECONDS=5 pf_probe "$tmp/p16" Edit frontend/vite.config.ts)"
+    g15_expect PC16 pass "$out"
+
+    i=0
+    for root in '.claude' '.claude/x' '.git' 'node_modules/a' '-x'; do
+        i=$((i + 1))
+        write_project_json "$tmp/p17-$i" "{\"schema_version\":1,\"app_roots\":[\"$root\"],\"codegen_commands\":[]}"
+        pc_roots_expect "PC17[$root]" "$tmp/p17-$i" 3 ""
+    done
+    write_project_json "$tmp/p17-ok" '{"schema_version":1,"app_roots":["a/-x","a.claude"],"codegen_commands":[]}'
+    pc_roots_expect PC17 "$tmp/p17-ok" 0 $'a/-x\na.claude\n'
+
+    mkdir -p "$tmp/p18/real"
+    ln -s real "$tmp/p18/fe"
+    write_project_json "$tmp/p18" '{"schema_version":1,"app_roots":["fe"],"codegen_commands":[]}'
+    pc_roots_expect PC18 "$tmp/p18" 3 ""
+    mkdir -p "$tmp/p18b/real/sub"
+    ln -s real "$tmp/p18b/fe"
+    write_project_json "$tmp/p18b" '{"schema_version":1,"app_roots":["fe/sub"],"codegen_commands":[]}'
+    pc_roots_expect PC18 "$tmp/p18b" 3 ""
+
+    write_project_json "$tmp/p19" '{"schema_version":1,"app_roots":["a"],"app_roots":["b"],"codegen_commands":[]}'
+    pc_roots_expect PC19 "$tmp/p19" 3 ""
+
+    pc_roots_expect PC14 "" 0 ""
+    mkdir -p "$tmp/rel/.claude"
+    cp "$tmp/real/.claude/project.json" "$tmp/rel/.claude/project.json"
+    out="$(cd "$tmp" && python3 -I -B "$HOOKS_DIR/project_config.py" roots rel 2>/dev/null; echo "rc=$?")"
+    CASES=$((CASES + 1))
+    [[ "$out" == "rc=0" ]] || fail project_config.py PC14 "a relative project dir was read: '$out'"
+    # PC20: reading a directory as project.json leaves no descriptor open.
+    mkdir -p "$tmp/p20/.claude/project.json"
+    out="$("${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"}" python3 -I -B -c '
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import project_config
+before = len(os.listdir("/proc/self/fd"))
+for _ in range(20):
+    try:
+        project_config._read(sys.argv[2])
+    except (project_config.ConfigError, OSError):
+        pass
+print(len(os.listdir("/proc/self/fd")) - before)
+' "$HOOKS_DIR" "$tmp/p20/.claude/project.json" 2>&1)"
+    CASES=$((CASES + 1))
+    [[ "$out" == 0 ]] || fail project_config.py PC20 "a directory project.json leaked descriptors: '${out:0:200}'"
+    rm -r "$tmp"
+}
+
+# Builds the app-roots tree in <dir> for <variant>: approots, approots-none, approots-bad,
+# approots-apps, approots-link, approots-two, codegen, codegen-none, codegen-bad.
+make_app_tree() {
+    local dir="$1" variant="$2" f
+    mkdir -p "$dir/frontend/src" "$dir/other/src" "$dir/src/types" "$dir/docs" "$dir/app"
+    for f in package.json tsconfig.json tsconfig.app.json vite.config.ts eslint.config.js; do
+        printf '{}\n' >"$dir/frontend/$f"
+    done
+    printf 'export const a = 1\n' >"$dir/frontend/src/a.ts"
+    printf '{}\n' >"$dir/other/package.json"
+    printf '{}\n' >"$dir/package.json"
+    case "$variant" in
+        approots) write_project_json "$dir" '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}' ;;
+        approots-none | codegen-none) ;;
+        approots-bad) write_project_json "$dir" '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[],"x":1}' ;;
+        approots-apps)
+            mkdir -p "$dir/apps/web/sub"
+            printf '{}\n' >"$dir/apps/web/vite.config.ts"
+            printf '{}\n' >"$dir/apps/web/sub/vite.config.ts"
+            write_project_json "$dir" '{"schema_version":1,"app_roots":["apps/web"],"codegen_commands":[]}' ;;
+        approots-link)
+            ln -s frontend "$dir/fe"
+            write_project_json "$dir" '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}' ;;
+        approots-two) write_project_json "$dir" '{"schema_version":1,"app_roots":["frontend","other"],"codegen_commands":[]}' ;;
+        codegen) write_project_json "$dir" '{"schema_version":1,"app_roots":[],"codegen_commands":[["supabase","gen","types"],["pnpm","supabase","gen","types"]]}' ;;
+        codegen-sb) write_project_json "$dir" '{"schema_version":1,"app_roots":[],"codegen_commands":[["supabase","gen","types"]]}' ;;
+        codegen-bad) write_project_json "$dir" '{"schema_version":1,"app_roots":[],"codegen_commands":[["supabase","gen","types"]],"x":1}' ;;
+    esac
+}
+
+# Edit (or Write) of <rel> through protect-files.sh in project <dir>.
+pf_probe() {
+    local dir="$1" tool="$2" rel="$3"
+    project_hook_probe protect-files.sh "$dir" \
+        "$(jq -cn --arg t "$tool" --arg f "$dir/$rel" \
+            '{tool_name:$t,tool_input:{file_path:$f,old_string:"a",new_string:"b",content:"x"}}')"
+}
+
+# <command> through the shell guard in project <dir>, cwd <dir>/<sub> (default the root).
+pd_probe() {
+    local dir="$1" command="$2" sub="${3:-}"
+    project_hook_probe prevent-destructive-commands.sh "$dir" \
+        "$(jq -cn --arg c "$command" --arg cwd "$dir${sub:+/$sub}" \
+            '{tool_name:"Bash",tool_input:{command:$c},cwd:$cwd}')"
+}
+
+# AR1-AR12, AR23, AR25, PC11 (app-roots-codegen step 2): a declared app root's configs are
+# guarded like the root's; nothing moves without a valid declaration.
+run_app_roots_cases() {
+    local tmp out start ms
+    tmp="$(mktemp -d)"
+    make_app_tree "$tmp/a" approots
+    out="$(pf_probe "$tmp/a" Edit frontend/vite.config.ts)"
+    g15_expect AR1 ask "$out" "guarded path"
+    out="$(pf_probe "$tmp/a" Write frontend/package.json)"
+    g15_expect AR2 ask "$out" "guarded path"
+    out="$(pf_probe "$tmp/a" Edit frontend/tsconfig.app.json)"
+    g15_expect AR2 ask "$out" "guarded path"
+    out="$(pf_probe "$tmp/a" Edit frontend/eslint.config.js)"
+    g15_expect AR2 ask "$out" "guarded path"
+    out="$(pd_probe "$tmp/a" 'echo {} > frontend/package.json')"
+    g15_expect AR3 ask "$out" "guarded path"
+    out="$(pd_probe "$tmp/a" 'sed -i s/a/b/ frontend/vite.config.ts')"
+    g15_expect AR4 deny "$out" "Use Write/Edit"
+    out="$(pf_probe "$tmp/a" Edit frontend/src/a.ts)"
+    g15_expect AR5 pass "$out"
+    out="$(pf_probe "$tmp/a" Write other/package.json)"
+    g15_expect AR6 pass "$out"
+    out="$(pd_probe "$tmp/a" 'rm -r frontend')"
+    g15_expect AR9 ask "$out" "guarded path"
+    out="$(project_hook_probe protect-files.sh "$tmp/a" \
+        "$(jq -cn --arg f "$tmp/a/frontend/vite.config.ts" '{tool_name:"Read",tool_input:{file_path:$f}}')")"
+    g15_expect AR11 pass "$out"
+    out="$(project_hook_probe protect-files.sh "$tmp/a" \
+        "$(jq -cn --arg p "$tmp/a/frontend" '{tool_name:"Grep",tool_input:{pattern:"x",path:$p}}')")"
+    g15_expect AR11 pass "$out"
+    out="$(project_hook_probe protect-files.sh "$tmp/a" \
+        "$(jq -cn '{tool_name:"Grep",tool_input:{pattern:"x",glob:"**/vite.config.*"}}')")"
+    g15_expect AR11 pass "$out"
+    out="$(project_hook_probe protect-files.sh "$tmp/a" \
+        "$(jq -cn '{tool_name:"Glob",tool_input:{pattern:"frontend/vite.config.*"}}')")"
+    g15_expect AR11 pass "$out"
+
+    make_app_tree "$tmp/n" approots-none
+    out="$(CLAUDE_PROJECT_DIR="$tmp/n" bash -c 'source "$1/hook-guarded.sh"; cwk_is_guarded apps/web/package.json; echo "$?"; cwk_is_guarded frontend/vite.config.ts; echo "$?"' _ "$HOOKS_DIR")"
+    CASES=$((CASES + 1))
+    [[ "$out" == $'1\n1' ]] || fail hook-guarded.sh AR7 "expected nothing guarded with no project.json, got '$out'"
+
+    make_app_tree "$tmp/b" approots-bad
+    out="$(pf_probe "$tmp/b" Edit frontend/vite.config.ts)"
+    g15_expect AR8 pass "$out"
+
+    make_app_tree "$tmp/w" approots-apps
+    out="$(pf_probe "$tmp/w" Edit apps/web/vite.config.ts)"
+    g15_expect AR10 ask "$out" "guarded path"
+    out="$(pf_probe "$tmp/w" Edit apps/web/sub/vite.config.ts)"
+    g15_expect AR10 pass "$out"
+
+    mkdir -p "$tmp/shim"
+    printf '#!/bin/sh\ntouch %s/SHIM_RAN\nexit 0\n' "$tmp" >"$tmp/shim/python3"
+    chmod +x "$tmp/shim/python3"
+    CLAUDE_PROJECT_DIR="$tmp/a" PATH="$tmp/shim:$PATH" bash -c 'source "$1/hook-guarded.sh"' _ "$HOOKS_DIR"
+    CASES=$((CASES + 1))
+    [[ ! -e "$tmp/SHIM_RAN" ]] || fail hook-guarded.sh AR12 "sourcing hook-guarded.sh ran python3"
+
+    start="$(date +%s%N)"
+    pf_probe "$tmp/a" Edit frontend/vite.config.ts >/dev/null
+    ms=$((($(date +%s%N) - start) / 1000000))
+    CASES=$((CASES + 1))
+    [[ "$ms" -lt 2000 ]] || fail protect-files.sh AR23 "an app-root Edit took $ms ms"
+
+    make_app_tree "$tmp/t" approots-two
+    out="$(pf_probe "$tmp/t" Edit frontend/vite.config.ts)"
+    g15_expect AR25 ask "$out" "guarded path"
+    out="$(pf_probe "$tmp/t" Write other/package.json)"
+    g15_expect AR25 ask "$out" "guarded path"
+
+    mkdir -p "$tmp/shim4"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>%s/pylog\nexec %s "$@"\n' "$tmp" "$(command -v python3)" >"$tmp/shim4/python3"
+    chmod +x "$tmp/shim4/python3"
+    out="$(PATH="$tmp/shim4:$PATH" \
+        pd_probe "$tmp/a" 'echo a > frontend/x.txt; echo b > other/y.txt; echo c > docs/z.txt; echo d > frontend/w.txt')"
+    CASES=$((CASES + 1))
+    [[ "$(grep -c 'project_config.py roots' "$tmp/pylog" 2>/dev/null || true)" -le 1 ]] \
+        || fail hook-guarded.sh AR27 "the reader ran $(grep -c 'project_config.py roots' "$tmp/pylog") times in one hook run"
+    CASES=$((CASES + 1))
+    [[ "$(grep -c 'project_config.py roots' "$tmp/pylog" 2>/dev/null || true)" -ge 1 ]] \
+        || fail hook-guarded.sh AR27 "the reader never ran: the case proves nothing"
+
+    mkdir -p "$tmp/shim3"
+    printf '#!/bin/sh\ncase "$*" in *project_config.py*) echo frontend; exit 3 ;; esac\nexec %s "$@"\n' \
+        "$(command -v python3)" >"$tmp/shim3/python3"
+    chmod +x "$tmp/shim3/python3"
+    out="$(PATH="$tmp/shim3:$PATH" pf_probe "$tmp/a" Edit frontend/vite.config.ts)"
+    g15_expect AR30 pass "$out"
+
+    mkdir -p "$tmp/plant"
+    printf 'import pathlib\npathlib.Path(%s).touch()\nfrom json import *\n' "'$tmp/PLANTED'" >"$tmp/plant/json.py"
+    out="$(PYTHONPATH="$tmp/plant" pf_probe "$tmp/a" Edit frontend/vite.config.ts)"
+    g15_expect PC11 ask "$out" "guarded path"
+    CASES=$((CASES + 1))
+    [[ ! -e "$tmp/PLANTED" ]] || fail hook-guarded.sh PC11 "a json.py on PYTHONPATH ran inside the roots read"
+    rm -r "$tmp"
+}
+
+# AR13-AR21, AR24, AR26 (app-roots-codegen step 3): a cfg option that resolves to a declared
+# app root passes; the real path of the target decides, never the cwd. AR22 is the
+# existing shell-guard.jsonl cfg rows, replayed unchanged by run_shell_guard_cases.
+run_app_roots_cfg_cases() {
+    local tmp out
+    tmp="$(mktemp -d)"
+    make_app_tree "$tmp/a" approots
+    mkdir -p "$tmp/a/frontend/src" "$tmp/a/other/src"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc --noEmit -p .' frontend)"
+    g15_expect AR13 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc --noEmit -p frontend')"
+    g15_expect AR14 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc -p frontend/tsconfig.app.json')"
+    g15_expect AR15 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm vitest --root frontend')"
+    g15_expect AR16 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm exec vite build --config frontend/vite.config.ts')"
+    g15_expect AR16 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc -p .' other)"
+    g15_expect AR17 ask "$out" "other (cfg)"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc -p .' frontend/src)"
+    g15_expect AR18 pass "$out"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc -p .' other/src)"
+    g15_expect AR18 ask "$out" "other (cfg)"
+    out="$(pd_probe "$tmp/a" 'pnpm exec tsc -p frontend/../other')"
+    g15_expect AR19 ask "$out" "(cfg)"
+
+    make_app_tree "$tmp/l" approots-link
+    out="$(pd_probe "$tmp/l" 'pnpm exec tsc -p fe')"
+    g15_expect AR20 pass "$out"
+
+    make_app_tree "$tmp/n" approots-none
+    out="$(pd_probe "$tmp/n" 'pnpm exec tsc -p frontend')"
+    g15_expect AR21 ask "$out" "frontend (cfg)"
+
+    make_app_tree "$tmp/b" approots-bad
+    out="$(pd_probe "$tmp/b" 'pnpm exec tsc -p frontend')"
+    g15_expect AR24 ask "$out" "frontend (cfg)"
+
+    make_app_tree "$tmp/t" approots-two
+    out="$(pd_probe "$tmp/t" 'pnpm exec tsc -p other')"
+    g15_expect AR26 pass "$out"
+
+    make_app_tree "$tmp/s" approots-link
+    write_project_json "$tmp/s" '{"schema_version":1,"app_roots":["fe"],"codegen_commands":[]}'
+    out="$(pd_probe "$tmp/s" 'pnpm exec tsc -p frontend')"
+    g15_expect AR28 ask "$out" "frontend (cfg)"
+
+    # A library from before cwk_app_roots next to this guard fails closed, never exit 127.
+    mkdir -p "$tmp/stale"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp/stale"/
+    sed -i '/^cwk_app_roots() {$/,/^}$/d; s/^    cwk_app_roots$//' "$tmp/stale/hook-guarded.sh"
+    out="$(HOOKS_DIR="$tmp/stale" pd_probe "$tmp/a" 'pnpm exec tsc -p frontend; echo x > .claude/settings.json')"
+    g15_expect AR29 deny "$out"
+    rm -r "$tmp"
+}
+
+# CG5-CG22 (app-roots-codegen step 4): a redirect onto a .ts/.tsx/.py source is denied,
+# except from a listed generator (its own segment's command), which asks "codegen". CG1-CG4
+# and CG12's first half are the amended shell-guard.jsonl rows X32.07/08, X42.04/05, X28.79,
+# X24.413.
+run_codegen_cases() {
+    local tmp c out cmd
+    tmp="$(mktemp -d)"
+    make_app_tree "$tmp/c" codegen
+    c="$tmp/c"
+    mkdir -p "$c/src/features/a" "$c/app/services"
+    out="$(pd_probe "$c" 'echo x > app/a.py')"
+    g15_expect CG5 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" 'pnpm supabase gen types --local > src/types/database.types.ts')"
+    g15_expect CG6 ask "$out" "codegen: src/types/database.types.ts"
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts')"
+    g15_expect CG7 ask "$out" "codegen: src/types/db.ts"
+    out="$(pd_probe "$c" 'supabase gen types; echo x > src/a.ts')"
+    g15_expect CG8 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" 'echo $(supabase gen types) > src/a.ts')"
+    g15_expect CG9 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" 'env FOO=1 supabase gen types > src/types/db.ts')"
+    g15_expect CG10 ask "$out" "codegen: src/types/db.ts"
+    out="$(pd_probe "$c" 'supabase gen types | tee src/types/db.ts')"
+    g15_expect CG11 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" 'supabase gen types > vite.config.ts')"
+    g15_expect CG12 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" 'echo x > docs/a.md')"
+    g15_expect CG13 pass "$out"
+    out="$(pd_probe "$c" 'echo x > /tmp/a.py')"
+    g15_expect CG13 pass "$out"
+    out="$(pd_probe "$c" 'echo x >/dev/null')"
+    g15_expect CG13 pass "$out"
+    out="$(pd_probe "$c" 'echo x > /tmp/a.ts')"
+    g15_expect CG13 ask "$out" "TypeScript source from the shell"
+    out="$(pd_probe "$c" 'echo x > src/a.utils.ts')"
+    g15_expect CG13 deny "$out" "test-first layer or a test file"
+    out="$(pd_probe "$c" 'echo x > app/services/x.py')"
+    g15_expect CG13 deny "$out" "Python test-first layer"
+    out="$(pd_probe "$c" 'echo x > src/App.tsx')"
+    g15_expect CG16 deny "$out" "Use Write/Edit"
+    out="$(pd_probe "$c" "supabase gen types > src/features/a/a.utils.t's'")"
+    g15_expect CG17 deny "$out" "test-first layer or a test file"
+    out="$(pd_probe "$c" 'supabase gen types > src/a.test.ts')"
+    g15_expect CG17 deny "$out" "test-first layer or a test file"
+    out="$(pd_probe "$c" 'supabase gen types > app/services/x.py')"
+    g15_expect CG17 deny "$out" "Python test-first layer"
+    out="$(pd_probe "$c" 'supabase gen types > docs/x.md')"
+    g15_expect CG18 pass "$out"
+    out="$(pd_probe "$c" 'supabase gen types > package.json')"
+    g15_expect CG18 ask "$out" "package.json written by >"
+    CASES=$((CASES + 1))
+    [[ "$out" != *">cg"* ]] || fail prevent-destructive-commands.sh CG18 "the internal verb leaks: '${out:0:300}'"
+    out="$(pd_probe "$c" 'pnpm supabase gen types --local > src/types/db.ts && rm -rf node_modules/x')"
+    g15_expect CG20 ask "$out" "node_modules/x"
+    out="$(pd_probe "$c" "echo x > src/b.ts; echo y > src/a.utils.t's'")"
+    g15_expect CG21 deny "$out" "test-first layer or a test file"
+    out="$(pd_probe "$c" 'supabase gen types > "$P/.claude/.tdd-red/x"')"
+    g15_expect CG22 deny "$out" "BLOCKED: >"
+    CASES=$((CASES + 1))
+    [[ "$out" != *">cg"* ]] || fail prevent-destructive-commands.sh CG22 "the internal verb leaks: '${out:0:300}'"
+    out="$(pd_probe "$c" 'mv /tmp/x app/a.ts')"
+    g15_expect CG15 ask "$out" "TypeScript source from the shell"
+
+    make_app_tree "$tmp/n" codegen-none
+    out="$(pd_probe "$tmp/n" 'pnpm supabase gen types --local > src/types/database.types.ts')"
+    g15_expect CG14 deny "$out" "Use Write/Edit"
+
+    make_app_tree "$tmp/r" codegen-sb
+    for cmd in 'pnpm supabase gen types --linked > src/types/database.types.ts' 'npx supabase gen types > src/types/db.ts' \
+        'pnpm exec supabase gen types > src/types/db.ts' 'pnpm dlx supabase gen types > src/types/db.ts' \
+        'npm exec supabase gen types > src/types/db.ts' 'yarn supabase gen types > src/types/db.ts' \
+        'yarn dlx supabase gen types > src/types/db.ts' 'bunx supabase gen types > src/types/db.ts' \
+        'bun x supabase gen types > src/types/db.ts'; do
+        out="$(pd_probe "$tmp/r" "$cmd")"
+        g15_expect "CG30[$cmd]" ask "$out" "codegen: src/types/"
+    done
+    for cmd in 'pnpm evil supabase gen types > src/types/db.ts' 'pnpmx supabase gen types > src/types/db.ts' \
+        'pnpm exec evil supabase gen types > src/types/db.ts'; do
+        out="$(pd_probe "$tmp/r" "$cmd")"
+        g15_expect "CG31[$cmd]" deny "$out" "Use Write/Edit"
+    done
+
+    make_app_tree "$tmp/b" codegen-bad
+    out="$(pd_probe "$tmp/b" 'supabase gen types > src/types/db.ts')"
+    g15_expect CG19 deny "$out" "Use Write/Edit"
+    CASES=$((CASES + 1))
+    [[ "$out" != *"shell guard unavailable"* ]] || fail prevent-destructive-commands.sh CG19 "the resolver crashed on a bad file"
+    out="$(pd_probe "$tmp/b" 'echo x > docs/a.md')"
+    g15_expect CG19 pass "$out"
+
+    : >"$c/src/features/a/a.utils.ts"
+    : >"$c/app/a.py"
+    for cmd in 'echo x > src/features/a/a.utils.t[s]' 'echo x > src/b.t[s]' 'echo x > src/b.t?' 'echo x >> src/b.t[s]' \
+        'echo x > app/a.p[y]' 'cp /etc/hostname src/features/a/a.utils.t[s]' \
+        'sed -i s/a/b/ src/features/a/a.utils.t[s]' 'echo x | tee src/features/a/a.utils.t[s]' \
+        'supabase gen types > src/types/d.t[s]'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG28[$cmd]" ask "$out" "unresolved write target"
+    done
+    for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log' 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md' \
+        'echo x > /tmp/*.log'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG29[$cmd]" pass "$out"
+    done
+    out="$(pd_probe "$c" 'supabase gen types > src/a.spec.ts')"
+    g15_expect CG26 deny "$out" "A test-first module or a test file is written only with Write/Edit"
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts && prettier --write .')"
+    g15_expect CG27 ask "$out" "runs a formatter in write mode"
+    out="$(pd_probe "$c" 'pnpm supabase gen types --local > src/types/db.ts && prettier --write .')"
+    g15_expect CG23 ask "$out" "runs a formatter in write mode"
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts; ruff format .')"
+    g15_expect CG24 ask "$out" "runs a formatter in write mode"
+    out="$(pd_probe "$c" 'echo x > src/b.ts && eslint --fix src/a.test.ts')"
+    g15_expect CG25 deny "$out" "with a fix flag rewrites the test file"
+
+    # CG32-CG36 (re-review fixes): a bracket or brace class can spell the dot, the extension or a
+    # test name, so any glob last segment with one asks; `*`/`?` alone asks on no dot, a glob
+    # extension, ts/tsx/py, or test/spec in the name. Each branch has a case that only it can fail.
+    for cmd in 'echo x > src/x.utils[.]ts' 'echo x > src/App[.]tsx' 'echo x > src/*[.]ts' \
+        'sed -i s/a/b/ src/a.t[e]st[.]ts' 'cp /etc/hostname src/a[.]ts' 'mv /tmp/x lib/a[.]ts' \
+        'echo x | tee src/a[.]ts' 'install /etc/hostname src/a[.]ts' 'supabase gen types > src/db[.]ts' \
+        'echo x > src/{a,b}.ts' 'echo x > src/{a,b}.js' 'echo x > src/*' 'echo x > src/*test*.js' \
+        'echo x > src/*.spec.js' 'echo x > src/a.*' 'echo x > src/a.?s' 'echo x > src/*.ts' \
+        'echo x > src/*.tsx' 'echo x > app/*.py' 'echo x > src/t[e]st.js'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG32[$cmd]" ask "$out" "unresolved write target"
+    done
+    for cmd in 'echo x > docs/*.md' 'echo x > docs/*.json' 'sed -i s/a/b/ docs/*.md' 'mv /tmp/x docs/*.md'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG33[$cmd]" pass "$out"
+    done
+    out="$(pd_probe "$c" 'supabase gen types > db[.]ts')"
+    g15_expect CG32r ask "$out"
+    out="$(pd_probe "$c" 'echo x > src/*[.]ts')"
+    g15_expect CG34 ask "$out" "onto a glob that may match a source or test file" "src"
+    CASES=$((CASES + 1))
+    [[ "$out" != *"src/*[.]ts"* || "$out" == *"under src"* ]] || fail prevent-destructive-commands.sh CG34 "the glob ask names a wrong path: '${out:0:300}'"
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts && mv /tmp/x lib/b.ts')"
+    g15_expect CG35 ask "$out" "This writes a TypeScript source from the shell"
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts')"
+    g15_expect CG35b ask "$out" "codegen: src/types/db.ts"
+    mkdir -p "$tmp/stale2"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp/stale2"/
+    sed -i '/^cwk_app_roots() {$/,/^}$/d; s/^    cwk_app_roots$//' "$tmp/stale2/hook-guarded.sh"
+    sed -i 's/ cwk_app_roots >\/dev\/null/ >\/dev\/null/' "$tmp/stale2/hook-lib.sh"
+    out="$(HOOKS_DIR="$tmp/stale2" pd_probe "$c" 'pnpm exec tsc -p frontend; echo x > .claude/settings.json')"
+    g15_expect CG36 deny "$out"
+    # CG37-CG42 (fix batch 3): a brace holding a slash leaves only a closing bracket in the last
+    # segment; nocaseglob and extglob spell a source name the plain comparison never sees.
+    for cmd in 'echo x | tee src/{features/a/a.utils.t?,y.md}' 'tee src/{x/a.t*,y.json}' \
+        'sed -i s/a/b/ src/{features/a/*,y.md}'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG37[$cmd]" ask "$out" "unresolved write target"
+    done
+    for cmd in $'shopt -s nocaseglob\necho x > src/*.TEST.TS' $'shopt -s nocaseglob\necho x > src/*.TS' \
+        $'shopt -s nocaseglob\necho x > app/*.PY' 'shopt -s nocaseglob; echo x > src/*.TEST.TS' \
+        'shopt -s nocaseglob; echo x > src/*.TS' 'shopt -s nocaseglob; echo x > app/*.PY'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG38[$cmd]" ask "$out" "unresolved write target"
+    done
+    for cmd in $'shopt -s extglob\necho x > src/!(*.md)' $'shopt -s extglob\necho x > src/a.!(md)' \
+        $'shopt -s extglob\necho x > src/a.@(ts)' $'shopt -s extglob\necho x > src/a.+(t|s)' \
+        $'shopt -s extglob\ncp /etc/hostname src/a.!(md)'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG39[$cmd]" ask "$out" "unresolved write target"
+    done
+    out="$(pd_probe "$c" 'echo x > src/*/Makefile')"
+    g15_expect CG40 ask "$out" "unresolved write target"
+    g15_expect CG41 ask "$(pd_probe "$c" 'supabase gen types > db[.]ts')" "guarded path"
+    out="$(pd_probe "$c" 'echo x > src/*/a.ts')"
+    g15_expect CG42 ask "$out" "a.ts under src"
+    # CG43-CG49 (fix batch 4): extglob syntax asks without a literal `shopt` (the option is set by
+    # a spelling the text never shows, or by a sourced file); the message names the syntax; a
+    # glob without shopt, a failing lowercase step and a lone `]` still ask.
+    for cmd in $'sh\'\'opt -s extglob\necho x > src/a.!(md)' $'sh\\opt -s extglob\necho x > src/a.!(md)' \
+        $'. f\necho x > src/a.utils.+(ts)' $'source f\necho x > src/a.@(ts)' $'s=sh; ${s}opt -s extglob; echo x > src/a.!(md)' \
+        $'. f\ncp /etc/hostname src/a.!(md)' $'. f\necho x >> src/a.+(ts)'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG43[$cmd]" ask "$out" "unresolved write target" "extglob syntax"
+    done
+    g15_expect CG43mv ask "$(pd_probe "$c" $'. f\nmv /tmp/x src/a.!(md)')"
+    out="$(pd_probe "$c" $'sh\'\'opt -s extglob\necho x > src/a.!(md)')"
+    CASES=$((CASES + 1))
+    [[ "$out" != *"shopt is set"* && "$out" != *"src/a.!:"* && "$out" != *"src/a.!)"* ]] \
+        || fail prevent-destructive-commands.sh CG43m "the extglob ask claims shopt or names a cut path: '${out:0:300}'"
+    out="$(pd_probe "$c" 'echo x > docs/a.md')"
+    g15_expect CG44 pass "$out"
+    out="$(pd_probe "$c" 'echo x > docs/a.md; echo "ok"')"
+    g15_expect CG44b pass "$out"
+    for cmd in 'echo x > src/*.TS' 'echo x > src/*.Tsx' 'echo x > app/*.PY' 'echo x > src/*.TEST.js'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG45[$cmd]" ask "$out" "unresolved write target"
+    done
+    for cmd in $'sh\'\'opt -s nocaseglob\necho x > src/*.TS' $'shopt -u nocaseglob\necho x > src/*.TS'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG46[$cmd]" ask "$out" "unresolved write target"
+    done
+    mkdir -p "$tmp/trfail"
+    printf '#!/bin/sh\ncase "$*" in *upper*) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v tr)" >"$tmp/trfail/tr"
+    chmod +x "$tmp/trfail/tr"
+    out="$(PATH="$tmp/trfail:$PATH" pd_probe "$c" 'echo x > docs/*.md')"
+    g15_expect CG47 ask "$out" "unresolved write target"
+    out="$(pd_probe "$c" 'echo x > src/*/a.json]')"
+    g15_expect CG48 ask "$out" "unresolved write target" "may match a source or test file"
+    out="$(pd_probe "$c" $'shopt -s extglob\necho x > src/a.!(md)')"
+    g15_expect CG39b ask "$out" "uses extglob syntax"
+    for cmd in 'echo x > src/a.?(ts)' 'echo x > src/a.*(ts)'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG49[$cmd]" ask "$out" "unresolved write target"
+    done
+    out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts && echo "a+(b)"')"
+    g15_expect CG49c ask "$out" "codegen: src/types/db.ts"
+    out="$(pd_probe "$c" 'echo x > .')"
+    g15_expect CG50 ask "$out" "the project root written by >"
+    # CG51-CG53 (fix batch 5): bash removes backslash-newline before parsing, so `!\<newline>(md)`
+    # is a live extglob; the text check reads a joined copy. A harmless continuation still passes.
+    for cmd in $'sh\'\'opt -s extglob\necho x > src/a.!\\\n(md)' $'. f\necho x > src/a.utils.+\\\n(ts)' \
+        $'. f\necho x > src/a.@\\\n(ts)' $'. f\necho x > src/a.!\\\n\\\n(md)' $'. f\necho x > src/a.\\\n!\\\n(md)' \
+        $'. f\ncp /etc/hostname src/a.!\\\n(md)' $'. f\necho x | tee src/a.!\\\n(md)' \
+        $'. f\nsed -i s/a/b/ src/a.!\\\n(md)' $'. f\nln -sf /tmp/x src/a.@\\\n(ts)'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG51[$cmd]" ask "$out" "extglob syntax"
+    done
+    out="$(pd_probe "$c" $'. f\nsupabase gen types > src/types/db.ts\necho x > src/a.!\\\n(md)')"
+    g15_expect CG52 ask "$out" "extglob syntax"
+    out="$(pd_probe "$c" $'echo x \\\n> docs/a.md')"
+    g15_expect CG53 pass "$out"
+    rm -r "$tmp"
+}
+
 # G10.04: a reason past 4000 characters is cut and says so.
 run_git_reason_cut_case() {
     local tmp feat out reason i pad
@@ -1639,6 +2242,10 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_git_restore_planted_case
     run_git_foreign_repo_cases
     run_git_reason_cut_case
+    run_project_config_cases
+    run_app_roots_cases
+    run_app_roots_cfg_cases
+    run_codegen_cases
     run_locale_cases
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"

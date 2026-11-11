@@ -520,6 +520,26 @@ def check_ci_scripts() -> list[Finding]:
     return [Finding("ci-scripts", OK, fmt(called))]
 
 
+def check_project_config() -> list[Finding]:
+    """`.claude/project.json` through the hooks' one reader: valid, and every app root exists."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import project_config
+    except ImportError:
+        return [Finding("project-config", DIVERGENCE, "project_config.py missing next to kit-doctor.py")]
+    try:
+        config = project_config.load(str(ROOT))
+    except project_config.ConfigError as error:
+        return [Finding("project-config", DIVERGENCE,
+                        "invalid: the hooks ignore it (no app root, no codegen)", [str(error)])]
+    missing = [root for root in config.app_roots if not (ROOT / root).is_dir()]
+    if missing:
+        return [Finding("project-config", DIVERGENCE, "declared app root(s) missing on disk",
+                        [f"app_roots: {root}" for root in missing])]
+    return [Finding("project-config", OK,
+                    f"{len(config.app_roots)} app root(s), {len(config.codegen_commands)} codegen command(s)")]
+
+
 def check_audit_flags() -> list[Finding]:
     """The dependency audit runs with the same flags in its three copies.
 
@@ -751,7 +771,7 @@ RUNTIME_PATHS = {
 # one per language.
 NON_HOOKS = {
     "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
+    "kit-attempts.py", "kit-measure.py", "project_config.py", "test-attempts.sh", "test-hooks.sh",
     "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
     "test-small-lane.sh", "test-workflow-contracts.sh",
 }
@@ -1298,7 +1318,7 @@ CHECKS = [
                check_shared_dirs,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
-               check_ignored_loop_paths,
+               check_ignored_loop_paths, check_project_config,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_hook_prerequisites, check_hook_wiring, check_github_protection]),

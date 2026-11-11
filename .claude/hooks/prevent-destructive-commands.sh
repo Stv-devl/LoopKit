@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 3
+# cwk-guard-api: 4
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -11,6 +11,13 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+
+# A hook-lib.sh older than this guard may not check cwk_app_roots: calling it would exit 127,
+# which a PreToolUse hook reads as "allow". Refuse instead.
+if ! declare -F cwk_app_roots >/dev/null 2>&1; then
+    echo "BLOCKED: hook-guarded.sh lacks cwk_app_roots (a stale hook-lib.sh or hook-guarded.sh next to this guard), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -402,12 +409,16 @@ if [[ "$PY_WRITE_SEEN" == "1" ]]; then
     deny "$PY_TDD_DENY"
 fi
 
-SRC_WRITE_SEEN=0
+SRC_WRITE_SEEN=0 SRC_VERB_SEEN=0
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     SEG_N="${SEG//\$\'/\'}"
     SEG_N="${SEG_N//\$\"/\"}"
     SEG_N="${SEG_N//[\'\"\\]/}"
-    { echo "$SEG" | grep -qE "$SRC_WRITE_RE"; } || { echo "$SEG_N" | grep -qE "$SRC_VERB_RE"; } || continue
+    if { echo "$SEG_N" | grep -qE "$SRC_VERB_RE"; }; then
+        SRC_VERB_SEEN=1
+    elif ! { echo "$SEG" | grep -qE "$SRC_WRITE_RE"; }; then
+        continue
+    fi
     SRC_WRITE_SEEN=1
     if echo "$SEG_N" | grep -qE "$TDD_TARGET_RE" || echo "$SEG" | grep -qE "$TDD_TARGET_RE"; then
         deny "$TS_TDD_DENY"
@@ -482,6 +493,7 @@ fi
 # the strongest verdict over the whole command. R: acceptEdits auto-approves
 # `rm`, so any other recursive delete inside the project asks.
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
+GUARD_DENY_CG="" GUARD_ASK_CG=""
 GUARD_ASK_F="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
 GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
@@ -492,6 +504,10 @@ fi
 GUARD_ROOT_WHY="It is the project root or a folder above it: deleting or emptying it loses the whole project."
 GUARD_TEST_WHY="A test-first module or a test file is written only with Write/Edit, where the TDD hooks see it (.claude/rules/05-testing.md)."
 GUARD_SOURCE_WRITERS=" sed perl cp tee install rsync ln patch truncate "
+
+guard_show() {
+    if [[ "$1" == . ]]; then printf '%s' 'the project root'; else printf '%s' "$1"; fi
+}
 
 guard_note_deny() {
     [[ -n "$GUARD_DENY" ]] && return 0
@@ -518,14 +534,23 @@ guard_classify_tool() {
             elif [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $CWK_TEST_FILE_RE ]]; then
                 guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
             elif cwk_is_guarded "$rel"; then
-                [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
+                [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
             elif [[ "$verb" == flag-r || "$rel" =~ $GUARD_PROTECTED_RE ]]; then
                 [[ -n "$GUARD_ASK_F" ]] || GUARD_ASK_F="$rel ($verb)"
             fi
             ;;
         cfg)
             if [[ -d "$target" ]]; then
-                [[ "$(cwk_real_path "$target")" == "$GUARD_PROJECT_REAL" ]] && return 0
+                local real root
+                real="$(cwk_real_path "$target")" || real=""
+                [[ -n "$real" && "$real" == "$GUARD_PROJECT_REAL" ]] && return 0
+                # A declared app root (.claude/project.json) is a project of its own: the
+                # real path of the target must be the real path of the declared folder.
+                cwk_app_roots
+                for root in ${__CWK_APP_ROOTS[@]+"${__CWK_APP_ROOTS[@]}"}; do
+                    [[ -n "$real" && -n "$GUARD_PROJECT_REAL" \
+                        && "$real" == "$(cwk_real_path "$GUARD_PROJECT_REAL/$root")" ]] && return 0
+                done
             elif cwk_is_guarded "$rel"; then
                 return 0
             fi
@@ -536,7 +561,12 @@ guard_classify_tool() {
 }
 
 guard_classify() {
-    local verb="$1" target="$2" rel text slot="" plain=1
+    local verb="$1" target="$2" rel text slot="" plain=1 codegen=0 globpat="" globpat_l shopt_chars extglob_re ext
+    # `>cg` (a listed generator's redirect) is shown and handled as `>`, but for its ask.
+    if [[ "$verb" == '>cg' ]]; then
+        verb='>'
+        codegen=1
+    fi
     case "$target" in
         '?inline:'* | '?unknown:'*)
             text="${target#*:}"
@@ -562,7 +592,14 @@ guard_classify() {
             fi
             return 0
             ;;
-        '?glob:'*) target="${target#?glob:}"; plain=0 ;;
+        '?glob:'*)
+            target="${target#?glob:}"
+            plain=0
+            if [[ "$target" == *$'\x1f'* ]]; then
+                globpat="${target#*$'\x1f'}"
+                target="${target%%$'\x1f'*}"
+            fi
+            ;;
     esac
     if [[ "$plain" == 1 && ( "$verb" == rm-r || "$verb" == flag-r ) ]] && guard_is_root_or_above "$target"; then
         guard_note_deny "$target written by $verb" "$GUARD_ROOT_WHY"
@@ -579,6 +616,34 @@ guard_classify() {
         fi
         [[ -n "$GUARD_ASK_O" ]] || GUARD_ASK_O="$target by $verb"
         return 0
+    fi
+    # A write onto a glob may expand to one source or test file the folder row hides: it asks
+    # unless the last segment is plainly a non-source name (docs/*.md passes). A bracket or brace
+    # class can spell any dot, extension or test name (a brace holding a slash leaves only its
+    # closing bracket in the last segment), so any of [ ] { } asks; `*`/`?` alone ask on no dot, a
+    # glob extension, ts/tsx/py, or test/spec in the name, compared in lower case (nocaseglob). A
+    # command that sets a shell option (`shopt`: nocaseglob, extglob) asks on any glob character.
+    # Bash drops backslash-newline before parsing, so `!\<newline>(md)` is a live `!(md)`: the
+    # `shopt` clause and the extglob regex below read a copy with every continuation removed.
+    cmd_joined="${COMMAND//$'\\\n'/}"
+    if [[ -n "$globpat" && ( "$verb" == '>'|| "$verb" == '>>' || "$verb" == mv || "$GUARD_SOURCE_WRITERS" == *" $verb "* ) ]]; then
+        globpat_l="$(printf '%s' "$globpat" | tr '[:upper:]' '[:lower:]')" || globpat_l=""
+        ext="${globpat_l##*.}"
+        shopt_chars='*[][*?{}()|!@+]*'
+        if [[ -z "$globpat_l" || "$globpat" == *[][{}]* || "$globpat_l" != *.*|| "$ext" == *[\*\?]* || "$ext" == ts || "$ext" == tsx || "$ext" == py \
+              || "$globpat_l" == *test* || "$globpat_l" == *spec* \
+              || ( "$cmd_joined" == *shopt* && "$globpat" == $shopt_chars ) ]]; then
+            [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb onto a glob that may match a source or test file: ${globpat:0:50} under ${rel:0:150}"
+        fi
+    fi
+    # Extglob (`a.!(md)`, `@(ts)`, `+(t|s)`) is on whenever any spelling or sourced file sets it, so the
+    # text is the only signal; the target tokenizer cuts the word at the parenthesis, so the call asks.
+    # A listed generator onto a source keeps its own codegen ask.
+    extglob_re='[@!+]\('
+    if [[ "$cmd_joined" =~ $extglob_re \
+          && ( "$verb" == '>' || "$verb" == '>>' || "$verb" == mv || "$GUARD_SOURCE_WRITERS" == *" $verb "* ) ]] \
+        && ! [[ "$codegen" == 1 && "$rel" =~ \.(tsx?|py)$ ]]; then
+        [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb in a command that uses extglob syntax (@(, !( or +( ), which can name a source or test file the guard cannot resolve"
     fi
     if [[ "$verb" == rm && "$rel" =~ ^\.git/(worktrees/[^/]+/)?(refs/([^/]+/)*)?[^/]+\.lock$ ]]; then
         # A stale lock (`.git/index.lock`, `.git/refs/heads/x.lock`, a linked worktree's
@@ -599,11 +664,18 @@ guard_classify() {
             [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$TS_TDD_DENY"
         elif [[ -n "${CWK_TDD_PY_TARGET_RE:-}" && "$rel" =~ $CWK_TDD_PY_TARGET_RE ]]; then
             [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$PY_TDD_DENY"
-        else
-            [[ "$rel" =~ \.tsx?$ ]] && SRC_WRITE_SEEN=1
-            if cwk_is_guarded "$rel"; then
-                [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
+        elif [[ "$rel" =~ \.(tsx?|py)$ ]]; then
+            # A source written by a redirect skips every Write/Edit guardrail: denied, but
+            # for a generator listed in .claude/project.json onto an unguarded file.
+            if [[ "$codegen" == 1 && "$rel" =~ $CWK_TEST_FILE_RE ]]; then
+                guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
+            elif [[ "$codegen" == 1 ]] && ! cwk_is_guarded "$rel"; then
+                [[ -n "$GUARD_ASK_CG" ]] || GUARD_ASK_CG="$rel"
+            else
+                [[ -n "$GUARD_DENY_CG" ]] || GUARD_DENY_CG="$rel"
             fi
+        elif cwk_is_guarded "$rel"; then
+            [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
         fi
     elif [[ "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$rel" =~ \.(tsx?|py)$ ]]; then
         # An in-place or copy write of a source goes around every Write/Edit guardrail:
@@ -618,8 +690,8 @@ guard_classify() {
     elif [[ "$verb" == flag-r || "$verb" == flag-w || "$verb" == cfg ]]; then
         guard_classify_tool "$verb" "$target" "$rel"
     elif cwk_is_guarded "$rel"; then
-        [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$rel written by $verb"
-    elif [[ "$verb" == mv && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+        [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
+    elif [[ "$verb" == mv &&"$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_M" ]] || GUARD_ASK_M="$rel"
     elif [[ "$verb" == rm-r && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
@@ -669,6 +741,11 @@ while IFS= read -r SEG; do
     done
 done < <(cwk_segments "$COMMAND")
 set +f
+
+# The codegen deny comes after every other deny, the eslint test-file one included.
+if [[ -n "$GUARD_DENY_CG" ]]; then
+    deny "BLOCKED: $GUARD_DENY_CG written by a redirect.\\n\\nThis writes a source from the shell, around every Write/Edit guardrail. Use Write/Edit; a generator listed in .claude/project.json codegen_commands may redirect with >."
+fi
 
 # The text fallback's ask half: a guarded name, a heredoc, a redirect or a writer verb.
 guard_text_writes() {
@@ -827,6 +904,10 @@ set +f
 
 if [[ -n "$FORMAT_WIDE" ]]; then
     ask "This runs a formatter in write mode on a whole folder ($FORMAT_WIDE).\n\nOn a track it rewrites files the diff never touched and turns into rebase conflicts later (.claude/guides/10-worktrees.md); in Python it can rewrite the frozen tests/services/ past the freeze. The on-save hooks (format-on-save.sh, ruff-on-save.sh) already format each file as it is written; to format by hand, name the changed files: git diff --name-only.\n\nIf the whole-folder pass is deliberate (a one-off formatting commit on its own), say so and let the user decide."
+fi
+
+if [[ -n "$GUARD_ASK_CG" && "$SRC_VERB_SEEN" != 1 ]]; then
+    ask "codegen: $GUARD_ASK_CG is written by a generator listed in .claude/project.json. Say what it generates, then let the user decide."
 fi
 
 if [[ "$SRC_WRITE_SEEN" == "1" ]]; then

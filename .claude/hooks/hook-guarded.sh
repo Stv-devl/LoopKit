@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 3
+# cwk-guard-api: 4
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -24,6 +24,7 @@ CWK_GUARDED=(
     '.claude/settings.local.json'
     '.claude/.tdd-unfrozen'      # the freeze's escape hatch
     '.claude/.size-exempt'       # the size limits' escape hatch
+    '.claude/project.json'       # app roots and codegen commands: it widens a pass
     'vitest.config.*'
     'eslint.config.*'            # the lint that forbids assertionless tests
     'vite.config.*'              # the coverage floor lives here
@@ -59,6 +60,30 @@ cwk_guard_denied_why() {
     esac
 }
 
+# The root config patterns a declared app root (`.claude/project.json` `app_roots`)
+# guards under itself, like the repo root does above.
+CWK_APP_ROOT_PATTERNS=('vitest.config.*' 'eslint.config.*' 'vite.config.*' 'playwright.config.*'
+                       'package.json' 'tsconfig*.json')
+__CWK_GUARD_LIB_DIR="${BASH_SOURCE[0]%/*}"
+__CWK_APP_ROOTS_LOADED=0
+__CWK_APP_ROOTS=()
+
+# cwk_app_roots: fill __CWK_APP_ROOTS from the project's `.claude/project.json`, once per
+# process, through the one reader. A missing, invalid or unreadable file gives no root:
+# the reader prints nothing then, so nothing is ever guarded or passed from a bad file.
+cwk_app_roots() {
+    local root out status=0
+    [[ "$__CWK_APP_ROOTS_LOADED" == 1 ]] && return 0
+    __CWK_APP_ROOTS_LOADED=1
+    [[ "${CLAUDE_PROJECT_DIR:-}" == /* ]] || return 0
+    out="$(python3 -I -B "$__CWK_GUARD_LIB_DIR/project_config.py" roots "$CLAUDE_PROJECT_DIR" 2>/dev/null)" || status=$?
+    [[ "$status" == 0 ]] || return 0
+    while IFS= read -r root || [[ -n "$root" ]]; do
+        [[ -n "$root" ]] && __CWK_APP_ROOTS+=("$root")
+    done <<<"$out"
+    return 0
+}
+
 # The folder a pattern lives in: its text up to the first glob character, cut
 # back to the last `/` (`.claude/hooks/*` → `.claude/hooks`, `vite.config.*` → `.`).
 __cwk_guard_dir() {
@@ -82,6 +107,14 @@ cwk_is_guarded() {
         [[ "$rel" == $pattern ]] && return 0
         dir="$(__cwk_guard_dir "$pattern")"
         [[ "$rel" == "$dir" || "$dir" == "$rel"/* ]] && return 0
+    done
+    cwk_app_roots
+    for dir in ${__CWK_APP_ROOTS[@]+"${__CWK_APP_ROOTS[@]}"}; do
+        [[ "$rel" == "$dir" || "$dir" == "$rel"/* ]] && return 0
+        for pattern in "${CWK_APP_ROOT_PATTERNS[@]}"; do
+            # shellcheck disable=SC2053
+            [[ "$rel" == "$dir"/$pattern ]] && return 0
+        done
     done
     return 1
 }

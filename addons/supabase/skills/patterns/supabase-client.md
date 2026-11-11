@@ -53,6 +53,8 @@ Vite builds, whatever the variable is called.
 supabase gen types --linked > src/types/database.types.ts
 ```
 
+The redirect needs `["supabase","gen","types"]` in `.claude/project.json` `codegen_commands` (a guarded file; `/kit:init` proposes it), else the shell guard denies it.
+
 Regenerate it **in the same change as the migration**. Without it the gateway
 types its rows by hand, drifts from the schema, and `any` comes back in through
 the one door `03-conventions.md` closed.
