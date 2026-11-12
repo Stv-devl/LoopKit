@@ -2017,6 +2017,33 @@ run_codegen_cases() {
     g15_expect CG52 ask "$out" "extglob syntax"
     out="$(pd_probe "$c" $'echo x \\\n> docs/a.md')"
     g15_expect CG53 pass "$out"
+    # CG54-CG60 (tmp-glob-escape): a /tmp target holding `..` is not exempt (the glob segment walks
+    # back up to /, then down to the project); /dev/fd/N past 0-2 asks; plain /tmp, /dev/null and
+    # /dev/fd/0-2 keep passing. "not pass" = ask or deny.
+    local up="/tmp/*/../.." verdict id id_cmd
+    for id_cmd in "CG54|echo x > $up$c/.claude/settings.json" "CG55|echo x > $up$c/src/a.py" \
+        "CG56|echo x > $up$c/src/a.utils.t?" "CG57|echo x > /tmp/..$c/src/a.py"; do
+        id="${id_cmd%%|*}"
+        cmd="${id_cmd#*|}"
+        out="$(pd_probe "$c" "$cmd")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+    done
+    for cmd in "exec 9<\"$c\"; echo x > /dev/fd/9/.claude/settings.json" \
+        "exec 9<\"$c\"
+echo x > /dev/fd/9/.claude/settings.json"; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG58[$cmd]" ask "$out"
+    done
+    out="$(pd_probe "$c" 'echo x > /dev/fd/9')"
+    g15_expect CG59 ask "$out"
+    for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /tmp/*.log' 'echo x > /dev/fd/2' \
+        'echo x > /dev/null'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG60[$cmd]" pass "$out"
+    done
     rm -r "$tmp"
 }
 

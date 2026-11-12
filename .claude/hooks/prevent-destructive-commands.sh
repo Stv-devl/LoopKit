@@ -608,7 +608,7 @@ guard_classify() {
     if ! rel="$(cwk_guard_rel "$target")"; then
         [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] || return 0
         case "$target" in
-            /dev/null | /dev/stdout | /dev/stderr | /dev/fd/*) return 0 ;;
+            /dev/null | /dev/stdout | /dev/stderr | /dev/fd/0 | /dev/fd/1 | /dev/fd/2) return 0 ;;
         esac
         if [[ "$verb" != rm-r && "$verb" != flag-r && "$verb" != cfg ]] \
             && [[ "$target" == /tmp || "$target" == /tmp/* ]]; then

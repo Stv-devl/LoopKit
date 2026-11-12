@@ -147,8 +147,13 @@ Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/
   - Batch-4 trade-off: the extglob ask is command-wide, so a quoted or commented `!(` / `+(` gives a false ask (`awk '!(NR%2)' f > docs/x.md`).
   - kit-doctor scans `.claude/worktrees/*` stray folders: an untracked `.claude/worktrees/pr-screenshots` produced 3 false divergences.
 - From the `app-roots-codegen` batch-5 security re-review (2026-11-11), pre-existing at HEAD, shipped as follow-ups by user decision:
-  - **Major, next pass first**: a glob before `..` in a `/tmp` target passes any in-project write and skips the glob/extglob checks: `echo x > /tmp/claude-1*/../../<project>/.claude/settings.json` passes, so do `src/a.py` and `src/a.utils.t?` (proven in real bash). When `cwk_guard_rel` fails on a glob target it falls back to the pre-glob prefix `/tmp`, and the exemption (`prevent-destructive-commands.sh:608-616`) returns first. Fix: the `/tmp` and `/dev/fd/*` exemptions apply only to a plain target with no glob and no `..` component.
-  - A directory fd: `exec 9<"$PROJECT"; echo x > /dev/fd/9/.claude/settings.json` passes (the `/dev/fd/*` exemption is textual; real bash wrote through `/dev/fd/9/src/a.py`).
+  - Fixed by `tmp-glob-escape` (2026-11-12): a `..` after a glob cut, and `/dev/fd/N` past 0-2 (CG54-CG60).
+- From the `tmp-glob-escape` review (2026-11-12), pre-existing at HEAD, next `/loop:debug` (rethink the `/tmp` and `/dev/fd` exemptions):
+  - **Critical**: fds 0-2 re-bound read-only to a project file: `echo x 1<$P/src/a.py >/dev/fd/1`, `exec 2<$P/.claude/settings.json; echo x > /dev/stderr` (or `/dev/fd/2`, `/dev/fd/0`) write into it (proven in real bash).
+  - **Critical**: a brace hides `..` from the new check (`shell_targets.py:1808` splits raw text): `echo x | tee /tmp/{.,}.$P/src/a.py`, `tee -a …settings.json`, `cp f /tmp/{.,}.$P/src/a.py /tmp/` pass.
+  - **Major**: a glob matching `..` (`.?`, `.[.]`, `.*` with `globskipdots` off, default before bash 5.2): `shopt -u globskipdots; echo x > /tmp/.[.]$P/.claude/settings.json` passes; the shopt/extglob checks run after the `/tmp` return.
+  - **Major**: symlinks under `/tmp`: `ln -s $P/.claude $S/l && echo x > $S/l/settings.json`, a pre-existing link plus `..` (`$S/preB/../.claude/…`, resolved lexically), a glob through a link, a final-component link (`$S/x.log` → `$P/src/a.py`) via `>`, `tee`, `cp` all pass. A lexical check cannot close this.
+  - Minor: no test pins a `..` after a `?`/`[`/brace cut, nor `/dev/fd/1/x`, `/dev/fd/01`; CG57 already denied before the fix (regression guard, not a repro); the glob-`..` check also asks outside `/tmp` (`rm src/*/../a.txt`, fail-closed, unpinned); ask messages name the wrong cause (glob-`..` reads as "a variable…", `/dev/fd/9/…` as "outside the project").
   - Aliases that write: `shopt -s expand_aliases⏎alias w='echo x > src/a.py'⏎w` passes (line 134 covers `cd` aliases only).
   - Minor: `cmd_joined` is not declared `local` in `guard_classify` (no verdict effect).
 

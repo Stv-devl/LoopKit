@@ -1805,6 +1805,8 @@ def target(word, directory):
     if is_glob(word):
         cuts = [word.index(c) for c in "*?[" if c in word]
         cuts += [m.start() for m in GLOB_BRACE.finditer(word)]
+        if ".." in unhide(word[min(cuts):]).split("/"):
+            return "?unknown:" + show(word)
         prefix = os.path.dirname(unhide(word[:min(cuts)]))
         if not prefix.startswith("/") and directory is None:
             return "?unknown:" + show(word)
