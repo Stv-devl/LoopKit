@@ -7,7 +7,8 @@ Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
 `#end\t<line count>`.
 
 Prints `<verb>\t<target>` rows, then always `#end\t<row count>`. A target is an
-absolute normalised path, `?glob:<abs folder>` (then a unit separator and the word's last segment pattern), `?unknown:<text>` or
+absolute normalised path, `?glob:<abs folder>` (then a unit separator and the word's last segment pattern),
+`?tmp:<lexical /tmp path>` (then a unit separator and its physical path or `?`), `?unknown:<text>` or
 `?inline:<program>`. It resolves, never classifies: prevent-destructive-commands.sh
 asks hook-guarded.sh about each row. Any failure exits nonzero and the hook falls
 back to its text rules. Contract: docs/work/guard-shell/plan.md.
@@ -625,7 +626,7 @@ class Walker:
         for row in rows:
             if row not in unique:
                 unique.append(row)
-        order = {"path": 0, "?glob": 0, "?unknown": 1, "?inline": 2}
+        order = {"path": 0, "?glob": 0, "?tmp": 0, "?unknown": 1, "?inline": 2}
         unique.sort(key=lambda row: order[kind(row[1])])
         self.rows.extend(unique)
         self.follow(seg, state, words)
@@ -756,10 +757,22 @@ class Walker:
         return rows
 
     def exec_rows(self, cmd, roots, state, in_matched_dir):
-        """Resolve the executed command once per root, `{}` standing for the matches under it."""
+        """Resolve the executed command once per root, `{}` standing for the matches under it.
+
+        A `?tmp:` root runs twice: on its lexical side (a project path is guarded as written) and on
+        its physical side (where a link leads), or `?unknown` when that side cannot be known.
+        """
         rows = []
+        resolved_roots = []
         for root in roots:
             resolved = target(root, state.dir)
+            if resolved.startswith("?tmp:"):
+                lexical, physical = resolved[len("?tmp:"):].rsplit(GLOB_NAME_SEP, 1)
+                resolved_roots.append(lexical)
+                resolved_roots.append(physical if physical.startswith("/") else "?unknown:" + show(root))
+            else:
+                resolved_roots.append(resolved)
+        for resolved in resolved_roots:
             if not resolved.startswith("/"):
                 rows.append((os.path.basename(cmd[0]) if cmd else "find", resolved))
                 continue
@@ -1798,8 +1811,62 @@ def is_glob(word):
     return any(c in word for c in "*?[") or GLOB_BRACE.search(word) is not None
 
 
+def under_tmp(path):
+    return path == "/tmp" or path.startswith("/tmp/")
+
+
+def under(path, root):
+    return path == root or path.startswith(root + "/")
+
+
+def tmp_physical(path):
+    """Where a write to a /tmp path lands: None when no link moves it, "?" when unknowable.
+
+    Links are followed in order and `..` is applied after them, as the kernel does. A link into
+    /proc or /dev is never followed (it would resolve in this process, not in the shell's), and
+    an existing file with a second hard link may be a project file: both are "?".
+    """
+    queue = [p for p in path.split("/") if p]
+    current, hops = "/", 0
+    while queue:
+        seg = queue.pop(0)
+        if seg == ".":
+            continue
+        if seg == "..":
+            current = os.path.dirname(current)
+            continue
+        step = os.path.join(current, seg)
+        if os.path.islink(step):
+            hops += 1
+            dest = os.readlink(step)
+            if hops > 40 or under(step, "/proc") or under(step, "/dev") \
+                    or under(os.path.normpath(os.path.join(current, dest)), "/proc") \
+                    or under(os.path.normpath(os.path.join(current, dest)), "/dev"):
+                return "?"
+            if dest.startswith("/"):
+                current = "/"
+            queue = [p for p in dest.split("/") if p] + queue
+            continue
+        current = step
+    try:
+        info = os.stat(current)
+        if os.path.isfile(current) and info.st_nlink > 1:
+            return "?"
+    except OSError:
+        pass
+    lexical = os.path.normpath(path)
+    if current == os.path.realpath("/tmp") + lexical[len("/tmp"):]:
+        return None
+    return current
+
+
 def target(word, directory):
-    """The row target of an operand, joined to the tracked directory."""
+    """The row target of an operand, joined to the tracked directory.
+
+    A plain /tmp operand a link moves, or with a second hard link, is
+    `?tmp:<lexical><US><physical or ?>`: write verbs take the physical side, while rm, mv and ln act
+    on the link itself and take the lexical one.
+    """
     if has_live(word) or word.startswith("~"):
         return "?unknown:" + show(word)
     if is_glob(word):
@@ -1815,7 +1882,15 @@ def target(word, directory):
     raw = unhide(word)
     if not raw.startswith("/") and directory is None:
         return "?unknown:" + show(word)
-    return flat_text(os.path.normpath(os.path.join(directory or "/", raw)))
+    joined = os.path.join(directory or "/", raw)
+    lexical = os.path.normpath(joined)
+    if under_tmp(lexical):
+        physical = tmp_physical(joined)
+        if physical is not None and GLOB_NAME_SEP in lexical + physical:
+            return "?unknown:" + show(word)
+        if physical is not None:
+            return "?tmp:" + flat_text(lexical) + GLOB_NAME_SEP + flat_text(physical)
+    return flat_text(lexical)
 
 
 def main(argv):

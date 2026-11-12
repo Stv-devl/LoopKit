@@ -1889,8 +1889,7 @@ run_codegen_cases() {
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG28[$cmd]" ask "$out" "unresolved write target"
     done
-    for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log' 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md' \
-        'echo x > /tmp/*.log'; do
+    for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log' 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG29[$cmd]" pass "$out"
     done
@@ -2039,11 +2038,126 @@ echo x > /dev/fd/9/.claude/settings.json"; do
     done
     out="$(pd_probe "$c" 'echo x > /dev/fd/9')"
     g15_expect CG59 ask "$out"
-    for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /tmp/*.log' 'echo x > /dev/fd/2' \
+    for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /dev/fd/2' \
         'echo x > /dev/null'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG60[$cmd]" pass "$out"
     done
+    # CG61-CG70 (tmp-exemption): an fd alias re-bound to a project file, a brace or glob that
+    # expands to `..`, and a symlink under /tmp (made beforehand or in the same command, mid-path or
+    # final) all land in the project, so they do not pass; plain /tmp and stderr usage keeps passing.
+    local s
+    s="$(mktemp -d /tmp/cg-tmpx.XXXXXX)"
+    mkdir -p "$s/ok" "$c/.claude"
+    : >"$c/src/a.py"
+    ln -s "$c/src" "$s/preB"
+    ln -s "$c/src/a.py" "$s/x.log"
+    for id_cmd in "CG61|echo x 1<$c/src/a.py >/dev/fd/1" \
+        "CG62|exec 2<$c/.claude/settings.json; echo x > /dev/stderr" \
+        "CG62|exec 2<$c/.claude/settings.json; echo x > /dev/fd/2" \
+        "CG63|echo x 0<$c/src/a.py >/dev/fd/0" \
+        "CG64|echo x | tee /tmp/{.,}.$c/src/a.py" \
+        "CG65|shopt -u globskipdots; echo x > /tmp/.[.]$c/.claude/settings.json" \
+        "CG65|shopt -u globskipdots; echo x > /tmp/.?$c/.claude/settings.json" \
+        "CG65|shopt -u globskipdots; echo x > /tmp/.*$c/.claude/settings.json" \
+        "CG66|ln -s $c/.claude $s/l && echo x > $s/l/settings.json" \
+        "CG67|echo x > $s/preB/../.claude/settings.json" \
+        "CG68|echo x > $s/pre?/a.py" \
+        "CG69|echo x > $s/x.log" "CG69|echo x | tee $s/x.log" "CG69|cp /etc/hostname $s/x.log" \
+        "CG69|echo x > $s/*.log"; do
+        id="${id_cmd%%|*}"
+        cmd="${id_cmd#*|}"
+        out="$(pd_probe "$c" "$cmd")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+    done
+    for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /dev/null' \
+        'echo x >&2' 'ls 2>&1' 'ls 2>/dev/fd/2' 'echo x >/dev/stderr' 'echo x | tee /dev/stderr' \
+        'sort < in.txt > /dev/stdout' 'pnpm test:run 2>&1 | tee /tmp/x.log' "echo x > $s/ok/out.txt"; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG70[$cmd]" pass "$out"
+    done
+    # CG71-CG79 (tmp-exemption revision 2, after review 1/3): every /tmp glob asks (R2), fd
+    # bindings follow dup chains (R1), a /tmp write resolves physically for write verbs only and
+    # asks on /proc, /dev or hard links (R3), any spelling of a link maker asks (R4); a link
+    # removed, moved or re-pointed keeps its lexical target. CG60/CG70's `/tmp/*.log` now asks (R2).
+    out="$(pd_probe "$c" 'echo x > /tmp/*.log')"
+    g15_expect "CG60-R2" ask "$out"
+    mkdir -p "$s/s2" "$s/s3" "$c/docs"
+    : >"$c/docs/n.md"
+    for id in a b c d; do ln -s "$c/docs/n.md" "$s/s2/$id.log"; done
+    ln -s "$c/src/a.py" "$s/s2/z.log"
+    ln -s "$c/src" "$s/s3/.h"
+    ln -s /dev/stderr "$s/errl"
+    ln -s "$c/.claude/settings.json" "$s/set.lnk"
+    : >"$c/.claude/settings.json"
+    local hard=0
+    ln "$c/src/a.py" "$s/hard" 2>/dev/null && hard=1
+    for id_cmd in "CG71|shopt -u globskipdots; echo x > /tmp/.[.]$c/src/a.py" \
+        "CG71|shopt -u globskipdots; echo x > /tmp/.?$c/src/a.py" \
+        "CG71|shopt -u globskipdots; echo x > /tmp/.*$c/src/a.py" \
+        "CG72|echo x 3<$c/src/a.py 2>&3 >/dev/fd/2" \
+        "CG72|exec 1<$c/.claude/settings.json 2>&1; echo x > /dev/stderr" \
+        "CG72|exec 3<$c/.claude/settings.json; exec 1>&3; echo x > /dev/stdout" \
+        "CG73|/bin/ln -s $c/src/a.py $s/l9 && echo x > $s/l9" \
+        "CG73|'ln' -s $c/src/a.py $s/l9 && echo x > $s/l9" \
+        "CG73|cp --sym $c/src/a.py $s/l9 && echo x > $s/l9" \
+        "CG73|cp -a $s/x.log $s/l9 && echo x > $s/l9" \
+        "CG74|echo x | tee $s/s2/*.log" \
+        "CG75|echo x > $s/[^x]reB/a.py" \
+        "CG75|shopt -s dotglob; echo x > $s/s3/*/a.py" \
+        "CG76|exec 2<$c/.claude/settings.json; echo x > $s/errl"; do
+        id="${id_cmd%%|*}"
+        cmd="${id_cmd#*|}"
+        out="$(pd_probe "$c" "$cmd")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+    done
+    if [[ "$hard" == 1 ]]; then
+        out="$(pd_probe "$c" "echo x > $s/hard")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "CG77" "expected ask or deny, got $verdict '${out:0:200}'"
+    else
+        printf 'skip CG77: /tmp and the fixture project are on different filesystems\n' >&2
+    fi
+    for cmd in "rm $s/set.lnk" "unlink $s/set.lnk" "mv $s/set.lnk $s/ok/" "ln -sfn $c/src/a.py $s/x2.log" \
+        "awk '\$1<10' f > /dev/stdout" $'cp a /tmp/b\nls -l'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG78-79[$cmd]" pass "$out"
+    done
+    # CG80-CG82 (tmp-exemption revision 3, after review 2/3): find -exec through a /tmp link root,
+    # /dev/stdin no longer exempt, a unit separator in a /tmp link name.
+    ln -s "$c/.claude/settings.json" "$s/L"$'\x1f'
+    for id_cmd in "CG80|find $s/preB/ -name '*.py' -exec sed -i s/x/y/ {} +" \
+        "CG81|echo x a2<$c/src/a.py >/dev/stdin" "CG81|true&&<$c/src/a.py echo x >/dev/stdin" \
+        "CG82|echo x > $s/L"$'\x1f'; do
+        id="${id_cmd%%|*}"
+        cmd="${id_cmd#*|}"
+        out="$(pd_probe "$c" "$cmd")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+    done
+    # CG83 (review 3/3): a find root inside the project that links into /tmp is still guarded as
+    # written (`.claude` -> a /tmp folder), not only on its physical side.
+    mkdir -p "$tmp/p2" "$s/shc"
+    : >"$s/shc/settings.json"
+    ln -s "$s/shc" "$tmp/p2/.claude"
+    for cmd in "cd $tmp/p2 && find .claude/ -exec /bin/rm {} +" "find $tmp/p2/.claude/ -exec unlink {} \\;"; do
+        out="$(pd_probe "$tmp/p2" "$cmd")"
+        verdict="${out%%$'\n'*}"
+        CASES=$((CASES + 1))
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || fail prevent-destructive-commands.sh "CG83[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+    done
+    rm -r "$s"
     rm -r "$tmp"
 }
 

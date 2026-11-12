@@ -148,7 +148,49 @@ Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/
   - kit-doctor scans `.claude/worktrees/*` stray folders: an untracked `.claude/worktrees/pr-screenshots` produced 3 false divergences.
 - From the `app-roots-codegen` batch-5 security re-review (2026-11-11), pre-existing at HEAD, shipped as follow-ups by user decision:
   - Fixed by `tmp-glob-escape` (2026-11-12): a `..` after a glob cut, and `/dev/fd/N` past 0-2 (CG54-CG60).
-- From the `tmp-glob-escape` review (2026-11-12), pre-existing at HEAD, next `/loop:debug` (rethink the `/tmp` and `/dev/fd` exemptions):
+- From the `tmp-exemption` review 2/3 (2026-11-12). The user chose to ship revision 3 and move
+  these to a spec, **`guard-tokenizer-fd-links`**. Its direction: emit fd-binding rows and
+  link-maker rows from the `shell_targets.py` tokenizer instead of reading the raw text in
+  bash, and split the /tmp and fd exemption out of `guard_classify`.
+  - **Critical, first in line (pre-existing at HEAD; found by review 3/3)**: a `?tmp:` row takes
+    its physical side only for `>`, `>>` and the source writers other than `ln`. Every other
+    verb that writes or deletes through the link keeps the lexical /tmp side, and the /tmp
+    exemption lets it pass:
+    - `find <tmp link to src>/ -delete` removed `src/a.py` in real bash, while the direct form
+      is denied;
+    - `find . -fprint <tmp link to package.json>` overwrote `package.json`;
+    - `shred`, `chmod 600`, `curl --output` and a flag-w `--outputFile=` through a /tmp link
+      also pass.
+    - Fix direction: the physical side applies to every verb except the final-component
+      `rm`/`unlink`/`mv`/`ln`, rather than a whitelist of writers.
+  - Minor (review 3/3), all fail-closed:
+    - A `find` root whose physical side is `?` asks even for `-exec cat`.
+    - `find /tmp/x -exec sed -i … {} +` now asks under R2.
+    - A unit separator in the name of a /tmp link's target makes writes under it ask.
+  - **Critical (pre-existing at HEAD)**: gaps in the R1 regex on `/dev/fd/0-2`:
+    `echo x a2<$P/src/a.py >/dev/fd/0`, `true&&<f`, `2>&1<f`, `>&2<f`, `$<f`. A here-string
+    `<<<` is read as binding fd 0 by accident.
+  - **Critical (pre-existing)**: link makers that R4's word list misses:
+    - `l'n'`, `l''n`, `l\n`, `c'p' -s`;
+    - `rsync -a`, `cp -r`/`-R` (links are copied as links), `mv` of an existing link, `tar -x`.
+    - R4 should become "another command in the call creates something under /tmp", not a
+      list of names.
+  - **Major (pre-existing)**: mv/rm/ln through a /tmp glob that crosses a link to a folder, e.g.
+    `mv $S/evil $R/c?/settings.json` with `cl` → `$P/.claude`. The R2 write-verb carve-out
+    skips `mv`/`rm`/`ln`.
+  - **Major (pre-existing)**: `cd -P <link>/..` is folded lexically by `resolve_in`
+    (`shell_targets.py:476`).
+  - **Major**: SOLID O in `guard_classify`, a growing ladder of target kinds. The write-verb
+    test is copied 4 times (`>`/`>>`/source writers minus `ln`, and a variant that includes
+    `mv`); one `guard_is_write_verb` helper should replace the copies.
+  - Minor:
+    - False asks on any `ln`/`link` word: `grep -rn link src > /tmp/hits.txt`,
+      `echo 'see the link' > /tmp/notes.txt`, `echo x > /tmp/ln`, `cp --verbose a /tmp/b`,
+      `echo $((1<2)) > /dev/stdout`.
+    - A skipped CG77 is not counted.
+    - The CG74/CG75 link fixtures are inert under R2.
+- From the `tmp-glob-escape` review (2026-11-12): **closed by `tmp-exemption`**, except what is
+  listed just above.
   - **Critical**: fds 0-2 re-bound read-only to a project file: `echo x 1<$P/src/a.py >/dev/fd/1`, `exec 2<$P/.claude/settings.json; echo x > /dev/stderr` (or `/dev/fd/2`, `/dev/fd/0`) write into it (proven in real bash).
   - **Critical**: a brace hides `..` from the new check (`shell_targets.py:1808` splits raw text): `echo x | tee /tmp/{.,}.$P/src/a.py`, `tee -a …settings.json`, `cp f /tmp/{.,}.$P/src/a.py /tmp/` pass.
   - **Major**: a glob matching `..` (`.?`, `.[.]`, `.*` with `globskipdots` off, default before bash 5.2): `shopt -u globskipdots; echo x > /tmp/.[.]$P/.claude/settings.json` passes; the shopt/extglob checks run after the `/tmp` return.

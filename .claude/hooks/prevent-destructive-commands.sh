@@ -494,7 +494,7 @@ fi
 # `rm`, so any other recursive delete inside the project asks.
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
 GUARD_DENY_CG="" GUARD_ASK_CG=""
-GUARD_ASK_F="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
+GUARD_ASK_F="" GUARD_ASK_T="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
 GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
 GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
 GUARD_PROJECT_REAL=""
@@ -560,6 +560,48 @@ guard_classify_tool() {
     return 0
 }
 
+# Whether fd $1 may point at a path: a read redirect binds an fd (a bare `<`/`<>` is fd 0; `<<`,
+# `<(` are not paths), a dup `N>&M`/`N<&M` copies M's binding to N (`>&M` is fd 1, `<&M` fd 0),
+# repeated until nothing changes. A `{var}` fd binds an unknown fd, so every alias counts as bound.
+# Order is ignored (fail-closed). `$1<10` is awk, not a redirect.
+guard_fd_bound() {
+    local want="$1" rest="${COMMAND//$'\\\n'/}" re n op m next bound=" " pair changed
+    local -a dups=()
+    [[ "$rest" =~ \{[A-Za-z_][A-Za-z0-9_]*\}[\<\>] ]] && return 0
+    re='(^|[^0-9<>&$])([0-9]*)(<>|<&|>&|<)([0-9]*)(.?)'
+    while [[ "$rest" =~ $re ]]; do
+        n="${BASH_REMATCH[2]}" op="${BASH_REMATCH[3]}" m="${BASH_REMATCH[4]}" next="${BASH_REMATCH[5]}"
+        rest="${rest#*"${BASH_REMATCH[0]}"}"
+        case "$op" in
+            '<>') bound+="${n:-0} " ;;
+            '<') [[ -n "$m" || ( "$next" != '<' && "$next" != '(' ) ]] && bound+="${n:-0} " ;;
+            '<&') [[ -n "$m" ]] && dups+=("${n:-0}:$m") ;;
+            '>&') [[ -n "$m" ]] && dups+=("${n:-1}:$m") ;;
+        esac
+    done
+    changed=1
+    while [[ "$changed" == 1 ]]; do
+        changed=0
+        for pair in "${dups[@]}"; do
+            if [[ "$bound" == *" ${pair#*:} "* && "$bound" != *" ${pair%%:*} "* ]]; then
+                bound+="${pair%%:*} "
+                changed=1
+            fi
+        done
+    done
+    [[ "$bound" == *" $want "* ]]
+}
+
+# Whether the command makes a link, which a later /tmp write may follow before it exists: a word
+# named ln or link under any path prefix or quoting, or cp with -s/-l/-a/-P/-d or any long option.
+# The scan of cp's options stops at a newline, `;`, `&` or `|`.
+guard_makes_link() {
+    local text="${COMMAND//$'\\\n'/}" nl=$'\n' re_ln re_cp
+    re_ln="(^|[^[:alnum:]_.-])['\"\\\\]*(ln|link)['\"]*([[:space:]]|$)"
+    re_cp="(^|[^[:alnum:]_.-])['\"\\\\]*cp['\"]*[[:space:]]([^;&|${nl}]*[[:space:]])?(-[[:alnum:]]*[slaPd][[:alnum:]]*|--[[:alnum:]])"
+    [[ "$text" =~ $re_ln || "$text" =~ $re_cp ]]
+}
+
 guard_classify() {
     local verb="$1" target="$2" rel text slot="" plain=1 codegen=0 globpat="" globpat_l shopt_chars extglob_re ext
     # `>cg` (a listed generator's redirect) is shown and handled as `>`, but for its ask.
@@ -592,12 +634,37 @@ guard_classify() {
             fi
             return 0
             ;;
+        '?tmp:'*)
+            # A /tmp path a link moves (or a hard-linked file): a write lands on the physical side,
+            # while rm, unlink, mv and ln act on the link itself. A lexical path inside the project
+            # is guarded as written.
+            target="${target#?tmp:}"
+            local physical="${target#*$'\x1f'}"
+            target="${target%%$'\x1f'*}"
+            if ! cwk_guard_rel "$target" >/dev/null \
+                && [[ "$verb" == '>' || "$verb" == '>>' \
+                    || ( "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$verb" != ln ) ]]; then
+                if [[ "$physical" == '?' ]]; then
+                    [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: a link into /proc or /dev, or a second hard link, decides where it lands"
+                    return 0
+                fi
+                target="$physical"
+            fi
+            ;;
         '?glob:'*)
             target="${target#?glob:}"
             plain=0
             if [[ "$target" == *$'\x1f'* ]]; then
                 globpat="${target#*$'\x1f'}"
                 target="${target%%$'\x1f'*}"
+            fi
+            # A /tmp glob outside the project: bash's expansion, its shell options and the links
+            # it meets cannot be replayed here, so it asks.
+            if [[ ( "$target" == /tmp || "$target" == /tmp/* ) && ( "$verb" == '>' || "$verb" == '>>' \
+                    || ( "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$verb" != ln ) ) ]] \
+                && ! cwk_guard_rel "$target" >/dev/null; then
+                [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target/${globpat:0:50} by $verb: a /tmp glob may expand through a link into the project"
+                return 0
             fi
             ;;
     esac
@@ -607,11 +674,26 @@ guard_classify() {
     fi
     if ! rel="$(cwk_guard_rel "$target")"; then
         [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] || return 0
+        # An fd alias writes wherever that fd points: a read redirect in the same command (`N<`,
+        # `N<>`, a bare `<` for fd 0) can bind it to a project file, and makes no row of its own.
+        local fd=""
         case "$target" in
-            /dev/null | /dev/stdout | /dev/stderr | /dev/fd/0 | /dev/fd/1 | /dev/fd/2) return 0 ;;
+            /dev/null) return 0 ;;
+            /dev/fd/0) fd=0 ;;
+            /dev/stdout | /dev/fd/1) fd=1 ;;
+            /dev/stderr | /dev/fd/2) fd=2 ;;
         esac
+        if [[ -n "$fd" ]]; then
+            if guard_fd_bound "$fd"; then
+                [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: fd $fd is bound to a path in this command"
+            fi
+            return 0
+        fi
         if [[ "$verb" != rm-r && "$verb" != flag-r && "$verb" != cfg ]] \
             && [[ "$target" == /tmp || "$target" == /tmp/* ]]; then
+            if [[ "$verb" != ln ]] && guard_makes_link; then
+                [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: this command also makes a link, which may lead into the project"
+            fi
             return 0
         fi
         [[ -n "$GUARD_ASK_O" ]] || GUARD_ASK_O="$target by $verb"
@@ -810,6 +892,9 @@ if [[ -n "$GUARD_ASK_M" ]]; then
 fi
 if [[ -n "$GUARD_ASK_F" ]]; then
     ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."
+fi
+if [[ -n "$GUARD_ASK_T" ]]; then
+    ask "This write goes through a /tmp or fd path that may land inside the project ($GUARD_ASK_T). Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
 fi
 if [[ -n "$GUARD_ASK_O" ]]; then
     ask "This writes outside the project ($GUARD_ASK_O): no guardrail of the kit covers that path. Say what it writes and why, then let the user decide."
