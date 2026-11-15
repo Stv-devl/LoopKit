@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 4
+# cwk-guard-api: 5
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -202,7 +202,14 @@ GUARD_BASE="$(jq -r '.cwd // empty' <<<"$INPUT")"
 [[ -n "$GUARD_BASE" ]] || GUARD_BASE="${CLAUDE_PROJECT_DIR:-}"
 [[ -n "$GUARD_BASE" ]] || GUARD_BASE="$PWD"
 SECRET_DENY="" SECRET_ASK=""
-if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
+# A resolver of another guard API (a partial merge of the .new files) is not trusted: its line 2
+# must be exactly this guard's API, else both calls are skipped and the failure paths below run.
+GUARD_API_OK=0
+if [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
+    { IFS= read -r _ && IFS= read -r GUARD_API_LINE; } <"$HOOK_DIR/shell_targets.py" || GUARD_API_LINE=""
+    [[ "$GUARD_API_LINE" != "# cwk-guard-api: 5" ]] || GUARD_API_OK=1
+fi
+if [[ "$GUARD_API_OK" == 1 ]] && command -v python3 >/dev/null 2>&1; then
     SECRET_OUT="$(python3 -I -B "$HOOK_DIR/shell_targets.py" --secret-reads "$COMMAND" "$GUARD_BASE" "$SECRET_VERB" 2>/dev/null)" || SECRET_OUT=""
     SECRET_LINES=()
     while IFS= read -r SECRET_LINE; do
@@ -442,7 +449,7 @@ GUARD_FAILED=0
 GUARD_DENY_RAW=""
 GUARD_PARSE=""
 GUARD_OUT=""
-if command -v python3 >/dev/null 2>&1 && [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
+if [[ "$GUARD_API_OK" == 1 ]] && command -v python3 >/dev/null 2>&1; then
     # No temp file: the resolver still runs, only its parse reason is lost.
     GUARD_ERR_FILE="$(mktemp 2>/dev/null)" || GUARD_ERR_FILE=/dev/null
     GUARD_STATUS=0
@@ -560,46 +567,38 @@ guard_classify_tool() {
     return 0
 }
 
-# Whether fd $1 may point at a path: a read redirect binds an fd (a bare `<`/`<>` is fd 0; `<<`,
-# `<(` are not paths), a dup `N>&M`/`N<&M` copies M's binding to N (`>&M` is fd 1, `<&M` fd 0),
-# repeated until nothing changes. A `{var}` fd binds an unknown fd, so every alias counts as bound.
-# Order is ignored (fail-closed). `$1<10` is awk, not a redirect.
-guard_fd_bound() {
-    local want="$1" rest="${COMMAND//$'\\\n'/}" re n op m next bound=" " pair changed
-    local -a dups=()
-    [[ "$rest" =~ \{[A-Za-z_][A-Za-z0-9_]*\}[\<\>] ]] && return 0
-    re='(^|[^0-9<>&$])([0-9]*)(<>|<&|>&|<)([0-9]*)(.?)'
-    while [[ "$rest" =~ $re ]]; do
-        n="${BASH_REMATCH[2]}" op="${BASH_REMATCH[3]}" m="${BASH_REMATCH[4]}" next="${BASH_REMATCH[5]}"
-        rest="${rest#*"${BASH_REMATCH[0]}"}"
-        case "$op" in
-            '<>') bound+="${n:-0} " ;;
-            '<') [[ -n "$m" || ( "$next" != '<' && "$next" != '(' ) ]] && bound+="${n:-0} " ;;
-            '<&') [[ -n "$m" ]] && dups+=("${n:-0}:$m") ;;
-            '>&') [[ -n "$m" ]] && dups+=("${n:-1}:$m") ;;
-        esac
-    done
-    changed=1
-    while [[ "$changed" == 1 ]]; do
-        changed=0
-        for pair in "${dups[@]}"; do
-            if [[ "$bound" == *" ${pair#*:} "* && "$bound" != *" ${pair%%:*} "* ]]; then
-                bound+="${pair%%:*} "
-                changed=1
-            fi
-        done
-    done
-    [[ "$bound" == *" $want "* ]]
+# guard_is_write_verb <verb> [mv]: the one write-verb test of the classifier. A redirect or a
+# GUARD_SOURCE_WRITERS verb; with the `mv` argument, mv too.
+guard_is_write_verb() {
+    [[ "$1" == '>' || "$1" == '>>' || "$GUARD_SOURCE_WRITERS" == *" $1 "* \
+        || ( "${2:-}" == mv && "$1" == mv ) ]]
 }
 
-# Whether the command makes a link, which a later /tmp write may follow before it exists: a word
-# named ln or link under any path prefix or quoting, or cp with -s/-l/-a/-P/-d or any long option.
-# The scan of cp's options stops at a newline, `;`, `&` or `|`.
-guard_makes_link() {
-    local text="${COMMAND//$'\\\n'/}" nl=$'\n' re_ln re_cp
-    re_ln="(^|[^[:alnum:]_.-])['\"\\\\]*(ln|link)['\"]*([[:space:]]|$)"
-    re_cp="(^|[^[:alnum:]_.-])['\"\\\\]*cp['\"]*[[:space:]]([^;&|${nl}]*[[:space:]])?(-[[:alnum:]]*[slaPd][[:alnum:]]*|--[[:alnum:]])"
-    [[ "$text" =~ $re_ln || "$text" =~ $re_cp ]]
+# guard_classify_outside <verb> <target>: a target cwk_guard_rel places outside the project.
+# /dev/null passes; an fd alias asks when the tokenizer's `fd-bound` rows bind its fd (/dev/stdin
+# is never exempt); a /tmp target passes, but for rm-r, flag-r and cfg; anything else asks. A
+# /tmp path a link made in this call may reach is already a `?link:` row (shell_targets.py).
+guard_classify_outside() {
+    local verb="$1" target="$2" fd=""
+    [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] || return 0
+    case "$target" in
+        /dev/null) return 0 ;;
+        /dev/fd/0) fd=0 ;;
+        /dev/stdout | /dev/fd/1) fd=1 ;;
+        /dev/stderr | /dev/fd/2) fd=2 ;;
+    esac
+    if [[ -n "$fd" ]]; then
+        if [[ "$GUARD_FD_BOUND" == *" $fd "* && -z "$GUARD_ASK_T" ]]; then
+            GUARD_ASK_T="$target by $verb: fd $fd is bound to a path in this command"
+        fi
+        return 0
+    fi
+    if [[ "$verb" != rm-r && "$verb" != flag-r && "$verb" != cfg ]] \
+        && [[ "$target" == /tmp || "$target" == /tmp/* ]]; then
+        return 0
+    fi
+    [[ -n "$GUARD_ASK_O" ]] || GUARD_ASK_O="$target by $verb"
+    return 0
 }
 
 guard_classify() {
@@ -634,22 +633,11 @@ guard_classify() {
             fi
             return 0
             ;;
-        '?tmp:'*)
-            # A /tmp path a link moves (or a hard-linked file): a write lands on the physical side,
-            # while rm, unlink, mv and ln act on the link itself. A lexical path inside the project
-            # is guarded as written.
-            target="${target#?tmp:}"
-            local physical="${target#*$'\x1f'}"
-            target="${target%%$'\x1f'*}"
-            if ! cwk_guard_rel "$target" >/dev/null \
-                && [[ "$verb" == '>' || "$verb" == '>>' \
-                    || ( "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$verb" != ln ) ]]; then
-                if [[ "$physical" == '?' ]]; then
-                    [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: a link into /proc or /dev, or a second hard link, decides where it lands"
-                    return 0
-                fi
-                target="$physical"
-            fi
+        '?link:'*)
+            # The tokenizer's structural link rule: another command of this call can make a link
+            # this /tmp path goes through before it runs.
+            [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="${target#?link:} by $verb: a link made in this command may lead this write into the project"
+            return 0
             ;;
         '?glob:'*)
             target="${target#?glob:}"
@@ -660,9 +648,8 @@ guard_classify() {
             fi
             # A /tmp glob outside the project: bash's expansion, its shell options and the links
             # it meets cannot be replayed here, so it asks.
-            if [[ ( "$target" == /tmp || "$target" == /tmp/* ) && ( "$verb" == '>' || "$verb" == '>>' \
-                    || ( "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$verb" != ln ) ) ]] \
-                && ! cwk_guard_rel "$target" >/dev/null; then
+            if [[ ( "$target" == /tmp || "$target" == /tmp/* ) && "$verb" != ln ]] \
+                && guard_is_write_verb "$verb" && ! cwk_guard_rel "$target" >/dev/null; then
                 [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target/${globpat:0:50} by $verb: a /tmp glob may expand through a link into the project"
                 return 0
             fi
@@ -673,30 +660,7 @@ guard_classify() {
         return 0
     fi
     if ! rel="$(cwk_guard_rel "$target")"; then
-        [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] || return 0
-        # An fd alias writes wherever that fd points: a read redirect in the same command (`N<`,
-        # `N<>`, a bare `<` for fd 0) can bind it to a project file, and makes no row of its own.
-        local fd=""
-        case "$target" in
-            /dev/null) return 0 ;;
-            /dev/fd/0) fd=0 ;;
-            /dev/stdout | /dev/fd/1) fd=1 ;;
-            /dev/stderr | /dev/fd/2) fd=2 ;;
-        esac
-        if [[ -n "$fd" ]]; then
-            if guard_fd_bound "$fd"; then
-                [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: fd $fd is bound to a path in this command"
-            fi
-            return 0
-        fi
-        if [[ "$verb" != rm-r && "$verb" != flag-r && "$verb" != cfg ]] \
-            && [[ "$target" == /tmp || "$target" == /tmp/* ]]; then
-            if [[ "$verb" != ln ]] && guard_makes_link; then
-                [[ -n "$GUARD_ASK_T" ]] || GUARD_ASK_T="$target by $verb: this command also makes a link, which may lead into the project"
-            fi
-            return 0
-        fi
-        [[ -n "$GUARD_ASK_O" ]] || GUARD_ASK_O="$target by $verb"
+        guard_classify_outside "$verb" "$target"
         return 0
     fi
     # A write onto a glob may expand to one source or test file the folder row hides: it asks
@@ -708,7 +672,7 @@ guard_classify() {
     # Bash drops backslash-newline before parsing, so `!\<newline>(md)` is a live `!(md)`: the
     # `shopt` clause and the extglob regex below read a copy with every continuation removed.
     cmd_joined="${COMMAND//$'\\\n'/}"
-    if [[ -n "$globpat" && ( "$verb" == '>'|| "$verb" == '>>' || "$verb" == mv || "$GUARD_SOURCE_WRITERS" == *" $verb "* ) ]]; then
+    if [[ -n "$globpat" ]] && guard_is_write_verb "$verb" mv; then
         globpat_l="$(printf '%s' "$globpat" | tr '[:upper:]' '[:lower:]')" || globpat_l=""
         ext="${globpat_l##*.}"
         shopt_chars='*[][*?{}()|!@+]*'
@@ -722,8 +686,7 @@ guard_classify() {
     # text is the only signal; the target tokenizer cuts the word at the parenthesis, so the call asks.
     # A listed generator onto a source keeps its own codegen ask.
     extglob_re='[@!+]\('
-    if [[ "$cmd_joined" =~ $extglob_re \
-          && ( "$verb" == '>' || "$verb" == '>>' || "$verb" == mv || "$GUARD_SOURCE_WRITERS" == *" $verb "* ) ]] \
+    if [[ "$cmd_joined" =~ $extglob_re ]] && guard_is_write_verb "$verb" mv \
         && ! [[ "$codegen" == 1 && "$rel" =~ \.(tsx?|py)$ ]]; then
         [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb in a command that uses extglob syntax (@(, !( or +( ), which can name a source or test file the guard cannot resolve"
     fi
@@ -775,7 +738,7 @@ guard_classify() {
         [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
     elif [[ "$verb" == mv &&"$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_M" ]] || GUARD_ASK_M="$rel"
-    elif [[ "$verb" == rm-r && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
+    elif [[ ( "$verb" == rm-r || "$verb" == find-delete ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
     elif [[ "$verb" == rm-r ]]; then
         [[ -n "$GUARD_ASK_R" ]] || GUARD_ASK_R="$rel"
@@ -783,9 +746,18 @@ guard_classify() {
     return 0
 }
 
+GUARD_FD_BOUND=" "
 if [[ "$GUARD_FAILED" == 0 ]]; then
+    # The tokenizer's `fd-bound N` rows: fds 0-2 a redirect in this command may point at a path.
     for GUARD_LINE in "${GUARD_ROWS[@]}"; do
-        guard_classify "${GUARD_LINE%%$'\t'*}" "${GUARD_LINE#*$'\t'}"
+        if [[ "${GUARD_LINE%%$'\t'*}" == fd-bound ]]; then
+            GUARD_FD_BOUND+="${GUARD_LINE#*$'\t'} "
+        fi
+    done
+    for GUARD_LINE in "${GUARD_ROWS[@]}"; do
+        if [[ "${GUARD_LINE%%$'\t'*}" != fd-bound ]]; then
+            guard_classify "${GUARD_LINE%%$'\t'*}" "${GUARD_LINE#*$'\t'}"
+        fi
     done
 fi
 

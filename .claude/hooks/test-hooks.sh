@@ -2161,6 +2161,237 @@ echo x > /dev/fd/9/.claude/settings.json"; do
     rm -r "$tmp"
 }
 
+# tok_expect <id> <pass|ask|deny|block> <project> <cwd sub or ""> <command> [needle...]: one shell
+# guard verdict; `block` accepts ask or deny.
+tok_expect() {
+    local id="$1" want="$2" dir="$3" sub="$4" cmd="$5" out verdict needle
+    shift 5
+    out="$(pd_probe "$dir" "$cmd" "$sub")"
+    verdict="${out%%$'\n'*}"
+    CASES=$((CASES + 1))
+    if [[ "$want" == block ]]; then
+        [[ "$verdict" == ask || "$verdict" == deny ]] \
+            || { fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"; return 0; }
+    elif [[ "$verdict" != "$want" ]]; then
+        fail prevent-destructive-commands.sh "$id[$cmd]" "expected $want, got $verdict '${out:0:200}'"
+        return 0
+    fi
+    for needle in "$@"; do
+        [[ "$out" == *"$needle"* ]] || fail prevent-destructive-commands.sh "$id[$cmd]" "reason lacks '$needle': '${out:0:300}'"
+    done
+    return 0
+}
+
+# CG84-CG119 (guard-tokenizer-fd-links): the /tmp and fd exemptions decided from tokenizer rows.
+# $c is the project; $s holds /tmp links into it.
+run_tokenizer_cases() {
+    local tmp c s cmd u=https://example.invalid
+    tmp="$(mktemp -d)"
+    make_app_tree "$tmp/c" codegen
+    c="$tmp/c"
+    mkdir -p "$c/.claude/sub" "$c/.git" "$tmp/tb"
+    printf 'x = 1\n' >"$c/src/a.py"
+    printf '{}\n' >"$c/.claude/settings.json"
+    printf '[core]\n' >"$c/.git/config"
+    ln -s "$c/.claude/sub" "$c/docs/l"
+    s="$(mktemp -d /tmp/cg-tok.XXXXXX)"
+    ln -s "$c/src" "$s/srcl"
+    ln -s "$c/package.json" "$s/pkg"
+    ln -s "$c/.claude" "$s/cl"
+    ln -s "$c/.claude/sub" "$s/clsub"
+    ln -s "$c/.git" "$s/gl"
+    ln -s "$c/src/a.py" "$s/x.log"
+    ln -s "$c/src/a.py" "$s/x2.log"
+    mkdir -p "$s/ok" "$s/d"
+    : >"$s/ok/f"
+    ln -s "$c/src/a.py" "$s/d/z.log"
+    : >"$s/evil"
+    ln -s "$c/src/a.py" "$tmp/tb/l"
+    tar -cf "$s/t.tar" -C "$tmp/tb" l
+
+    # Reproduction: each fails on 8e39637.
+    tok_expect CG84 block "$c" "" "find $s/srcl/ -delete"
+    tok_expect CG85 block "$c" "" "find . -fprint $s/pkg"
+    for cmd in "shred $s/pkg" "chmod 600 $s/pkg" "touch $s/pkg"; do
+        tok_expect CG86 block "$c" "" "$cmd"
+    done
+    for cmd in "curl --output $s/pkg $u" "pnpm vitest run --outputFile=$s/pkg"; do
+        tok_expect CG87 block "$c" "" "$cmd"
+    done
+    for cmd in "mv $s/evil $s/c?/settings.json" "rm $s/c?/settings.json" "ln -sf $s/evil $s/c?/settings.json"; do
+        tok_expect CG89 block "$c" "" "$cmd"
+    done
+    for cmd in "echo x a2<$c/src/a.py >/dev/fd/0" "true&&<$c/src/a.py echo x >/dev/fd/0" \
+               "echo x 2>&1<$c/src/a.py >/dev/fd/0" "echo x >&2<$c/src/a.py >/dev/fd/0" \
+               "echo \$<$c/src/a.py >/dev/fd/0"; do
+        tok_expect CG90 block "$c" "" "$cmd"
+    done
+    for cmd in "l'n' -s $c/src/a.py $s/l && echo x > $s/l" "l\\n -s $c/src/a.py $s/l && echo x > $s/l" \
+               "rsync -a $s/x.log $s/l && echo x > $s/l" "cp -r $s/d $s/e && echo x > $s/e/z.log" \
+               "mv $s/x.log $s/l && echo x > $s/l" "tar -xf $s/t.tar -C $s && echo x > $s/l" \
+               "\$(which ln) -s $c/src/a.py $s/l && echo x > $s/l"; do
+        tok_expect CG91 block "$c" "" "$cmd"
+    done
+    for cmd in "cd -P $s/clsub/.. && echo x > settings.json" "cd -P docs/l/.. && echo x > settings.json"; do
+        tok_expect CG92 block "$c" "" "$cmd"
+    done
+    for cmd in "curl -o $s/pkg $u" "curl -sSLo $s/pkg $u" "wget -O $s/pkg $u" \
+               "wget --output-document=$s/pkg $u" "curl -o $c/package.json $u"; do
+        tok_expect CG99 block "$c" "" "$cmd"
+    done
+    for cmd in "set -P; cd $s/clsub/.. && echo x > settings.json" \
+               "set -o physical; cd $s/clsub/.. && echo x > settings.json" \
+               "env -C $s/clsub/.. tee settings.json"; do
+        tok_expect CG104 block "$c" "" "$cmd"
+    done
+    for cmd in "find -P $s/srcl/ -delete" "find -H $s/srcl -delete" "find -H $c/s''rc -delete"; do
+        tok_expect CG107 block "$c" docs "$cmd"
+    done
+    tok_expect CG108 block "$c" "" "ln -s $c/.claude/hooks $s/D && ln -sf /tmp/x/f $s/D"
+    tok_expect CG105 block "$c" "" "find $c/s''rc/ -delete"
+    tok_expect CG103 block "$c" "" "cat 1 < $c/src/a.py > /dev/stdout"
+
+    # Characterisation: already holds on 8e39637.
+    for cmd in "rm $s/x.log" "unlink $s/x.log" "mv $s/x.log $s/ok/" "ln -sfn $c/src/a.py $s/x2.log" \
+               "ln -sf /etc/hostname $s/x2.log" "ln -sfn /etc/hostname $s/srcl" "ln -s $c/src/a.py $s/l2" \
+               "if true; then pnpm build > /tmp/o.txt; fi" $'cat <<EOF > /dev/stdout\nhi\nEOF' \
+               "pnpm build > /tmp/out.txt 2>&1" "echo a > /tmp/a.txt; echo b > /tmp/b.txt" \
+               "find $s/ok -name '*.log' -delete" "chmod 600 $s/ok/f" "touch $s/ok/f" \
+               "cd $s/clsub/.. && echo x > $s/ok/f" "cd $c && pnpm build > /tmp/out.txt 2>&1" \
+               "export X=1; echo x > /tmp/o.txt" "cat <<<hi > /dev/stdout" "exec 3>&1; echo x >/dev/stdout" \
+               "sort < in.txt > /dev/stdout" "awk '\$1<10' f > /dev/stdout" \
+               "pnpm test:run 2>&1 | tee /tmp/x.log" "ls /tmp && echo x > /tmp/out.txt" "echo x > docs/a.md"; do
+        tok_expect CG93 pass "$c" "" "$cmd"
+    done
+    tok_expect CG94 deny "$c" "" "echo x > $s/x.log" "src/a.py written by a redirect"
+    tok_expect CG94 ask "$c" "" "echo x | tee $s/pkg" "guarded path: package.json"
+    for cmd in "truncate -s0 $s/pkg" "mv /tmp/f $s/srcl" "cd $s/cl && echo x > settings.json"; do
+        tok_expect CG94 block "$c" "" "$cmd"
+    done
+    for cmd in "exec {fd}<$c/src/a.py; echo x > /dev/stdout" "echo x > /dev/stdin"; do
+        tok_expect CG95 block "$c" "" "$cmd"
+    done
+    tok_expect CG100 block "$c" "" "ln -s $c/src/a.py $s/l3 && cp $s/evil $s/l3"
+    for cmd in "pnpm exec ln -s $c/src/a.py $s/l4 && echo x > $s/l4" \
+               "find . -maxdepth 0 -exec ln -s $c/src/a.py $s/l5 \\; && echo x > $s/l5" \
+               "awk 'BEGIN{system(\"ln -s $c/src/a.py $s/l6\")}' && echo x > $s/l6" \
+               "awk 'BEGIN{system(\"ln -s $c/src/a.py $s/l6\")}'; echo x > $s/l6"; do
+        tok_expect CG101 block "$c" "" "$cmd"
+    done
+    for cmd in "ln -s $c/.claude $s/L && rm $s/L/settings.json" "ln -s $c/.claude $s/L && unlink $s/L/settings.json" \
+               "ln -s $c/.claude $s/L && mv $s/L/settings.json /tmp/z" "ln -s $c/.git $s/G && rm $s/G/config"; do
+        tok_expect CG106 block "$c" "" "$cmd"
+    done
+    tok_expect CG102 deny "$c" "" "cp $s/evil /tmp/b && rm $s/gl/config" ".git/config written by rm"
+    tok_expect CG103 block "$c" "" "head -n 5 < $c/src/a.py > /dev/fd/0"
+    tok_expect CG103 deny "$c" "" "cat 2< .env" "secret"
+
+    # CG109-CG115 (review 1/3 fix batch). CG109: awk/sed link makers are read from the program text only.
+    for cmd in "sed -n '1,20p' src/features/auth/services.ts > /tmp/snip.txt" \
+               "sed 's/foo/bar/; s/old/new/' in.txt > /tmp/out.txt" \
+               "awk '\$1==\"a\" || \$2==\"b\"' in.txt > /tmp/out.txt" \
+               "awk '{print \$1}' logs/system.log > /tmp/out.txt"; do
+        tok_expect CG109 pass "$c" "" "$cmd"
+    done
+    tok_expect CG109 block "$c" "" "sed -e 's/x/y/e' f > /tmp/out.txt"
+    # CG110: the secret mode itself, with a spelling the raw-text scan misses.
+    tok_expect CG110 deny "$c" "" "cat 2< .e''nv" "a secret file"
+    # CG111: a Unicode digit is not an fd, and must not crash the tokenizer.
+    tok_expect CG111 deny "$c" "" "cat ² < .e'n'v" "a secret file"
+    tok_expect CG111 deny "$c" "" "echo x ²> /tmp/a; echo y > src/a.ts"
+    # CG112: npm eats the first `--`; npx and pnpm forward it.
+    for cmd in "npm exec foo -- --output package.json" "npm x foo -- --output package.json"; do
+        tok_expect CG112 block "$c" "" "$cmd"
+    done
+    tok_expect CG112 pass "$c" "" "npx foo -- --output package.json"
+    # CG113: a dlx package is an unknown program, not a lexical link maker.
+    tok_expect CG113 block "$c" "" "pnpm dlx foo-gen && echo x > /tmp/out.txt"
+    tok_expect CG113 pass "$c" "" "pnpm dlx foo-gen > /tmp/out.txt"
+    # CG114: find -L and -follow walk through links under a root outside the project.
+    tok_expect CG114 block "$c" "" "find -L $s -name '*.py' -delete"
+    tok_expect CG114 block "$c" "" "find $s -follow -name '*.json' -delete"
+    tok_expect CG114 pass "$c" "" "find -H $s -name '*.py' -delete"
+    # CG115: a shell_targets.py of another guard API is not trusted.
+    mkdir -p "$tmp/mix"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp/mix"/
+    printf '#!/usr/bin/env python3\n# cwk-guard-api: 4\nprint("#end\\t0")\n' >"$tmp/mix/shell_targets.py"
+    cmd="ln -s $c/.claude $s/M && rm $s/M/settings.json"
+    CASES=$((CASES + 1))
+    out="$(HOOKS_DIR="$tmp/mix" pd_probe "$c" "$cmd")"
+    verdict="${out%%$'\n'*}"
+    [[ "$verdict" == ask || "$verdict" == deny ]] \
+        || fail prevent-destructive-commands.sh "CG115[$cmd]" "expected ask or deny with a guard API 4 resolver, got $verdict '${out:0:200}'"
+
+    # CG116-CG119 (fix batch 2). CG116: everyday awk that writes to /tmp is not a link maker.
+    for cmd in "ps aux | awk '/systemd/ {print \$2}' > /tmp/pids.txt" \
+               "df -h | awk '\$1 != \"Filesystem\"' > /tmp/df.txt" \
+               "awk '{print \"system ok\"}' f > /tmp/o" \
+               "awk '{print \$1 \"|\" \$2}' f > /tmp/o" \
+               "awk 'BEGIN{OFS=\"|\"} {print \$1,\$2}' f > /tmp/o.md" \
+               "awk '{n=split(\$0,a,\"|\"); print n}' f > /tmp/o" \
+               "awk -F'\t' '{print \"| \" \$1 \" | \" \$2 \" |\"}' data.tsv > /tmp/table.md" \
+               "awk --assign 'x=a|system(' '{print x}' f > /tmp/o" \
+               "awk -v 'x=a|b' '{print x}' f > /tmp/o" \
+               "awk --field-separator '|' '{print \$1}' f > /tmp/o" \
+               "awk '\$0 ~ /a|b/ {print}' f > /tmp/o"; do
+        tok_expect CG116 pass "$c" "" "$cmd"
+    done
+    # CG117: a real awk link maker still asks: system, a literal or variable command on a pipe,
+    # a coprocess, and a program file that cannot be read.
+    for cmd in "awk 'BEGIN{system(\"ln -s x /tmp/l\")}' f > /tmp/o" \
+               "awk 'BEGIN{system (\"id\")}' f > /tmp/o" \
+               "awk '{print \"x\" | \"sh\"}' f > /tmp/o" \
+               "awk 'BEGIN{\"date\" | getline d; print d}' > /tmp/o" \
+               "awk -v c=sh '{print | c}' f > /tmp/o" \
+               "awk -v c=date 'BEGIN{c | getline d}' > /tmp/o" \
+               "awk '{print |& \"sh\"}' f > /tmp/o" \
+               "awk -f prog.awk f > /tmp/o" \
+               "awk --file=prog.awk f > /tmp/o" \
+               "awk -f prog.awk logs/system.log > /tmp/o"; do
+        tok_expect CG117 block "$c" "" "$cmd"
+    done
+    # CG118: sed is weighed by its own analysis: a backslashed delimiter or a file operand is no
+    # command; an e command or flag, --expression and a script file still ask.
+    tok_expect CG118 pass "$c" "" "sed 's/foo/\\/etc/' f && echo x > /tmp/o"
+    tok_expect CG118 pass "$c" "" "sed -n '1,20p' src/x/services.ts > /tmp/s.txt"
+    for cmd in "sed 's/x/y/e' f" "sed '1e cmd' f" "sed '\$e date' f" "sed '/x/e ln -s a b' f" \
+               "sed --expression='1e id' f" "sed --expr='1e id' f" "sed -f mk.sed f" \
+               "sed '1e id' f && echo x > /tmp/o" "sed -f mk.sed f > /tmp/o"; do
+        tok_expect CG118 block "$c" "" "$cmd"
+    done
+    # CG119: find -L / -follow asks on a delete or a writing exec, not on a read-only exec, and
+    # -follow counts only among find's own words.
+    for cmd in "find -L $s -name x -exec grep -l foo {} \;" "find -L $s -name x -exec cat {} +" \
+               "find $s -name x -exec grep -follow {} \;" "find $s -name x -follow -exec ls {} \;"; do
+        tok_expect CG119 pass "$c" "" "$cmd"
+    done
+    for cmd in "find -L $s -name x -exec rm {} \;" "find -L $s -name x -exec cp {} /tmp/z \;" \
+               "find $s -exec cat {} + -follow -delete"; do
+        tok_expect CG119 block "$c" "" "$cmd"
+    done
+
+    # Business rules: the structural link rule.
+    tok_expect CG96 block "$c" "" "frobnicate $s && echo x > /tmp/out.txt"
+    tok_expect CG96 pass "$c" "" "grep -rn link src > /tmp/hits.txt"
+    tok_expect CG96 pass "$c" "" "git diff > /tmp/x.diff"
+    tok_expect CG96 block "$c" "" "git checkout x && echo y > /tmp/out.txt"
+    tok_expect CG97 pass "$c" "" "cp --verbose a /tmp/b"
+    tok_expect CG97 block "$c" "" "cp a /tmp/b && echo x > /tmp/b2"
+
+    # Structure.
+    CASES=$((CASES + 1))
+    if grep -qE 'guard_fd_bound|guard_makes_link' "$HOOKS_DIR/prevent-destructive-commands.sh" \
+        || [[ "$(grep -c '^guard_is_write_verb()' "$HOOKS_DIR/prevent-destructive-commands.sh")" != 1 ]] \
+        || [[ "$(grep -c '^guard_classify_outside()' "$HOOKS_DIR/prevent-destructive-commands.sh")" != 1 ]] \
+        || grep -q '"?tmp:' "$HOOKS_DIR/shell_targets.py" \
+        || ! grep -qx '# cwk-guard-api: 5' "$HOOKS_DIR/shell_targets.py" \
+        || ! grep -qx '# cwk-guard-api: 5' "$HOOKS_DIR/prevent-destructive-commands.sh"; then
+        fail prevent-destructive-commands.sh CG98 "a raw-text fd/link helper, a ?tmp: row, a duplicated helper or guard API != 5"
+    fi
+    rm -r "$s"
+    rm -r "$tmp"
+}
+
 # G10.04: a reason past 4000 characters is cut and says so.
 run_git_reason_cut_case() {
     local tmp feat out reason i pad
@@ -2387,6 +2618,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_app_roots_cases
     run_app_roots_cfg_cases
     run_codegen_cases
+    run_tokenizer_cases
     run_locale_cases
     run_prove_red_symbols
     ADDON_TEST="$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py"

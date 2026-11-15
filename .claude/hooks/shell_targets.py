@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cwk-guard-api: 4
+# cwk-guard-api: 5
 """Resolve the write targets of a Bash command: `python3 -B shell_targets.py <cmd> <base>`.
 
 Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
@@ -8,8 +8,9 @@ Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
 
 Prints `<verb>\t<target>` rows, then always `#end\t<row count>`. A target is an
 absolute normalised path, `?glob:<abs folder>` (then a unit separator and the word's last segment pattern),
-`?tmp:<lexical /tmp path>` (then a unit separator and its physical path or `?`), `?unknown:<text>` or
-`?inline:<program>`. It resolves, never classifies: prevent-destructive-commands.sh
+`?unknown:<text>` or `?inline:<program>`. A /tmp path outside the project that a link moves is
+emitted on the side the verb acts on: physical for a write through it, lexical for an operand that
+acts on the link itself (`target`'s `follows`). A `-delete` root of find is labelled `find-delete`. It resolves, never classifies: prevent-destructive-commands.sh
 asks hook-guarded.sh about each row. Any failure exits nonzero and the hook falls
 back to its text rules. Contract: docs/work/guard-shell/plan.md.
 
@@ -70,6 +71,12 @@ def redirect_verb(words):
                 return ">cg"
     return ">"
 NUMERIC_STACK = re.compile(r"^[+-][0-9]+$")
+BRACE_FD = re.compile(r"^\{[A-Za-z_][A-Za-z0-9_]*\}$")
+
+
+def is_fd(word):
+    """True for a word of ASCII digits only: str.isdigit() also accepts `²`, which int() rejects."""
+    return re.fullmatch(r"[0-9]+", word) is not None
 SUB_REF = re.compile("([0-9]+)")
 
 HIDE = {"*": "", "?": "", "[": "", "{": "", "$": ""}
@@ -432,22 +439,24 @@ class State:
     possible: a relative target is checked against every candidate.
     """
 
-    def __init__(self, directory, stack=(), dirs=None):
+    def __init__(self, directory, stack=(), dirs=None, physical=False):
         self.dirs = [directory] if dirs is None else list(dirs)
         self.stack = [list(entry) for entry in stack]
+        self.physical = physical
 
     @property
     def dir(self):
         return self.dirs[0]
 
     def copy(self):
-        return State(None, self.stack, self.dirs)
+        return State(None, self.stack, self.dirs, self.physical)
 
     def resolve(self, word):
         return resolve_in(word, self.dir)
 
-    def move(self, word):
-        moved = [resolve_in(word, d) for d in self.dirs]
+    def move(self, word, physical=False):
+        resolve = resolve_physical if physical or self.physical else resolve_in
+        moved = [resolve(word, d) for d in self.dirs]
         kept = []
         for d in moved + self.dirs:
             if d not in kept:
@@ -455,14 +464,30 @@ class State:
         self.dirs = kept if len(kept) <= MAX_DIRS else [None]
 
     def cd(self, args):
-        self.move(skip_cd_options(args))
+        self.move(skip_cd_options(args), cd_physical(args))
 
     def pushd(self, args):
         self.stack.append(list(self.dirs))
         if any(NUMERIC_STACK.match(a) for a in args):
             self.dirs = [None]
         else:
-            self.move(skip_cd_options(args))
+            self.move(skip_cd_options(args), cd_physical(args))
+
+    def set_mode(self, verb, args):
+        """`set -P`/`set -o physical`/`shopt -s -o physical` make later cds physical; `+P`,
+        `+o physical` and `shopt -u -o physical` undo it. A live word after them sets it."""
+        if any(has_live(a) for a in args):
+            self.physical = True
+        elif verb == "set":
+            for j, a in enumerate(args):
+                following = args[j + 1] if j + 1 < len(args) else None
+                if re.match(r"^[-+][a-zA-Z]*P", a) or (a in ("-o", "+o") and following == "physical"):
+                    self.physical = a.startswith("-")
+        elif "-o" in args and "physical" in args:
+            if "-s" in args:
+                self.physical = True
+            elif "-u" in args:
+                self.physical = False
 
     def popd(self, args):
         if any(NUMERIC_STACK.match(a) for a in args):
@@ -479,6 +504,44 @@ def resolve_in(word, directory):
     if raw.startswith("/"):
         return os.path.normpath(raw)
     return None if directory is None else os.path.normpath(os.path.join(directory, raw))
+
+
+def cd_physical(args):
+    """Whether cd/pushd's options hold -P (the last of -P/-L wins, as in bash)."""
+    physical = False
+    for a in args:
+        if not a.startswith("-") or a in ("-", "--"):
+            break
+        for letter in a[1:]:
+            if letter in "PL":
+                physical = letter == "P"
+    return physical
+
+
+def resolve_physical(word, directory):
+    """The directory a `cd -P`-like word lands in: links followed before `..`, as chdir(2) does.
+
+    A result inside the physical project is mapped back onto the project's spelling, so every
+    in-project row keeps the prefix the hook compares against. None when unknown.
+    """
+    if word is None or has_live(word) or word.startswith("~") or word == "-":
+        return None
+    raw = unhide(word)
+    if not raw.startswith("/") and directory is None:
+        return None
+    joined = os.path.join(directory or "/", raw)
+    physical = tmp_physical(joined)
+    if physical == "?":
+        return None
+    if physical is None:
+        return os.path.normpath(joined)
+    physical = os.path.normpath(physical)
+    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if project.startswith("/"):
+        real = os.path.realpath(project)
+        if under(physical, real):
+            return os.path.normpath(project) + physical[len(real):]
+    return physical
 
 
 def skip_cd_options(args):
@@ -523,6 +586,11 @@ class Walker:
         self.after = None
         self.top = False
         self.kits = []
+        self.fd_events = []
+        self.inner = 0
+        self.seg_count = 0
+        self.row_segs = {}
+        self.maker_weight = {}
 
     def walk(self, state):
         self.start = state.dir
@@ -531,7 +599,40 @@ class Walker:
         for index, sub in enumerate(self.subs):
             if index not in self.walked:
                 self.walk_flat(sub, state.copy())
+        self.rows = self.link_rewrite(self.rows)
         self.rows.extend(self.kit_cwd_rows())
+        self.rows.extend(self.fd_rows())
+
+    def note_fd(self, op, fd, word):
+        """Record a redirect's fd: an int, None (the operator's default) or "?" (a `{var}` fd)."""
+        self.fd_events.append((op, fd, word))
+
+    def fd_rows(self):
+        """`fd-bound` rows: the fds 0-2 that may point at a path anywhere in the call.
+
+        A read redirect binds its fd; a dup copies a binding, repeated until nothing changes, in any
+        order. shlex drops whitespace, so a digit word before the operator binds both that fd and
+        the default one (`head -n 5 < f` binds 0). A `{var}` fd is unknown: 0, 1 and 2 are bound.
+        Here-docs and here-strings bind nothing.
+        """
+        bound, dups = set(), []
+        for op, fd, word in self.fd_events:
+            if op in ("<<", "<<<"):
+                continue
+            default = 1 if op == ">&" else 0
+            fds = {0, 1, 2} if fd == "?" else ({default} if fd is None else {fd, default})
+            if fd == "?" or op in ("<", "<>") or (op == "<&" and not is_fd(word) and word != "-"):
+                bound |= fds
+            elif op in ("<&", ">&") and is_fd(word):
+                dups.extend((n, int(word)) for n in fds)
+        changed = True
+        while changed:
+            changed = False
+            for n, m in dups:
+                if m in bound and n not in bound:
+                    bound.add(n)
+                    changed = True
+        return [("fd-bound", str(n)) for n in sorted(bound) if n in (0, 1, 2)]
 
     def walk_flat(self, flat, state, top=False):
         outer, self.top = self.top, top
@@ -541,10 +642,11 @@ class Walker:
             self.top = outer
 
     def walk_segments(self, flat, state):
-        stack, seg, pending = [state], Segment(False), None
+        stack, seg, pending, pending_fd = [state], Segment(False), None, None
         for tok in tokens(flat):
             seg.subs.extend(int(n) for n in SUB_REF.findall(tok))
             if pending is not None:
+                self.note_fd(pending, pending_fd, tok)
                 self.redirect(seg, pending, tok)
                 pending = None
             elif tok in CONTROL or tok == "}":
@@ -556,8 +658,11 @@ class Walker:
                     stack.pop()
                 seg = Segment(tok in ("|", "|&"))
             elif tok in REDIRECTS:
-                if seg.words and seg.words[-1].isdigit():
-                    seg.words.pop()
+                pending_fd = None
+                if seg.words and is_fd(seg.words[-1]):
+                    pending_fd = int(seg.words.pop())
+                elif seg.words and BRACE_FD.match(seg.words[-1]):
+                    pending_fd = "?"
                 pending = tok
             else:
                 seg.words.append(tok)
@@ -596,7 +701,7 @@ class Walker:
         return []
 
     def redirect(self, seg, op, word):
-        if op in (">&", "<&") and (word.isdigit() or word == "-"):
+        if op in (">&", "<&") and (is_fd(word) or word == "-"):
             return
         if op == "<<":
             if not word.startswith(HEREDOC):
@@ -618,7 +723,7 @@ class Walker:
             if words:
                 where = State(directory)
                 if chdir is not None:
-                    where = State(where.resolve(chdir))
+                    where = State(resolve_physical(chdir, directory))
                 verb = os.path.basename(unhide(words[0]))
                 rows.extend(self.verb_rows(verb, words[1:], seg, where, implicit))
         self.note_kit(seg, words, chdir)
@@ -626,10 +731,40 @@ class Walker:
         for row in rows:
             if row not in unique:
                 unique.append(row)
-        order = {"path": 0, "?glob": 0, "?tmp": 0, "?unknown": 1, "?inline": 2}
+        order = {"path": 0, "?glob": 0, "?link": 0, "?unknown": 1, "?inline": 2}
         unique.sort(key=lambda row: order[kind(row[1])])
         self.rows.extend(unique)
+        if self.inner == 0:
+            number = self.seg_count
+            self.seg_count += 1
+            for row in unique:
+                self.row_segs.setdefault(row, set()).add(number)
+            weight = link_maker_weight(words)
+            if weight:
+                self.maker_weight[number] = weight
         self.follow(seg, state, words)
+
+    def link_rewrite(self, rows):
+        """The structural link rule: once the call holds a link maker, a row lexically under /tmp
+        and outside the project becomes `?link:`, but for a row of the sole link maker's own
+        segment and a settled operand that acts on the link itself."""
+        total = sum(self.maker_weight.values())
+        if not total:
+            return rows
+        sole = next(iter(self.maker_weight)) if total == 1 else None
+        made = [(t, s) for (_, t), segs in self.row_segs.items() for s in segs
+                if s in self.maker_weight and t.startswith("/")]
+        out = []
+        for label, tgt in rows:
+            path = tgt[len("?glob:"):].replace(GLOB_NAME_SEP, "/") if tgt.startswith("?glob:") else tgt
+            segs = self.row_segs.get((label, tgt), set())
+            if not path.startswith("/") or not under_tmp(path) or in_project(path) \
+                    or (sole is not None and segs == {sole}) \
+                    or ((label, tgt) in ACTS_ON_LINK and settled(path, segs, made)):
+                out.append((label, tgt))
+            else:
+                out.append((label, "?link:" + path))
+        return out
 
     def follow(self, seg, state, words):
         """Walk the segment's substitutions, then apply its cd/pushd/popd to the state."""
@@ -646,6 +781,8 @@ class Walker:
                 state.pushd(args)
             elif verb == "popd":
                 state.popd(args)
+            elif verb in ("set", "shopt"):
+                state.set_mode(verb, args)
 
     def verb_rows(self, verb, args, seg, state, implicit):
         rows = output_rows(verb, args, state)
@@ -734,15 +871,22 @@ class Walker:
 
     def find(self, args, state):
         roots, j = [], 0
+        while j < len(args) and (args[j] in ("-H", "-L", "-P") or args[j].startswith("-O")
+                                 or args[j] == "-D"):
+            j += 2 if args[j] == "-D" else 1
+        follow = "-L" in args[:j]
         while j < len(args) and not (args[j].startswith("-") or args[j] in ("(", "!")):
             roots.append(args[j])
             j += 1
         roots = roots or ["."]
+        follow = follow or self.follows_links(args[j:])
         rows = []
         while j < len(args):
             a = args[j]
             if a == "-delete":
-                rows.extend(("find", target(r, state.dir)) for r in roots)
+                rows.extend(("find-delete", target(r, state.dir)) for r in roots)
+                if follow:
+                    rows.extend(self.followed_rows("find-delete", roots, state))
             elif a in ("-fprint", "-fprint0", "-fls", "-fprintf") and j + 1 < len(args):
                 rows.append(("find", target(args[j + 1], state.dir)))
                 j += 1
@@ -752,26 +896,52 @@ class Walker:
                 while j < len(args) and args[j] != ";" and not (args[j] == "+" and cmd[-1:] == ["{}"]):
                     cmd.append(args[j])
                     j += 1
-                rows.extend(self.exec_rows(cmd, roots, state, a.endswith("dir")))
+                ran = self.exec_rows(cmd, roots, state, a.endswith("dir"))
+                rows.extend(ran)
+                if follow and (ran or link_maker_weight(strip_prefixes(cmd)[0])):
+                    rows.extend(self.followed_rows(os.path.basename(cmd[0]) if cmd else "find", roots, state))
             j += 1
+        return rows
+
+    @staticmethod
+    def follows_links(args):
+        """True when `-follow` is one of find's own expression words, not an -exec clause word."""
+        j = 0
+        while j < len(args):
+            if args[j] == "-follow":
+                return True
+            if args[j] in ("-exec", "-execdir", "-ok", "-okdir"):
+                j += 1
+                while j < len(args) and args[j] != ";" and not (args[j] == "+" and args[j - 1] == "{}"):
+                    j += 1
+            j += 1
+        return False
+
+    @staticmethod
+    def followed_rows(label, roots, state):
+        """With -L or -follow, find walks through the links under a root; one outside the project
+        may lead into it, so the delete or exec on it is `?unknown`."""
+        rows = []
+        for root in roots:
+            raw = unhide(root)
+            joined = raw if raw.startswith("/") else (os.path.join(state.dir, raw) if state.dir else "")
+            if not joined or not in_project(os.path.normpath(joined)):
+                rows.append((label, "?unknown:" + show(root)))
         return rows
 
     def exec_rows(self, cmd, roots, state, in_matched_dir):
         """Resolve the executed command once per root, `{}` standing for the matches under it.
 
-        A `?tmp:` root runs twice: on its lexical side (a project path is guarded as written) and on
-        its physical side (where a link leads), or `?unknown` when that side cannot be known.
+        A root a link moves runs twice: on the link itself and on where it leads (`?unknown` when
+        that side cannot be known).
         """
         rows = []
         resolved_roots = []
         for root in roots:
-            resolved = target(root, state.dir)
-            if resolved.startswith("?tmp:"):
-                lexical, physical = resolved[len("?tmp:"):].rsplit(GLOB_NAME_SEP, 1)
-                resolved_roots.append(lexical)
-                resolved_roots.append(physical if physical.startswith("/") else "?unknown:" + show(root))
-            else:
-                resolved_roots.append(resolved)
+            for follows in (False, True):
+                resolved = target(root, state.dir, follows)
+                if resolved not in resolved_roots:
+                    resolved_roots.append(resolved)
         for resolved in resolved_roots:
             if not resolved.startswith("/"):
                 rows.append((os.path.basename(cmd[0]) if cmd else "find", resolved))
@@ -779,7 +949,11 @@ class Walker:
             inner = Segment(False)
             inner.words = [hide_path(resolved) + "/*" if w == "{}" else w for w in cmd]
             before = len(self.rows)
-            self.finish(inner, State(None if in_matched_dir else state.dir))
+            self.inner += 1
+            try:
+                self.finish(inner, State(None if in_matched_dir else state.dir))
+            finally:
+                self.inner -= 1
             rows.extend(self.rows[before:])
             del self.rows[before:]
         return rows
@@ -804,7 +978,7 @@ class SecretWalker(Walker):
 
     def redirect(self, seg, op, word):
         word = word.replace(ESCAPED_WORD_START, "")
-        if op == "<" or (op == "<&" and not (word.isdigit() or word == "-")):
+        if op == "<" or (op == "<&" and not (is_fd(word) or word == "-")):
             seg.stdin_targets.append(word)
         super().redirect(seg, op, word)
 
@@ -980,6 +1154,8 @@ def runner_exec(verb, args):
             return SHELL_LINE
         i += 2 if name in EXEC_VALUE_OPTS and "=" not in rest[i] else 1
     inner = rest[i:]
+    if verb == "npm" and "--" in inner:
+        inner = inner[:inner.index("--")] + inner[inner.index("--") + 1:]
     words, implicit, chdir = strip_prefixes(inner)
     dropped = {w for w in inner[:len(inner) - len(words)] if w in PREFIX_WORDS}
     return words, base, dropped, implicit, chdir
@@ -1436,25 +1612,58 @@ def tool_rows(tool, args, base, script, prior, text, listed=True, positional=Non
 
 
 def output_rows(verb, args, state):
+    """The files of `--output`, and of curl's `-o` and wget's `-O`/`--output-document` (a short
+    cluster ending in the letter takes the next word, `-sSLo f`; a glued value is the rest)."""
     rows = []
+    short = {"curl": "o", "wget": "O"}.get(verb)
     for j, a in enumerate(args):
+        following = args[j + 1] if j + 1 < len(args) else None
+        value = None
+        if a == "--":
+            break
         if a.startswith("--output="):
-            rows.append((verb, target(a[len("--output="):], state.dir)))
-        elif a == "--output" and j + 1 < len(args):
-            rows.append((verb, target(args[j + 1], state.dir)))
+            value = a[len("--output="):]
+        elif a == "--output":
+            value = following
+        elif verb == "wget" and a.startswith("--output-document="):
+            value = a[len("--output-document="):]
+        elif verb == "wget" and a == "--output-document":
+            value = following
+        elif short and a.startswith("-") and not a.startswith("--") and short in a[1:]:
+            letters, rest = a[1:].split(short, 1)
+            if letters.isalpha() or not letters:
+                value = rest or following
+        if value is not None and value != "-":
+            rows.append((verb, target(value, state.dir)))
     return rows
 
 
 def writer_rows(verb, args, state, implicit, text):
+    """The rows of a file writer. An operand acts through a link (a write, `follows`) or on the
+    link itself: rm, unlink, rmdir and mv's sources do, and so does ln's link operand unless it is
+    an existing folder taken as a target directory (no -n/-T)."""
     operands = operands_of(verb, args)
     if verb in ("chmod", "chown") and not any(a.startswith("--reference") for a in args):
         operands = operands[1:]
+    follows = None
     if verb in LAST_OPERAND:
         explicit = target_dir_option(verb, args)
         operands = [explicit] if explicit is not None else operands[-1:]
+        if verb == "ln" and explicit is None and operands:
+            no_deref = any(a in ("--no-dereference", "--no-target-directory")
+                           or (re.match(r"^-[a-zA-Z]+$", a) and ("n" in a or "T" in a)) for a in args)
+            link = resolve_in(operands[0], state.dir)
+            follows = [not no_deref and link is not None and os.path.isdir(link)]
     elif verb == "mv":
         explicit = target_dir_option(verb, args)
-        operands = operands + ([explicit] if explicit is not None else [])
+        if explicit is not None:
+            follows = [False] * len(operands) + [True]
+            operands = operands + [explicit]
+        else:
+            last = not any(a in ("-T", "--no-target-directory") for a in args)
+            follows = [False] * (len(operands) - 1) + [last] if operands else []
+    elif verb in ("rm", "rmdir", "unlink"):
+        follows = [False] * len(operands)
     if verb == "patch":
         output = patch_output(args)
         operands = [output] if output is not None else operands[:1]
@@ -1464,7 +1673,10 @@ def writer_rows(verb, args, state, implicit, text):
     if verb == "rm" and any(RECURSIVE_SHORT.match(a) or (len(a) >= 3 and "--recursive".startswith(a))
                            for a in args):
         label = "rm-r"
-    rows = [(label, target(op, state.dir)) for op in operands]
+    if follows is None or len(follows) != len(operands):
+        follows = [True] * len(operands)
+    rows = [(label, target(op, state.dir, f)) for op, f in zip(operands, follows)]
+    ACTS_ON_LINK.update(row for row, f in zip(rows, follows) if not f)
     if implicit:
         rows.append((label, "?unknown:" + text))
     return rows
@@ -1860,36 +2072,243 @@ def tmp_physical(path):
     return current
 
 
-def target(word, directory):
+LINK_CAPABLE = {"ln", "link", "cp", "mv", "rsync", "install", "tar", "cpio", "unzip", "busybox",
+                "bsdtar", "pax"}
+GIT_READ = {"status", "diff", "log", "show", "rev-parse", "ls-files", "grep", "blame"}
+GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+NON_CREATING = {
+    "echo", "printf", "cat", "grep", "egrep", "fgrep", "rg", "ls", "sort", "head", "tail", "wc",
+    "cut", "tr", "uniq", "diff", "cmp", "comm", "jq", "yq", "test", "[", "[[", "]]", "true",
+    "false", ":", "pwd", "date", "basename", "dirname", "realpath", "readlink", "stat", "file",
+    "which", "type", "command", "sleep", "printenv", "id", "whoami", "uname", "tee", "seq",
+    "column", "fold", "nl", "paste", "join", "od", "xxd", "hexdump", "md5sum", "sha256sum",
+    "base64", "cd", "pushd", "popd", "export", "unset", "set", "shopt", "local", "declare",
+    "readonly", "shift", "exit", "return", "wait", "read", "mkdir", "rm", "rmdir", "unlink",
+    "shred", "truncate", "touch", "chmod", "chown", "patch", "curl", "wget", "kill", "trap",
+    "jobs", "du", "df", "ps", "tree", "less", "more", "if", "then", "elif", "else", "fi", "for",
+    "while", "until", "do", "done", "case", "esac", "in", "{", "}", "!", "function",
+}
+INTERPRETERS = SHELLS | {"node", "ruby", "perl", "deno", "bun"}
+AWKS = {"awk", "gawk", "mawk", "nawk"}
+AWK_SYSTEM = re.compile(r"\bsystem\s*\(")
+AWK_VALUED = "FvWil"
+AWK_LONG_VALUED = ("--assign", "--field-separator", "--include", "--load")
+AWK_REGEX_AFTER = set(";{}(,!~&|=?:<>+-*%^\n")
+ACTS_ON_LINK = set()
+
+
+def awk_program(args):
+    """The program text of an awk call: the -e/--source values, else the first plain operand.
+    None when a -f/--file/-E/--exec script hides the program. Option values (-v, -F, --assign...)
+    are skipped, never read as the program."""
+    texts, plain, opts, i = [], [], True, 0
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if opts and a == "--":
+            opts = False
+        elif opts and a.startswith("--"):
+            name, eq, value = a.partition("=")
+            if name in ("--file", "--exec"):
+                return None
+            if name in ("--source", *AWK_LONG_VALUED):
+                if not eq and i < len(args):
+                    value = args[i]
+                    i += 1
+                if name == "--source":
+                    texts.append(value)
+        elif opts and a.startswith("-") and len(a) > 1:
+            for j, c in enumerate(a[1:], 1):
+                if c in "fE":
+                    return None
+                if c == "e" or c in AWK_VALUED:
+                    value = a[j + 1:]
+                    if not value and i < len(args):
+                        value = args[i]
+                        i += 1
+                    if c == "e":
+                        texts.append(value)
+                    break
+        else:
+            plain.append(a)
+    return texts or plain[:1]
+
+
+def awk_code(text):
+    """An awk program without its string literals, regex literals and comments."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        last = next((x for x in reversed(out) if not x.isspace()), "")
+        if c == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+            out.append("s")
+        elif c == "/" and (not last or last in AWK_REGEX_AFTER):
+            i += 1
+            while i < n and text[i] not in "/\n":
+                i += 2 if text[i] == "\\" else 1
+            out.append("r")
+        elif c == "#":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def awk_runs(args):
+    """True when an awk call can run a command: system(), a pipe to or from a command, or a
+    program file it cannot read."""
+    texts = awk_program(args)
+    if texts is None:
+        return True
+    return any(AWK_SYSTEM.search(code) or "|" in code.replace("||", "")
+               for code in map(awk_code, texts))
+
+
+def sed_runs(args):
+    """True when a sed call can run a command, from sed_rows' own reading: an `e` command or flag,
+    a script file. An unreadable script counts."""
+    try:
+        rows = sed_rows(args, State("/"), False, "")
+    except Unreadable:
+        return True
+    return any(kind(tgt) == "?unknown" for _, tgt in rows)
+
+
+def git_subcommand(args):
+    j = 0
+    while j < len(args) and args[j].startswith("-"):
+        j += 2 if args[j] in GIT_VALUE_OPTS else 1
+    return (args[j], args[j + 1:]) if j < len(args) else (None, [])
+
+
+def find_exec_commands(args):
+    """The commands of find's -exec/-execdir/-ok/-okdir clauses."""
+    out, j = [], 0
+    while j < len(args):
+        if args[j] in ("-exec", "-execdir", "-ok", "-okdir"):
+            cmd, j = [], j + 1
+            while j < len(args) and args[j] != ";" and not (args[j] == "+" and cmd[-1:] == ["{}"]):
+                cmd.append(args[j])
+                j += 1
+            out.append(cmd)
+        j += 1
+    return out
+
+
+def link_maker_weight(words):
+    """How many link makers a command is: a command that can create a link or move one into
+    place, or one the tokenizer cannot read. A find counts each inner command; an awk or sed that
+    runs a command counts two, because its own rows may write through the link it makes."""
+    if not words:
+        return 0
+    head = words[0]
+    if has_live(head) or BRACE_FD.match(head):
+        return 1
+    verb, args = os.path.basename(unhide(head)), words[1:]
+    if verb in ("eval", "source", ".") or verb in INTERPRETERS or PYTHON.match(verb):
+        return 1
+    if verb == "git":
+        sub, rest = git_subcommand(args)
+        read = sub in GIT_READ or (sub == "branch" and all(a.startswith("-") for a in rest)
+                                   and not any(a in ("-m", "-M", "-c", "-C", "-d", "-D") for a in rest))
+        return 0 if read else 1
+    if verb in LINK_CAPABLE:
+        return 1
+    if verb in RUNNERS:
+        call = runner_exec(verb, args)
+        if call is SHELL_LINE:
+            return 1
+        if call is None:
+            return 1 if runner_split(verb, args)[1] == "dlx" else 0
+        return link_maker_weight(call[0])
+    if verb == "find":
+        return sum(link_maker_weight(strip_prefixes(cmd)[0]) for cmd in find_exec_commands(args))
+    if verb in AWKS or verb == "sed":
+        return 2 if (sed_runs(args) if verb == "sed" else awk_runs(args)) else 0
+    if verb in NON_CREATING or verb in FLAG_TOOLS:
+        return 0
+    return 1
+
+
+def settled(path, segs, made):
+    """An operand acting on a /tmp link is settled when its folder exists before the call runs and
+    no link maker in another segment targets it or a folder above it."""
+    if not os.path.isdir(os.path.dirname(path)):
+        return False
+    return not any(under(path, t) and any(s != m for s in segs) for t, m in made)
+
+
+def in_project(path):
+    """True when an absolute path lies in $CLAUDE_PROJECT_DIR as written, or once the deepest
+    existing directory on it (the path itself included) is resolved, as cwk_guard_rel does."""
+    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if not project.startswith("/") or not path.startswith("/"):
+        return False
+    project = os.path.normpath(project)
+    if under(path, project):
+        return True
+    deepest, rest = path, []
+    while deepest != "/" and not os.path.isdir(deepest):
+        rest.insert(0, os.path.basename(deepest))
+        deepest = os.path.dirname(deepest)
+    return under(os.path.normpath(os.path.join(os.path.realpath(deepest), *rest)),
+                 os.path.realpath(project))
+
+
+def link_side(joined, follows):
+    """Where an operation on a /tmp path lands: None when no link moves it, "?" when unknowable.
+    A write (`follows`) follows every link; an operation on the link itself only its folders."""
+    name = os.path.basename(joined)
+    if follows or name in ("", ".", ".."):
+        return tmp_physical(joined)
+    folder = tmp_physical(os.path.dirname(joined))
+    return folder if folder in (None, "?") else os.path.join(folder, name)
+
+
+def target(word, directory, follows=True):
     """The row target of an operand, joined to the tracked directory.
 
-    A plain /tmp operand a link moves, or with a second hard link, is
-    `?tmp:<lexical><US><physical or ?>`: write verbs take the physical side, while rm, mv and ln act
-    on the link itself and take the lexical one.
+    A /tmp operand outside the project that a link moves, or with a second hard link, is given on
+    the side the operation acts on (`link_side`), `?unknown` when that side cannot be known. A /tmp
+    glob outside the project with a glob character in a folder segment may cross a folder link:
+    `?unknown`.
     """
     if has_live(word) or word.startswith("~"):
         return "?unknown:" + show(word)
     if is_glob(word):
         cuts = [word.index(c) for c in "*?[" if c in word]
         cuts += [m.start() for m in GLOB_BRACE.finditer(word)]
-        if ".." in unhide(word[min(cuts):]).split("/"):
+        tail = unhide(word[min(cuts):])
+        if ".." in tail.split("/"):
             return "?unknown:" + show(word)
         prefix = os.path.dirname(unhide(word[:min(cuts)]))
         if not prefix.startswith("/") and directory is None:
             return "?unknown:" + show(word)
-        folder = flat_text(os.path.normpath(os.path.join(directory or "/", prefix)))
-        return "?glob:" + folder + GLOB_NAME_SEP + flat_text(unhide(word).rsplit("/", 1)[-1])
+        joined = os.path.join(directory or "/", prefix)
+        folder = os.path.normpath(joined)
+        if under_tmp(folder) and not in_project(folder):
+            moved = tmp_physical(joined)
+            if "/" in tail or moved == "?" or (moved is not None and GLOB_NAME_SEP in moved):
+                return "?unknown:" + show(word)
+            folder = moved or folder
+        return "?glob:" + flat_text(folder) + GLOB_NAME_SEP + flat_text(unhide(word).rsplit("/", 1)[-1])
     raw = unhide(word)
     if not raw.startswith("/") and directory is None:
         return "?unknown:" + show(word)
     joined = os.path.join(directory or "/", raw)
     lexical = os.path.normpath(joined)
-    if under_tmp(lexical):
-        physical = tmp_physical(joined)
-        if physical is not None and GLOB_NAME_SEP in lexical + physical:
+    if under_tmp(lexical) and not in_project(lexical):
+        physical = link_side(joined, follows)
+        if physical == "?" or (physical is not None and GLOB_NAME_SEP in physical):
             return "?unknown:" + show(word)
         if physical is not None:
-            return "?tmp:" + flat_text(lexical) + GLOB_NAME_SEP + flat_text(physical)
+            return flat_text(os.path.normpath(physical))
     return flat_text(lexical)
 
 

@@ -198,6 +198,24 @@ Folded on 2026-11-01: `sed`/`rg` → `harness-hooks` A4; `git log --output=.git/
   - Minor: no test pins a `..` after a `?`/`[`/brace cut, nor `/dev/fd/1/x`, `/dev/fd/01`; CG57 already denied before the fix (regression guard, not a repro); the glob-`..` check also asks outside `/tmp` (`rm src/*/../a.txt`, fail-closed, unpinned); ask messages name the wrong cause (glob-`..` reads as "a variable…", `/dev/fd/9/…` as "outside the project").
   - Aliases that write: `shopt -s expand_aliases⏎alias w='echo x > src/a.py'⏎w` passes (line 134 covers `cd` aliases only).
   - Minor: `cmd_joined` is not declared `local` in `guard_classify` (no verdict effect).
+- From the `guard-tokenizer-fd-links` review 3/3 (2026-11-13). The user shipped with these as
+  follow-ups on 2026-11-15:
+  - **Major (pre-existing)**: escaped or quoted find punctuation. `tokens()`
+    (`shell_targets.py:408-419`) makes `\;`, `';'` and `\(…\)` operators, and `cwk_segments`
+    (`hook-lib.sh:217/221`) also splits on `\;`. Everything after the first escaped terminator
+    goes unchecked. These pass: `find S -exec cat {} \; -delete`,
+    `-exec grep -q … \; -exec sed -i … \;`, `-exec true \; -fprint package.json`,
+    `find -L S … \; -o … -exec rm {} \;`, and the `\(…\) -delete` root ask.
+    - Fix direction: hide escaped or quoted punctuation in `region()` (ST:249-258) via HIDE,
+      and make `cwk_segments` honour `\` outside double quotes.
+  - Pre-existing, no rows: `gawk -i inplace`, awk `print > "src/a.ts"`, `sort -o`,
+    `base64 -d -o`. `followed_rows` only covers roots outside the project.
+  - Introduced Minors:
+    - awk `i++ / 2; system(...)` on one line is hidden (ST:2144/2096);
+    - `awk_program` ignores gawk's abbreviated long options (`--as`, `--fi`) and `-W exec`;
+    - `sed_runs` duplicates the `sed_rows` `?unknown` row, so CG118's block cases cannot fail;
+    - the CG119 `-follow`-in-exec case passes either way. The case that would catch it is
+      `-exec grep -follow {} + -delete`.
 
 ## Where each old item went
 Older docs cite these ids (`docs/work/small-lane/plan.md`, `docs/specs/light-permissions.md`, `docs/work/light-permissions-git/prior-gate.md`).
