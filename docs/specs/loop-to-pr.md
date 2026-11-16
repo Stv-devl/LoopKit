@@ -27,7 +27,7 @@ Shared with `docs/specs/fewer-asks.md` (*Evidence*). Owned here: push/PR asked 3
       - The record hook stores the rows only when the answer is the exact `go` option label (free text records nothing).
       - `protect-files.sh` allows a `.tdd-unfrozen` Edit without a prompt only when every added line's path and ids match recorded rows and the path is a test file; an implementation path, an id on another path, or an id from an earlier pass's go keeps the ask. The spike (`docs/product/spikes/safetycheck-tdd-unfrozen.md`) shows Claude Code adds no prompt of its own there.
       - `tdd-freeze-tests.sh` (and `addons/fastapi/hooks/tdd-freeze-tests-py.py`) then accepts the edited case only if its new line hashes to the row; otherwise deny.
-    - **Frozen-test corrections during EXECUTE are queued, then validated once.** The main thread records each (case id, old and new line, reason, hunk) and keeps working on what does not depend on the blocked layer (`05-testing.md`'s layer order holds). It stops **once**, when nothing else can progress or at the end of EXECUTE before review, shows the whole batch, and applies the user's answer (all, some, none) in **one** `.tdd-unfrozen` Edit. This replaces `light-fewer-gates.md` B7's per-correction confirmation; B7's recording in `## Gate` and its listing (now in the PR body) stay.
+    - **Frozen-test corrections during EXECUTE are queued, then validated once.** The main thread records each (case id, old and new line, reason, hunk) and keeps working on what does not depend on the blocked layer (`05-testing.md`'s layer order holds). It stops **once**, when nothing else can progress or at the end of EXECUTE before review, shows the whole batch, and applies the user's answer (all, some, none) in **one** `.tdd-unfrozen` Edit. This replaces `light-fewer-gates` (shipped 41cb73d) B7's per-correction confirmation; B7's recording in `## Gate` and its listing (now in the PR body) stay.
     - **Reviewer:** an unfrozen test whose diff does not match its recorded new line, or removes an assertion beyond it, is **Critical** (FAIL); a changed frozen case with no row is Critical.
 - OUT :
   - Auto mode, the dedicated agent, the guarded-path split, the `Guarded files touched` block: `docs/specs/auto-mode.md`.
@@ -49,7 +49,7 @@ No app code. Expected files:
 - Hooks: `enforce-git-workflow.sh`, `protect-files.sh`, `tdd-freeze-tests.sh`, `addons/fastapi/hooks/tdd-freeze-tests-py.py`, a new record hook (PostToolUse `AskUserQuestion`), `hook-guarded.sh`, `kit-doctor.py`, their fixtures, `test-hooks.sh`; `.claude/settings.json` wiring.
 - Commands: `.claude/commands/loop/{plan,orchestrate,ship,small,tracks}.md`, `.claude/commands/kit/doctor.md`.
 - Agents: `github`, `reviewer` / `.claude/guides/review/tests.md`.
-- Docs: `docs/Claude_Workflows.md`, `docs/specs/light-fewer-gates.md` and `docs/specs/fast-lane.md` (cross-references to V5/V10).
+- Docs: `docs/Claude_Workflows.md`, `light-fewer-gates` (shipped 41cb73d) and `docs/specs/fast-lane.md` (cross-references to V5/V10).
 
 ## Business logic to cover
 - F4 `git push -u origin <B>` with the record and the server rule: pass; each refused shape listed in V5: ask/deny; no server rule: ask.

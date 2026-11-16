@@ -2,7 +2,7 @@
 > **Superseded 2026-10-28** (plan-critic BLOCKED 3x, `docs/work/light-permissions/handoff.md`). Split into three passes, in order: `docs/specs/guard-writes.md` → `docs/specs/guard-shell.md` → `docs/specs/light-permissions-git.md`. Kept as the trace; do not orchestrate this file.
 
 Token profile: critical (it widens what the agent may do without a prompt and hardens the hooks that compensate)
-Split from: `docs/specs/light-fewer-gates.md` (2026-10-27), which keeps the loop change only. Ships before `docs/specs/fast-lane.md`.
+Split from: `light-fewer-gates` (shipped 41cb73d) (2026-10-27), which keeps the loop change only. Ships before `docs/specs/fast-lane.md`.
 
 ## Objective
 Permission prompts disappear for commands the hooks already police, and every guardrail the hooks rely on (their own files, their escape hatches, their RED markers, the gate configs) stays in front of the user, whatever tool or shell verb reaches it. Evidence for the gain: `docs/measuring-the-loop.md`, "5 minutes of work behind one unapproved `Write`".
@@ -29,7 +29,7 @@ Threat model: a **mistaken** agent in `acceptEdits` with the allow list below. N
     - The deny texts of `tdd-require-red.sh` and `tdd-freeze-tests.sh` keep naming `.tdd-unfrozen`, and add: "this write will ask the user".
   - **P3. Docs.** `docs/ADAPTATION.md`: `install.sh` merges `allow` as a union and keeps the user's `defaultMode` (`install.sh:247`), so a reinstall switches to `acceptEdits` only where no mode was set; writing the guarded set (kit hooks and scripts, RED markers, vitest/eslint configs) now prompts on every write, by design. `docs/Claude_Workflows.md`: the permission prompts that remain on a light pass.
 - OUT :
-  - No change to the loop's human gates (`docs/specs/light-fewer-gates.md`).
+  - No change to the loop's human gates (`light-fewer-gates` (shipped 41cb73d)).
 
 ## Open findings from the 2026-10-27 reviews — settled 2026-10-28, all nine IN
 Decided with the user before `/loop:plan` (research: `docs/work/light-permissions/research.md`). They amend P2 as follows, and the cases H9-H15 below cover them:

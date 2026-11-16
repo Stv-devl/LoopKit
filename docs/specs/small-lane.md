@@ -1,6 +1,6 @@
 # Spec: Small lane, small tickets in parallel, merged one at a time
 Token profile: standard (no automated path to the remote; tickets that need `critical` are refused, S2)
-Depends on: `docs/specs/light-fewer-gates.md` shipped (case ids, B6). `docs/specs/light-permissions.md` is not required to work, only to remove the permission prompts inside a ticket's session (P1 allows, H7 for `kit-attempts.py`).
+Depends on: `light-fewer-gates` shipped (41cb73d) (case ids, B6). `docs/specs/light-permissions.md` is not required to work, only to remove the permission prompts inside a ticket's session (P1 allows, H7 for `kit-attempts.py`).
 Replaces: `docs/specs/fast-lane.md` as the next step (parked, its decision D4 taken: local first).
 
 ## Objective

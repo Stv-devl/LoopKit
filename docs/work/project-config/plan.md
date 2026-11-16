@@ -1015,6 +1015,9 @@ the rule stops EXECUTE for the user. It is never edited silently.
   - `migrate` on a protection key (`protected_dirs`, `protected_branches`): **keep every
     readable item plus the defaults**, one note per dropped item (overrides plan.md:487-489
     for these two keys).
+- shipped 2026-11-16 as `ac3c9a4` (local, `audit/slim`): the user confirmed every
+  `amended` frozen case above at `/loop:ship` 4bis ("Confirm all"), and the review-3
+  exception.
 - review 3 (2026-11-16): `review` BLOCKED 3/3 on one Major (G1). **User-authorised
   exception** to the ceiling, scope fixed: hook-lib `CWK_TDD_SHELL_TARGET_RE`,
   `CWK_TDD_SHELL_FROZEN_TEST_RE`, `CWK_TDD_PY_TARGET_RE` start `'^'` (fail closed, as the

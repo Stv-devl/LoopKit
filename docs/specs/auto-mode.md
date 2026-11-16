@@ -12,7 +12,7 @@ Shared with `docs/specs/fewer-asks.md` (*Evidence*). Expected in `auto` mode: th
 - IN :
   - **V7. Auto mode: who takes the gates, chosen once.**
     - **The mode question** is asked at the framing, with the spec interview's questions (no extra stop): `Validation : moi | auto`. Full/BMAD entry: asked at `/loop:orchestrate` Phase 0. Never asked again in the pass, never switched by it. The record hook (`loop-to-pr.md`) stores it with the contract go; missing or mismatched → `moi`.
-    - **`moi`**: the flow after `loop-to-pr.md` (`light-fewer-gates.md` B1/B3 plus V10).
+    - **`moi`**: the flow after `loop-to-pr.md` (`light-fewer-gates`, shipped 41cb73d, B1/B3 plus V10).
     - **`auto` — option B** (user, 2026-11-08): `/loop:orchestrate` stops once at the end of Phase 1: it prints the spec's Objective, Scope IN/OUT and Acceptance criteria verbatim under `Contract (validated by this go)` and research's `Traps`, and asks `as written` or free text to amend (B3's amendment rules apply). Full/BMAD entry: the stories, after `/stories:review`, are the contract; same stop after research. After that stop, every gate goes to an agent:
 
       | Gate after the contract | `moi` | `auto` |
@@ -39,7 +39,7 @@ Shared with `docs/specs/fewer-asks.md` (*Evidence*). Expected in `auto` mode: th
     - **Always as today, every mode:** every deny (secrets, `.claude/.tdd-red/`, `.git/`, destructive commands, the TDD hooks' denies); every non-guarded ask (destructive git, `gh pr merge`).
     - **The `Guarded files touched` section is computed by the hook.** When `enforce-git-workflow.sh` is about to allow `gh pr create`, it fetches, builds `git diff --no-renames --name-status origin/<base>...HEAD`, adds the ledger of guarded writes allowed during the pass (path, sha256 before/after — catches a guarded edit reverted before the commit), and denies unless the `--body-file` contains that exact block (checked by hash). Changed existing test files are listed; a changed frozen case with no ledger row is printed first, as a guard failure.
 - OUT :
-  - `moi` mode's contract placement: unchanged, `docs/specs/light-fewer-gates.md`.
+  - `moi` mode's contract placement: unchanged, `light-fewer-gates` (shipped 41cb73d).
   - The plan-critic / review cap: `docs/specs/review-convergence.md`.
 
 ## Open questions
@@ -56,7 +56,7 @@ No app code. Expected files:
 - Hooks: the record hook (mode + contract go, `SubagentStop` verdicts), `protect-files.sh`, `enforce-git-workflow.sh` (`Guarded files touched`), `hook-guarded.sh`, their fixtures, `test-hooks.sh`; `.claude/settings.json` wiring.
 - Commands: `.claude/commands/loop/{spec,orchestrate,interface,plan,review,ship}.md`.
 - Agents: the new dedicated agent, `designer`, `github` (two new PR sections), `.claude/guides/review/tests.md`.
-- Rules and docs: `.claude/rules/11-token-budget.md` (agent name in the `inherit` row, no new line), `CLAUDE.md` (`/loop:interface` and `/loop:plan` "never proceed on silence" holds in `moi` only; agent count 13 → 14), `README.md`, `docs/Claude_Workflows.md`, `docs/specs/light-fewer-gates.md`.
+- Rules and docs: `.claude/rules/11-token-budget.md` (agent name in the `inherit` row, no new line), `CLAUDE.md` (`/loop:interface` and `/loop:plan` "never proceed on silence" holds in `moi` only; agent count 13 → 14), `README.md`, `docs/Claude_Workflows.md`, `light-fewer-gates` (shipped 41cb73d).
 
 ## Business logic to cover
 - F6 auto mode: `settings.json`, `.github/workflows/x.yml` write: deny; `vite.config.ts` and `frontend/vite.config.ts` write: pass + ledger row; `.tdd-unfrozen` with/without a ledger row: pass/ask.
