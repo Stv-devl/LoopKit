@@ -218,8 +218,8 @@ words, written **once** in this file:
 // The four test-first layers (.claude/rules/05-testing.md), as a brace
 // expansion reused by every coverage glob below.
 //
-// This is the ONLY copy outside `.claude/hooks/hook-lib.sh`, where the same
-// four words are `CWK_TDD_LAYERS` and every hook that freezes or gates a file
+// This is the ONLY copy outside `.claude/project.json`, where the same
+// four words are `tdd_layers` and every hook that freezes or gates a file
 // reads them from there. The two cannot be shared — one is bash, one is TS —
 // so they are kept to one declaration each and this comment is the link.
 // They must cover the same set: a word in the hooks and not here produces a

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 2
+# cwk-guard-api: 3
 #
 # Hook: protect-files
 # Event: PreToolUse (Write|Edit), PreToolUse (Read), PreToolUse (Grep|Glob)
@@ -38,6 +38,12 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+if ! declare -F cwk_config cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_cfg_reason), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -77,7 +83,8 @@ fi
 # into real newlines and leaves every other backslash alone.
 decide() {
     local reason
-    reason="${2//\\n/$'\n'}"
+    cwk_cfg_reason "${2//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     jq -n --arg d "$1" --arg r "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -94,10 +101,17 @@ ask() { decide ask "$1"; }
 # SECRETS — refused whatever the tool, and on EVERY field that names a target
 # =============================================================================
 
-# CONFIGURE: the template suffixes that carry no secret. This list is duplicated
-# in prevent-destructive-commands.sh (SECRET_RE sanitizer) — change both, or the
-# two guards stop protecting the same set.
-ENV_TEMPLATE_RE='\.(example|sample|template)$'
+# The template suffixes that carry no secret come from `.claude/project.json`
+# (`env_template_suffixes`), the one list every guard reads: env_template_re builds
+# ENV_KEEP_ERE on the first `.env*` name, so no other target spawns the reader.
+ENV_KEEP_ERE="$CWK_NEVER_RE"
+__ENV_TEMPLATE_LOADED=0
+env_template_re() {
+    [[ "$__ENV_TEMPLATE_LOADED" == 1 ]] && return 0
+    __ENV_TEMPLATE_LOADED=1
+    cwk_config || true
+    [[ -z "$CWK_CFG_ENV_SUFFIX_ERE" ]] || ENV_KEEP_ERE="^\.env(\..+)?\.(${CWK_CFG_ENV_SUFFIX_ERE})$"
+}
 
 SECRET_PATTERNS=(
     "\.pem$"                    # SSL certificates
@@ -143,7 +157,8 @@ for target in "${PROBES[@]}"; do
     # known suffixes (`.local`, `.production`, …) always misses one, and the previous
     # shortcut for "anything but .example" was `\.env\.[^e]`, which silently let
     # `.env.e2e` and `.env.enc` through.
-    if [[ "$base" =~ ^\.env(\..*)?$ ]] && [[ ! "$base" =~ $ENV_TEMPLATE_RE ]]; then
+    [[ ! "$base" =~ ^\.env(\..*)?$ ]] || env_template_re
+    if [[ "$base" =~ ^\.env(\..*)?$ ]] && [[ ! "$base" =~ $ENV_KEEP_ERE ]]; then
         deny "Protected target: '$target' names environment secrets.\n\nThis is refused on every tool that can surface the contents — Read, Grep, Glob, Write, Edit — and prevent-destructive-commands.sh refuses it from the shell.\n\nAsk the user for the variable NAMES (never the values), or read .env.example."
     fi
 

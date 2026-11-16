@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: tdd-freeze-tests
 # Event: PreToolUse (Write|Edit)
@@ -40,6 +41,12 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -57,7 +64,8 @@ fi
 # with no message at all. Only the authored `\n` is expanded; every other backslash is left alone.
 deny() {
     local reason
-    reason="${1//\\n/$'\n'}"
+    cwk_cfg_reason "${1//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     cwk_log_health_deny "$reason"
     jq -n --arg r "$reason" '{
       hookSpecificOutput: {
@@ -66,6 +74,19 @@ deny() {
         permissionDecisionReason: $r
       }
     }'
+    exit 0
+}
+
+# An allowed edit, announced. With the config unreadable the allow becomes an ask carrying the
+# same text and the config note: one JSON object, never a message beside the degraded ask.
+notice() {
+    cwk_cfg_reason "$1"
+    if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+        jq -n --arg r "$CWK_CFG_OUT" '{hookSpecificOutput: {hookEventName: "PreToolUse",
+            permissionDecision: "ask", permissionDecisionReason: $r}}'
+    else
+        jq -n --arg m "$1" '{systemMessage: $m}'
+    fi
     exit 0
 }
 
@@ -111,6 +132,8 @@ fi
 
 # Only the three test-first layers. hooks.test.tsx, *.gateway.test.ts and
 # component tests are written AFTER the code — they are not frozen.
+[[ "$FILE_PATH" == *.test.ts || "$FILE_PATH" == *.test.tsx ]] || exit 0
+cwk_tdd_load || true
 if [[ ! "$FILE_PATH" =~ $CWK_TDD_TEST_RE ]]; then
     exit 0
 fi
@@ -151,8 +174,7 @@ fi
 # no-op.
 CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
 if [[ -n "$CONTENT" && "$CONTENT" == "$(cat "$FILE_PATH")" ]]; then
-    jq -n --arg m "TDD: identical re-save of the frozen test '$FILE_PATH' — allowed, nothing changed. tdd-prove-red is re-running it; read its verdict before writing any implementation." '{systemMessage: $m}'
-    exit 0
+    notice "TDD: identical re-save of the frozen test '$FILE_PATH' — allowed, nothing changed. tdd-prove-red is re-running it; read its verdict before writing any implementation."
 fi
 
 # The module under test, needed by three of the conditions below.
@@ -386,8 +408,7 @@ if [[ -n "$OLD_STRING" && "$OLD_STRING" != *"expect("* && "$NEW_STRING" == *"$OL
     fi
 
     if [[ -z "$REFUSED" ]]; then
-        jq -n --arg m "TDD: new case appended to the frozen test '$FILE_PATH' — allowed (the test list grows as you learn), nothing existing was touched. Say in your next message which behaviour it covers and why the /loop:plan test plan missed it; /loop:review compares this file against that plan." '{systemMessage: $m}'
-        exit 0
+        notice "TDD: new case appended to the frozen test '$FILE_PATH' — allowed (the test list grows as you learn), nothing existing was touched. Say in your next message which behaviour it covers and why the /loop:plan test plan missed it; /loop:review compares this file against that plan."
     fi
 
     deny "Frozen test: this edit to '$FILE_PATH' looks like an insertion, but $REFUSED (.claude/rules/05-testing.md).\n\nAdding a case is allowed; opening a way into a case that already runs is not — an inserted 'return;' leaves every assertion intact and kills the case anyway, and the lint cannot see it.\n\nA real append: anchor on a line outside any case body (the closing '});' of the previous one), keep that anchor verbatim, and let the added block carry its own 'expect('. Add its fixtures in the same edit.\n\nIf you genuinely need to change what an existing case asserts, that is a plan-level correction. A subagent stops and reports the case id and why. The main thread records it: one line in .claude/.tdd-unfrozen (this write will ask the user) in this shape:\n\n    $FILE_PATH  # <case id>: <one-line reason>\n\nthe plan line rewritten with the same id, an 'amended' line in plan.md's ## Gate — the user confirms it at the merge (orchestrate.md, Phase 4). Then edit."

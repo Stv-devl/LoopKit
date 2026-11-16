@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 5
+# cwk-guard-api: 6
 #
 # Hook: prevent-destructive-commands
 # Event: PreToolUse (Bash)
@@ -11,11 +11,13 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
 
 # A hook-lib.sh older than this guard may not check cwk_app_roots: calling it would exit 127,
 # which a PreToolUse hook reads as "allow". Refuse instead.
-if ! declare -F cwk_app_roots >/dev/null 2>&1; then
-    echo "BLOCKED: hook-guarded.sh lacks cwk_app_roots (a stale hook-lib.sh or hook-guarded.sh next to this guard), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+if ! declare -F cwk_app_roots cwk_config cwk_tdd_load >/dev/null 2>&1; then
+    echo "BLOCKED: hook-guarded.sh or hook-lib.sh lacks cwk_app_roots/cwk_config/cwk_tdd_load (a stale hook-lib.sh or hook-guarded.sh next to this guard), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
     exit 2
 fi
 
@@ -39,7 +41,8 @@ fi
 # newlines and leaves every other backslash alone (a path is full of them).
 decide() {
     local decision="$1" reason
-    reason="${2//\\n/$'\n'}"
+    cwk_cfg_reason "${2//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     [[ "$decision" == "deny" ]] && cwk_log_health_deny "$reason"
     jq -n --arg d "$decision" --arg r "$reason" '{
       hookSpecificOutput: {
@@ -80,9 +83,24 @@ fi
 # PROTECTED DIRECTORIES - Block recursive delete
 # =============================================================================
 
-# CONFIGURE: the top-level folders that must never be deleted recursively.
-# Add the ones this repo owns (backend, infra, migrations...).
-PROTECTED_DIRS="src|shared|\.claude|public|node_modules|dist"
+# The top-level folders that must never be deleted recursively come from
+# `.claude/project.json` (`protected_dirs`), read on the first rule that needs them:
+# pdc_protected_load fills PROTECTED_DIRS (an ERE alternation), PROTECTED_TEXT (the
+# list as the deny text shows it), PROTECTED_TARGET and the GUARD_PROTECTED_* regexes.
+PROTECTED_DIRS="$CWK_NEVER_RE" PROTECTED_TEXT="" PROTECTED_TARGET="$CWK_NEVER_RE"
+GUARD_PROTECTED_RE="$CWK_NEVER_RE" GUARD_PROTECTED_ROOT_RE="$CWK_NEVER_RE"
+__PDC_PROTECTED_LOADED=0
+pdc_protected_load() {
+    [[ "$__PDC_PROTECTED_LOADED" == 1 ]] && return 0
+    __PDC_PROTECTED_LOADED=1
+    cwk_config || true
+    [[ -n "$CWK_CFG_PROTECTED_DIRS_ERE" ]] || return 0
+    PROTECTED_DIRS="$CWK_CFG_PROTECTED_DIRS_ERE"
+    PROTECTED_TEXT="$CWK_CFG_PROTECTED_DIRS_TEXT"
+    PROTECTED_TARGET="(^|[[:space:]'\"/])($PROTECTED_DIRS)/?([[:space:]]|;|&|\||\"|'|\$)"
+    GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
+    GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
+}
 
 # The recursive flag, in every spelling: -r, -rf, -fr, -Rf, --recursive.
 # The target is checked SEPARATELY from the flags, because tying the two together
@@ -96,19 +114,20 @@ RM_RECURSIVE='(^|[|;&(`[:space:]])rm([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(-[a-z
 # `rm -rf /tmp/x; mkdir -p .claude/hooks src` has a recursive rm and the word
 # `.claude` in it, and blocking that is both wrong and infuriating. Splitting on
 # the shell separators keeps each rm judged on what it actually deletes.
-PROTECTED_TARGET="(^|[[:space:]'\"/])($PROTECTED_DIRS)/?([[:space:]]|;|&|\||\"|'|\$)"
+# PROTECTED_TARGET is built by pdc_protected_load above.
 
 # `|| [[ -n "$SEG" ]]` is not optional: tr emits no trailing newline, so a
 # single-segment command (`rm -rf src`) ends without one and a plain
 # `while read` never runs its body — the rule silently checked nothing.
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE "$RM_RECURSIVE" || continue
+    pdc_protected_load
 
     # A protected dir as a whole path segment: `src`, `./src`, `src/`,
     # `/abs/path/src/`. A path INSIDE one (`dist/assets`) is not denied here: the
     # guarded-set block below asks for it.
     if echo "$SEG" | grep -qE "$PROTECTED_TARGET"; then
-        deny "BLOCKED: Cannot delete protected directory recursively.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/\\n\\nA subdirectory is asked, not blocked: name it and let the user approve."
+        deny "BLOCKED: Cannot delete protected directory recursively.\\n\\nProtected: $PROTECTED_TEXT\\n\\nA subdirectory is asked, not blocked: name it and let the user approve."
     fi
 
     # Root, home, cwd — with or without a trailing slash. The missing `/?` is
@@ -144,8 +163,9 @@ fi
 # `while read` never runs its body — the rule silently checked nothing.
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE '\bfind\b.*(-delete\b|-exec(dir)?[[:space:]]+rm\b)' || continue
+    pdc_protected_load
     if echo "$SEG" | grep -qE "$PROTECTED_TARGET"; then
-        deny "BLOCKED: 'find ... -delete' on a protected directory is a recursive delete under another name.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/\\n\\nTarget specific files instead, and list them before deleting."
+        deny "BLOCKED: 'find ... -delete' on a protected directory is a recursive delete under another name.\\n\\nProtected: $PROTECTED_TEXT\\n\\nTarget specific files instead, and list them before deleting."
     fi
 done < <(cwk_segments "$COMMAND")
 
@@ -183,11 +203,11 @@ SECRET_RE="$SECRET_RE|--env-file[=[:space:]][\"']?[^|;&[:space:]\"']*$SECRET_FIL
 SECRET_RE="$SECRET_RE|(^|[;&|][[:space:]]*)\.[[:space:]]+[^|;&]*$SECRET_FILE"
 
 if echo "$COMMAND" | grep -qE "$SECRET_RE"; then
-    # Template env files contain no secrets — strip them, then re-check.
-    # CONFIGURE: this whitelist is duplicated in protect-files.sh
-    # (ENV_TEMPLATE_RE). Change both, or the shell and the tools stop protecting
-    # the same set of files.
-    SANITIZED=$(echo "$COMMAND" | sed -E 's/\.env\.(example|sample|template)//g')
+    # Template env files contain no secrets — strip them, then re-check. The
+    # suffixes are `.claude/project.json` `env_template_suffixes`, the list
+    # protect-files.sh, auto-approve-config.sh and enforce-git-workflow.sh read too.
+    cwk_config || true
+    SANITIZED=$(echo "$COMMAND" | sed -E "s/\\.env\\.(${CWK_CFG_ENV_SUFFIX_ERE:-$CWK_NEVER_RE})(\$|[^[:alnum:]_.-])/\\2/g")
     if echo "$SANITIZED" | grep -qE "$SECRET_RE"; then
         deny "BLOCKED: Reading or copying secret files (.env*, *.key, *.pem, credentials) via shell is not allowed.\\n\\nAsk the user for variable NAMES (not values) or check .env.example."
     fi
@@ -207,7 +227,7 @@ SECRET_DENY="" SECRET_ASK=""
 GUARD_API_OK=0
 if [[ -f "$HOOK_DIR/shell_targets.py" ]]; then
     { IFS= read -r _ && IFS= read -r GUARD_API_LINE; } <"$HOOK_DIR/shell_targets.py" || GUARD_API_LINE=""
-    [[ "$GUARD_API_LINE" != "# cwk-guard-api: 5" ]] || GUARD_API_OK=1
+    [[ "$GUARD_API_LINE" != "# cwk-guard-api: 6" ]] || GUARD_API_OK=1
 fi
 if [[ "$GUARD_API_OK" == 1 ]] && command -v python3 >/dev/null 2>&1; then
     SECRET_OUT="$(python3 -I -B "$HOOK_DIR/shell_targets.py" --secret-reads "$COMMAND" "$GUARD_BASE" "$SECRET_VERB" 2>/dev/null)" || SECRET_OUT=""
@@ -219,6 +239,7 @@ if [[ "$GUARD_API_OK" == 1 ]] && command -v python3 >/dev/null 2>&1; then
     if [[ "$SECRET_COUNT" -gt 0 && "${SECRET_LINES[$((SECRET_COUNT - 1))]}" == $'#end\t'"$((SECRET_COUNT - 1))" ]]; then
         for SECRET_LINE in "${SECRET_LINES[@]:0:$((SECRET_COUNT - 1))}"; do
             case "$SECRET_LINE" in
+                $'?config\t'*) cwk_config || true ;;
                 $'deny\t'*) [[ -n "$SECRET_DENY" ]] || SECRET_DENY="${SECRET_LINE#*$'\t'}" ;;
                 $'ask\t'*) [[ -n "$SECRET_ASK" ]] || SECRET_ASK="${SECRET_LINE#*$'\t'}" ;;
             esac
@@ -273,13 +294,37 @@ fi
 # Write/Edit, which is the only path the freeze can see.
 # =============================================================================
 
-TDD_TARGET_RE="$CWK_TDD_SHELL_TARGET_RE"
-
 # The FROZEN test files only — the four layer words, not every test file. The
 # source-write rule wants the wide list (no test file is written from a shell);
 # the snapshot rule wants the narrow one, or it denies a legitimate
 # `Button.test.tsx` snapshot update.
-TDD_FROZEN_TEST_RE="$CWK_TDD_SHELL_FROZEN_TEST_RE"
+#
+# pdc_tdd <target|frozen|py|any> <subject>: grep-style match, line by line, of the
+# subject against the layer regexes; pdc_tdd_rel the same with `=~` on one path.
+# Each regex needs `.ts` or `.py` in its own subject, so the project's config is read
+# only for a subject that holds one: a command naming no such file costs no reader.
+pdc_tdd_re() {
+    cwk_tdd_load || true
+    case "$1" in
+        target) printf '%s' "$CWK_TDD_SHELL_TARGET_RE" ;;
+        frozen) printf '%s' "$CWK_TDD_SHELL_FROZEN_TEST_RE" ;;
+        py) printf '%s' "$CWK_TDD_PY_TARGET_RE" ;;
+        tsany) printf '%s' "$CWK_TDD_SHELL_TARGET_RE|$CWK_TDD_SHELL_FROZEN_TEST_RE" ;;
+        any) printf '%s' "$CWK_TDD_SHELL_TARGET_RE|$CWK_TDD_SHELL_FROZEN_TEST_RE|$CWK_TDD_PY_TARGET_RE" ;;
+    esac
+}
+pdc_tdd() {
+    [[ "$2" == *.ts* || "$2" == *.py* ]] || return 1
+    cwk_tdd_load || true
+    grep -qE -- "$(pdc_tdd_re "$1")" <<<"$2"
+}
+pdc_tdd_rel() {
+    local re
+    [[ "$2" == *.ts* || "$2" == *.py* ]] || return 1
+    cwk_tdd_load || true
+    re="$(pdc_tdd_re "$1")"
+    [[ "$2" =~ $re ]]
+}
 
 # =============================================================================
 # DELETING A FROZEN TEST  —  the shortest way around the freeze, and it was open
@@ -301,7 +346,7 @@ TDD_FROZEN_TEST_RE="$CWK_TDD_SHELL_FROZEN_TEST_RE"
 
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE '(^|[[:space:]])(rm|unlink|shred|mv|truncate)([[:space:]]|$)' || continue
-    if echo "$SEG" | grep -qE "$TDD_FROZEN_TEST_RE"; then
+    if pdc_tdd frozen "$SEG"; then
         deny "BLOCKED: deleting or moving a frozen test file from the shell.\\n\\nThe freeze (tdd-freeze-tests.sh) allows a Write when the file does not exist — that is the RED phase. So removing the file and writing it again rewrites a frozen test wholesale, past every guardrail, which is exactly what the freeze exists to stop (.claude/rules/05-testing.md).\\n\\nIf a case is genuinely wrong, that is a plan-level correction: a subagent stops and reports the case id and why; the main thread adds the path + '# <case id>: <reason>' to .claude/.tdd-unfrozen, records it in plan.md's ## Gate (orchestrate.md, Phase 4), then edits it with Edit.\\n\\nIf the whole feature is being abandoned, delete the implementation module too and say so — do not start by removing the specification."
     fi
 done < <(cwk_segments "$COMMAND")
@@ -334,7 +379,7 @@ done < <(cwk_segments "$COMMAND")
 
 while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     echo "$SEG" | grep -qE '\b(vitest|jest|test:run|test:coverage|test:ui)\b[^|;&]*([[:space:]]-u\b|--update\b|--update-snapshots?\b)' || continue
-    if echo "$SEG" | grep -qE "$TDD_FROZEN_TEST_RE"; then
+    if pdc_tdd frozen "$SEG"; then
         deny "BLOCKED: updating snapshots on a test-first layer.\\n\\nThe runner rewrites the assertion in place, so tdd-freeze-tests.sh never sees the edit — the test ends up agreeing with the code, which is exactly what the freeze exists to prevent.\\n\\nThe three frozen layers (utils / mapper / repository-services) carry no snapshot at all (.claude/rules/05-testing.md). If one slipped in, remove it and assert the value; if a case is genuinely wrong, that is .claude/.tdd-unfrozen, visibly, with a reason."
     fi
 done < <(cwk_segments "$COMMAND")
@@ -385,7 +430,7 @@ SRC_VERB_RE="${SEG_HEAD}(tee|cp|mv|install|rsync|ln|patch|truncate).*\.tsx?"
 SRC_VERB_RE="$SRC_VERB_RE|${SEG_HEAD}(sed|perl)\b.*(^|[[:space:]])(-[a-zA-Z]*i|--in-place).*\.tsx?"
 SRC_VERB_RE="$SRC_VERB_RE|${SEG_HEAD}(python3?|node|deno|bun|ruby|php)\b.*(^|[[:space:]])(-c|-e|--eval|-p)\b.*\.tsx?"
 
-# `TDD_TARGET_RE` is defined above, and shared with the snapshot rule.
+# `pdc_tdd target` is defined above, and shared with the snapshot rule.
 
 # The same door, on the Python cycle (fastapi addon). Deny only — there is no
 # `ask` tier here, because this pattern names the two test-first paths and
@@ -405,15 +450,19 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
     SEG_N="${SEG_N//\$\"/\"}"
     SEG_N="${SEG_N//[\'\"\\]/}"
     { echo "$SEG" | grep -qE "$PY_WRITE_RE"; } || { echo "$SEG_N" | grep -qE "$PY_VERB_RE"; } || continue
-    echo "$SEG_N" | grep -qE "$CWK_TDD_PY_TARGET_RE" || echo "$SEG" | grep -qE "$CWK_TDD_PY_TARGET_RE" || continue
+    pdc_tdd py "$SEG_N" || pdc_tdd py "$SEG" || continue
     PY_WRITE_SEEN=1
 done < <(cwk_segments "$COMMAND")
 
-PY_TDD_DENY="BLOCKED: writing the Python test-first layer from the shell.\\n\\nThe three Python TDD hooks (tdd-require-red-py, tdd-freeze-tests-py, tdd-prove-red-py) only see the Write and Edit tools, exactly like their TypeScript twins. A redirection bypasses all three: app/services/ would be created with no RED ever observed, and a frozen tests/services/test_*.py rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed. To correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/07-backend.md)."
+# The module and test roots come from `.claude/project.json` (`fastapi`), loaded by the
+# `pdc_tdd py` test that precedes every use.
+pdc_py_deny() {
+    printf '%s' "BLOCKED: writing the Python test-first layer from the shell.\\n\\nThe three Python TDD hooks (tdd-require-red-py, tdd-freeze-tests-py, tdd-prove-red-py) only see the Write and Edit tools, exactly like their TypeScript twins. A redirection bypasses all three: a test-first module under ${CWK_CFG_MODULE_ROOT:-the module root}/ would be created with no RED ever observed, and a frozen ${CWK_CFG_TESTS_ROOT:-tests}/…/test_*.py rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed. To correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/07-backend.md)."
+}
 TS_TDD_DENY="BLOCKED: writing a test-first layer or a test file from the shell.\\n\\nThe TDD hooks (tdd-require-red, tdd-freeze-tests, tdd-prove-red) only see the Write and Edit tools. A redirection bypasses all three: the RED phase is never observed and a frozen test can be rewritten silently.\\n\\nUse Write/Edit. If the module already exists and you are in GREEN or REFACTOR, Edit is allowed and nothing will block you. If you genuinely need to correct a frozen test, that is .claude/.tdd-unfrozen — visibly, with a reason (.claude/rules/05-testing.md)."
 
 if [[ "$PY_WRITE_SEEN" == "1" ]]; then
-    deny "$PY_TDD_DENY"
+    deny "$(pdc_py_deny)"
 fi
 
 SRC_WRITE_SEEN=0 SRC_VERB_SEEN=0
@@ -427,7 +476,7 @@ while IFS= read -r SEG || [[ -n "$SEG" ]]; do
         continue
     fi
     SRC_WRITE_SEEN=1
-    if echo "$SEG_N" | grep -qE "$TDD_TARGET_RE" || echo "$SEG" | grep -qE "$TDD_TARGET_RE"; then
+    if pdc_tdd target "$SEG_N" || pdc_tdd target "$SEG"; then
         deny "$TS_TDD_DENY"
     fi
 done < <(cwk_segments "$COMMAND")
@@ -502,8 +551,6 @@ fi
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
 GUARD_DENY_CG="" GUARD_ASK_CG=""
 GUARD_ASK_F="" GUARD_ASK_T="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
-GUARD_PROTECTED_RE="^($PROTECTED_DIRS)(/|$)"
-GUARD_PROTECTED_ROOT_RE="^($PROTECTED_DIRS)$"
 GUARD_PROJECT_REAL=""
 if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
     GUARD_PROJECT_REAL="$(cwk_real_path "$CLAUDE_PROJECT_DIR")" || GUARD_PROJECT_REAL=""
@@ -534,11 +581,12 @@ guard_is_root_or_above() {
 # flag-r empties or rewrites a folder, flag-w writes a file, cfg loads a config.
 guard_classify_tool() {
     local verb="$1" target="$2" rel="$3"
+    pdc_protected_load
     case "$verb" in
         flag-r | flag-w)
             if [[ "$rel" =~ $GUARD_PROTECTED_ROOT_RE && "$rel" != dist ]]; then
                 guard_note_deny "$rel written by $verb" "$rel is a protected directory, and a tool option that writes its output there empties or overwrites it whole."
-            elif [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $CWK_TEST_FILE_RE ]]; then
+            elif pdc_tdd_rel target "$rel" || [[ "$rel" =~ $CWK_TEST_FILE_RE ]]; then
                 guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
             elif cwk_is_guarded "$rel"; then
                 [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
@@ -603,6 +651,7 @@ guard_classify_outside() {
 
 guard_classify() {
     local verb="$1" target="$2" rel text slot="" plain=1 codegen=0 globpat="" globpat_l shopt_chars extglob_re ext
+    pdc_protected_load
     # `>cg` (a listed generator's redirect) is shown and handled as `>`, but for its ask.
     if [[ "$verb" == '>cg' ]]; then
         verb='>'
@@ -626,7 +675,7 @@ guard_classify() {
                     GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.tdd-red)"
                 fi
             elif [[ "$target" == '?inline:'* ]] \
-                && grep -qE "$TDD_TARGET_RE|$TDD_FROZEN_TEST_RE|$CWK_TDD_PY_TARGET_RE" <<<"$text"; then
+                && pdc_tdd any "$text"; then
                 [[ -n "$GUARD_INLINE_TDD" ]] || GUARD_INLINE_TDD="$verb ${text:0:200}"
             else
                 [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="$verb ${text:0:200}"
@@ -700,15 +749,15 @@ guard_classify() {
     elif [[ "$verb" == inline-path ]]; then
         # An inline program naming a repo path: sent back to Read/Grep or Write/Edit. A
         # test-first or test file keeps the GUARD_INLINE_TDD deny and its own text.
-        [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE ]] && return 0
+        pdc_tdd_rel tsany "$rel" && return 0
         guard_note_deny "inline programs are not used here: $rel" "Read/Grep to read, Write/Edit to write."
     elif [[ "$verb" == '>' || "$verb" == '>>' ]]; then
         # A redirect whose filename carries a quote is invisible to the raw-text rules above;
         # the resolved target gets the same decision the unquoted spelling gets there.
-        if [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE ]]; then
+        if pdc_tdd_rel tsany "$rel"; then
             [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$TS_TDD_DENY"
-        elif [[ -n "${CWK_TDD_PY_TARGET_RE:-}" && "$rel" =~ $CWK_TDD_PY_TARGET_RE ]]; then
-            [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$PY_TDD_DENY"
+        elif pdc_tdd_rel py "$rel"; then
+            [[ -n "$GUARD_DENY_RAW" ]] || GUARD_DENY_RAW="$(pdc_py_deny)"
         elif [[ "$rel" =~ \.(tsx?|py)$ ]]; then
             # A source written by a redirect skips every Write/Edit guardrail: denied, but
             # for a generator listed in .claude/project.json onto an unguarded file.
@@ -726,8 +775,7 @@ guard_classify() {
         # An in-place or copy write of a source goes around every Write/Edit guardrail:
         # denied, so the agent retries with Edit instead of asking the user. A redirect
         # (`>`) keeps its ask below, and `mv` keeps the protected-dir ask (no rename tool).
-        if [[ "$rel" =~ $TDD_TARGET_RE || "$rel" =~ $TDD_FROZEN_TEST_RE \
-              || ( -n "${CWK_TDD_PY_TARGET_RE:-}" && "$rel" =~ $CWK_TDD_PY_TARGET_RE ) ]]; then
+        if pdc_tdd_rel any "$rel"; then
             guard_note_deny "$rel written by $verb" "$GUARD_TEST_WHY"
         else
             guard_note_deny "$rel written by $verb" "This edits a source from the shell, around every Write/Edit guardrail. Use Write/Edit."
@@ -755,7 +803,9 @@ if [[ "$GUARD_FAILED" == 0 ]]; then
         fi
     done
     for GUARD_LINE in "${GUARD_ROWS[@]}"; do
-        if [[ "${GUARD_LINE%%$'\t'*}" != fd-bound ]]; then
+        if [[ "${GUARD_LINE%%$'\t'*}" == '?config' ]]; then
+            cwk_config || true
+        elif [[ "${GUARD_LINE%%$'\t'*}" != fd-bound ]]; then
             guard_classify "${GUARD_LINE%%$'\t'*}" "${GUARD_LINE#*$'\t'}"
         fi
     done
@@ -857,10 +907,10 @@ if [[ -n "$GUARD_ASK_Q" ]]; then
     ask "kit-cwd: this kit script ($GUARD_ASK_Q) is run by a relative path where the directory is not the project root or a registered worktree, or is not provably so: a nested copy of the kit script would run instead of the project's own.\\n\\nRun it as the first command, from the project root or a registered worktree (or after a lone 'cd <absolute root> &&'). Approve only if that copy is the one you mean."
 fi
 if [[ -n "$GUARD_ASK_P" ]]; then
-    ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. Approve only if this subtree is meant to go."
+    ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: $PROTECTED_TEXT. Approve only if this subtree is meant to go."
 fi
 if [[ -n "$GUARD_ASK_M" ]]; then
-    ask "this moves a path under a protected dir: $GUARD_ASK_M.\\n\\nProtected: src/, shared/, .claude/, public/, node_modules/, dist/. A move out of the tree is a deletion from it; Write/Edit cannot rename, so the user decides."
+    ask "this moves a path under a protected dir: $GUARD_ASK_M.\\n\\nProtected: $PROTECTED_TEXT. A move out of the tree is a deletion from it; Write/Edit cannot rename, so the user decides."
 fi
 if [[ -n "$GUARD_ASK_F" ]]; then
     ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: auto-approve-config
 # Event: PreToolUse (Read)
@@ -64,10 +64,18 @@ fi
 # protect-files.sh denies these on the same event and a deny outranks an allow,
 # but two hooks of one event returning opposite decisions is a contradiction
 # waiting to be resolved the wrong way by a later refactor. Keep the lists agreed.
+# The template suffixes come from `.claude/project.json` (`env_template_suffixes`), read
+# only for a `.env*` name. A config that cannot be read approves no `.env*` file at all.
+ENV_KEEP_ERE='[^[:print:][:space:]]{255}'
 for probe in "$FILE_PATH" "$REL_PATH"; do
     BASENAME="${probe##*/}"
-    if [[ "$BASENAME" =~ ^\.env(\..+)?$ ]] && [[ ! "$BASENAME" =~ \.(example|sample|template)$ ]]; then
-        exit 0
+    if [[ "$BASENAME" =~ ^\.env(\..+)?$ ]]; then
+        declare -F cwk_config >/dev/null 2>&1 || exit 0
+        rc=0
+        cwk_config || rc=$?
+        [[ "$rc" == 0 && -n "$CWK_CFG_ENV_SUFFIX_ERE" ]] || exit 0
+        ENV_KEEP_ERE="^\.env(\..+)?\.(${CWK_CFG_ENV_SUFFIX_ERE})$"
+        [[ "$BASENAME" =~ $ENV_KEEP_ERE ]] || exit 0
     fi
     if [[ "$probe" =~ \.pem$|\.key$|(^|/)\.?credentials(\.|$) ]]; then
         exit 0
@@ -86,7 +94,7 @@ AUTO_APPROVE_PATTERNS=(
     "^postcss\.config\."        # PostCSS config
     "^\.prettierrc"             # Prettier config
     "^package\.json$"           # Package manifest
-    "^\.env\.example$"          # Example env file
+    "^\.env(\.[^/]+)?$"         # Env template: only a name that passed the suffix check above
     "^\.claude/"                # Claude config files
     "CLAUDE\.md$"               # Claude instructions
 )

@@ -862,8 +862,9 @@ grep -Fq 'project_config.py' "$ROOT/.claude/hooks/hook-guarded.sh"
 
 # W5: no rule line was added for this pass; counted as test-rules-floor.sh counts the core total.
 RULES_TOTAL="$(wc -l "$ROOT/CLAUDE.md" "$ROOT"/.claude/rules/*.md | tail -1 | awk '{print $1}')"
-[[ "$RULES_TOTAL" -le 516 ]] || {
-    echo "W5: the session floor is $RULES_TOTAL lines, over the 516 this pass started from" >&2
+RULES_CEILING="$(sed -n 's/^CORE_CEILING=\([0-9][0-9]*\)$/\1/p' "$ROOT/.claude/hooks/test-rules-floor.sh")"
+[[ -n "$RULES_CEILING" && "$RULES_TOTAL" -le "$RULES_CEILING" ]] || {
+    echo "W5/PK3: the session floor is $RULES_TOTAL lines, over test-rules-floor.sh's ceiling ${RULES_CEILING:-?}" >&2
     exit 1
 }
 for f in "$ROOT"/.claude/hooks/*.sh "$ROOT/install.sh"; do
@@ -898,5 +899,134 @@ grep -Fq 'MERGED' "$SHIP"
 for pr_file in "$GITHUB_AGENT" "$ROOT/.claude/skills/e2e-playwright/SKILL.md" "$ROOT/.claude/agents/e2e-tester.md"; do
     if grep -Eiq 'imgur|supabase|upload-artifact|s3\.' "$pr_file"; then echo "foreign image host in $pr_file" >&2; exit 1; fi
 done
+
+# PK1 (project-config): no hook holds a moved project value or its default literal; the
+# values live in .claude/project.json, read by project_config.py.
+PK1_OUT="$(python3 -I - "$ROOT" <<'PY'
+import ast
+import glob
+import io
+import json
+import os
+import re
+import sys
+import tokenize
+
+root = sys.argv[1]
+icons = "|".join(json.load(open(os.path.join(root, ".claude", "project.json")))["forbidden_icons"])
+literals = ["example|sample|template", r"^\.env\.example$", "app/services", "lib/client",
+            '"main|master"', "cwk_bin prettier", "cwk_bin eslint", "Protected: src/", icons]
+shell_names = ["PROTECTED_DIRS", "PROTECTED_BRANCHES", "RUN_TESTS", "CWK_TDD_LAYERS"]
+py_names = {"DATA_CLIENT_MODULE", "DATA_CLIENT_OWN_PATH", "COMPOSITION_ROOTS", "SHARED_DIRS",
+            "SECRET_KEEP", "MODULE_ROOT", "TESTS_ROOT", "TEST_FIRST_DIRS", "SESSION_NAMES",
+            "EXTERNAL_CLIENTS"}
+files = []
+for pattern in (".claude/hooks/*.sh", ".claude/hooks/*.py", "addons/fastapi/hooks/*.sh", "addons/fastapi/hooks/*.py"):
+    files += glob.glob(os.path.join(root, pattern))
+bad = []
+for path in sorted(files):
+    name = os.path.basename(path)
+    if name in ("project_config.py", "kit-doctor.py") or name.startswith(("test-", "test_")):
+        continue
+    text = open(path, encoding="utf-8").read()
+    rel = os.path.relpath(path, root)
+    if name.endswith(".sh"):
+        for number, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for var in shell_names:
+                if re.search(rf'(^|[^A-Za-z0-9_]){var}="[^$]', line):
+                    bad.append(f"{rel}:{number}: {var}= literal")
+            if "ENV_TEMPLATE_RE" in line or re.search(r"SECRET_KEEP\s*=", line):
+                bad.append(f"{rel}:{number}: env template copy")
+            for literal in literals:
+                if literal in line:
+                    bad.append(f"{rel}:{number}: {literal}")
+        continue
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in py_names:
+                bad.append(f"{rel}:{node.lineno}: {target.id} =")
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant) \
+                    and isinstance(first.value.value, str):
+                docs.update(range(first.lineno, first.end_lineno + 1))
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT or token.start[0] in docs:
+            continue
+        for literal in literals:
+            if literal in token.string:
+                bad.append(f"{rel}:{token.start[0]}: {literal}")
+print("\n".join(sorted(set(bad))))
+PY
+)"
+if [[ -n "$PK1_OUT" ]]; then printf 'PK1: a hook still holds a project value:\n%s\n' "$PK1_OUT" >&2; exit 1; fi
+
+# PK2: every reader call runs isolated, and no file sources or evals reader output.
+PK2_OUT="$(grep -nE 'project_config\.py' "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh \
+    "$ROOT"/addons/*/hooks/*.sh "$ROOT/install.sh" 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | grep -E 'python3( +-[A-Za-z]+)* +"?[^ ]*project_config\.py' | grep -vE 'python3 +-I' || true)"
+if [[ -n "$PK2_OUT" ]]; then printf 'PK2: reader call without -I:\n%s\n' "$PK2_OUT" >&2; exit 1; fi
+if grep -nE '(source|eval|\.) +.*project_config\.py' "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh \
+        "$ROOT/install.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
+    echo 'PK2: reader output sourced or evaluated' >&2; exit 1
+fi
+
+# PK4: the four hooks that read project values are guard files, each stamped.
+for pk_hook in tdd-freeze-tests.sh no-forbidden-icons.sh enforce-architecture.py tdd-prove-red.sh; do
+    grep -Fq "$pk_hook" <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
+    grep -q '^# cwk-guard-api: [0-9]' "$ROOT/.claude/hooks/$pk_hook"
+done
+
+# PK5: /kit:init writes the project values into .claude/project.json, never into a hook.
+for pk_key in protected_branches test_command env_template_suffixes forbidden_icons tdd_layers; do
+    grep -Fq "$pk_key" "$KIT_INIT"
+done
+if grep -nE '^[0-9]+\. +`?(\.claude/hooks/|[a-z_-]+\.(sh|py)`)' "$KIT_INIT"; then
+    echo 'PK5: a /kit:init step edits a hook' >&2; exit 1
+fi
+
+# PK6 (amended with PV3): cwk_is_guarded stays two-state, 0 or 1; an unreadable config is the
+# degraded mode, which turns the hook's pass into an ask, never a third return code that a bare
+# `if cwk_is_guarded` would read as "not guarded".
+PK6_BODY="$(sed -n '/^cwk_is_guarded() {/,/^}/p' "$ROOT/.claude/hooks/hook-guarded.sh")"
+[[ -n "$PK6_BODY" ]] || { echo 'PK6: cwk_is_guarded not found' >&2; exit 1; }
+if grep -nE 'return +[2-9]' <<<"$PK6_BODY"; then
+    echo 'PK6: cwk_is_guarded returns a third state' >&2; exit 1
+fi
+
+# PK7 (review 1): a hook whose reading of the project values changed carries a new stamp, so
+# an old copy is held back: protect-files 2 → 3, auto-approve-config 1 → 2.
+pk7_stamp() { sed -n 's/^# cwk-guard-api: \([0-9][0-9]*\)$/\1/p' "$ROOT/.claude/hooks/$1" | head -n 1; }
+[[ "$(pk7_stamp protect-files.sh)" -ge 3 ]] || { echo 'PK7: protect-files.sh stamp is below 3' >&2; exit 1; }
+[[ "$(pk7_stamp auto-approve-config.sh)" -ge 2 ]] || { echo 'PK7: auto-approve-config.sh stamp is below 2' >&2; exit 1; }
+for pk_hook in protect-files.sh auto-approve-config.sh; do
+    grep -Fq "$pk_hook" <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")" \
+        || { echo "PK7: $pk_hook is not a guard file" >&2; exit 1; }
+done
+
+# PK8: the never-matching pattern stays under BSD's repetition limit (RE_DUP_MAX 255).
+pk8_count="$(sed -n "s/^CWK_NEVER_RE=.*{\([0-9][0-9]*\)}'.*/\1/p" "$ROOT/.claude/hooks/hook-guarded.sh")"
+[[ -n "$pk8_count" && "$pk8_count" -le 255 ]] || { echo "PK8: CWK_NEVER_RE repeats ${pk8_count:-?} times" >&2; exit 1; }
+pk8_files=()
+for pk8_f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/*.py "$ROOT"/.claude/scripts/*.sh \
+             "$ROOT"/addons/fastapi/hooks/*.sh "$ROOT"/addons/fastapi/hooks/*.py; do
+    [[ "$(basename "$pk8_f")" == test-* ]] || pk8_files+=("$pk8_f")
+done
+if grep -nE '\{(25[6-9]|2[6-9][0-9]|[3-9][0-9]{2}|[0-9]{4,})\}' "${pk8_files[@]}"; then
+    echo 'PK8: an ERE repeats more than 255 times (RE_DUP_MAX on BSD)' >&2; exit 1
+fi
+
+# PK9: CODEOWNERS owns .claude/project.json, the file that holds every project value.
+grep -Eq '^/\.claude/project\.json[[:space:]]+@' "$ROOT/templates/github/CODEOWNERS" \
+    || { echo 'PK9: CODEOWNERS does not own .claude/project.json' >&2; exit 1; }
+grep -Fq '.claude/project.json' <<<"$(grep -A4 '^- \*\*`CODEOWNERS`\*\*' "$ROOT/.claude/skills/templates/ci.md")" \
+    || { echo 'PK9: ci.md does not list .claude/project.json among the owned paths' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

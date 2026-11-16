@@ -13,8 +13,8 @@ Read by a `reviewer` assigned `correctness` (`.claude/agents/reviewer.md`). Also
       invariants from the code.
 - [ ] No cross-feature import (`features/A` → `features/B`)
 - [ ] No shared **leaf** code depending on a feature: `src/components`, `src/hooks`,
-      `src/lib`, `src/types`, `src/stores`, `src/config` — the full `SHARED_DIRS`
-      of `enforce-architecture.py`, six entries — must not import `features/*`.
+      `src/lib`, `src/types`, `src/stores`, `src/config` — the full
+      `data_client.shared_dirs` of `.claude/project.json`, six entries — must not import `features/*`.
       `src/routes` and `src/providers` are wiring and may. You are the backstop
       that matters here: the hook inspects only the **inserted delta** of an
       Edit, so an import already sitting elsewhere in the file reaches you and

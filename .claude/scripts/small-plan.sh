@@ -50,6 +50,7 @@ while IFS= read -r path; do
     rows+="$path"$'\t'"$(small_layer "$path")"$'\t'"$status"$'\n'
 done < <(small_spec_files "$spec")
 
+small_tdd_load
 SMALL_ROWS="$rows" SMALL_RED_GREEN="$CWK_TDD_LAYERS" SMALL_TEST_RE="$CWK_TDD_TEST_RE" SMALL_DATE="$(date +%F)" \
     python3 -I - "$mode" "$spec" "$plan" "$slug" <<'PY'
 import os
@@ -64,7 +65,9 @@ CASE_RE = re.compile(r"^- \[ \] ")
 ID_RE = re.compile(r"^- \[ \] ([A-Z][0-9]+) ")
 CHAIN = ["DB", "backend", "types", "schemas", "errors", "gateway", "utils", "mapper",
          "repository", "hooks", "store", "components", "forms", "wiring"]
-RED_GREEN = {"repository" if word == "services" else word for word in os.environ["SMALL_RED_GREEN"].split("|")}
+LAYER_WORDS = ["repository" if word == "services" else word for word in os.environ["SMALL_RED_GREEN"].split("|")]
+RED_GREEN = set(LAYER_WORDS)
+CHAIN[CHAIN.index("hooks"):CHAIN.index("hooks")] = [word for word in dict.fromkeys(LAYER_WORDS) if word not in CHAIN]
 
 
 def sections(text: str) -> dict[str, list[str]]:

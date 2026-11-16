@@ -284,7 +284,7 @@
 {"id":"X24.104","verdict":"pass","command":"ls > /tmp/x"}
 {"id":"X24.105","verdict":"pass","command":"tee /tmp/x"}
 {"id":"X24.106","verdict":"pass","command":"rm /tmp/x"}
-{"id":"X24.107","verdict":"pass","setup":"noproject","command":"rm -rf /tmp/x"}
+{"id":"X24.107","verdict":"ask","setup":"noproject","command":"rm -rf /tmp/x","reason":"CLAUDE_PROJECT_DIR is not an absolute path"}
 {"id":"X24.108","verdict":"ask","setup":"noproject","command":"python3 -c 'x'","reason":"unresolved write target"}
 {"id":"X24.109","verdict":"deny","setup":"noproject","command":"python3 -c 'open(\".claude/.tdd-red/m\",\"w\")'","reason":"is written only by tdd-prove-red.sh"}
 {"id":"X24.110","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=..","reason":"project root or a folder above"}

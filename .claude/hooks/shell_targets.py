@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cwk-guard-api: 5
+# cwk-guard-api: 6
 """Resolve the write targets of a Bash command: `python3 -B shell_targets.py <cmd> <base>`.
 
 Secret mode, `--secret-reads <cmd> <base> <verbs>`: prints `deny\t<text>` and
@@ -36,20 +36,39 @@ except ImportError:
 MAX_ROWS = 64
 GLOB_NAME_SEP = "\x1f"
 MAX_DIRS = 8
-CODEGEN = []
+CONFIG = []
+
+
+def config():
+    """`(codegen commands, env template suffixes, bad status or None)`, read once.
+
+    A file that cannot be read gives the kit defaults (no generator, the default suffixes;
+    with no reader at all, no suffix: every `.env*` name is then a secret)
+    and its status (3 invalid, 4 absent, 5 no project, 6 no reader): `main` then prints a
+    `?config` row, and the hook keeps its denies and asks where it would pass.
+    """
+    if not CONFIG:
+        if project_config is None:
+            CONFIG.append(((), (), 6))
+        else:
+            try:
+                loaded = project_config.load_strict(os.environ.get("CLAUDE_PROJECT_DIR", ""))
+                CONFIG.append((loaded.codegen_commands, loaded.env_template_suffixes, None))
+            except project_config.ConfigError as error:
+                CONFIG.append(((), tuple(project_config.DEFAULTS["env_template_suffixes"]), error.status))
+    return CONFIG[0]
 
 
 def codegen_commands():
-    """The project's listed generators, read once; none when the file is absent or bad."""
-    if not CODEGEN:
-        commands = ()
-        if project_config is not None:
-            try:
-                commands = project_config.load(os.environ.get("CLAUDE_PROJECT_DIR", "")).codegen_commands
-            except project_config.ConfigError:
-                commands = ()
-        CODEGEN.append(commands)
-    return CODEGEN[0]
+    """The project's listed generators; none when the file is absent or bad."""
+    return config()[0]
+
+
+def config_rows():
+    """`[("?config", <status>)]` when the project's config could not be read, else `[]`."""
+    if not CONFIG or CONFIG[0][2] is None:
+        return []
+    return [("?config", str(CONFIG[0][2]))]
 
 
 CODEGEN_RUNNERS = (("pnpm",), ("pnpm", "exec"), ("pnpm", "dlx"), ("npx",), ("npm", "exec"),
@@ -202,7 +221,7 @@ READER_VALUE_SHORT = {"grep": GREP_VALUE_SHORT, "egrep": GREP_VALUE_SHORT, "fgre
 BYPASS_WRAPPERS = {"command", "env", "exec", "nice", "nohup", "setsid", "sudo", "stdbuf",
                    "timeout", "xargs"}
 SECRET_NAME = re.compile(r"^(\.env(\..+)?|.*\.(pem|key)|\.?credentials(\..*)?)$")
-SECRET_KEEP = re.compile(r"^\.env(\..+)?\.(example|sample|template)$")
+TEMPLATE_KEEP = []
 LIVE_BRACE = re.compile(r"\{([^{}]*,[^{}]*)\}")
 BASH_ONLY_GLOB = re.compile(r"\{[^{}]*\.\.[^{}]*\}|\[\^|\[[!^]?\]?[^\]]*\[[:.=]")
 SHELL_LINE = "shell-line"
@@ -1260,8 +1279,18 @@ def brace_expand(word):
     return out
 
 
+def secret_keep():
+    """`.env[.<x>].<suffix>` for the project's `env_template_suffixes`: a template, never a secret."""
+    if not TEMPLATE_KEEP:
+        suffixes = "|".join(re.escape(suffix) for suffix in config()[1])
+        TEMPLATE_KEEP.append(re.compile(r"^\.env(\..+)?\.(" + suffixes + r")$" if suffixes else r"(?!)"))
+    return TEMPLATE_KEEP[0]
+
+
 def is_secret_name(name):
-    return SECRET_NAME.match(name) is not None and SECRET_KEEP.match(name) is None
+    if SECRET_NAME.match(name) is None:
+        return False
+    return secret_keep().match(name) is None
 
 
 def strip_prefixes(words):
@@ -2317,7 +2346,7 @@ def main(argv):
         command, base, verbs = argv[2], argv[3], argv[4]
         walker = SecretWalker(command, verbs.split("|"))
         walker.walk(State(os.path.normpath(base) if base.startswith("/") else None))
-        verdicts = walker.verdicts[:MAX_ROWS]
+        verdicts = config_rows() + walker.verdicts[:MAX_ROWS]
         for verdict, text in verdicts:
             print(f"{verdict}\t{text}")
         print(f"#end\t{len(verdicts)}")
@@ -2332,6 +2361,7 @@ def main(argv):
     rows = walker.rows
     if len(rows) > MAX_ROWS:
         rows = [("?", "?unknown:" + flat_text(command))]
+    rows = config_rows() + rows
     for verb, tgt in rows:
         print(f"{verb}\t{tgt}")
     print(f"#end\t{len(rows)}")

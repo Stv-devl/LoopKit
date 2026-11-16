@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 2
+# cwk-guard-api: 5
 #
 # Hook: hook-lib (sourced, never executed)
 # Purpose: three things every hook needs and none is worth re-writing per file
@@ -39,14 +39,48 @@ if [[ "${CWK_HOOK_TIMING:-1}" == "1" ]]; then
 
     __cwk_record() {
         local code=$?
+        [[ -n "${1:-}" ]] && code="$1"
         local ms=$(( $(__cwk_now_ms) - __CWK_T0 ))
         # FILE_PATH is set by every hook that has one; empty is fine.
         printf '%s\t%s\t%s\t%s\t%s\n' \
             "$__CWK_T0" "$__CWK_HOOK" "$ms" "$code" "${FILE_PATH:--}" \
             >> "$__CWK_LOG" 2>/dev/null || true
     }
-    trap __cwk_record EXIT
 fi
+
+# ------------------------------------------------------------- degraded mode
+# A PreToolUse hook sets CWK_DEGRADED_ASK=1. When the project's config could not be read
+# (cwk_config set CWK_CFG_DEGRADED=1 in this shell), every verdict carries the config note:
+# a deny stays a deny, an ask stays an ask, and a pass becomes an ask. Each hook's output
+# function calls cwk_cfg_reason and marks the decision; the EXIT trap below asks for every
+# exit that decided nothing, so no `exit 0` path can pass on an unreadable config.
+CWK_DEGRADED_ASK=0
+__CWK_DECIDED=0
+
+# cwk_cfg_reason <reason>: sets CWK_CFG_OUT to <reason>, with the config note appended when
+# degraded, and marks the hook as decided. Call it in the hook's own shell, never in `$(...)`.
+cwk_cfg_reason() {
+    __CWK_DECIDED=1
+    CWK_CFG_OUT="$1"
+    if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+        CWK_CFG_OUT+=$'\n\n'"$CWK_CFG_REASON"
+    fi
+}
+
+__cwk_exit() {
+    local code=$?
+    if [[ "$code" == 0 && "$CWK_DEGRADED_ASK" == 1 && "$__CWK_DECIDED" != 1 \
+          && "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+        jq -n --arg r "$CWK_CFG_REASON" '{hookSpecificOutput: {hookEventName: "PreToolUse",
+            permissionDecision: "ask", permissionDecisionReason: $r}}' 2>/dev/null \
+            || printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"the project config could not be read"}}\n'
+    fi
+    if declare -F __cwk_record >/dev/null 2>&1; then
+        __cwk_record "$code"
+    fi
+    return "$code"
+}
+trap __cwk_exit EXIT
 
 # ------------------------------------------------------------- hook-guarded
 # The guarded-path list and its resolver (cwk_guard_rel, cwk_is_guarded,
@@ -116,15 +150,20 @@ cwk_log_health_deny() {
 # the same binary without that preamble. Falls back to `pnpm exec` so a repo
 # with an unusual layout still works, and returns 1 when the tool is absent
 # (the caller then skips silently: a formatter that is not installed is not an
-# error, it is a repo that does not use one).
+# error, it is a repo that does not use one). The resolved argv lands in the array
+# CWK_BIN; call it in the hook's own shell, never inside `$(...)`.
+CWK_BIN=()
+# shellcheck disable=SC2034  # read by the hooks that source this file
 cwk_bin() {
     local tool="$1" root="${CLAUDE_PROJECT_DIR:-$PWD}"
+    CWK_BIN=()
+    [[ -n "$tool" ]] || return 1
     if [[ -x "$root/node_modules/.bin/$tool" ]]; then
-        printf '%s' "$root/node_modules/.bin/$tool"
+        CWK_BIN=("$root/node_modules/.bin/$tool")
         return 0
     fi
     if command -v pnpm &> /dev/null && pnpm exec "$tool" --version &> /dev/null; then
-        printf 'pnpm exec %s' "$tool"
+        CWK_BIN=(pnpm exec "$tool")
         return 0
     fi
     return 1
@@ -250,21 +289,19 @@ cwk_segments() {
 #     and `microservices.ts` do not.
 #   - SHELL form: the same words matched inside a command line, so the class
 #     also admits a space and a quote, and it cannot anchor on end-of-path.
-CWK_TDD_LAYERS="repository|services|mapper|utils"
-
-# Implementation module, matched on a path (Write|Edit hooks).
+#   The words come from `.claude/project.json` (`tdd_layers`) through cwk_tdd_load below:
+#   every reader calls it before the first use. Until then all five regexes (the two PATH
+#   and the three shell/python ones) match EVERYTHING: a consumer from an older kit (which
+#   never calls cwk_tdd_load) then denies instead of passing silently.
+CWK_TDD_LAYERS=''
 # shellcheck disable=SC2034  # read by the hooks that source this file
-CWK_TDD_IMPL_RE="(^|[/.])(${CWK_TDD_LAYERS})\.tsx?$"
-# Frozen test file, matched on a path (Write|Edit hooks).
+CWK_TDD_IMPL_RE='^'
 # shellcheck disable=SC2034  # read by the hooks that source this file
-CWK_TDD_TEST_RE="(^|[/.])(${CWK_TDD_LAYERS})\.test\.tsx?$"
-# Any test-first target named inside a shell command (Bash hook). The trailing
-# alternative keeps every *.test.ts* in scope, whatever its layer word.
+CWK_TDD_TEST_RE='^'
 # shellcheck disable=SC2034  # read by the hooks that source this file
-CWK_TDD_SHELL_TARGET_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.tsx?|\.test\.tsx?"
-# A frozen test file named inside a shell command (Bash hook).
+CWK_TDD_SHELL_TARGET_RE='^'
 # shellcheck disable=SC2034  # read by the hooks that source this file
-CWK_TDD_SHELL_FROZEN_TEST_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.test\.tsx?"
+CWK_TDD_SHELL_FROZEN_TEST_RE='^'
 # Any test file, TypeScript or Python, on a path relative to the project root:
 # what tdd-freeze-tests.sh freezes and what a shell tool option may never write.
 # shellcheck disable=SC2034  # read by the hooks that source this file
@@ -284,11 +321,43 @@ CWK_TEST_FILE_RE='\.(test|spec|test-d)\.[cm]?[jt]sx?$|(^|/)(test_[^/]*|[^/]*_tes
 #
 # Kept in this file rather than in the addon because the rule that consumes it is
 # a core hook, and inert on a repo with no Python service layer: the paths simply
-# do not occur. The layer names mirror TEST_FIRST_DIRS / MODULE_ROOT in
-# addons/fastapi/hooks/tdd_py_lib.py — change them together.
+# do not occur. cwk_tdd_load fills it from `py_target_ere`, which project_config.py
+# derives from `fastapi.module_root`, `tests_root` and `test_first_dirs`: one source.
 # Both spellings of the layer, exactly as tdd_py_lib.py accepts them: the
-# `app/services/` package AND the flat `app/services.py` a small service ends up
-# with. Covering only the package would leave the flat one frozen by the hooks
+# `<module_root>/<dir>/` package AND the flat `<module_root>/<dir>.py` a small service
+# ends up with. Covering only the package would leave the flat one frozen by the hooks
 # and writable from the shell — the mismatch is silent, which is the worst kind.
 # shellcheck disable=SC2034  # read by the hooks that source this file
-CWK_TDD_PY_TARGET_RE="(^|[/[:space:]\"'])(app/services(/[A-Za-z0-9_./-]*)?\.py|tests/(services/[A-Za-z0-9_./-]*)?test_[A-Za-z0-9_]*\.py)"
+CWK_TDD_PY_TARGET_RE='^'
+__CWK_TDD_LOADED=''
+
+# cwk_tdd_load: refills the CWK_TDD_* regexes from `.claude/project.json` (`tdd_layers`,
+# `py_target_ere`) through cwk_config, once per process. Returns 1 when the config is
+# degraded: the regexes then hold the kit defaults, and the hook asks where it would pass.
+# shellcheck disable=SC2034  # read by the hooks that source this file
+cwk_tdd_load() {
+    local rc=0
+    if [[ -n "$__CWK_TDD_LOADED" ]]; then
+        return "$__CWK_TDD_LOADED"
+    fi
+    cwk_config || rc=$?
+    __CWK_TDD_LOADED=0
+    [[ "$rc" == 0 ]] || __CWK_TDD_LOADED=1
+    if [[ -z "$CWK_CFG_TDD_LAYERS_ERE" || -z "$CWK_CFG_PY_TARGET_ERE" ]]; then
+        CWK_TDD_LAYERS=''
+        CWK_TDD_IMPL_RE="$CWK_NEVER_RE"
+        CWK_TDD_TEST_RE="$CWK_NEVER_RE"
+        CWK_TDD_SHELL_TARGET_RE="$CWK_NEVER_RE"
+        CWK_TDD_SHELL_FROZEN_TEST_RE="$CWK_NEVER_RE"
+        CWK_TDD_PY_TARGET_RE="$CWK_NEVER_RE"
+        __CWK_TDD_LOADED=1
+        return 1
+    fi
+    CWK_TDD_LAYERS="$CWK_CFG_TDD_LAYERS_ERE"
+    CWK_TDD_IMPL_RE="(^|[/.])(${CWK_TDD_LAYERS})\.tsx?$"
+    CWK_TDD_TEST_RE="(^|[/.])(${CWK_TDD_LAYERS})\.test\.tsx?$"
+    CWK_TDD_SHELL_TARGET_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.tsx?|\.test\.tsx?"
+    CWK_TDD_SHELL_FROZEN_TEST_RE="([./[:space:]\"']|^)(${CWK_TDD_LAYERS})\.test\.tsx?"
+    CWK_TDD_PY_TARGET_RE="$CWK_CFG_PY_TARGET_ERE"
+    return "$__CWK_TDD_LOADED"
+}

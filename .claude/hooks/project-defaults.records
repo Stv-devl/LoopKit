@@ -1,0 +1,17 @@
+#status=0
+protected_dirs_ere=src|shared|\.claude|public|node_modules|dist
+protected_dirs_text=src/, shared/, .claude/, public/, node_modules/, dist/
+protected_branches=main
+protected_branches=master
+test_command=pnpm
+test_command=test:run
+formatter=prettier
+formatter=--write
+linter=eslint
+env_suffix_ere=example|sample|template
+icons_ere=Star|Stars|Sparkle|Sparkles|Rocket|RocketLaunch|Zap|Bolt|LightningBolt
+tdd_layers_ere=repository|services|mapper|utils
+py_target_ere=(^|[/[:space:]"'])(app/(services)(/[A-Za-z0-9_./-]*)?\.py|tests/((services)/[A-Za-z0-9_./-]*)?test_[A-Za-z0-9_]*\.py)
+module_root=app
+tests_root=tests
+#end=15

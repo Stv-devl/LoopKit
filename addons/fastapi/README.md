@@ -41,7 +41,7 @@ files this run just wrote, never one that already existed:
 | --- | --- |
 | The six hooks in `settings.json` | the kit wrote that `settings.json` (otherwise they land in the `.new`, for you to merge) |
 | `@07-backend.md` in the `CLAUDE.md` rules index | same |
-| `app\|alembic` in `PROTECTED_DIRS` | same |
+| `app\|alembic` in `protected_dirs` of `.claude/project.json` | same |
 
 Everything below needs to know what **your** project does, and stays manual.
 None of it is optional: a guardrail that is not wired is indistinguishable from
@@ -147,12 +147,13 @@ single `.claude/.tdd-unfrozen` shared by both cycles.
 This used to be a manual edit, which put the one line tying the two cycles
 together in the list of things nobody does.
 
-### 7. `enforce-backend-layers.py` → the configuration
+### 7. `.claude/project.json` → the `fastapi` block
 
-`MODULE_ROOT` (default `app/`, matched on a path boundary), `SESSION_NAMES` (how
-this project names its `AsyncSession`) and `EXTERNAL_CLIENTS` (your LLM / vector
-/ storage clients and the modules allowed to import them). Left empty, check 3
-is off.
+`module_root` (default `app`, matched on a path boundary), `tests_root`,
+`test_first_dirs`, `session_names` (how this project names its `AsyncSession`)
+and `external_clients` (your LLM / vector / storage clients and the module
+prefixes allowed to import them). Left empty, check 3 is off. The hooks read it;
+no hook file is edited.
 
 > `.claude/hooks/enforce-architecture.py` (the front-end one) is untouched: it
 > only inspects `src/**/*.ts`.

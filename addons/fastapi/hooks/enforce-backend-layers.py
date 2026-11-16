@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: enforce-backend-layers
 # Event: PreToolUse (Write|Edit)
@@ -9,9 +10,6 @@
 #   2. DB access in api/     : api/ running SQLAlchemy session calls itself
 #   3. Client outside owner  : an external client imported outside the modules
 #                              declared as its owners
-#
-# CONFIGURE: MODULE_ROOT, SESSION_NAMES and EXTERNAL_CLIENTS below. An empty
-#            EXTERNAL_CLIENTS disables check 3.
 #
 # Anything ambiguous (a missing tenant filter, business logic hiding in a route)
 # is deliberately NOT enforced here: those need judgement, and a hook that
@@ -25,6 +23,23 @@ import os
 import re
 import sys
 import time
+
+
+
+def _ask_on_crash(kind, value, trace):
+    """Any uncaught error, a mismatched tdd_py_lib.py included, asks: exit 1 would let the write through."""
+    note = (f"{os.path.basename(sys.argv[0])} failed ({kind.__name__}: {value}); the hooks in .claude/hooks come "
+            "from two kit versions. Restore them: rerun install.sh on this project, or /kit:init.")
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                       "permissionDecision": "ask",
+                                                       "permissionDecisionReason": note}}))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+sys.excepthook = _ask_on_crash
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tdd_py_lib as lib  # noqa: E402
 
 # --- timing ------------------------------------------------------------------
 # Same log and same TSV columns as hook-lib.sh and english-comments.py, so
@@ -50,29 +65,6 @@ if os.environ.get("CWK_HOOK_TIMING", "1") == "1":
 
     atexit.register(_record)
 
-# --- configuration -----------------------------------------------------------
-# Package root of the backend source, as it appears in the path.
-#
-# Matched on a path BOUNDARY, never as a bare substring: `app/` inside
-# `/home/u/myapp/api/x.py` is not this package, and an unanchored match denied
-# every write in a project whose directory happens to end in "app".
-MODULE_ROOT = "app/"
-
-# External clients and the ONLY modules allowed to import them.
-# Paths are relative to MODULE_ROOT, matched as prefixes.
-#   "<import specifier>": ["<allowed path prefix>", ...]
-#
-# Build the list from the code, not from the architecture you wish you had:
-#   grep -rn "from app.core.<client> import" app/ | cut -d: -f1 | sort -u
-# then remove the modules that should NOT be there and fix them — otherwise the
-# first legitimate write gets blocked and the hook gets switched off.
-EXTERNAL_CLIENTS: dict[str, list[str]] = {
-    # "app.core.qdrant":  ["core/", "services/search.py", "services/ingestion/",
-    #                      "services/chat/", "services/admin.py", "services/summary.py"],
-    # "app.core.mistral": ["core/", "services/chat/", "services/ingestion/",
-    #                      "services/admin.py", "services/summary.py"],
-}
-# -----------------------------------------------------------------------------
 
 # FastAPI names that carry HTTP semantics. Depends/UploadFile/BackgroundTasks are
 # NOT here: a service may legitimately receive them as values.
@@ -91,28 +83,34 @@ HTTP_IMPORT_RES = (
     r"\braise\s+HTTPException\b",
 )
 
-# CONFIGURE: how this project names the SQLAlchemy session it passes around.
-# The patterns in this addon all use `db: AsyncSession` — a project that calls it
-# `session` (or `async_session`) and leaves this list alone turns check 2 off
-# without a word, which is the worst kind of guardrail. Grep first:
-#   grep -rhoE "\b\w+: AsyncSession" app/ | sort -u
-SESSION_NAMES = ("db", "session", "async_session")
+DB_CALL_VERBS = r"(execute|add|add_all|commit|refresh|delete|get|scalar|scalars)"
 
-# Session calls that mean "this file talks to the database".
-DB_CALLS = r"\b(%s)\.(execute|add|add_all|commit|refresh|delete|get|scalar|scalars)\s*\(" % (
-    "|".join(SESSION_NAMES),
-)
+
+def load_config() -> None:
+    """`module_root` (matched on a path boundary, never as a bare substring: `app/` inside
+    `/home/u/myapp/api/x.py` is not this package), `session_names` (how the project names
+    the SQLAlchemy session it passes around) and `external_clients` (each client and the
+    only module prefixes, under the module root, allowed to import it) come from
+    `.claude/project.json` `fastapi`, through tdd_py_lib.configure. When the file cannot be
+    read the kit defaults apply and a pass becomes an ask; with no reader, the hook asks."""
+    lib.configure(ask_on_pass=True)
+    if not lib.VALUES:
+        sys.exit(0)
+
+
+def module_root() -> str:
+    """The module root with its trailing `/`."""
+    return lib.VALUES["module_root"].rstrip("/") + "/"
+
+
+def db_calls() -> str:
+    """Session calls that mean "this file talks to the database"."""
+    names = "|".join(re.escape(n) for n in lib.VALUES["session_names"])
+    return r"\b(%s)\.%s\s*\(" % (names, DB_CALL_VERBS)
 
 
 def deny(reason: str) -> None:
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
+    lib.deny(reason)
 
 
 def main() -> None:
@@ -129,8 +127,9 @@ def main() -> None:
 
     if not path.endswith(".py"):
         sys.exit(0)
+    load_config()
     match = None
-    for m in re.finditer(r"(?:^|/)%s" % re.escape(MODULE_ROOT), path):
+    for m in re.finditer(r"(?:^|/)%s" % re.escape(module_root()), path):
         match = m
     if match is None:
         sys.exit(0)
@@ -153,7 +152,7 @@ def main() -> None:
 
     # --- Check 2: database access inside api/ ------------------------------
     if rel.startswith("api/") and not rel.endswith("deps.py"):
-        if re.search(DB_CALLS, content):
+        if re.search(db_calls(), content):
             deny(
                 f"Database access in the HTTP layer ({rel}).\n\n"
                 "api/ routes validate, delegate and return. Move the query into "
@@ -162,7 +161,7 @@ def main() -> None:
             )
 
     # --- Check 3: external client outside its owning modules ---------------
-    for module, allowed in EXTERNAL_CLIENTS.items():
+    for module, allowed in lib.VALUES["external_clients"].items():
         if any(rel.startswith(prefix) for prefix in allowed):
             continue
         pattern = r"(from\s+%s[\w.]*\s+import|import\s+%s\b)" % (

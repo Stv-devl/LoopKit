@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Shared library for the three Python TDD hooks:
 #   tdd-require-red-py.py  (Pre)   — the implementation cannot be created first
@@ -8,11 +9,8 @@
 # It is the Python twin of `.claude/hooks/hook-lib.sh`, and it exists for the
 # same reason: three hooks that each retype the layer list, the marker naming
 # and the runner resolution are three hooks that drift apart in silence.
-#
-# CONFIGURE: MODULE_ROOT, TESTS_ROOT and TEST_FIRST_DIRS below.
-#            They must agree with `.claude/rules/07-backend.md` ("Tests") and
-#            with MODULE_ROOT in enforce-backend-layers.py.
 
+import atexit
 import json
 import os
 import posixpath
@@ -22,14 +20,35 @@ import subprocess
 import sys
 import time
 
+
+def _crash_envelope(kind, value, trace) -> None:
+    """An uncaught error in a hook that imports this library (an older hook beside this
+    version raising a KeyError, say) must not end as a bare exit 1, which lets the write
+    through: a PreToolUse hook asks, the PostToolUse prover reports. Exits 0 so the harness
+    reads the JSON."""
+    name = os.path.basename(sys.argv[0]) if sys.argv and sys.argv[0] else "hook"
+    note = (f"{name} failed ({kind.__name__}: {value}); the hooks in .claude/hooks come from two kit "
+            "versions. Restore them: rerun install.sh on this project, or /kit:init.")
+    if "prove-red" in name:
+        envelope = {"systemMessage": note}
+    else:
+        envelope = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
+                                           "permissionDecisionReason": note}}
+    sys.stdout.write(json.dumps(envelope))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+if sys.excepthook is sys.__excepthook__:
+    sys.excepthook = _crash_envelope
+
 # --- configuration -----------------------------------------------------------
 # The Python package root, relative to the project. Same value as
 # enforce-backend-layers.py's MODULE_ROOT.
-MODULE_ROOT = "app"
+VALUES = {}
 # Where the tests live. `tests/` MIRRORS the module root — that is the addon's
 # own convention (`patterns/pytest-backend.md`, "Mirroring"), and it is what
 # makes the test <-> module mapping derivable instead of guessed.
-TESTS_ROOT = "tests"
 # The layers written TEST-FIRST and then frozen, as path prefixes under
 # MODULE_ROOT. `services/` is the backend's twin of the front end's
 # repository/services: the layer where "correct" is decided.
@@ -42,8 +61,80 @@ TESTS_ROOT = "tests"
 #              that do carry logic (auth, security) would have to be listed file
 #              by file, and a list of files rots faster than a list of layers.
 #              They stay mandatory-to-test, test-after.
-TEST_FIRST_DIRS = ("services/",)
 # -----------------------------------------------------------------------------
+CONFIG_STATE = []
+DECIDED = []
+CONFIG_REASONS = {
+    3: ".claude/project.json is invalid or could not be read",
+    4: ".claude/project.json is missing",
+    5: ".claude/project.json cannot be found: CLAUDE_PROJECT_DIR is not an absolute path",
+    6: ".claude/project.json cannot be read: .claude/hooks/project_config.py is missing",
+}
+CONFIG_TAIL = (", so the hooks run on the kit defaults and ask instead of passing. Restore it: "
+               "rerun install.sh on this project, or /kit:init.")
+
+
+def _reader():
+    """The kit's one reader module: beside this file in an installed project, else under
+    `$CLAUDE_PROJECT_DIR/.claude/hooks`; None when neither holds one."""
+    places = [os.path.dirname(os.path.abspath(__file__))]
+    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if project and os.path.isabs(project):
+        places.append(os.path.join(project, ".claude", "hooks"))
+    for place in places:
+        if os.path.isfile(os.path.join(place, "project_config.py")):
+            if place not in sys.path:
+                sys.path.insert(0, place)
+            import project_config
+            return project_config
+    return None
+
+
+def configure(ask_on_pass: bool = False) -> str:
+    """Fill VALUES (`module_root`, `tests_root`, `test_first_dirs`, `session_names`,
+    `external_clients`) from `.claude/project.json`, once; from the reader's kit defaults
+    when the file cannot be read. Returns that config reason, else "". With no reader at
+    all VALUES stays empty and the caller decides nothing. With `ask_on_pass`, a PreToolUse
+    hook that then exits without a decision asks instead of passing."""
+    if CONFIG_STATE:
+        return CONFIG_STATE[0]
+    reason = ""
+    try:
+        reader = _reader()
+        if reader is None:
+            reason = CONFIG_REASONS[6]
+        else:
+            try:
+                block = reader.load_strict(os.environ.get("CLAUDE_PROJECT_DIR", "")).fastapi
+            except reader.ConfigError as error:
+                reason = CONFIG_REASONS.get(error.status, CONFIG_REASONS[3])
+                block = reader.DEFAULTS["fastapi"]
+            VALUES.update(
+                module_root=block["module_root"],
+                tests_root=block["tests_root"],
+                test_first_dirs=tuple(d.rstrip("/") + "/" for d in block["test_first_dirs"]),
+                session_names=tuple(block["session_names"]),
+                external_clients={k: list(v) for k, v in block["external_clients"].items()},
+            )
+    except Exception:
+        VALUES.clear()
+        reason = CONFIG_REASONS[3]
+    if reason:
+        reason += CONFIG_TAIL
+    CONFIG_STATE.append(reason)
+    if reason and ask_on_pass:
+        atexit.register(_ask_if_undecided)
+    return reason
+
+
+def _ask_if_undecided() -> None:
+    if not DECIDED:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": CONFIG_STATE[0],
+        }}))
+        sys.stdout.flush()
 
 _T0 = time.time()
 
@@ -145,10 +236,10 @@ def is_test_first_impl(path: str) -> bool:
         return False
     if posixpath.basename(rel) == "__init__.py":
         return False
-    _, inner = _split_root(rel, MODULE_ROOT)
+    _, inner = _split_root(rel, VALUES["module_root"])
     if inner is None:
         return False
-    if inner.startswith(TEST_FIRST_DIRS):
+    if inner.startswith(VALUES["test_first_dirs"]):
         return True
     # A FLAT module spelled like the layer — `app/services.py` rather than the
     # `app/services/` package `07-backend.md` prescribes. It happens on a small
@@ -156,7 +247,7 @@ def is_test_first_impl(path: str) -> bool:
     # cycle, which is the worst of the two answers: the layout is wrong AND
     # nothing says so. The TypeScript side keys on the filename and covers its
     # own flat spelling (`services.ts`) for exactly this reason.
-    return inner in tuple(d.rstrip("/") + ".py" for d in TEST_FIRST_DIRS)
+    return inner in tuple(d.rstrip("/") + ".py" for d in VALUES["test_first_dirs"])
 
 
 def is_frozen_test(path: str) -> bool:
@@ -178,14 +269,14 @@ def impl_for_test(path: str) -> str:
     backend/tests/services/test_project.py -> backend/app/services/project.py
     """
     rel = rel_path(path)
-    prefix, inner = _split_root(rel, TESTS_ROOT)
+    prefix, inner = _split_root(rel, VALUES["tests_root"])
     if inner is None:
         return ""
     parts = inner.split("/")
     if not parts or not parts[-1].startswith("test_"):
         return ""
     parts[-1] = parts[-1][len("test_") :]
-    return _join_root(prefix, MODULE_ROOT, "/".join(parts))
+    return _join_root(prefix, VALUES["module_root"], "/".join(parts))
 
 
 def test_for_impl(path: str) -> str:
@@ -193,12 +284,12 @@ def test_for_impl(path: str) -> str:
     backend/app/services/project.py -> backend/tests/services/test_project.py
     """
     rel = rel_path(path)
-    prefix, inner = _split_root(rel, MODULE_ROOT)
+    prefix, inner = _split_root(rel, VALUES["module_root"])
     if inner is None:
         return ""
     parts = inner.split("/")
     parts[-1] = "test_" + parts[-1]
-    return _join_root(prefix, TESTS_ROOT, "/".join(parts))
+    return _join_root(prefix, VALUES["tests_root"], "/".join(parts))
 
 
 def dotted_module(rel_impl: str) -> str:
@@ -209,10 +300,10 @@ def dotted_module(rel_impl: str) -> str:
     """
     if not rel_impl.endswith(".py"):
         return ""
-    _, inner = _split_root(rel_impl, MODULE_ROOT)
+    _, inner = _split_root(rel_impl, VALUES["module_root"])
     if inner is None:
         return ""
-    return (MODULE_ROOT + "/" + inner)[: -len(".py")].replace("/", ".")
+    return (VALUES["module_root"] + "/" + inner)[: -len(".py")].replace("/", ".")
 
 
 # ----------------------------------------------------------------- the markers
@@ -370,9 +461,9 @@ def module_root_dir(path: str) -> str:
     belongs to.
     """
     rel = rel_path(path)
-    prefix, inner = _split_root(rel, MODULE_ROOT)
+    prefix, inner = _split_root(rel, VALUES["module_root"])
     if inner is None:
-        prefix, inner = _split_root(rel, TESTS_ROOT)
+        prefix, inner = _split_root(rel, VALUES["tests_root"])
     if inner is None or not prefix:
         return project_dir()
     return os.path.join(project_dir(), prefix)
@@ -529,11 +620,34 @@ def emit(message: str) -> None:
     """A PostToolUse note. Built with json.dumps, never a format string: an
     unparseable hook envelope is DROPPED by the harness, and a TDD hook that
     says nothing reads exactly like a gate that passed."""
+    DECIDED.append(True)
+    if CONFIG_STATE and CONFIG_STATE[0]:
+        message = f"{message}\n\n{CONFIG_STATE[0]}"
     print(json.dumps({"systemMessage": message}))
     sys.exit(0)
 
 
+def notice(message: str) -> None:
+    """A PreToolUse edit that is allowed and announced. With the config unreadable the allow
+    becomes an ask carrying the message and the config note: one JSON object, never a
+    message beside the degraded ask."""
+    DECIDED.append(True)
+    reason = CONFIG_STATE[0] if CONFIG_STATE else ""
+    if reason:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": f"{message}\n\n{reason}",
+        }}))
+    else:
+        print(json.dumps({"systemMessage": message}))
+    sys.exit(0)
+
+
 def deny(reason: str) -> None:
+    DECIDED.append(True)
+    if CONFIG_STATE and CONFIG_STATE[0]:
+        reason = f"{reason}\n\n{CONFIG_STATE[0]}"
     print(
         json.dumps(
             {

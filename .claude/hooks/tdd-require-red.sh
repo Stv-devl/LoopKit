@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 1
+# cwk-guard-api: 2
 #
 # Hook: tdd-require-red
 # Event: PreToolUse (Write|Edit)
@@ -44,6 +44,12 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -58,7 +64,10 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 # module would be unwritable. See cwk_foreign_toolchain in hook-lib.sh.
 cwk_foreign_toolchain "$FILE_PATH" && exit 0
 
-# Only the three test-first layers.
+# Only the three test-first layers. A layer module ends in .ts or .tsx: anything else
+# needs no layer word, so the project's config is read only for those.
+[[ "$FILE_PATH" == *.ts || "$FILE_PATH" == *.tsx ]] || exit 0
+cwk_tdd_load || true
 if [[ ! "$FILE_PATH" =~ $CWK_TDD_IMPL_RE ]]; then
     exit 0
 fi
@@ -110,7 +119,8 @@ extract_exported_symbols() {
 # with no message at all. Only the authored `\n` is expanded; every other backslash is left alone.
 deny() {
     local reason
-    reason="${1//\\n/$'\n'}"
+    cwk_cfg_reason "${1//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     cwk_log_health_deny "$reason"
     jq -n --arg r "$reason" '{
       hookSpecificOutput: {

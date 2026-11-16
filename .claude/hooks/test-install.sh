@@ -264,14 +264,13 @@ p1_present "$HC"
 # (d) a target's own edits never hold P1 back, and survive.
 HD="$SCRATCH/hold-d"
 p1_fresh "$HD"
-sed -i 's/^PROTECTED_DIRS="src|shared/PROTECTED_DIRS="src|shared|docs/' "$HD/.claude/hooks/prevent-destructive-commands.sh"
-sed -i 's/^PROTECTED_BRANCHES="main|master"/PROTECTED_BRANCHES="main|master|release"/' "$HD/.claude/hooks/enforce-git-workflow.sh"
+jq '.protected_dirs += ["docs"] | .protected_branches += ["release"]' "$HD/.claude/project.json" >"$HD/pj.tmp"
+mv "$HD/pj.tmp" "$HD/.claude/project.json"
 p1_strip "$HD"
 HD_OUT="$(p1_rerun "$HD")"
 p1_present "$HD"
 if grep -Fq 'P1 held back' <<<"$HD_OUT"; then exit 1; fi
-grep -q '^PROTECTED_DIRS="src|shared|docs' "$HD/.claude/hooks/prevent-destructive-commands.sh"
-grep -q '^PROTECTED_BRANCHES="main|master|release"' "$HD/.claude/hooks/enforce-git-workflow.sh"
+jq -e '(.protected_dirs | index("docs")) and (.protected_branches | index("release"))' "$HD/.claude/project.json" >/dev/null
 PY_OUT="$("$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci 2>&1)"
 if grep -Fq 'P1 held back' <<<"$PY_OUT"; then exit 1; fi
 
@@ -575,16 +574,310 @@ lh_tty "$I6E" '' >/dev/null
 [ ! -e "$I6E/lefthook.yml" ]
 [ -f "$I6E/.claude/settings.json" ]
 
-# IN1-IN3 (app-roots-codegen): the kit's .claude/project.json ships, a filled one survives a
-# re-install, and project_config.py is a guard file.
+# IN1-IN3 (app-roots-codegen, amended by project-config): the kit's .claude/project.json
+# ships; a v1 file is upgraded in place, keeping its roots, never shadowed by a .new; and
+# project_config.py is a guard file.
 cmp -s "$ROOT/.claude/project.json" "$TARGET/.claude/project.json"
 printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' > "$TARGET/.claude/project.json"
-cp "$TARGET/.claude/project.json" "$SCRATCH/project.json.filled"
 rm -f "$TARGET/.claude/project.json.new"
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
-cmp -s "$SCRATCH/project.json.filled" "$TARGET/.claude/project.json"
-[ -f "$TARGET/.claude/project.json.new" ]
+jq -e '.schema_version == 2 and .app_roots == ["frontend"]' "$TARGET/.claude/project.json" >/dev/null
+[ ! -e "$TARGET/.claude/project.json.new" ]
 grep -Fq 'project_config.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
 grep -q '^# cwk-guard-api: [0-9]' "$TARGET/.claude/hooks/project_config.py"
+
+# IN4-IN13 (project-config step 6): `project_config.py migrate` reads a target's active hooks.
+MIGRATE=(python3 -I -B "$ROOT/.claude/hooks/project_config.py" migrate)
+# A target holding only the given hook files, each one line per argument after its name.
+mig_tree() {
+    local dir="$1" file
+    shift
+    mkdir -p "$dir/.claude/hooks"
+    while [[ $# -gt 0 ]]; do
+        file="$1"
+        shift
+        printf '%s\n' "$1" >>"$dir/.claude/hooks/$file"
+        shift
+    done
+}
+# IN4 EcoCrew's active hook lines, through a real install.
+IN4="$SCRATCH/in4"
+mig_tree "$IN4" \
+    enforce-git-workflow.sh 'PROTECTED_BRANCHES="main"' \
+    prevent-destructive-commands.sh 'PROTECTED_DIRS="frontend|backend|src|shared|app|alembic|\.claude|public|node_modules|dist"' \
+    enforce-architecture.py 'DATA_CLIENT_MODULE = "lib/api"' \
+    enforce-architecture.py 'DATA_CLIENT_OWN_PATH = "lib/api.ts"' \
+    enforce-architecture.py 'COMPOSITION_ROOTS = ("main.tsx", "routes/__root.tsx")' \
+    tdd-prove-red.sh 'RUN_TESTS="pnpm --dir frontend exec vitest run"' \
+    tdd_py_lib.py 'MODULE_ROOT = "app"' \
+    tdd_py_lib.py 'TEST_FIRST_DIRS = ("services/",)' \
+    format-on-save.sh 'if PRETTIER=$(cwk_bin prettier); then' \
+    eslint-batch.sh 'ESLINT=$(cwk_bin eslint) || exit 0'
+"$ROOT/install.sh" "$IN4" --no-ci >/dev/null 2>&1
+jq -e '.protected_branches == ["main"]
+    and .protected_dirs == ["frontend","backend","src","shared","app","alembic",".claude","public","node_modules","dist"]
+    and .data_client.module == "lib/api" and .data_client.own_path == "lib/api.ts"
+    and .data_client.composition_roots == ["main.tsx","routes/__root.tsx"]
+    and .data_client.shared_dirs == ["components/","hooks/","lib/","types/","stores/","config/"]
+    and .test_command == ["pnpm","--dir","frontend","exec","vitest","run"]
+    and .fastapi.module_root == "app" and .fastapi.test_first_dirs == ["services"]
+    and .formatter == ["prettier","--write"] and .linter == "eslint"
+    and .env_template_suffixes == ["example","sample","template"]
+    and .tdd_layers == ["repository","services","mapper","utils"]
+    and .app_roots == [] and .codegen_commands == []' "$IN4/.claude/project.json" >/dev/null
+# IN5 a branch regex `x/.*` becomes the glob `x/*`.
+IN5="$SCRATCH/in5"
+mig_tree "$IN5" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main|release/.*"'
+"${MIGRATE[@]}" "$IN5" >/dev/null 2>&1
+jq -e '.protected_branches == ["main","release/*"]' "$IN5/.claude/project.json" >/dev/null
+# IN6 a v1 file is upgraded, keeping its roots and codegen, taking the hook values.
+IN6="$SCRATCH/in6"
+mig_tree "$IN6" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main"'
+printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[["supabase","gen","types"]]}\n' \
+    >"$IN6/.claude/project.json"
+"${MIGRATE[@]}" "$IN6" >/dev/null 2>&1
+jq -e '.schema_version == 2 and .app_roots == ["frontend"] and .codegen_commands == [["supabase","gen","types"]]
+    and .protected_branches == ["main"]' "$IN6/.claude/project.json" >/dev/null
+# IN7 a fresh install writes the kit defaults, and no .new.
+IN7="$SCRATCH/in7"
+mkdir -p "$IN7"
+"$ROOT/install.sh" "$IN7" --no-ci >/dev/null 2>&1
+cmp -s <(python3 -I -B "$ROOT/.claude/hooks/project_config.py" defaults) "$IN7/.claude/project.json"
+[ ! -e "$IN7/.claude/project.json.new" ]
+# IN8 a typed, multi-line, commented EXTERNAL_CLIENTS migrates to the same map.
+IN8="$SCRATCH/in8"
+mig_tree "$IN8" enforce-backend-layers.py 'EXTERNAL_CLIENTS: dict[str, list[str]] = {
+    # the vector store
+    "app.core.qdrant": ["core/", "services/search.py"],
+    "app.core.mistral": [
+        "core/",  # owner
+        "services/chat/",
+    ],
+}'
+"${MIGRATE[@]}" "$IN8" >/dev/null 2>&1
+jq -e '.fastapi.external_clients == {"app.core.qdrant":["core/","services/search.py"],"app.core.mistral":["core/","services/chat/"]}' \
+    "$IN8/.claude/project.json" >/dev/null
+# IN9 a value that is not a plain literal keeps the default and says so.
+IN9="$SCRATCH/in9"
+mig_tree "$IN9" enforce-git-workflow.sh 'PROTECTED_BRANCHES="(main|dev)+"' \
+    tdd-prove-red.sh 'RUN_TESTS="pnpm test:run \"$X\""'
+IN9_OUT="$("${MIGRATE[@]}" "$IN9" 2>&1)"
+jq -e '.protected_branches == ["main","master"] and .test_command == ["pnpm","test:run"]' "$IN9/.claude/project.json" >/dev/null
+grep -Fq 'migrate: protected_branches unreadable in enforce-git-workflow.sh, default kept' <<<"$IN9_OUT"
+grep -Fq 'migrate: test_command unreadable in tdd-prove-red.sh, default kept' <<<"$IN9_OUT"
+# IN10 env copies that disagree: protect-files wins, the other copy is named.
+IN10="$SCRATCH/in10"
+mig_tree "$IN10" protect-files.sh "ENV_TEMPLATE_RE='\\.(example|dist)\$'" \
+    prevent-destructive-commands.sh "    SANITIZED=\$(echo \"\$COMMAND\" | sed -E 's/\\.env\\.(example)//g')"
+IN10_OUT="$("${MIGRATE[@]}" "$IN10" 2>&1)"
+jq -e '.env_template_suffixes == ["example","dist"]' "$IN10/.claude/project.json" >/dev/null
+grep -q 'prevent-destructive-commands.sh' <<<"$IN10_OUT"
+# IN11 a second install over a v2 file leaves it byte-identical.
+cp "$IN4/.claude/project.json" "$SCRATCH/in4.json"
+"$ROOT/install.sh" "$IN4" --no-ci >/dev/null 2>&1
+cmp -s "$SCRATCH/in4.json" "$IN4/.claude/project.json"
+# IN12 an invalid existing file is left untouched, reported, and the install exits 0.
+IN12="$SCRATCH/in12"
+mkdir -p "$IN12/.claude"
+printf '{"schema_version":2}\n' >"$IN12/.claude/project.json"
+IN12_OUT="$("$ROOT/install.sh" "$IN12" --no-ci 2>&1)"
+[ "$(cat "$IN12/.claude/project.json")" = '{"schema_version":2}' ]
+grep -q 'project.json' <<<"$IN12_OUT"
+# IN13 --supabase then --fastapi on a fresh target, then a re-run.
+IN13="$SCRATCH/in13"
+mkdir -p "$IN13"
+"$ROOT/install.sh" "$IN13" --supabase --no-ci >/dev/null 2>&1
+"$ROOT/install.sh" "$IN13" --fastapi --no-ci >/dev/null 2>&1
+"$ROOT/install.sh" "$IN13" --supabase --fastapi --no-ci >/dev/null 2>&1
+jq -e '([.protected_dirs[] | select(. == "supabase")] | length) == 1
+    and ([.protected_dirs[] | select(. == "app")] | length) == 1
+    and ([.protected_dirs[] | select(. == "alembic")] | length) == 1
+    and .data_client.module == "lib/supabase"' "$IN13/.claude/project.json" >/dev/null
+grep -q 'lib/supabase' "$IN13/.claude/skills/templates/feature.md"
+for f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/*.py; do
+    cmp -s "$f" "$IN13/.claude/hooks/$(basename "$f")" || { echo "IN13: $(basename "$f") differs" >&2; exit 1; }
+done
+if python3 -I -B "$IN13/.claude/hooks/kit-doctor.py" "$IN13" 2>&1 | grep -q 'DIVERGENCE  client-copies'; then
+    echo 'IN13: client-copies divergence' >&2; exit 1
+fi
+
+# IN14 (review 1): an ERE branch is mapped to a glob that matches as much, or the default stays.
+IN14="$SCRATCH/in14"
+mig_tree "$IN14" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main|master|release.*|hotfix-.*|release/.*"'
+"${MIGRATE[@]}" "$IN14" >/dev/null 2>&1
+jq -e '.protected_branches == ["main","master","release*","hotfix-*","release/*"]' "$IN14/.claude/project.json" >/dev/null
+IN14B="$SCRATCH/in14b"
+mig_tree "$IN14B" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main|rel.ease"'
+IN14B_OUT="$("${MIGRATE[@]}" "$IN14B" 2>&1)"
+jq -e '.protected_branches == ["main","master"]' "$IN14B/.claude/project.json" >/dev/null
+grep -Fq 'migrate: protected_branches unreadable in enforce-git-workflow.sh, default kept' <<<"$IN14B_OUT"
+
+# IN15 (review 1): a v2 file the user edited survives a reinstall beside a hook holding an old literal.
+IN15="$SCRATCH/in15"
+mig_tree "$IN15" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main"'
+"$ROOT/install.sh" "$IN15" --no-ci >/dev/null 2>&1
+jq '.protected_branches = ["main","develop"]' "$IN15/.claude/project.json" >"$SCRATCH/in15.json"
+cp "$SCRATCH/in15.json" "$IN15/.claude/project.json"
+"$ROOT/install.sh" "$IN15" --no-ci >/dev/null 2>&1
+cmp -s "$SCRATCH/in15.json" "$IN15/.claude/project.json"
+jq -e '.protected_branches == ["main","develop"]' "$IN15/.claude/project.json" >/dev/null
+
+# IN16 (review 1): while the target's active reader or loader is older than the kit's, a v1 file
+# stays v1, whatever the install would otherwise write, and the install says what to do.
+for in16_old in project_config.py hook-guarded.sh; do
+    IN16="$SCRATCH/in16-$in16_old"
+    mkdir -p "$IN16"
+    "$ROOT/install.sh" "$IN16" --no-ci >/dev/null 2>&1
+    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$IN16/.claude/hooks/$in16_old"
+    printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' >"$IN16/.claude/project.json"
+    IN16_OUT="$("$ROOT/install.sh" "$IN16" --no-ci 2>&1)"
+    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
+    grep -Fq 'laissé en v1' <<<"$IN16_OUT"
+    grep -Fq "$in16_old.new" <<<"$IN16_OUT"
+    "$ROOT/install.sh" "$IN16" --no-ci --supabase >/dev/null 2>&1
+    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
+    "$ROOT/install.sh" "$IN16" --no-ci --fastapi >/dev/null 2>&1
+    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
+done
+
+# IN17 (review 1): wire_fastapi warns on an invalid project.json, as wire_supabase does.
+IN17="$SCRATCH/in17"
+mkdir -p "$IN17/.claude"
+printf '{"schema_version":2}\n' >"$IN17/.claude/project.json"
+IN17_OUT="$("$ROOT/install.sh" "$IN17" --fastapi --no-ci 2>&1)"
+grep -Fq 'fastapi non câblé' <<<"$IN17_OUT"
+
+# IN18 (review 2): an upgrade keeps the values of the still-old hooks whatever order the .new
+# are merged in. Run 1 saves them beside a v1 file; after every .new is merged, run 2 writes them.
+in_merge_all() {
+    local n
+    for n in "$1"/.claude/hooks/*.new; do
+        [[ -e "$n" ]] && mv "$n" "${n%.new}"
+    done
+    return 0
+}
+in_old_target() {
+    mkdir -p "$1"
+    "$ROOT/install.sh" "$1" --no-ci >/dev/null 2>&1
+    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$1/.claude/hooks/project_config.py" "$1/.claude/hooks/hook-guarded.sh"
+    rm -f "$1/.claude/project.json"
+    printf 'PROTECTED_DIRS="frontend|src|infra|\\.claude"\n' >>"$1/.claude/hooks/prevent-destructive-commands.sh"
+    printf 'PROTECTED_BRANCHES="main|develop"\n' >>"$1/.claude/hooks/enforce-git-workflow.sh"
+    printf 'DATA_CLIENT_MODULE = "lib/api"\nDATA_CLIENT_OWN_PATH = "lib/api.ts"\n' >>"$1/.claude/hooks/enforce-architecture.py"
+}
+IN18="$SCRATCH/in18"
+in_old_target "$IN18"
+IN18_OUT="$("$ROOT/install.sh" "$IN18" --no-ci 2>&1)"
+[ ! -e "$IN18/.claude/project.json" ]
+grep -Fq 'project.snapshot.json' <<<"$IN18_OUT"
+jq -e '.values.protected_branches == ["main","develop"] and .values.data_client.module == "lib/api"' "$IN18/.claude/project.snapshot.json" >/dev/null
+in_merge_all "$IN18"
+"$ROOT/install.sh" "$IN18" --no-ci >/dev/null 2>&1
+jq -e '.schema_version == 2 and .protected_branches == ["main","develop"]
+    and .protected_dirs == ["frontend","src","infra",".claude"] and .data_client.module == "lib/api"' \
+    "$IN18/.claude/project.json" >/dev/null
+[ ! -e "$IN18/.claude/project.snapshot.json" ]
+
+# IN19 (review 2): a partial merge between two runs loses nothing; the saved values accumulate.
+IN19="$SCRATCH/in19"
+in_old_target "$IN19"
+"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
+mv "$IN19/.claude/hooks/enforce-git-workflow.sh.new" "$IN19/.claude/hooks/enforce-git-workflow.sh"
+"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
+[ ! -e "$IN19/.claude/project.json" ]
+in_merge_all "$IN19"
+"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
+jq -e '.protected_branches == ["main","develop"] and .protected_dirs == ["frontend","src","infra",".claude"]' \
+    "$IN19/.claude/project.json" >/dev/null
+
+# IN20 (review 2): an upgrade that finds no value anywhere writes the defaults and says so.
+IN20="$SCRATCH/in20"
+mkdir -p "$IN20"
+"$ROOT/install.sh" "$IN20" --no-ci >/dev/null 2>&1
+rm -f "$IN20/.claude/project.json"
+IN20_OUT="$("$ROOT/install.sh" "$IN20" --no-ci 2>&1)"
+cmp -s <(python3 -I -B "$ROOT/.claude/hooks/project_config.py" defaults) "$IN20/.claude/project.json"
+grep -Fq 'no value found in the active hooks and no saved snapshot' <<<"$IN20_OUT"
+mkdir -p "$SCRATCH/in20-fresh"
+if grep -Fq 'no value found' <<<"$("$ROOT/install.sh" "$SCRATCH/in20-fresh" --no-ci 2>&1)"; then
+    echo 'IN20: a fresh install must stay silent' >&2; exit 1
+fi
+
+# IN21 (review 2): an invalid file with --fastapi says it is unreadable and stays byte-identical.
+IN21="$SCRATCH/in21"
+mkdir -p "$IN21/.claude"
+printf '{"schema_version":2}\n' >"$IN21/.claude/project.json"
+cp "$IN21/.claude/project.json" "$SCRATCH/in21.json"
+IN21_OUT="$("$ROOT/install.sh" "$IN21" --fastapi --no-ci 2>&1)"
+grep -Fq 'illisible : fastapi non câblé' <<<"$IN21_OUT"
+cmp -s "$SCRATCH/in21.json" "$IN21/.claude/project.json"
+
+# IN22 (review 2): without python3 the install says python3 is missing, not that the file is invalid.
+IN22="$SCRATCH/in22"
+IN22_BIN="$SCRATCH/in22-bin"
+mkdir -p "$IN22" "$IN22_BIN"
+for tool in env bash dirname basename date jq grep sed cat tr head tail cut sort uniq mktemp rm mkdir wc \
+            readlink realpath awk ls touch cp mv ln tee chmod find perl id uname git cmp diff expr; do
+    [[ -x "$(command -v "$tool" 2>/dev/null)" ]] && ln -sf "$(command -v "$tool")" "$IN22_BIN/$tool"
+done
+IN22_OUT="$(PATH="$IN22_BIN" "$ROOT/install.sh" "$IN22" --no-ci 2>&1)" || true
+grep -Fq 'python3 absent' <<<"$IN22_OUT"
+if grep -Fq 'invalide' <<<"$IN22_OUT"; then echo 'IN22: a missing python3 reported as an invalid file' >&2; exit 1; fi
+
+# IN23 (review 2): the same upgrade from the real a8efa59 kit (a v1 file, api-1 reader, literal hooks).
+if git -C "$ROOT" cat-file -e a8efa59:.claude/project.json 2>/dev/null; then
+    IN23="$SCRATCH/in23"
+    mkdir -p "$IN23"
+    git -C "$ROOT" archive a8efa59 .claude | tar -x -C "$IN23"
+    sed -i 's/^PROTECTED_BRANCHES=.*/PROTECTED_BRANCHES="main|trunk"/' "$IN23/.claude/hooks/enforce-git-workflow.sh"
+    sed -i 's/^PROTECTED_DIRS=.*/PROTECTED_DIRS="src|infra|\\.claude"/' "$IN23/.claude/hooks/prevent-destructive-commands.sh"
+    sed -i 's/^DATA_CLIENT_MODULE = .*/DATA_CLIENT_MODULE = "lib\/api"/; s/^DATA_CLIENT_OWN_PATH = .*/DATA_CLIENT_OWN_PATH = "lib\/api.ts"/' \
+        "$IN23/.claude/hooks/enforce-architecture.py"
+    "$ROOT/install.sh" "$IN23" --no-ci >/dev/null 2>&1
+    in_merge_all "$IN23"
+    "$ROOT/install.sh" "$IN23" --no-ci >/dev/null 2>&1
+    jq -e '.schema_version == 2 and .protected_branches == ["main","trunk"]
+        and .protected_dirs == ["src","infra",".claude"] and .data_client.module == "lib/api"' \
+        "$IN23/.claude/project.json" >/dev/null
+else
+    echo 'SKIP IN23: a8efa59 absent'
+fi
+
+# IN24 (review 2, FastAPI addon): the six addon hooks that share tdd_py_lib.py are held back with
+# P1 while the target's copies are older, and the message names their .new.
+IN24="$SCRATCH/in24"
+mkdir -p "$IN24"
+"$ROOT/install.sh" "$IN24" --fastapi --no-ci >/dev/null 2>&1
+sed -i '/^# cwk-guard-api:/d' "$IN24/.claude/hooks/tdd_py_lib.py"
+IN24_OUT="$("$ROOT/install.sh" "$IN24" --fastapi --no-ci 2>&1)"
+grep -Fq 'P1 held back: .claude/hooks/tdd_py_lib.py' <<<"$IN24_OUT"
+grep -Fq 'tdd_py_lib.py.new' <<<"$IN24_OUT"
+
+# IN25 (review 2): one unreadable alternative drops that item only; the readable ones and the
+# defaults stay, with one note per dropped item.
+IN25="$SCRATCH/in25"
+mig_tree "$IN25" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main|release-[0-9]+|hotfix/.*"' \
+    prevent-destructive-commands.sh 'PROTECTED_DIRS="src|infra/.*|\.claude|var-data"'
+IN25_OUT="$("${MIGRATE[@]}" "$IN25" 2>&1)"
+jq -e '(.protected_branches | sort) == ["hotfix/*","main","master"]
+    and (.protected_dirs | index("var-data") != null and index("infra/.*") == null
+         and index("shared") != null and index("src") != null)' "$IN25/.claude/project.json" >/dev/null
+grep -Fq "migrate: protected_branches unreadable in enforce-git-workflow.sh, default kept ('release-[0-9]+' dropped)" <<<"$IN25_OUT"
+grep -Fq "migrate: protected_dirs unreadable in prevent-destructive-commands.sh, default kept ('infra/.*' dropped)" <<<"$IN25_OUT"
+[ "$(grep -c 'dropped' <<<"$IN25_OUT")" -eq 2 ]
+
+# IN26 (review 3, G2): a snapshot key is adopted with one note each; a key the hooks cannot hold
+# (here codegen_commands) is ignored with a note and never reaches project.json.
+IN26="$SCRATCH/in26"
+mkdir -p "$IN26/.claude"
+printf '{"schema_version":1,"values":{"protected_branches":["main","develop"],"data_client":{"module":"lib/api","own_path":"lib/api.ts"},"codegen_commands":[["x","y"]]}}\n' \
+    >"$IN26/.claude/project.snapshot.json"
+IN26_OUT="$("${MIGRATE[@]}" "$IN26" 2>&1)"
+jq -e '.protected_branches == ["main","develop"] and .data_client.module == "lib/api" and .codegen_commands == []' \
+    "$IN26/.claude/project.json" >/dev/null
+grep -Fq 'migrate: protected_branches taken from project.snapshot.json' <<<"$IN26_OUT"
+grep -Fq 'migrate: data_client taken from project.snapshot.json' <<<"$IN26_OUT"
+grep -Fq 'migrate: codegen_commands in project.snapshot.json is not a value the hooks hold, ignored' <<<"$IN26_OUT"
+[ "$(grep -c 'taken from project.snapshot.json' <<<"$IN26_OUT")" -eq 2 ]
 
 echo 'install fixtures: green.'

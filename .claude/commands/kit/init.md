@@ -66,7 +66,9 @@ explicit options and an `leave open` option:
 - local command and production: detected target, `none yet`, or a named target;
 - CI: install/keep it because a remote exists, or no workflow while local-only;
 - forbidden icon set: keep LoopKit's default, provide a replacement set, or open;
-- protected branches: `main`, `master`, both, or an explicit list;
+- protected branches: `main`, `master`, both, or an explicit list (globs such as
+  `release/*` allowed);
+- the run-once test command the TDD hook runs on one file (detected candidate or open);
 - user-facing language and log/error language;
 - backend/database policy when those surfaces exist;
 - app roots and codegen commands to declare: the detected candidates, a subset, or none.
@@ -79,8 +81,10 @@ those observed candidates. Do not add a synthetic recommendation.
 For every section, re-read that section immediately before editing it:
 
 1. `01-stack.md`: data-client table and stack/scripts facts.
-2. `enforce-architecture.py`: `DATA_CLIENT_MODULE`, `DATA_CLIENT_OWN_PATH`,
-   `COMPOSITION_ROOTS`, `SHARED_DIRS`; then section 2 bis secret-template twins.
+2. `.claude/project.json` `data_client` (`module`, `own_path`, `composition_roots`,
+   `shared_dirs`); then section 2 bis secret-template twins (`env_template_suffixes`
+   against the settings.json `Read(!.env.<s>)` entries). No hook under `.claude/hooks/`
+   is ever edited: every hook reads these values from `.claude/project.json`.
    When the client is not `lib/client`, rewrite its copies in the same step:
    `import { <its export> as client } from "@/<module>"` in `templates/feature.md`
    and `patterns/react-query.md`, the mock path and key in `templates/fixtures.md`,
@@ -98,11 +102,16 @@ For every section, re-read that section immediately before editing it:
 8. `03-conventions.md`: user language and English logs/errors.
 9. feedback/guard patterns.
 10. E2E backend choice, only if that skill is installed.
-11. icon rule and `no-forbidden-icons.sh` together.
+11. icon rule `09-icons.md` and `forbidden_icons` in `.claude/project.json` together.
 12. worktree base and branch convention.
 13. review level-zero browser capability; report absence, never fake it.
-14. `.claude/project.json`: the chosen `app_roots` and `codegen_commands` (a guarded
-    file: the write asks). Probe: `/kit:doctor` `project-config`.
+14. `.claude/project.json`, in one Edit (a guarded file: the write asks): the chosen
+    `app_roots` and `codegen_commands`, plus every value decided above that a hook
+    applies — `data_client`, `protected_dirs` (the CLAUDE.md list of step 7),
+    `protected_branches`, `test_command` (the run-once command the TDD hook runs on one
+    test file), `formatter`, `linter`, `env_template_suffixes`, `forbidden_icons`,
+    `tdd_layers`, and `fastapi` when that addon is installed. Probe: `/kit:doctor`
+    `project-config` and its twins.
 
 After each section, run only its deterministic probe from `docs/ADAPTATION.md`.
 Do not run an application gate until its command has been resolved.

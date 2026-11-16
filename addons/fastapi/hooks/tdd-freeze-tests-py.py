@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: tdd-freeze-tests-py
 # Event: PreToolUse (Write|Edit)
@@ -15,13 +16,25 @@
 #
 # `.claude/.tdd-unfrozen` is the visible exception, shared with the TypeScript
 # cycle: a path, with a reason, in review.
-#
-# CONFIGURE: the layers and the module root live in tdd_py_lib.py.
 
+import json
 import os
 import re
 import sys
 
+
+def _ask_on_crash(kind, value, trace):
+    """Any uncaught error, a mismatched tdd_py_lib.py included, asks: exit 1 would let the write through."""
+    note = (f"{os.path.basename(sys.argv[0])} failed ({kind.__name__}: {value}); the hooks in .claude/hooks come "
+            "from two kit versions. Restore them: rerun install.sh on this project, or /kit:init.")
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                       "permissionDecision": "ask",
+                                                       "permissionDecisionReason": note}}))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+sys.excepthook = _ask_on_crash
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import tdd_py_lib as lib  # noqa: E402
@@ -149,7 +162,10 @@ def main() -> None:
     payload = lib.read_payload()
     tool_input = payload.get("tool_input") or {}
     file_path = tool_input.get("file_path") or ""
-    if not file_path or not lib.is_frozen_test(file_path):
+    if not file_path or not file_path.endswith(".py"):
+        sys.exit(0)
+    lib.configure(ask_on_pass=True)
+    if not lib.VALUES or not lib.is_frozen_test(file_path):
         sys.exit(0)
 
     abs_test = lib.abs_path(file_path)
@@ -174,15 +190,11 @@ def main() -> None:
     content = tool_input.get("content")
     if content is not None:
         if content == current:
-            print(
-                '{"systemMessage": %s}'
-                % _json(
-                    "TDD: identical re-save of the frozen test '%s' — allowed, nothing "
-                    "changed. tdd-prove-red-py is re-running it; read its verdict "
-                    "before writing any implementation." % file_path
-                )
+            lib.notice(
+                "TDD: identical re-save of the frozen test '%s' — allowed, nothing "
+                "changed. tdd-prove-red-py is re-running it; read its verdict "
+                "before writing any implementation." % file_path
             )
-            sys.exit(0)
         lib.deny(
             "TDD: %s is frozen — it was validated at the /loop:plan gate and proved red, "
             "and a wholesale overwrite rewrites assertions with nothing watching.\n\n"
@@ -305,21 +317,11 @@ def main() -> None:
             % (file_path, refused, file_path, impl_rel)
         )
 
-    print(
-        '{"systemMessage": %s}'
-        % _json(
-            "TDD: case appended to the frozen test %s — allowed as a pure insertion. "
-            "Say which behaviour it covers and why the /loop:plan test plan missed it."
-            % file_path
-        )
+    lib.notice(
+        "TDD: case appended to the frozen test %s — allowed as a pure insertion. "
+        "Say which behaviour it covers and why the /loop:plan test plan missed it."
+        % file_path
     )
-    sys.exit(0)
-
-
-def _json(text: str) -> str:
-    import json
-
-    return json.dumps(text)
 
 
 if __name__ == "__main__":

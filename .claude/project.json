@@ -1,1 +1,77 @@
-{"schema_version": 1, "app_roots": [], "codegen_commands": []}
+{
+  "schema_version": 2,
+  "app_roots": [],
+  "codegen_commands": [],
+  "data_client": {
+    "module": "lib/client",
+    "own_path": "lib/client.ts",
+    "composition_roots": [
+      "main.tsx",
+      "routes/__root.tsx"
+    ],
+    "shared_dirs": [
+      "components/",
+      "hooks/",
+      "lib/",
+      "types/",
+      "stores/",
+      "config/"
+    ]
+  },
+  "protected_dirs": [
+    "src",
+    "shared",
+    ".claude",
+    "public",
+    "node_modules",
+    "dist"
+  ],
+  "protected_branches": [
+    "main",
+    "master"
+  ],
+  "test_command": [
+    "pnpm",
+    "test:run"
+  ],
+  "formatter": [
+    "prettier",
+    "--write"
+  ],
+  "linter": "eslint",
+  "env_template_suffixes": [
+    "example",
+    "sample",
+    "template"
+  ],
+  "forbidden_icons": [
+    "Star",
+    "Stars",
+    "Sparkle",
+    "Sparkles",
+    "Rocket",
+    "RocketLaunch",
+    "Zap",
+    "Bolt",
+    "LightningBolt"
+  ],
+  "tdd_layers": [
+    "repository",
+    "services",
+    "mapper",
+    "utils"
+  ],
+  "fastapi": {
+    "module_root": "app",
+    "tests_root": "tests",
+    "test_first_dirs": [
+      "services"
+    ],
+    "session_names": [
+      "db",
+      "session",
+      "async_session"
+    ],
+    "external_clients": {}
+  }
+}

@@ -436,7 +436,8 @@ run_case() {
                     mkdir -p "$tmp/src"
                     printf '%s\n' 'export const x = 1' >"$tmp/src/x.ts"
                     printf '%s\n' 'API_URL=' >"$tmp/.env.example"
-                    git -C "$tmp" add src/x.ts .env.example
+                    seed_project "$tmp"
+                    git -C "$tmp" add src/x.ts .env.example .claude/project.json
                     git -C "$tmp" commit -q -m seed
                     git -C "$tmp" worktree add -q "$tmp/.feat" -b feat/x
                     # The `-C` commit allow is limited to the project tree and its
@@ -533,6 +534,11 @@ run_case() {
             esac
             ;;
     esac
+    # A tmp project gets the kit's project.json, unless its case is about a missing one.
+    if [[ -n "$project_dir" && "$project_dir" != "$PROJECT_ROOT" && -d "$project_dir" \
+          && ! -e "$project_dir/.claude/project.json" && "$fixture_name" != *-noconfig-* ]]; then
+        seed_project "$project_dir"
+    fi
 
     set +e
     ( cd "$hook_pwd" && printf '%s' "$input" | PATH="$hook_path" HOME="$hook_home" TMPDIR="$hook_tmp" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
@@ -1183,7 +1189,8 @@ run_git_linked_worktree_case() {
     git -C "$tmp" config user.email fixture@loopkit.invalid
     git -C "$tmp" config user.name Fixture
     printf '%s\n' 'export const x = 1' >"$tmp/x.ts"
-    git -C "$tmp" add x.ts
+    seed_project "$tmp"
+    git -C "$tmp" add x.ts .claude/project.json
     git -C "$tmp" commit -q -m seed
     git -C "$tmp" worktree add -q "$feat" -b feat/x
     printf '%s\n' 'export const y = 1' >"$feat/y.ts"
@@ -1199,6 +1206,7 @@ run_git_python_isolation_case() {
     local tmp out verdict
     tmp="$(mktemp -d)"
     printf 'import pathlib\npathlib.Path(%s).touch()\n' "'$tmp/MARKER'" >"$tmp/shlex.py"
+    seed_project "$tmp"
     CASES=$((CASES + 1))
     out="$(git_hook_probe "git status" "$tmp" "$tmp")"
     verdict="${out%%$'\n'*}"
@@ -1229,7 +1237,8 @@ make_seed_repo() {
     git -C "$1" config user.email fixture@loopkit.invalid
     git -C "$1" config user.name Fixture
     printf '%s\n' 'export const x = 1' >"$1/x.ts"
-    git -C "$1" add x.ts
+    seed_project "$1"
+    git -C "$1" add x.ts .claude/project.json
     git -C "$1" commit -q -m seed
 }
 
@@ -1430,6 +1439,17 @@ project_hook_probe() {
     printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
 }
 
+# Copies the repo's own .claude/project.json into <dir>/.claude/; with --reader, also
+# project_config.py into <dir>/.claude/hooks/ (the addon cases).
+seed_project() {
+    mkdir -p "$1/.claude"
+    cp "$PROJECT_ROOT/.claude/project.json" "$1/.claude/project.json"
+    if [[ "${2:-}" == --reader ]]; then
+        mkdir -p "$1/.claude/hooks"
+        cp "$HOOKS_DIR/project_config.py" "$1/.claude/hooks/project_config.py"
+    fi
+}
+
 # Writes <json text> into <project>/.claude/project.json.
 write_project_json() {
     mkdir -p "$1/.claude"
@@ -1525,7 +1545,7 @@ run_project_config_cases() {
     pc_roots_expect PC15 "$tmp/p15d" 3 ""
     out="$(project_hook_probe prevent-destructive-commands.sh "$tmp/p15a" \
         "$(jq -cn --arg cwd "$tmp/p15a" '{tool_name:"Bash",tool_input:{command:"echo x > docs/a.md"},cwd:$cwd}')")"
-    g15_expect PC15 pass "$out"
+    g15_expect PC15 ask "$out" "rerun install.sh on this project, or /kit:init"
 
     out="$(project_hook_probe protect-files.sh "$PROJECT_ROOT" \
         "$(jq -cn --arg f "$PROJECT_ROOT/.claude/project.json" '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"a",new_string:"b"}}')")"
@@ -1540,7 +1560,7 @@ run_project_config_cases() {
     CASES=$((CASES + 1))
     [[ "$rc" == 3 ]] || fail project_config.py PC16 "a FIFO project.json: expected exit 3, got $rc"
     out="$(PROBE_SECONDS=5 pf_probe "$tmp/p16" Edit frontend/vite.config.ts)"
-    g15_expect PC16 pass "$out"
+    g15_expect PC16 ask "$out" "rerun install.sh on this project, or /kit:init"
 
     i=0
     for root in '.claude' '.claude/x' '.git' 'node_modules/a' '-x'; do
@@ -1586,6 +1606,1117 @@ print(len(os.listdir("/proc/self/fd")) - before)
     CASES=$((CASES + 1))
     [[ "$out" == 0 ]] || fail project_config.py PC20 "a directory project.json leaked descriptors: '${out:0:200}'"
     rm -r "$tmp"
+}
+
+# Prints `project_config.py shell <project>` with NUL records turned into lines, then `rc=<n>`.
+pc_shell() {
+    local rc=0 out
+    out="$(python3 -I -B "$HOOKS_DIR/project_config.py" shell "$1" 2>/dev/null | tr '\0' '\n'; printf 'x')" || true
+    python3 -I -B "$HOOKS_DIR/project_config.py" shell "$1" >/dev/null 2>&1 || rc=$?
+    printf '%src=%s\n' "${out%x}" "$rc"
+}
+
+# Fails <id> unless `shell <project>` exits <code>, prints only `#status=<code>` and names
+# <needle> on stderr.
+pc_shell_reject() {
+    local id="$1" project="$2" code="$3" needle="$4" err
+    CASES=$((CASES + 1))
+    err="$(python3 -I -B "$HOOKS_DIR/project_config.py" shell "$project" 2>&1 >/dev/null)" || true
+    [[ "$(pc_shell "$project")" == $'#status='"$code"$'\nrc='"$code" ]] \
+        || { fail project_config.py "$id" "expected only #status=$code and exit $code, got '$(pc_shell "$project" | head -c 200)'"; return 0; }
+    [[ -z "$needle" || "$err" == *"$needle"* ]] || fail project_config.py "$id" "reason does not name '$needle': '$err'"
+    return 0
+}
+
+# PC21-PC32 (project-config step 1): schema 2, the `shell` records, `defaults`. Expected values
+# are hand-written; the icon names come from .claude/rules/09-icons.md, never from the reader.
+run_project_config_v2_cases() {
+    local tmp out want icons v2 py
+    tmp="$(mktemp -d)"
+    icons="$(sed -n '/heroicons names:/,/\.$/p' "$PROJECT_ROOT/.claude/rules/09-icons.md" \
+        | grep -o '`[A-Za-z]*`' | tr -d '`' | paste -sd'|' -)"
+    py="(^|[/[:space:]\"'])(app/(services)(/[A-Za-z0-9_./-]*)?\\.py|tests/((services)/[A-Za-z0-9_./-]*)?test_[A-Za-z0-9_]*\\.py)"
+    want="#status=0
+protected_dirs_ere=src|shared|\\.claude|public|node_modules|dist
+protected_dirs_text=src/, shared/, .claude/, public/, node_modules/, dist/
+protected_branches=main
+protected_branches=master
+test_command=pnpm
+test_command=test:run
+formatter=prettier
+formatter=--write
+linter=eslint
+env_suffix_ere=example|sample|template
+icons_ere=$icons
+tdd_layers_ere=repository|services|mapper|utils
+py_target_ere=$py
+module_root=app
+tests_root=tests
+#end=15
+rc=0"
+    v2="{\"schema_version\":2,\"app_roots\":[],\"codegen_commands\":[],
+ \"data_client\":{\"module\":\"lib/client\",\"own_path\":\"lib/client.ts\",
+  \"composition_roots\":[\"main.tsx\",\"routes/__root.tsx\"],
+  \"shared_dirs\":[\"components/\",\"hooks/\",\"lib/\",\"types/\",\"stores/\",\"config/\"]},
+ \"protected_dirs\":[\"src\",\"shared\",\".claude\",\"public\",\"node_modules\",\"dist\"],
+ \"protected_branches\":[\"main\",\"master\"],\"test_command\":[\"pnpm\",\"test:run\"],
+ \"formatter\":[\"prettier\",\"--write\"],\"linter\":\"eslint\",
+ \"env_template_suffixes\":[\"example\",\"sample\",\"template\"],
+ \"forbidden_icons\":$(printf '%s' "$icons" | jq -Rc 'split("|")'),
+ \"tdd_layers\":[\"repository\",\"services\",\"mapper\",\"utils\"],
+ \"fastapi\":{\"module_root\":\"app\",\"tests_root\":\"tests\",\"test_first_dirs\":[\"services\"],
+  \"session_names\":[\"db\",\"session\",\"async_session\"],\"external_clients\":{}}}"
+
+    write_project_json "$tmp/p21" "$v2"
+    CASES=$((CASES + 1))
+    out="$(pc_shell "$tmp/p21")"
+    [[ "$out" == "$want" ]] || fail project_config.py PC21 "schema-2 shell records differ: '$out'"
+
+    write_project_json "$tmp/p22" '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[["supabase","gen","types"]]}'
+    mkdir -p "$tmp/p22/frontend"
+    CASES=$((CASES + 1))
+    out="$(pc_shell "$tmp/p22")"
+    [[ "$out" == "$(printf '%s' "$want" | sed -e 's/^#status=0$/#status=0\napp_roots=frontend/' -e 's/^#end=15$/#end=16/')" ]] \
+        || fail project_config.py PC22 "a schema-1 file did not keep its root and take the defaults: '$out'"
+    CASES=$((CASES + 1))
+    out="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import project_config as p; print(p.load(sys.argv[2]).codegen_commands)' \
+        "$HOOKS_DIR" "$tmp/p22" 2>&1)" || true
+    [[ "$out" == "(('supabase', 'gen', 'types'),)" ]] || fail project_config.py PC22 "a schema-1 file lost its codegen: '$out'"
+
+    write_project_json "$tmp/p23" "$(printf '%s' "$v2" | jq -c '.protected_dirs = [".claude", "a.b"]')"
+    CASES=$((CASES + 1))
+    out="$(pc_shell "$tmp/p23" | grep '^protected_dirs_')"
+    [[ "$out" == $'protected_dirs_ere=\\.claude|a\\.b\nprotected_dirs_text=.claude/, a.b/' ]] \
+        || fail project_config.py PC23 "protected dirs are not ERE-escaped: '$out'"
+
+    mkdir -p "$tmp/p24"
+    pc_shell_reject PC24 "$tmp/p24" 4 "missing"
+    pc_roots_expect PC24 "$tmp/p24" 0 ""
+    CASES=$((CASES + 1))
+    python3 -I -B "$HOOKS_DIR/project_config.py" check "$tmp/p24" >/dev/null 2>&1 \
+        || fail project_config.py PC24 "check on an absent file must still exit 0"
+
+    write_project_json "$tmp/p25a" "$(printf '%s' "$v2" | jq -c '.schema_version = 3')"
+    pc_shell_reject PC25 "$tmp/p25a" 3 "schema_version"
+    write_project_json "$tmp/p25b" "$(printf '%s' "$v2" | jq -c 'del(.protected_branches)')"
+    pc_shell_reject PC25 "$tmp/p25b" 3 "protected_branches"
+    write_project_json "$tmp/p25c" "$(printf '%s' "$v2" | jq -c '.extra = 1')"
+    pc_shell_reject PC25 "$tmp/p25c" 3 "extra"
+    write_project_json "$tmp/p25d" "$(printf '%s' "$v2" | jq -c '.data_client.extra = 1')"
+    pc_shell_reject PC25 "$tmp/p25d" 3 "extra"
+
+    local -a bad=(
+        'protected_branches|.protected_branches = ["../x"]'
+        'protected_branches|.protected_branches = ["-x"]'
+        'protected_branches|.protected_branches = ["a b"]'
+        'protected_dirs|.protected_dirs = [".."]'
+        'env_template_suffixes|.env_template_suffixes = ["ex.ample"]'
+        'tdd_layers|.tdd_layers = ["Utils"]'
+        'test_command|.test_command = []'
+        'test_command|.test_command = ["pnpm", "a\nb"]'
+        'formatter|.formatter = ["../x"]'
+        'linter|.linter = "a/b"'
+        'own_path|.data_client.own_path = "lib/other.ts"'
+        'module_root|.fastapi.module_root = "app/"'
+        'external_clients|.fastapi.external_clients = {"9x": ["core/"]}'
+    )
+    local entry i=0
+    for entry in "${bad[@]}"; do
+        i=$((i + 1))
+        write_project_json "$tmp/p26-$i" "$(printf '%s' "$v2" | jq -c "${entry#*|}")"
+        pc_shell_reject "PC26[${entry%%|*}]" "$tmp/p26-$i" 3 "${entry%%|*}"
+    done
+
+    pc_shell_reject PC27 "" 5 ""
+    pc_shell_reject PC27 "rel/p" 5 ""
+
+    write_project_json "$tmp/p28" "$(printf '%s' "$v2" | jq -c '.formatter = [] | .linter = ""')"
+    CASES=$((CASES + 1))
+    out="$(pc_shell "$tmp/p28")"
+    [[ "$out" == "$(printf '%s' "$want" | sed -e '/^formatter=/d' -e 's/^linter=eslint$/linter=/' -e 's/^#end=15$/#end=13/')" ]] \
+        || fail project_config.py PC28 "formatter [] and linter \"\" must give empty records: '$out'"
+
+    write_project_json "$tmp/p29" "$(printf '%s' "$v2" | jq -c '.fastapi.module_root = "srv" | .fastapi.test_first_dirs = ["domain"]')"
+    CASES=$((CASES + 1))
+    out="$(pc_shell "$tmp/p29" | sed -n 's/^py_target_ere=//p')"
+    if [[ -z "$out" ]]; then
+        fail project_config.py PC29 "no py_target_ere record"
+    else
+        [[ "srv/domain/x.py" =~ $out && "tests/domain/test_x.py" =~ $out ]] \
+            || fail project_config.py PC29 "the derived target misses srv/domain: '$out'"
+        [[ ! "app/services/x.py" =~ $out && ! "srv/domain_old/x.py" =~ $out ]] \
+            || fail project_config.py PC29 "the derived target still matches the default or a lookalike: '$out'"
+    fi
+
+    CASES=$((CASES + 1))
+    cmp -s <(python3 -I -B "$HOOKS_DIR/project_config.py" defaults 2>/dev/null) "$PROJECT_ROOT/.claude/project.json" \
+        || fail project_config.py PC30 "the repo's project.json is not the reader's defaults byte for byte"
+    CASES=$((CASES + 1))
+    [[ "$(pc_shell "$PROJECT_ROOT")" == "$want" ]] || fail project_config.py PC30 "the repo's project.json shell output differs from PC21"
+
+    write_project_json "$tmp/p31" "$(printf '%s' "$v2" | jq -c '.fastapi.external_clients = {"app.core.qdrant": ["core/", "services/search.py"]}')"
+    CASES=$((CASES + 1))
+    [[ "$(pc_shell "$tmp/p31" | head -1)" == "#status=0" ]] || fail project_config.py PC31 "a real external_clients map was refused"
+
+    CASES=$((CASES + 1))
+    cmp -s <(python3 -I -B "$HOOKS_DIR/project_config.py" defaults --shell 2>/dev/null) "$HOOKS_DIR/project-defaults.records" \
+        && cmp -s "$HOOKS_DIR/project-defaults.records" <(python3 -I -B "$HOOKS_DIR/project_config.py" shell "$tmp/p21" 2>/dev/null | tr '\0' '\n') \
+        || fail project_config.py PC32 "project-defaults.records is not the reader's default records"
+    rm -r "$tmp"
+}
+
+# PC33-PC35 (project-config review 1): secret suffix words, a leading dash, the writer's temp file.
+run_project_config_review1_cases() {
+    local tmp word d victim
+    tmp="$(mktemp -d)"
+    for word in local production development prod dev staging test; do
+        pv_project "$tmp/p33-$word" ".env_template_suffixes = [\"example\", \"$word\"]"
+        pc_shell_reject "PC33[$word]" "$tmp/p33-$word" 3 "env_template_suffixes"
+    done
+    pv_project "$tmp/p34a" '.linter = "-x"'
+    pc_shell_reject PC34 "$tmp/p34a" 3 "linter"
+    pv_project "$tmp/p34b" '.formatter = ["-x", "--write"]'
+    pc_shell_reject PC34 "$tmp/p34b" 3 "formatter"
+    pv_project "$tmp/p34c" '.test_command = ["-x"]'
+    pc_shell_reject PC34 "$tmp/p34c" 3 "test_command"
+
+    d="$tmp/p35"
+    victim="$d/victim"
+    pv_project "$d"
+    printf 'keep\n' >"$victim"
+    ln -s "$victim" "$d/.claude/project.json.tmp"
+    CASES=$((CASES + 1))
+    python3 -I -B "$HOOKS_DIR/project_config.py" wire "$d" fastapi >/dev/null 2>&1 || true
+    [[ "$(cat "$victim")" == keep ]] || fail project_config.py PC35 "the writer followed a planted .tmp symlink onto another file"
+    CASES=$((CASES + 1))
+    [[ -f "$d/.claude/project.json" && ! -L "$d/.claude/project.json" ]] \
+        && jq -e '.protected_dirs | index("alembic")' "$d/.claude/project.json" >/dev/null 2>&1 \
+        || fail project_config.py PC35 "the wired file is not a regular file holding the addon's dirs"
+    rm -r "$tmp"
+}
+
+# Writes the reader's defaults, through jq filter <filter>, as <dir>/.claude/project.json.
+pv_project() {
+    mkdir -p "$1/.claude" "$1/src" "$1/docs"
+    python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq "${2:-.}" >"$1/.claude/project.json"
+}
+
+# Fails <id> unless the first line of <out> is <verdict> (and, with a 4th arg, the rest
+# holds it; with a 5th, the rest lacks it).
+pv_expect() {
+    local id="$1" want="$2" out="$3" needle="${4:-}" absent="${5:-}"
+    CASES=$((CASES + 1))
+    if [[ "${out%%$'\n'*}" != "$want" ]]; then
+        fail project-values "$id" "expected $want, got '${out:0:240}'"
+    elif [[ -n "$needle" && "$out" != *"$needle"* ]]; then
+        fail project-values "$id" "reason lacks '$needle': '${out:0:240}'"
+    elif [[ -n "$absent" && "$out" == *"$absent"* ]]; then
+        fail project-values "$id" "reason holds '$absent': '${out:0:240}'"
+    fi
+    return 0
+}
+
+# A python3 on PATH that logs each call's arguments to <dir>/calls, then runs the real one.
+pv_python_spy() {
+    mkdir -p "$1/bin"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s/calls"\nexec %s "$@"\n' \
+        "$1" "$(command -v python3)" >"$1/bin/python3"
+    chmod +x "$1/bin/python3"
+    : >"$1/calls"
+}
+
+# PV1-PV3, PX1, PX10, PX11, PX13 (project-config step 2): the loader and the TDD regexes.
+run_project_values_cases() {
+    local tmp out p rc stale junk
+    tmp="$(mktemp -d)"
+    p="$tmp/pv1"
+    pv_project "$p" '.tdd_layers = ["repository", "usecase"]'
+    out="$(project_hook_probe tdd-require-red.sh "$p" \
+        "$(jq -cn --arg f "$p/src/a.usecase.ts" '{tool_name:"Write",tool_input:{file_path:$f,content:"export const a = 1"}}')")"
+    pv_expect PV1 deny "$out"
+    out="$(project_hook_probe tdd-require-red.sh "$p" \
+        "$(jq -cn --arg f "$p/src/a.mapper.ts" '{tool_name:"Write",tool_input:{file_path:$f,content:"export const a = 1"}}')")"
+    pv_expect PV1 pass "$out"
+    pv_expect PV1 deny "$(pd_probe "$p" 'echo x > src/a.usecase.ts')"
+
+    p="$tmp/pv2"
+    pv_project "$p" '.fastapi.module_root = "srv"'
+    pv_expect PV2 deny "$(pd_probe "$p" 'echo x > srv/services/a.py')" "Python test-first layer"
+    out="$(pd_probe "$p" 'echo x > app/services/a.py')"
+    pv_expect PV2 "${out%%$'\n'*}" "$out" "" "Python test-first layer"
+
+    p="$tmp/pv3"
+    pv_project "$p" '.app_roots = ["frontend"]'
+    mkdir -p "$p/frontend"
+    out="$(cd "$p" && CLAUDE_PROJECT_DIR="$p" bash -c 'source "$1/hook-guarded.sh"; rc=0
+        cwk_is_guarded frontend/vite.config.ts || rc=$?; echo "$rc $CWK_CFG_DEGRADED"' _ "$HOOKS_DIR")"
+    CASES=$((CASES + 1))
+    [[ "$out" == "0 0" ]] || fail hook-guarded.sh PV3 "a declared root's config: expected '0 0', got '$out'"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    out="$(cd "$p" && CLAUDE_PROJECT_DIR="$p" bash -c 'source "$1/hook-guarded.sh"; a=0; b=0
+        cwk_is_guarded frontend/vite.config.ts || a=$?; cwk_is_guarded .claude/hooks/x || b=$?
+        echo "$a $b $CWK_CFG_DEGRADED"' _ "$HOOKS_DIR")"
+    CASES=$((CASES + 1))
+    [[ "$out" == "1 0 1" ]] || fail hook-guarded.sh PV3 "an invalid file: expected '1 0 1' (defaults, static list, degraded), got '$out'"
+
+    p="$tmp/px1"
+    pv_project "$p"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    pv_python_spy "$tmp/spy1"
+    out="$(PATH="$tmp/spy1/bin:$PATH" project_hook_probe protect-files.sh "$p" \
+        "$(jq -cn --arg f "$p/src/a.ts" '{tool_name:"Read",tool_input:{file_path:$f}}')")"
+    pv_expect PX1 pass "$out"
+    CASES=$((CASES + 1))
+    grep -q ' shell ' "$tmp/spy1/calls" && fail protect-files.sh PX1 "a Read of src/a.ts ran the reader: $(cat "$tmp/spy1/calls")"
+
+    for junk in 'printf "junk\\n"' 'printf "#status=0\\0linter=eslint\\0"' \
+                "printf '#status=0\\0linter=eslint\\0#end=9\\0'"; do
+        mkdir -p "$tmp/badpy/bin"
+        printf '#!/usr/bin/env bash\ncase " $* " in *" shell "*) %s; exit 0 ;; esac\nexec %s "$@"\n' \
+            "$junk" "$(command -v python3)" >"$tmp/badpy/bin/python3"
+        chmod +x "$tmp/badpy/bin/python3"
+        p="$tmp/px10"
+        pv_project "$p"
+        out="$(cd "$p" && PATH="$tmp/badpy/bin:$PATH" CLAUDE_PROJECT_DIR="$p" bash -c 'source "$1/hook-guarded.sh"; rc=0
+            cwk_config || rc=$?; echo "$rc $CWK_CFG_DEGRADED ${CWK_CFG_PROTECTED_BRANCHES[*]}"' _ "$HOOKS_DIR")"
+        CASES=$((CASES + 1))
+        [[ "$out" == "3 1 main master" ]] \
+            || fail hook-guarded.sh PX10 "reader output [$junk] must be status 3 on the defaults, got '$out'"
+    done
+    rm -rf "$tmp/px10g"; make_seed_repo "$tmp/px10g"
+    pv_project "$tmp/px10g"
+    out="$(PATH="$tmp/badpy/bin:$PATH" PROBE_PROJECT="$tmp/px10g" git_hook_probe 'git commit -m x' "$tmp/px10g" "$tmp/px10g")"
+    pv_expect PX10 deny "$out"
+
+    stale="$tmp/stale"
+    mkdir -p "$stale"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$HOOKS_DIR/project-defaults.records" "$stale/"
+    git -C "$PROJECT_ROOT" show 0790de8:.claude/hooks/hook-lib.sh >"$stale/hook-lib.sh"
+    for hook in prevent-destructive-commands.sh tdd-require-red.sh tdd-prove-red.sh; do
+        rc=0
+        out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s/src/a.utils.ts","content":"x","command":"ls"}}' "$PROJECT_ROOT" \
+            | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 "$stale/$hook" 2>&1 >/dev/null)" || rc=$?
+        CASES=$((CASES + 1))
+        [[ "$rc" == 2 && "$out" == *cwk_tdd_load* ]] \
+            || fail "$hook" PX11 "a stale hook-lib.sh must exit 2 naming cwk_tdd_load, got rc $rc '${out:0:200}'"
+    done
+
+    p="$tmp/px13"
+    pv_project "$p"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    mkdir -p "$tmp/px13hooks"
+    cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.py "$tmp/px13hooks/"
+    printf 'corrupt\n' >"$tmp/px13hooks/project-defaults.records"
+    out="$(cd "$p" && printf '%s' "$(jq -cn --arg cwd "$p" '{tool_name:"Bash",tool_input:{command:"echo x > docs/a.md"},cwd:$cwd}')" \
+        | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$tmp/px13hooks/prevent-destructive-commands.sh" 2>/dev/null)"
+    pv_expect PX13 ask "$(semantic_verdict 0 <(printf '%s' "$out"))
+$out" "" "test-first"
+    out="$(cd "$p" && printf '%s' "$(jq -cn --arg cwd "$p" '{tool_name:"Bash",tool_input:{command:"python3 -I -c '"'"'x'"'"' > src/b.md"},cwd:$cwd}')" \
+        | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$tmp/px13hooks/prevent-destructive-commands.sh" 2>/dev/null)"
+    pv_expect PX13 ask "$(semantic_verdict 0 <(printf '%s' "$out"))
+$out" "inline program" "test-first"
+    rm -rf "$tmp"
+}
+
+# <hook> on a <tool> call naming <path> (or a Bash <command>), in project <dir>.
+pv_tool() {
+    local hook="$1" dir="$2" tool="$3" arg="$4" content="${5:-x}"
+    if [[ "$tool" == Bash ]]; then
+        project_hook_probe "$hook" "$dir" "$(jq -cn --arg c "$arg" --arg cwd "$dir" \
+            '{tool_name:"Bash",tool_input:{command:$c},cwd:$cwd}')"
+    else
+        project_hook_probe "$hook" "$dir" "$(jq -cn --arg t "$tool" --arg f "$dir/$arg" --arg c "$content" \
+            '{tool_name:$t,tool_input:{file_path:$f,content:$c,old_string:"a",new_string:$c,pattern:"x",path:$f}}')"
+    fi
+}
+
+# A git repo at <dir> on <branch> with one commit, the project's config committed in it.
+pv_repo() {
+    make_seed_repo "$1"
+    pv_project "$1" "${3:-.}"
+    git -C "$1" add .claude/project.json
+    git -C "$1" commit -q --allow-empty -m config
+    [[ "$2" == main ]] || git -C "$1" switch -q -c "$2"
+}
+
+# PV4-PV9, PX2, PX3, PX8, PX9, PX12, PX14, PX15 (project-config step 3): each PreToolUse
+# value changes a verdict; an unreadable config keeps every deny and asks where it passed.
+run_project_values_step3_cases() {
+    local tmp p out icon state bad hook reason id branch rc
+    tmp="$(mktemp -d)"
+    reason="rerun install.sh on this project, or /kit:init"
+
+    pv_repo "$tmp/pv4" release/1 '.protected_branches = ["release/*"]'
+    pv_expect PV4 deny "$(PROBE_PROJECT="$tmp/pv4" git_hook_probe 'git commit -m x' "$tmp/pv4" "$tmp/pv4")"
+    git -C "$tmp/pv4" switch -q main
+    pv_expect PV4 pass "$(PROBE_PROJECT="$tmp/pv4" git_hook_probe 'git commit -m x' "$tmp/pv4" "$tmp/pv4")"
+
+    p="$tmp/pv5"
+    pv_project "$p" '.protected_dirs += ["frontend"]'
+    mkdir -p "$p/frontend"
+    pv_expect PV5 deny "$(pd_probe "$p" 'rm -rf frontend')" "frontend/"
+    pv_project "$p"
+    out="$(pd_probe "$p" 'rm -rf frontend')"
+    pv_expect PV5 "${out%%$'\n'*}" "$out" "" "Cannot delete protected directory"
+
+    p="$tmp/pv6"
+    pv_project "$p" '.env_template_suffixes = ["dist"]'
+    printf 'A=1\n' >"$p/.env.dist"; printf 'A=1\n' >"$p/.env.example"
+    pv_expect PV6 pass "$(pv_tool protect-files.sh "$p" Read .env.dist)"
+    pv_expect PV6 allow "$(pv_tool auto-approve-config.sh "$p" Read .env.dist)"
+    pv_expect PV6 deny "$(pv_tool protect-files.sh "$p" Read .env.example)"
+    pv_expect PV6 pass "$(pd_probe "$p" 'cat .env.dist')"
+    pv_repo "$tmp/pv6g" main '.env_template_suffixes = ["dist"]'
+    printf 'A=1\n' >"$tmp/pv6g/.env.dist"
+    git -C "$tmp/pv6g" switch -q -c feat/x
+    out="$(PROBE_PROJECT="$tmp/pv6g" git_hook_probe 'git add .env.dist' "$tmp/pv6g" "$tmp/pv6g")"
+    pv_expect PV6 "${out%%$'\n'*}" "$out" "" "secret"
+
+    p="$tmp/pv7"
+    pv_project "$p"
+    printf 'A=1\n' >"$p/.env.sample"
+    pv_expect PV7 allow "$(pv_tool auto-approve-config.sh "$p" Read .env.sample)"
+
+    p="$tmp/pv8"
+    pv_project "$p" '.forbidden_icons = ["Gauge"]'
+    icon="$(python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq -r '.forbidden_icons[0]')"
+    pv_expect PV8 deny "$(pv_tool no-forbidden-icons.sh "$p" Write src/a.tsx 'export const A = () => <Gauge />')"
+    pv_expect PV8 pass "$(pv_tool no-forbidden-icons.sh "$p" Write src/b.tsx "export const B = () => <$icon />")"
+
+    p="$tmp/pv9"
+    pv_project "$p" '.data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts" | .data_client.composition_roots = ["main.tsx"]'
+    state="import { client } from '@/lib/api'"
+    pv_expect PV9 deny "$(pv_tool enforce-architecture.py "$p" Write src/features/x/hooks.ts "$state")"
+    pv_expect PV9 deny "$(pv_tool enforce-architecture.py "$p" Write src/routes/__root.tsx "$state")"
+    pv_expect PV9 pass "$(pv_tool enforce-architecture.py "$p" Write src/main.tsx "$state")"
+
+    for bad in invalid absent; do
+        p="$tmp/px2-$bad"
+        pv_project "$p"
+        mkdir -p "$p/frontend"
+        printf 'A=1\n' >"$p/.env.example"
+        if [[ "$bad" == invalid ]]; then
+            printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+        else
+            rm "$p/.claude/project.json"
+        fi
+        id="PX2[$bad]"
+        pv_expect "$id" deny "$(pd_probe "$p" 'echo x > src/a.utils.ts')" "$reason"
+        pv_expect "$id" deny "$(pv_tool tdd-require-red.sh "$p" Write src/a.utils.ts)" "$reason"
+        pv_expect "$id" ask "$(pv_tool protect-files.sh "$p" Write frontend/vite.config.ts)" "$reason"
+        pv_expect "$id" ask "$(pv_tool protect-files.sh "$p" Read .env.example)" "$reason"
+        pv_expect "$id" ask "$(pv_tool protect-files.sh "$p" Grep .env.example)" "$reason"
+        pv_expect "$id" pass "$(pv_tool auto-approve-config.sh "$p" Read .env.example)"
+        pv_expect "$id" ask "$(pd_probe "$p" 'rm -rf build')" "$reason"
+        pv_expect "$id" ask "$(pd_probe "$p" 'cp /tmp/x frontend/package.json')" "$reason"
+        pv_expect "$id" deny "$(pd_probe "$p" 'sed -i s/a/b/ frontend/vite.config.ts')" "$reason"
+        printf 'it("U1 a", () => { expect(1).toBe(1) })\n' >"$p/src/a.utils.test.ts"
+        pv_expect "$id" deny "$(project_hook_probe tdd-freeze-tests.sh "$p" \
+            "$(jq -cn --arg f "$p/src/a.utils.test.ts" '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"toBe(1)",new_string:"toBe(2)"}}')")" "$reason"
+        pv_expect "$id" ask "$(pv_tool no-forbidden-icons.sh "$p" Write src/c.tsx 'export const C = 1')" "$reason"
+        pv_expect "$id" ask "$(pv_tool enforce-architecture.py "$p" Write src/features/x/hooks.ts 'export const h = 1')" "$reason"
+        pv_expect "$id" ask "$(project_hook_probe protect-files.sh "$p" \
+            "$(jq -cn --arg f "$tmp/other/.env.example" '{tool_name:"Write",tool_input:{file_path:$f,content:"x"}}')")" "$reason"
+        pv_repo "$tmp/px2g-$bad" main
+        if [[ "$bad" == invalid ]]; then
+            printf '{"schema_version":2}\n' >"$tmp/px2g-$bad/.claude/project.json"
+        else
+            rm "$tmp/px2g-$bad/.claude/project.json"
+        fi
+        pv_expect "$id" deny "$(PROBE_PROJECT="$tmp/px2g-$bad" git_hook_probe 'git commit -m x' "$tmp/px2g-$bad" "$tmp/px2g-$bad")" "$reason"
+    done
+
+    p="$tmp/px3"
+    pv_project "$p"
+    out="$(cd "$p" && printf '%s' "$(jq -cn --arg cwd "$p" '{tool_name:"Bash",tool_input:{command:"rm -rf build"},cwd:$cwd}')" \
+        | env -u CLAUDE_PROJECT_DIR CWK_HOOK_TIMING=0 "$HOOKS_DIR/prevent-destructive-commands.sh" 2>/dev/null)"
+    pv_expect PX3 ask "$(semantic_verdict 0 <(printf '%s' "$out"))
+$out" "CLAUDE_PROJECT_DIR"
+    out="$(cd "$p" && printf '%s' "$(jq -cn --arg f "$p/src/a.utils.ts" '{tool_name:"Write",tool_input:{file_path:$f,content:"x"}}')" \
+        | CLAUDE_PROJECT_DIR=rel CWK_HOOK_TIMING=0 "$HOOKS_DIR/tdd-require-red.sh" 2>/dev/null)"
+    pv_expect PX3 deny "$(semantic_verdict 0 <(printf '%s' "$out"))
+$out" "CLAUDE_PROJECT_DIR"
+
+    p="$tmp/px8"
+    pv_project "$p" '.codegen_commands = [["supabase", "gen", "types"]] | .linter = "a/b"'
+    out="$(pd_probe "$p" 'supabase gen types > src/types.ts')"
+    CASES=$((CASES + 1))
+    [[ "${out%%$'\n'*}" != pass ]] || fail project-values PX8 "an invalid file's codegen exempted its redirect"
+
+    p="$tmp/px9"
+    pv_project "$p"
+    printf 'A=1\n' >"$p/.env.example"
+    pv_python_spy "$tmp/spy9"
+    for hook in protect-files.sh auto-approve-config.sh; do
+        : >"$tmp/spy9/calls"
+        PATH="$tmp/spy9/bin:$PATH" pv_tool "$hook" "$p" Read src/a.ts >/dev/null
+        CASES=$((CASES + 1))
+        [[ "$(grep -c ' shell ' "$tmp/spy9/calls" || true)" == 0 ]] || fail "$hook" PX9 "a Read of src/a.ts ran the reader"
+        : >"$tmp/spy9/calls"
+        PATH="$tmp/spy9/bin:$PATH" pv_tool "$hook" "$p" Read .env.example >/dev/null
+        CASES=$((CASES + 1))
+        [[ "$(grep -c ' shell ' "$tmp/spy9/calls" || true)" == 1 ]] || fail "$hook" PX9 "a Read of .env.example must run the reader once"
+    done
+    : >"$tmp/spy9/calls"
+    PATH="$tmp/spy9/bin:$PATH" pv_tool enforce-git-workflow.sh "$p" Bash ls >/dev/null
+    CASES=$((CASES + 1))
+    [[ "$(grep -c ' shell ' "$tmp/spy9/calls" || true)" == 0 ]] || fail enforce-git-workflow.sh PX9 "ls ran the reader"
+    # shellcheck disable=SC2043  # one hook today; the loop is the shape PX9 extends
+    for hook in prevent-destructive-commands.sh; do
+        : >"$tmp/spy9/calls"
+        PATH="$tmp/spy9/bin:$PATH" pd_probe "$p" 'rm -rf build' >/dev/null
+        CASES=$((CASES + 1))
+        [[ "$(grep -c ' shell ' "$tmp/spy9/calls" || true)" -le 1 ]] || fail "$hook" PX9 "rm -rf build ran the reader more than once"
+    done
+    for hook in protect-files.sh no-forbidden-icons.sh tdd-require-red.sh tdd-freeze-tests.sh; do
+        : >"$tmp/spy9/calls"
+        PATH="$tmp/spy9/bin:$PATH" pv_tool "$hook" "$p" Write src/a.ts >/dev/null
+        CASES=$((CASES + 1))
+        [[ "$(grep -c ' shell ' "$tmp/spy9/calls" || true)" -le "$([[ $hook == tdd-freeze-tests.sh ]] && echo 0 || echo 1)" ]] \
+            || fail "$hook" PX9 "a Write of src/a.ts ran the reader too often: $(grep -c ' shell ' "$tmp/spy9/calls")"
+    done
+
+    p="$tmp/px12"
+    pv_project "$p"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    pv_expect PX12 deny "$(pd_probe "$p" 'rm -rf ~')"
+    pv_expect PX12 deny "$(pd_probe "$p" 'rm -rf / --no-preserve-root')"
+    pv_expect PX12 deny "$(pd_probe "$p" 'touch .claude/.tdd-red/m')"
+    pv_repo "$tmp/px12g" feat/x
+    printf '{"schema_version":2}\n' >"$tmp/px12g/.claude/project.json"
+    pv_expect PX12 deny "$(PROBE_PROJECT="$tmp/px12g" git_hook_probe 'git commit -S -m x' "$tmp/px12g" "$tmp/px12g")"
+    pv_expect PX12 deny "$(PROBE_PROJECT="$tmp/px12g" git_hook_probe 'git commit -m x; git add -f .env.local' "$tmp/px12g" "$tmp/px12g")" "force"
+
+    p="$tmp/px14"
+    pv_project "$p"
+    mkdir -p "$p/src/features/a" "$p/frontend/src"
+    printf 'x\n' >"$p/src/a.ts"
+    pv_expect PX14 deny "$(pd_probe "$p" 'npx nice tsc --outDir src')"
+    pv_expect PX14 ask "$(pd_probe "$p" 'mv src/a.ts src/b.ts')"
+    pv_expect PX14 deny "$(pd_probe "$p" "echo x >src/features/a/a.utils.t's'")" "test-first"
+    out="$(pd_probe "$p" "pnpm exec tsc --outFile frontend/src/a.utils.t's'")"
+    CASES=$((CASES + 1))
+    [[ "${out%%$'\n'*}" != pass ]] || fail project-values PX14 "a quote-split test-first target passed"
+
+    no_python_bin "$tmp/nopy"
+    pv_repo "$tmp/px15" main
+    for branch in main feat/x; do
+        [[ "$branch" == main ]] || git -C "$tmp/px15" switch -q -c "$branch"
+        rc=0
+        out="$(cd "$tmp/px15" && jq -cn --arg cwd "$tmp/px15" '{tool_name:"Bash",tool_input:{command:"git commit -m x"},cwd:$cwd}' \
+            | PATH="$tmp/nopy" CLAUDE_PROJECT_DIR="$tmp/px15" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+              "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)" || rc=$?
+        pv_expect PX15 "$([[ $branch == main ]] && echo deny || echo ask)" \
+            "$(semantic_verdict "$rc" <(printf '%s' "$out"))
+$out" "python3"
+    done
+    rm -rf "$tmp"
+}
+
+# <hook> run in project <dir> on a Write of <rel>; prints its stdout.
+pv_post() {
+    local hook="$1" dir="$2" rel="$3"
+    (cd "$dir" && jq -cn --arg f "$dir/$rel" '{tool_name:"Write",tool_input:{file_path:$f}}' \
+        | CLAUDE_PROJECT_DIR="$dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/$hook" 2>/dev/null) || true
+}
+
+# A node_modules/.bin/<name> in <dir> that appends its argv to <dir>/<name>.calls.
+pv_bin_spy() {
+    mkdir -p "$1/node_modules/.bin"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/%s.calls"\n' "$1" "$2" >"$1/node_modules/.bin/$2"
+    chmod +x "$1/node_modules/.bin/$2"
+}
+
+# A red test file for src/a.utils.ts in <dir>.
+pv_red_test() {
+    mkdir -p "$1/src"
+    printf '%s\n' "import { double } from './a.utils'" "it('U1 doubles', () => { expect(double(1)).toBe(2) })" \
+        >"$1/src/a.utils.test.ts"
+}
+
+# PV10-PV12, PX4-PX6 (project-config step 4): the PostToolUse and Stop commands come from the
+# config; an unreadable config runs nothing and says why.
+run_project_values_step4_cases() {
+    local tmp p out bad reason rc
+    tmp="$(mktemp -d)"
+    reason="rerun install.sh on this project, or /kit:init"
+
+    p="$tmp/pv10"
+    pv_project "$p" "$(printf '.test_command = ["sh", "%s/runner.sh"]' "$p")"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" >"%s/argv"\necho "      Tests  1 failed (1)"\nexit 1\n' "$p" >"$p/runner.sh"
+    pv_red_test "$p"
+    pv_post tdd-prove-red.sh "$p" src/a.utils.test.ts >/dev/null
+    CASES=$((CASES + 1))
+    [[ "$(tail -1 "$p/argv" 2>/dev/null)" == "$p/src/a.utils.test.ts" ]] \
+        || fail tdd-prove-red.sh PV10 "test_command did not run with the test path last: '$(cat "$p/argv" 2>/dev/null)'"
+    CASES=$((CASES + 1))
+    [[ -n "$(ls -A "$p/.claude/.tdd-red" 2>/dev/null)" ]] || fail tdd-prove-red.sh PV10 "a failing run wrote no RED marker"
+
+    p="$tmp/pv11"
+    pv_project "$p" '.formatter = ["fmtshim", "--x"]'
+    pv_bin_spy "$p" fmtshim
+    printf 'export const a = 1\n' >"$p/src/a.ts"
+    pv_post format-on-save.sh "$p" src/a.ts >/dev/null
+    CASES=$((CASES + 1))
+    [[ "$(cat "$p/fmtshim.calls" 2>/dev/null)" == "--x $p/src/a.ts" ]] \
+        || fail format-on-save.sh PV11 "expected 'fmtshim --x <file>', got '$(cat "$p/fmtshim.calls" 2>/dev/null)'"
+    pv_project "$p" '.formatter = []'
+    rm -f "$p/fmtshim.calls"
+    pv_bin_spy "$p" prettier
+    pv_post format-on-save.sh "$p" src/a.ts >/dev/null
+    CASES=$((CASES + 1))
+    [[ ! -e "$p/fmtshim.calls" && ! -e "$p/prettier.calls" ]] || fail format-on-save.sh PV11 "formatter [] still ran a formatter"
+
+    p="$tmp/pv12"
+    pv_project "$p" '.linter = "lintshim"'
+    pv_bin_spy "$p" lintshim
+    printf 'export const a = 1\n' >"$p/src/a.ts"
+    printf '%s\n' "$p/src/a.ts" >"$p/.claude/.eslint-queue"
+    (cd "$p" && CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$HOOKS_DIR/eslint-batch.sh" </dev/null >/dev/null 2>&1) || true
+    CASES=$((CASES + 1))
+    [[ "$(cat "$p/lintshim.calls" 2>/dev/null)" == "$p/src/a.ts"* ]] \
+        || fail eslint-batch.sh PV12 "lintshim did not run on the queued file: '$(cat "$p/lintshim.calls" 2>/dev/null)'"
+    pv_project "$p" '.linter = ""'
+    rm -f "$p/lintshim.calls"
+    pv_bin_spy "$p" eslint
+    printf '%s\n' "$p/src/a.ts" >"$p/.claude/.eslint-queue"
+    (cd "$p" && CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$HOOKS_DIR/eslint-batch.sh" </dev/null >/dev/null 2>&1) || true
+    CASES=$((CASES + 1))
+    [[ ! -e "$p/lintshim.calls" && ! -e "$p/eslint.calls" ]] || fail eslint-batch.sh PV12 "linter \"\" still ran a linter"
+
+    for bad in invalid absent; do
+        p="$tmp/px-$bad"
+        pv_project "$p"
+        if [[ "$bad" == invalid ]]; then
+            printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+        else
+            rm "$p/.claude/project.json"
+        fi
+        pv_red_test "$p"
+        pv_bin_spy "$p" pnpm
+        out="$(PATH="$p/node_modules/.bin:$PATH" pv_post tdd-prove-red.sh "$p" src/a.utils.test.ts)"
+        CASES=$((CASES + 1))
+        [[ "$out" == *systemMessage* && "$out" == *"$reason"* ]] \
+            || fail tdd-prove-red.sh "PX4[$bad]" "no systemMessage naming the repair: '${out:0:200}'"
+        CASES=$((CASES + 1))
+        [[ -z "$(ls -A "$p/.claude/.tdd-red" 2>/dev/null)" && ! -e "$p/pnpm.calls" ]] \
+            || fail tdd-prove-red.sh "PX4[$bad]" "an unreadable config ran the tests or wrote a marker"
+
+        printf 'export const   a = 1\n' >"$p/src/b.ts"
+        printf '#!/bin/sh\nfor f; do printf "x\\n" >>"$f"; done\n' >"$p/node_modules/.bin/prettier"
+        chmod +x "$p/node_modules/.bin/prettier"
+        out="$(pv_post format-on-save.sh "$p" src/b.ts)"
+        CASES=$((CASES + 1))
+        [[ "$out" == *systemMessage* && "$out" == *"$reason"* ]] \
+            || fail format-on-save.sh "PX5[$bad]" "no systemMessage naming the repair: '${out:0:200}'"
+        CASES=$((CASES + 1))
+        [[ "$(cat "$p/src/b.ts")" == 'export const   a = 1' ]] || fail format-on-save.sh "PX5[$bad]" "the file was formatted"
+
+        pv_bin_spy "$p" eslint
+        printf '%s\n' "$p/src/b.ts" >"$p/.claude/.eslint-queue"
+        rc=0
+        out="$(cd "$p" && CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$HOOKS_DIR/eslint-batch.sh" </dev/null 2>/dev/null)" || rc=$?
+        CASES=$((CASES + 1))
+        [[ "$rc" == 0 && "$out" == *systemMessage* && "$out" == *"$reason"* ]] \
+            || fail eslint-batch.sh "PX6[$bad]" "expected exit 0 and a systemMessage naming the repair, got $rc '${out:0:200}'"
+        CASES=$((CASES + 1))
+        [[ -s "$p/.claude/.eslint-queue" && ! -e "$p/eslint.calls" ]] \
+            || fail eslint-batch.sh "PX6[$bad]" "the queue was consumed or the linter ran"
+    done
+    rm -rf "$tmp"
+}
+
+# A tmp project for the fastapi addon: pv_project, plus the reader in <dir>/.claude/hooks.
+pv_addon_project() {
+    pv_project "$1" "${2:-.}"
+    mkdir -p "$1/.claude/hooks"
+    cp "$HOOKS_DIR/project_config.py" "$1/.claude/hooks/project_config.py"
+}
+
+# The fastapi addon <hook> on a <tool> of <rel> holding <content>, in project <dir>.
+pv_addon() {
+    local hook="$1" dir="$2" tool="$3" rel="$4" content="${5:-x = 1}" out code
+    set +e
+    out="$(cd "$dir" && jq -cn --arg t "$tool" --arg f "$dir/$rel" --arg c "$content" \
+        '{tool_name:$t,tool_input:{file_path:$f,content:$c}}' \
+        | CLAUDE_PROJECT_DIR="$dir" CWK_HOOK_TIMING=0 python3 "$HOOKS_DIR/../../addons/fastapi/hooks/$hook" 2>/dev/null)"
+    code=$?
+    set -e
+    printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
+}
+
+# PV13-PV15, PX7 (project-config step 5): the fastapi addon reads its roots, layers and
+# session names from the config; an unreadable config keeps its denies and asks for the rest.
+run_project_values_step5_cases() {
+    local tmp p out reason sure
+    tmp="$(mktemp -d)"
+    reason="rerun install.sh on this project, or /kit:init"
+
+    p="$tmp/pv13"
+    pv_addon_project "$p" '.fastapi.module_root = "srv"'
+    pv_expect PV13 deny "$(pv_addon tdd-require-red-py.py "$p" Write srv/services/a.py)"
+    pv_expect PV13 pass "$(pv_addon tdd-require-red-py.py "$p" Write app/services/a.py)"
+
+    p="$tmp/pv14"
+    pv_addon_project "$p" '.fastapi.session_names = ["conn"]'
+    pv_expect PV14 deny "$(pv_addon enforce-backend-layers.py "$p" Write app/api/routes.py 'conn.execute(q)')" "Database access"
+    pv_expect PV14 pass "$(pv_addon enforce-backend-layers.py "$p" Write app/api/routes.py 'db.execute(q)')"
+
+    p="$tmp/pv15"
+    pv_addon_project "$p"
+    pv_expect PV15 pass "$(pv_addon tdd-require-red-py.py "$p" Write application/x.py)"
+    pv_expect PV15 pass "$(pv_addon tdd-require-red-py.py "$p" Write app/services_old/x.py)"
+    pv_expect PV15 deny "$(pv_addon enforce-backend-layers.py "$p" Write app/api/routes.py 'db.execute(q)')" "Database access"
+    pv_expect PV15 pass "$(pv_addon enforce-backend-layers.py "$p" Write application/api/routes.py 'db.execute(q)')"
+
+    for bad in invalid noreader raises; do
+        p="$tmp/px7-$bad"
+        pv_addon_project "$p"
+        case "$bad" in
+            invalid) printf '{"schema_version":2}\n' >"$p/.claude/project.json" ;;
+            noreader) rm "$p/.claude/hooks/project_config.py" ;;
+            raises) printf 'raise RuntimeError("boom")\n' >"$p/.claude/hooks/project_config.py" ;;
+        esac
+        sure=ask
+        [[ "$bad" == invalid ]] && sure=deny
+        pv_expect "PX7[$bad]" "$sure" "$(pv_addon tdd-require-red-py.py "$p" Write app/services/a.py)" "$reason"
+        pv_expect "PX7[$bad]" ask "$(pv_addon tdd-require-red-py.py "$p" Write app/api/x.py)" "$reason"
+        pv_expect "PX7[$bad]" ask "$(pv_addon enforce-backend-layers.py "$p" Write app/api/x.py 'x = 1')" "$reason"
+        pv_expect "PX7[$bad]" "$sure" "$(pv_addon enforce-backend-layers.py "$p" Write app/api/x.py 'db.execute(q)')" "$reason"
+        mkdir -p "$p/tests/services"
+        printf 'from app.services.a import f\n\ndef test_f():\n    assert f() == 1\n' >"$p/tests/services/test_a.py"
+        out="$(pv_addon tdd-prove-red-py.py "$p" Write tests/services/test_a.py)"
+        CASES=$((CASES + 1))
+        [[ "$out" == *systemMessage* && "$out" == *"$reason"* && -z "$(ls -A "$p/.claude/.tdd-red" 2>/dev/null)" ]] \
+            || fail tdd-prove-red-py "PX7[$bad]" "expected a systemMessage naming the repair and no marker, got '${out:0:200}'"
+    done
+    CASES=$((CASES + 1))
+    (cd "$tmp" && env -u CLAUDE_PROJECT_DIR python3 "$HOOKS_DIR/../../addons/fastapi/hooks/test_imported_symbols.py" >/dev/null 2>&1) \
+        || fail tdd-prove-red-py PX7 "test_imported_symbols.py failed with no CLAUDE_PROJECT_DIR"
+    rm -rf "$tmp"
+}
+
+# Fails <id> unless the stdout part of a probe's <out> is exactly one JSON object.
+rv_one_json() {
+    local id="$1" out="$2"
+    CASES=$((CASES + 1))
+    [[ "$(printf '%s' "${out#*$'\n'}" | jq -s 'length == 1 and (.[0] | type) == "object"' 2>/dev/null)" == true ]] \
+        || fail review-1 "$id" "stdout is not exactly one JSON object: '${out:0:300}'"
+}
+
+# <script> (a hook copied beside its own reader) run in project <dir> on <json>; prints verdict, then stdout.
+rv_script() {
+    local script="$1" dir="$2" input="$3" out code
+    set +e
+    out="$(cd "$dir" && printf '%s' "$input" | CLAUDE_PROJECT_DIR="$dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
+        python3 "$script" 2>/dev/null)"
+    code=$?
+    set -e
+    printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
+}
+
+# RV1-RV7 (project-config review 1): degraded verdicts stay one decision, config-independent
+# denies survive an unusable reader, and the PostToolUse hooks refuse a stale hook-lib.sh.
+run_review1_cases() {
+    local tmp p bad out reason sure cross f sure_rel sure_content icon
+    tmp="$(mktemp -d)"
+    reason="rerun install.sh on this project, or /kit:init"
+    icon="$(python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq -r '.forbidden_icons[0]')"
+    cross="import { y } from '../b/y'"
+
+    for bad in raises noreader; do
+        p="$tmp/rv1-$bad"
+        pv_project "$p"
+        mkdir -p "$tmp/rv1-hooks-$bad"
+        cp "$HOOKS_DIR/enforce-architecture.py" "$tmp/rv1-hooks-$bad/"
+        [[ "$bad" == raises ]] && printf 'raise RuntimeError("boom")\n' >"$tmp/rv1-hooks-$bad/project_config.py"
+        for out in "src/features/a/x.ts|$cross|deny" "src/features/a/y.ts|export const h = 1|ask"; do
+            IFS='|' read -r sure_rel sure_content sure <<<"$out"
+            out="$(rv_script "$tmp/rv1-hooks-$bad/enforce-architecture.py" "$p" \
+                "$(jq -cn --arg f "$p/$sure_rel" --arg c "$sure_content" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+            pv_expect "RV1[$bad]" "$sure" "$out" "$reason"
+            rv_one_json "RV1[$bad]" "$out"
+        done
+    done
+
+    for bad in invalid noreader raises; do
+        p="$tmp/rv2-$bad"
+        pv_addon_project "$p"
+        case "$bad" in
+            invalid) printf '{"schema_version":2}\n' >"$p/.claude/project.json" ;;
+            noreader) rm "$p/.claude/hooks/project_config.py" ;;
+            raises) printf 'raise RuntimeError("boom")\n' >"$p/.claude/hooks/project_config.py" ;;
+        esac
+        mkdir -p "$p/tests/services" "$p/tests/api"
+        printf 'def test_a():\n    assert 1 == 1\n' >"$p/tests/services/test_a.py"
+        printf 'def test_x():\n    assert 1 == 1\n' >"$p/tests/api/test_x.py"
+        sure=ask
+        [[ "$bad" == invalid ]] && sure=deny
+        out="$(pv_addon tdd-freeze-tests-py.py "$p" Write tests/services/test_a.py $'def test_a():\n    assert 2 == 2\n')"
+        pv_expect "RV2[$bad]" "$sure" "$out" "$reason"
+        rv_one_json "RV2[$bad]" "$out"
+        out="$(pv_addon tdd-freeze-tests-py.py "$p" Write tests/api/test_x.py $'def test_x():\n    assert 2 == 2\n')"
+        pv_expect "RV2[$bad]" ask "$out" "$reason"
+        rv_one_json "RV2[$bad]" "$out"
+        out="$(pv_addon tdd-freeze-tests-py.py "$p" Write tests/services/test_a.py $'def test_a():\n    assert 1 == 1\n')"
+        pv_expect "RV4[py-$bad]" ask "$out" "$reason"
+        rv_one_json "RV4[py-$bad]" "$out"
+    done
+
+    for bad in invalid absent; do
+        p="$tmp/rv3-$bad"
+        pv_project "$p"
+        if [[ "$bad" == invalid ]]; then
+            printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+        else
+            rm "$p/.claude/project.json"
+        fi
+        out="$(pv_tool no-forbidden-icons.sh "$p" Write src/a.tsx "export const A = () => <$icon />")"
+        pv_expect "RV3[$bad]" deny "$out" "$reason"
+        rv_one_json "RV3[$bad]" "$out"
+        out="$(pv_tool enforce-architecture.py "$p" Write src/features/a/x.ts "$cross")"
+        pv_expect "RV3[$bad]" deny "$out" "$reason"
+        rv_one_json "RV3[$bad]" "$out"
+        out="$(pv_tool protect-files.sh "$p" Write .env)"
+        pv_expect "RV3[$bad]" deny "$out" "$reason"
+        rv_one_json "RV3[$bad]" "$out"
+
+        mkdir -p "$p/src"
+        printf 'it("U1 a", () => { expect(1).toBe(1) })' >"$p/src/a.utils.test.ts"
+        out="$(project_hook_probe tdd-freeze-tests.sh "$p" \
+            "$(jq -cn --arg f "$p/src/a.utils.test.ts" --arg c 'it("U1 a", () => { expect(1).toBe(1) })' \
+                '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+        pv_expect "RV4[sh-$bad]" ask "$out" "$reason"
+        rv_one_json "RV4[sh-$bad]" "$out"
+        printf 'describe("a", () => {\n  it("U1 a", () => {\n    expect(1).toBe(1)\n  })\n})\n' >"$p/src/a.utils.test.ts"
+        out="$(project_hook_probe tdd-freeze-tests.sh "$p" \
+            "$(jq -cn --arg f "$p/src/a.utils.test.ts" --arg o $'  })\n})' \
+                --arg n $'  })\n\n  it("U2 b", () => {\n    expect(2).toBe(2)\n  })\n})' \
+                '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$o,new_string:$n}}')")"
+        pv_expect "RV4[sh-append-$bad]" ask "$out" "$reason"
+        rv_one_json "RV4[sh-append-$bad]" "$out"
+    done
+
+    p="$tmp/rv5"
+    pv_project "$p" '.fastapi.test_first_dirs = ["services", "domain"]'
+    mkdir -p "$p/.claude/hooks" "$p/bin" "$p/tests/domain" "$p/tests/services" "$p/tests/api"
+    cp "$HOOKS_DIR/hook-lib.sh" "$HOOKS_DIR/hook-guarded.sh" "$HOOKS_DIR/project_config.py" \
+        "$HOOKS_DIR/project-defaults.records" "$HOOKS_DIR/../../addons/fastapi/hooks/ruff-on-save.sh" "$p/.claude/hooks/"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/ruff.calls"\n' "$p" >"$p/bin/ruff"
+    chmod +x "$p/bin/ruff"
+    for f in tests/domain/test_x.py tests/services/test_a.py tests/api/test_y.py; do
+        printf 'def test_z():\n    assert 1\n' >"$p/$f"
+    done
+    for f in tests/domain/test_x.py tests/services/test_a.py tests/api/test_y.py; do
+        (cd "$p" && jq -cn --arg f "$p/$f" '{tool_name:"Write",tool_input:{file_path:$f}}' \
+            | PATH="$p/bin:$PATH" CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$p/.claude/hooks/ruff-on-save.sh" >/dev/null 2>&1) || true
+    done
+    CASES=$((CASES + 1))
+    [[ "$(grep -c '^format ' "$p/ruff.calls" 2>/dev/null || true)" == 1 && "$(grep '^format ' "$p/ruff.calls")" == "format $p/tests/api/test_y.py" ]] \
+        || fail ruff-on-save.sh RV5 "only the test-after file is formatted when test_first_dirs is services+domain, got '$(grep '^format ' "$p/ruff.calls" 2>/dev/null | tr '\n' ' ')'"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    : >"$p/ruff.calls"
+    out="$(cd "$p" && jq -cn --arg f "$p/tests/api/test_y.py" '{tool_name:"Write",tool_input:{file_path:$f}}' \
+        | PATH="$p/bin:$PATH" CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$p/.claude/hooks/ruff-on-save.sh" 2>/dev/null)" || true
+    CASES=$((CASES + 1))
+    [[ "$out" == *systemMessage* && "$out" == *"$reason"* && -z "$(grep '^format ' "$p/ruff.calls")" ]] \
+        || fail ruff-on-save.sh RV5 "an invalid config must format nothing and say why, got '${out:0:200}'"
+
+    for bad in format-on-save.sh eslint-batch.sh; do
+        p="$tmp/rv6-$bad"
+        pv_project "$p"
+        mkdir -p "$p/hooks"
+        cp "$HOOKS_DIR/$bad" "$p/hooks/"
+        printf ':\n' >"$p/hooks/hook-lib.sh"
+        printf 'export const a = 1\n' >"$p/src/a.ts"
+        printf '%s\n' "$p/src/a.ts" >"$p/.claude/.eslint-queue"
+        out="$(cd "$p" && jq -cn --arg f "$p/src/a.ts" '{tool_name:"Write",tool_input:{file_path:$f}}' \
+            | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 bash "$p/hooks/$bad" 2>/dev/null)" || true
+        CASES=$((CASES + 1))
+        [[ "$out" == *systemMessage* && "$out" == *"hook-lib.sh is older than this hook"* ]] \
+            || fail "$bad" RV6 "a stale hook-lib.sh must be reported, got '${out:0:200}'"
+    done
+    CASES=$((CASES + 1))
+    [[ -s "$tmp/rv6-eslint-batch.sh/.claude/.eslint-queue" ]] || fail eslint-batch.sh RV6 "the queue was claimed under a stale hook-lib.sh"
+
+    p="$tmp/rv7"
+    pv_project "$p" '.env_template_suffixes = ["example", "env"]'
+    pv_expect RV7 deny "$(pv_tool protect-files.sh "$p" Read .env)"
+    pv_expect RV7 pass "$(pv_tool auto-approve-config.sh "$p" Read .env)"
+    pv_expect RV7 pass "$(pv_tool protect-files.sh "$p" Read .env.example)"
+    rm -rf "$tmp"
+}
+
+# <hooks dir>/<hook> (a fastapi addon hook) fed <payload json> in project <dir>; prints verdict, then stdout.
+rv2_pair() {
+    local hooks="$1" hook="$2" dir="$3" payload="$4" out code
+    set +e
+    out="$(cd "$dir" && printf '%s' "$payload" \
+        | CLAUDE_PROJECT_DIR="$dir" CWK_HOOK_TIMING=0 python3 "$hooks/$hook" 2>/dev/null)"
+    code=$?
+    set -e
+    printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out"
+}
+
+# A project for ruff-on-save.sh: the config (jq filter <2>), the hook and its libraries copied in,
+# a ruff stub logging each call to <dir>/ruff.calls.
+rv2_ruff_project() {
+    pv_project "$1" "${2:-.}"
+    mkdir -p "$1/.claude/hooks" "$1/bin"
+    cp "$HOOKS_DIR/hook-lib.sh" "$HOOKS_DIR/hook-guarded.sh" "$HOOKS_DIR/project_config.py" \
+        "$HOOKS_DIR/project-defaults.records" "$HOOKS_DIR/../../addons/fastapi/hooks/ruff-on-save.sh" "$1/.claude/hooks/"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/ruff.calls"\n' "$1" >"$1/bin/ruff"
+    chmod +x "$1/bin/ruff"
+    : >"$1/ruff.calls"
+}
+
+# ruff-on-save.sh on a Write of <file> (absolute) in project <dir>; prints stdout.
+rv2_ruff() {
+    (cd "$1" && jq -cn --arg f "$2" '{tool_name:"Write",tool_input:{file_path:$f}}' \
+        | PATH="$1/bin:$PATH" CLAUDE_PROJECT_DIR="$1" CWK_HOOK_TIMING=0 "$1/.claude/hooks/ruff-on-save.sh" 2>/dev/null) || true
+}
+
+# RV9-RV10 (project-config review 2, mixed versions): an old TDD consumer next to the new
+# hook-lib.sh never calls cwk_tdd_load, so the path regexes it reads must fail closed.
+# RV11-RV15 ruff-on-save.sh skips exactly the frozen tests; RV16-RV17 a mixed addon pair asks;
+# RV19-RV23 tdd-freeze-tests-py.py on a healthy config; RV24 the env template sanitiser.
+run_review2_cases() {
+    local tmp p out hook addon rel fmt want old
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+
+    out="$(CLAUDE_PROJECT_DIR="$tmp" CWK_HOOK_TIMING=0 bash -c \
+        'source "$1/hook-lib.sh"; [[ src/a.utils.ts =~ $CWK_TDD_IMPL_RE && src/a.utils.test.ts =~ $CWK_TDD_TEST_RE && README.md =~ $CWK_TDD_IMPL_RE ]] && echo match' \
+        _ "$HOOKS_DIR" 2>&1)"
+    CASES=$((CASES + 1))
+    [[ "$out" == match ]] || fail hook-lib.sh RV9 "a consumer that skips cwk_tdd_load must see a layer path as a match, got '${out:0:200}'"
+
+    if git -C "$PROJECT_ROOT" cat-file -e a8efa59:.claude/hooks/tdd-require-red.sh 2>/dev/null; then
+        p="$tmp/rv10"
+        pv_project "$p"
+        mkdir -p "$p/.claude/hooks"
+        cp "$HOOKS_DIR/hook-lib.sh" "$HOOKS_DIR/hook-guarded.sh" "$HOOKS_DIR/project_config.py" \
+            "$HOOKS_DIR/project-defaults.records" "$HOOKS_DIR/shell_targets.py" "$p/.claude/hooks/"
+        for hook in tdd-require-red.sh tdd-freeze-tests.sh; do
+            git -C "$PROJECT_ROOT" show "a8efa59:.claude/hooks/$hook" >"$p/.claude/hooks/$hook"
+            chmod +x "$p/.claude/hooks/$hook"
+        done
+        printf 'it("U1 a", () => { expect(1).toBe(1) })' >"$p/src/a.utils.test.ts"
+        out="$(cd "$p" && jq -cn --arg f "$p/src/a.utils.ts" --arg c 'export const a = 1' \
+            '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' \
+            | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$p/.claude/hooks/tdd-require-red.sh" 2>/dev/null; echo "rc=$?")"
+        CASES=$((CASES + 1))
+        [[ "$out" == *'"deny"'* || "$out" == *rc=2 ]] \
+            || fail tdd-require-red.sh RV10 "an a8efa59 copy beside the new hook-lib.sh must deny a layer write, got '${out:0:200}'"
+        out="$(cd "$p" && jq -cn --arg f "$p/src/a.utils.test.ts" --arg c 'it("U1 a", () => { expect(2).toBe(2) })' \
+            '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' \
+            | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$p/.claude/hooks/tdd-freeze-tests.sh" 2>/dev/null; echo "rc=$?")"
+        CASES=$((CASES + 1))
+        [[ "$out" == *'"deny"'* || "$out" == *rc=2 ]] \
+            || fail tdd-freeze-tests.sh RV10 "an a8efa59 copy beside the new hook-lib.sh must deny a frozen-test rewrite, got '${out:0:200}'"
+    else
+        printf 'SKIP RV10: a8efa59 absent\n'
+    fi
+
+    # RV25 (review 3, G1): the a8efa59 shell guards beside the new lib never call cwk_tdd_load, so
+    # the three shell/python target regexes must fail closed: a frozen test is still protected.
+    if git -C "$PROJECT_ROOT" cat-file -e a8efa59:.claude/hooks/prevent-destructive-commands.sh 2>/dev/null; then
+        p="$tmp/rv25"
+        pv_project "$p"
+        mkdir -p "$p/.claude/hooks" "$p/src/features/a"
+        cp "$HOOKS_DIR/hook-lib.sh" "$HOOKS_DIR/hook-guarded.sh" "$HOOKS_DIR/project_config.py" \
+            "$HOOKS_DIR/project-defaults.records" "$p/.claude/hooks/"
+        git -C "$PROJECT_ROOT" show "a8efa59:.claude/hooks/shell_targets.py" >"$p/.claude/hooks/shell_targets.py"
+        for hook in prevent-destructive-commands.sh enforce-git-workflow.sh; do
+            git -C "$PROJECT_ROOT" show "a8efa59:.claude/hooks/$hook" >"$p/.claude/hooks/$hook"
+            chmod +x "$p/.claude/hooks/$hook"
+        done
+        printf 'it("U1 a", () => { expect(1).toBe(1) })' >"$p/src/features/a/a.utils.test.ts"
+        for want in "prevent-destructive-commands.sh|rm src/features/a/a.utils.test.ts" \
+                    "prevent-destructive-commands.sh|git rm src/features/a/a.utils.test.ts" \
+                    "enforce-git-workflow.sh|git checkout HEAD -- src/features/a/a.utils.test.ts" \
+                    "enforce-git-workflow.sh|git restore src/features/a/a.utils.test.ts"; do
+            hook="${want%%|*}"
+            out="$(cd "$p" && jq -cn --arg c "${want#*|}" --arg cwd "$p" \
+                '{tool_name:"Bash",tool_input:{command:$c},cwd:$cwd}' \
+                | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$p/.claude/hooks/$hook" 2>/dev/null; echo "rc=$?")"
+            CASES=$((CASES + 1))
+            [[ "$out" == *'"deny"'* || "$out" == *rc=2 ]] \
+                || fail "$hook" RV25 "an a8efa59 copy beside the new hook-lib.sh must deny '${want#*|}', got '${out:0:200}'"
+        done
+    else
+        printf 'SKIP RV25: a8efa59 absent\n'
+    fi
+
+    # RV26 the synthetic twin of RV25, no a8efa59 needed: a consumer that never calls cwk_tdd_load
+    # sees every frozen test path match the three regexes.
+    out="$(CLAUDE_PROJECT_DIR="$tmp" CWK_HOOK_TIMING=0 bash -c \
+        'source "$1/hook-lib.sh"; f="rm src/features/a/a.utils.test.ts"; [[ $f =~ $CWK_TDD_SHELL_TARGET_RE && $f =~ $CWK_TDD_SHELL_FROZEN_TEST_RE && src/features/a/a.utils.test.ts =~ $CWK_TDD_PY_TARGET_RE ]] && echo match; true' \
+        _ "$HOOKS_DIR" 2>&1)"
+    CASES=$((CASES + 1))
+    [[ "$out" == match ]] || fail hook-lib.sh RV26 "a consumer that skips cwk_tdd_load must see a frozen test as a match of the shell and python target regexes, got '${out:0:200}'"
+
+    # RV11 the skip is the frozen-test predicate: tests/test_main.py is test-after (formatted),
+    # a prefixed backend/tests/services/test_a.py is frozen (skipped), tests/api is formatted.
+    p="$tmp/rv11"
+    rv2_ruff_project "$p"
+    for rel in tests/test_main.py backend/tests/services/test_a.py tests/services/test_a.py tests/api/test_y.py; do
+        mkdir -p "$p/$(dirname "$rel")"
+        printf 'def test_z():\n    assert 1\n' >"$p/$rel"
+        rv2_ruff "$p" "$p/$rel" >/dev/null
+    done
+    fmt="$(grep '^format ' "$p/ruff.calls" | sed "s|$p/||" | sort | tr '\n' ' ')"
+    CASES=$((CASES + 1))
+    [[ "$fmt" == "format tests/api/test_y.py format tests/test_main.py " ]] \
+        || fail ruff-on-save.sh RV11 "expected only tests/test_main.py and tests/api/test_y.py formatted, got '$fmt'"
+
+    # RV12 a non-default tests_root and test_first_dirs move the skip with them.
+    p="$tmp/rv12"
+    rv2_ruff_project "$p" '.fastapi.tests_root = "test" | .fastapi.test_first_dirs = ["domain"]'
+    for rel in test/domain/test_x.py test/services/test_a.py tests/domain/test_x.py; do
+        mkdir -p "$p/$(dirname "$rel")"
+        printf 'def test_z():\n    assert 1\n' >"$p/$rel"
+        rv2_ruff "$p" "$p/$rel" >/dev/null
+    done
+    fmt="$(grep '^format ' "$p/ruff.calls" | sed "s|$p/||" | sort | tr '\n' ' ')"
+    CASES=$((CASES + 1))
+    [[ "$fmt" == "format tests/domain/test_x.py format test/services/test_a.py " || "$fmt" == "format test/services/test_a.py format tests/domain/test_x.py " ]] \
+        || fail ruff-on-save.sh RV12 "expected only test/services/test_a.py and tests/domain/test_x.py formatted, got '$fmt'"
+
+    # RV13 an unreadable config formats nothing, says why, and still lints.
+    p="$tmp/rv13"
+    rv2_ruff_project "$p"
+    mkdir -p "$p/app"
+    printf 'x = 1\n' >"$p/app/m.py"
+    printf '{"schema_version":2}\n' >"$p/.claude/project.json"
+    out="$(rv2_ruff "$p" "$p/app/m.py")"
+    CASES=$((CASES + 1))
+    [[ "$out" == *systemMessage* && "$out" == *"rerun install.sh on this project, or /kit:init"* \
+        && -z "$(grep '^format ' "$p/ruff.calls")" && -n "$(grep '^check ' "$p/ruff.calls")" ]] \
+        || fail ruff-on-save.sh RV13 "degraded: no format, a message, and ruff check still run, got '${out:0:160}' / '$(tr '\n' ' ' <"$p/ruff.calls")'"
+
+    # RV14 a path outside the project's own prefix (a worktree, a symlinked checkout) is judged the same way.
+    p="$tmp/rv14"
+    rv2_ruff_project "$p"
+    mkdir -p "$tmp/rv14-other/backend/tests/services"
+    printf 'def test_z():\n    assert 1\n' >"$tmp/rv14-other/backend/tests/services/test_a.py"
+    rv2_ruff "$p" "$tmp/rv14-other/backend/tests/services/test_a.py" >/dev/null
+    CASES=$((CASES + 1))
+    [[ -z "$(grep '^format ' "$p/ruff.calls")" ]] \
+        || fail ruff-on-save.sh RV14 "a frozen test reached through another prefix must not be formatted, got '$(tr '\n' ' ' <"$p/ruff.calls")'"
+
+    # RV15 the hook agrees with tdd_py_lib.is_frozen_test on every path of a table.
+    p="$tmp/rv15"
+    rv2_ruff_project "$p" '.fastapi.test_first_dirs = ["services", "domain"]'
+    for rel in tests/services/test_a.py tests/domain/sub/test_b.py tests/test_services.py tests/api/test_c.py \
+               backend/tests/domain/test_d.py tests/services/app/test_e.py tests/test_x.py tests/conftest.py; do
+        mkdir -p "$p/$(dirname "$rel")"
+        printf 'def test_z():\n    assert 1\n' >"$p/$rel"
+        : >"$p/ruff.calls"
+        rv2_ruff "$p" "$p/$rel" >/dev/null
+        want="$(cd "$p" && CLAUDE_PROJECT_DIR="$p" python3 -I -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import tdd_py_lib as lib
+lib.configure()
+print("skip" if lib.is_frozen_test(sys.argv[2]) else "format")' "$addon" "$p/$rel")"
+        [[ -z "$(grep '^format ' "$p/ruff.calls")" ]] && fmt=skip || fmt=format
+        CASES=$((CASES + 1))
+        [[ "$fmt" == "$want" ]] || fail ruff-on-save.sh RV15 "$rel: the hook says $fmt, is_frozen_test says $want"
+    done
+
+    # RV16 an a8efa59 addon hook beside the new tdd_py_lib.py (KeyError at run time) asks, never passes.
+    p="$tmp/rv16"
+    pv_addon_project "$p"
+    mkdir -p "$p/tests/services" "$tmp/rv16-hooks" "$p/app/services"
+    printf 'from app.services.a import f\n\ndef test_f():\n    assert f() == 1\n' >"$p/tests/services/test_a.py"
+    cp "$addon/tdd_py_lib.py" "$tmp/rv16-hooks/"
+    for hook in tdd-freeze-tests-py.py tdd-require-red-py.py; do
+        git -C "$PROJECT_ROOT" cat-file -e "a8efa59:addons/fastapi/hooks/$hook" 2>/dev/null || { printf 'SKIP RV16[%s]: a8efa59 absent\n' "$hook"; continue; }
+        git -C "$PROJECT_ROOT" show "a8efa59:addons/fastapi/hooks/$hook" >"$tmp/rv16-hooks/$hook"
+        case "$hook" in
+            tdd-freeze-tests-py.py) rel=tests/services/test_a.py; old=$'def test_f():\n    assert 2 == 2\n' ;;
+            *) rel=app/services/b.py; old='x = 1' ;;
+        esac
+        out="$(rv2_pair "$tmp/rv16-hooks" "$hook" "$p" "$(jq -cn --arg f "$p/$rel" --arg c "$old" \
+            '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+        pv_expect "RV16[$hook]" ask "$out" "rerun install.sh on this project, or /kit:init"
+    done
+
+    # RV17 a new addon hook beside the a8efa59 tdd_py_lib.py (no configure) asks, never crashes through.
+    p="$tmp/rv17"
+    pv_addon_project "$p"
+    mkdir -p "$tmp/rv17-hooks"
+    if git -C "$PROJECT_ROOT" show "a8efa59:addons/fastapi/hooks/tdd_py_lib.py" >"$tmp/rv17-hooks/tdd_py_lib.py" 2>/dev/null; then
+        for hook in tdd-freeze-tests-py.py tdd-require-red-py.py enforce-backend-layers.py; do
+            cp "$addon/$hook" "$tmp/rv17-hooks/"
+            out="$(rv2_pair "$tmp/rv17-hooks" "$hook" "$p" "$(jq -cn --arg f "$p/app/services/new.py" --arg c 'x = 1' \
+                '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+            pv_expect "RV17[$hook]" ask "$out" "rerun install.sh on this project, or /kit:init"
+        done
+    else
+        printf 'SKIP RV17: a8efa59 absent\n'
+    fi
+
+    # RV19-RV23: the freeze on a healthy config.
+    p="$tmp/rv19"
+    pv_addon_project "$p"
+    mkdir -p "$p/tests/services"
+    printf 'from app.services.a import f\n\ndef test_f():\n    assert f() == 1\n' >"$p/tests/services/test_a.py"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg c $'from app.services.a import f\n\ndef test_f():\n    assert f() == 1\n' \
+        '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV19 pass "$out" "identical re-save"
+    CASES=$((CASES + 1))
+    [[ "$out" == *systemMessage* && "$out" != *permissionDecision* ]] || fail tdd-freeze-tests-py "RV19" "an identical re-save is a notice, not an ask, got '${out:0:200}'"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg c $'from app.services.a import f\n\ndef test_f():\n    assert f() == 9\n' \
+        '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV19 deny "$out" "frozen"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg o '    assert f() == 1' --arg n $'    assert f() == 1\n\n\ndef test_g():\n    assert f() == 2' \
+        '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$o,new_string:$n}}')")"
+    pv_expect RV20 pass "$out" "case appended"
+    CASES=$((CASES + 1))
+    [[ "$out" != *permissionDecision* ]] || fail tdd-freeze-tests-py "RV20" "a pure appended case is a notice, not an ask, got '${out:0:200}'"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg o '    assert f() == 1' --arg n $'    assert f() == 1\n    assert f() == 3' \
+        '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$o,new_string:$n}}')")"
+    pv_expect RV21 deny "$out" "INSIDE a case"
+
+    # RV24 an allowed template suffix strips the whole `.env.<suffix>` word, never a prefix of another name.
+    p="$tmp/rv24"
+    pv_project "$p" '.env_template_suffixes = ["loc"]'
+    : >"$p/.env.loc"
+    : >"$p/.env.local"
+    pv_expect RV24 deny "$(pv_tool prevent-destructive-commands.sh "$p" Bash 'cat .env.local')" "Reading or copying secret files"
+    pv_expect RV24 pass "$(pv_tool prevent-destructive-commands.sh "$p" Bash 'cat .env.loc')"
+    pv_expect RV24 pass "$(pv_tool prevent-destructive-commands.sh "$p" Bash 'cat .env.loc | wc -l')"
+
+    p="$tmp/rv22"
+    pv_addon_project "$p" '.fastapi.tests_root = "test"'
+    mkdir -p "$p/test/services" "$p/tests/services"
+    printf 'def test_f():\n    assert 1 == 1\n' >"$p/test/services/test_a.py"
+    printf 'def test_f():\n    assert 1 == 1\n' >"$p/tests/services/test_a.py"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/test/services/test_a.py" \
+        --arg c $'def test_f():\n    assert 2 == 2\n' '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV22 deny "$out" "frozen"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg c $'def test_f():\n    assert 2 == 2\n' '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV22 pass "$out"
+
+    p="$tmp/rv23"
+    pv_addon_project "$p" '.fastapi.test_first_dirs = ["domain"]'
+    mkdir -p "$p/tests/domain" "$p/tests/services"
+    printf 'def test_f():\n    assert 1 == 1\n' >"$p/tests/domain/test_b.py"
+    printf 'def test_f():\n    assert 1 == 1\n' >"$p/tests/services/test_a.py"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/domain/test_b.py" \
+        --arg c $'def test_f():\n    assert 2 == 2\n' '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV23 deny "$out" "frozen"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_a.py" \
+        --arg c $'def test_f():\n    assert 2 == 2\n' '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')")"
+    pv_expect RV23 pass "$out"
+    rm -rf "$tmp"
 }
 
 # Builds the app-roots tree in <dir> for <variant>: approots, approots-none, approots-bad,
@@ -1678,7 +2809,7 @@ run_app_roots_cases() {
 
     make_app_tree "$tmp/b" approots-bad
     out="$(pf_probe "$tmp/b" Edit frontend/vite.config.ts)"
-    g15_expect AR8 pass "$out"
+    g15_expect AR8 ask "$out" "rerun install.sh on this project, or /kit:init"
 
     make_app_tree "$tmp/w" approots-apps
     out="$(pf_probe "$tmp/w" Edit apps/web/vite.config.ts)"
@@ -1711,10 +2842,10 @@ run_app_roots_cases() {
     out="$(PATH="$tmp/shim4:$PATH" \
         pd_probe "$tmp/a" 'echo a > frontend/x.txt; echo b > other/y.txt; echo c > docs/z.txt; echo d > frontend/w.txt')"
     CASES=$((CASES + 1))
-    [[ "$(grep -c 'project_config.py roots' "$tmp/pylog" 2>/dev/null || true)" -le 1 ]] \
-        || fail hook-guarded.sh AR27 "the reader ran $(grep -c 'project_config.py roots' "$tmp/pylog") times in one hook run"
+    [[ "$(grep -c 'project_config.py shell' "$tmp/pylog" 2>/dev/null || true)" -le 1 ]] \
+        || fail hook-guarded.sh AR27 "the reader ran $(grep -c 'project_config.py shell' "$tmp/pylog") times in one hook run"
     CASES=$((CASES + 1))
-    [[ "$(grep -c 'project_config.py roots' "$tmp/pylog" 2>/dev/null || true)" -ge 1 ]] \
+    [[ "$(grep -c 'project_config.py shell' "$tmp/pylog" 2>/dev/null || true)" -ge 1 ]] \
         || fail hook-guarded.sh AR27 "the reader never ran: the case proves nothing"
 
     mkdir -p "$tmp/shim3"
@@ -1722,7 +2853,7 @@ run_app_roots_cases() {
         "$(command -v python3)" >"$tmp/shim3/python3"
     chmod +x "$tmp/shim3/python3"
     out="$(PATH="$tmp/shim3:$PATH" pf_probe "$tmp/a" Edit frontend/vite.config.ts)"
-    g15_expect AR30 pass "$out"
+    g15_expect AR30 ask "$out" "rerun install.sh on this project, or /kit:init"
 
     mkdir -p "$tmp/plant"
     printf 'import pathlib\npathlib.Path(%s).touch()\nfrom json import *\n' "'$tmp/PLANTED'" >"$tmp/plant/json.py"
@@ -1878,7 +3009,7 @@ run_codegen_cases() {
     CASES=$((CASES + 1))
     [[ "$out" != *"shell guard unavailable"* ]] || fail prevent-destructive-commands.sh CG19 "the resolver crashed on a bad file"
     out="$(pd_probe "$tmp/b" 'echo x > docs/a.md')"
-    g15_expect CG19 pass "$out"
+    g15_expect CG19 ask "$out" "rerun install.sh on this project, or /kit:init"
 
     : >"$c/src/features/a/a.utils.ts"
     : >"$c/app/a.py"
@@ -2384,9 +3515,9 @@ run_tokenizer_cases() {
         || [[ "$(grep -c '^guard_is_write_verb()' "$HOOKS_DIR/prevent-destructive-commands.sh")" != 1 ]] \
         || [[ "$(grep -c '^guard_classify_outside()' "$HOOKS_DIR/prevent-destructive-commands.sh")" != 1 ]] \
         || grep -q '"?tmp:' "$HOOKS_DIR/shell_targets.py" \
-        || ! grep -qx '# cwk-guard-api: 5' "$HOOKS_DIR/shell_targets.py" \
-        || ! grep -qx '# cwk-guard-api: 5' "$HOOKS_DIR/prevent-destructive-commands.sh"; then
-        fail prevent-destructive-commands.sh CG98 "a raw-text fd/link helper, a ?tmp: row, a duplicated helper or guard API != 5"
+        || ! grep -qx '# cwk-guard-api: 6' "$HOOKS_DIR/shell_targets.py" \
+        || ! grep -qx '# cwk-guard-api: 6' "$HOOKS_DIR/prevent-destructive-commands.sh"; then
+        fail prevent-destructive-commands.sh CG98 "a raw-text fd/link helper, a ?tmp: row, a duplicated helper or guard API != 6"
     fi
     rm -r "$s"
     rm -r "$tmp"
@@ -2544,7 +3675,7 @@ run_shell_guard_bash3_case() {
                 || fail prevent-destructive-commands.sh "bash3: $command" "expected ask with 'guarded path:', got $code '${out:0:120}'"
         fi
     done
-    for banned in 'mapfile' 'readarray' '[-1]' 'declare -A' 'local -A'; do
+    for banned in 'mapfile' 'readarray' '[-1]' 'declare -A' 'local -A' 'local -n' 'declare -n'; do
         CASES=$((CASES + 1))
         if grep -qF -e "$banned" "$hook"; then
             fail prevent-destructive-commands.sh "bash3-static" "the hook holds '$banned', a bash 4+ construct"
@@ -2581,8 +3712,8 @@ run_shell_guard_no_base_case() {
         | env -u CLAUDE_PROJECT_DIR CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/prevent-destructive-commands.sh" 2>&1)"
     code=$?
     set -e
-    [[ "$code" -eq 0 && -z "$out" ]] \
-        || fail prevent-destructive-commands.sh "no-base" "expected exit 0 and no output, got $code '${out:0:120}'"
+    [[ "$code" -eq 0 && "$out" == *'"ask"'* && "$out" == *"CLAUDE_PROJECT_DIR is not an absolute path"* ]] \
+        || fail prevent-destructive-commands.sh "no-base" "expected exit 0 and an ask naming CLAUDE_PROJECT_DIR, got $code '${out:0:120}'"
     rm -r "$tmp"
 }
 
@@ -2615,6 +3746,14 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_git_foreign_repo_cases
     run_git_reason_cut_case
     run_project_config_cases
+    run_project_config_v2_cases
+    run_project_config_review1_cases
+    run_project_values_cases
+    run_project_values_step3_cases
+    run_project_values_step4_cases
+    run_project_values_step5_cases
+    run_review1_cases
+    run_review2_cases
     run_app_roots_cases
     run_app_roots_cfg_cases
     run_codegen_cases

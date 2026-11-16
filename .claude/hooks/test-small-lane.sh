@@ -60,18 +60,17 @@ make_fixture() {
 }
 
 kit_variant() {
-    local dir="$1" lib_sed="${2:-}" with_board="${3:-}"
+    local dir="$1" config_jq="${2:-.}" with_board="${3:-}" f
     mkdir -p "$dir/.claude/scripts" "$dir/.claude/hooks"
     cp "$SCRIPTS"/*.sh "$dir/.claude/scripts/"
-    if [[ -n "$lib_sed" ]]; then
-        sed "$lib_sed" "$KIT/.claude/hooks/hook-lib.sh" >"$dir/.claude/hooks/hook-lib.sh"
-    else
-        cp "$KIT/.claude/hooks/hook-lib.sh" "$dir/.claude/hooks/"
-    fi
+    for f in hook-lib.sh hook-guarded.sh project_config.py project-defaults.records; do
+        cp "$KIT/.claude/hooks/$f" "$dir/.claude/hooks/"
+    done
+    python3 -I -B "$KIT/.claude/hooks/project_config.py" defaults | jq "$config_jq" >"$dir/.claude/project.json"
     [[ -z "$with_board" ]] || cp "$KIT/.claude/hooks/next-feature-on-clear.py" "$dir/.claude/hooks/"
 }
 
-SELECTORS_SED='s/^CWK_TDD_LAYERS="repository|services|mapper|utils"/CWK_TDD_LAYERS="repository|services|mapper|utils|selectors"/'
+SELECTORS_SED='.tdd_layers += ["selectors"]'
 
 group_paths() {
     local repo kit_copy path seven=() six=()
@@ -282,7 +281,7 @@ group_plan() {
 - src/features/a/x.ts' ''
     run "$SCRATCH/kit-q5/.claude/scripts/small-plan.sh" small-d
     check small-plan "Q5 unknown layer kept" "a path of an unknown layer was dropped" \
-        grep -Fxq -- '- unmapped: src/features/a/selectors.ts' docs/work/small-d/plan.md
+        grep -Fxq -- '- selectors: src/features/a/selectors.ts — RED→GREEN' docs/work/small-d/plan.md
 
     # Q6 (ship audit C1): a planted root module is never imported by the script's Python.
     for q6_mod in re pathlib json; do
@@ -426,6 +425,39 @@ group_dispatch() {
     kit_variant "$SCRATCH/kit-d16" "$SELECTORS_SED"
     run "$SCRATCH/kit-d16/.claude/scripts/small-dispatch-check.sh" b src/features/b/selectors.ts
     expect dispatch "D16 layer words from the hook lib" "no test file: src/features/b/selectors.ts" 1
+
+    # SL1-SL3 (project-config step 2): the layer words come from the scripts' own kit
+    # project.json, and an unreadable one refuses instead of skipping the test-first check.
+    repo="$(make_fixture)"; cd "$repo" || return
+    kit_variant "$SCRATCH/kit-sl1" '.tdd_layers += ["usecase"]'
+    printf 'export const u = 1;\n' >src/features/b/b.usecase.ts
+    git_q add -A; git_q commit -q -m usecase
+    RUN_OUT="$(CLAUDE_PROJECT_DIR="$KIT" "$SCRATCH/kit-sl1/.claude/scripts/small-dispatch-check.sh" b src/features/b/b.usecase.ts 2>/dev/null)"
+    RUN_RC=$?
+    expect dispatch "SL1 layer words from the kit's own project.json" "no test file: src/features/b/b.usecase.ts" 1
+    kit_variant "$SCRATCH/kit-sl2" '.tdd_layers = "bad"'
+    write_small_spec "$repo" sl "main $(git rev-parse HEAD)" '- src/features/b/b.utils.ts' ''
+    sl_err="$("$SCRATCH/kit-sl2/.claude/scripts/small-plan.sh" small-sl 2>&1 >/dev/null)"
+    sl_rc=$?
+    check small-plan "SL2 invalid project.json refuses" "rc $sl_rc, stderr [$sl_err]" \
+        test "$sl_rc" -ne 0 -a -n "$(grep -F 'project.json' <<<"$sl_err")"
+    run "$SCRATCH/kit-sl1/.claude/scripts/small-dispatch-check.sh" b src/features/b/b.utils.ts src/features/b/b.utils.test.ts
+    expect dispatch "SL3 a valid config with its test file is ok" "ok" 0
+    run "$SCRATCH/kit-sl2/.claude/scripts/small-dispatch-check.sh" b src/features/b/b.utils.ts src/features/b/b.utils.test.ts
+    check dispatch "SL3 invalid project.json never ok" "got [$RUN_OUT] rc $RUN_RC" \
+        test "$RUN_RC" -ne 0 -a "$RUN_OUT" != ok
+
+    # SL4 (review 1; the SL1 plan line, on small-plan.sh): a custom tdd_layers word gets its
+    # own RED→GREEN leg in the plan's write chain, never an unmapped line.
+    write_small_spec "$repo" sl4 "main $(git rev-parse HEAD)" \
+        $'- src/features/b/b.usecase.ts\n- src/features/b/b.usecase.test.ts' \
+        $'#### src/features/b/b.usecase.test.ts\n- [ ] S1 the usecase returns the card'
+    run "$SCRATCH/kit-sl1/.claude/scripts/small-plan.sh" small-sl4
+    expect small-plan "SL4 plan for a custom layer" "plan: docs/work/small-sl4/plan.md" 0
+    check small-plan "SL4 custom layer has a RED→GREEN leg" "write chain: $(sed -n '/^## Write chain/,/^## Parallel/p' docs/work/small-sl4/plan.md 2>/dev/null)" \
+        grep -Fxq -- '- usecase: src/features/b/b.usecase.ts — RED→GREEN' docs/work/small-sl4/plan.md
+    check small-plan "SL4 custom layer is not unmapped" "unmapped line present" \
+        test -z "$(grep -F 'unmapped' docs/work/small-sl4/plan.md 2>/dev/null)"
 
     repo="$(make_fixture)"; cd "$repo" || return
     git_q mv src/features/a/x.ts src/features/a/y.ts

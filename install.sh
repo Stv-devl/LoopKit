@@ -206,12 +206,70 @@ copy_tree() {
     done < <(find "$src" \
         \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' \) -prune -o \
         -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
+                 ! -path "$src/project.json" \
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
+}
+
+# reader_stale <target>
+# Vrai (et dit pourquoi) tant que le project_config.py ou le hook-guarded.sh ACTIF de
+# la cible est plus ancien que celui du kit : l'ancien lecteur refuse un schéma 2, donc
+# écrire un project.json v2 maintenant ferait tomber les racines d'appli sans garde.
+# Le fichier reste en v1 ; l'utilisateur fusionne les .new, puis relance install.sh. Les
+# valeurs des hooks encore actifs sont gardées à part (migrate_config), l'ordre de fusion
+# n'a donc pas d'importance.
+reader_stale() {
+    local target="$1" f have want stale=()
+    for f in project_config.py hook-guarded.sh; do
+        want="$(guard_api_number "$KIT_DIR/.claude/hooks/$f")"
+        have="$(guard_api_number "$target/.claude/hooks/$f")"
+        if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
+            stale+=(".claude/hooks/$f.new")
+        fi
+    done
+    [[ "${#stale[@]}" -gt 0 ]] || return 1
+    echo "  ! .claude/project.json laissé en v1 (non migré, non câblé) : le lecteur actif de la cible est plus ancien que celui du kit." >&2
+    echo "    Fusionne ${stale[*]} (au minimum) et les autres .new de la ligne « P1 held back », dans l'ordre que tu veux, puis relance install.sh." >&2
+    echo "    Les valeurs de tes hooks actuels sont gardées dans .claude/project.snapshot.json ; la relance les reprend dans project.json." >&2
+    return 0
+}
+
+# migrate_config <target>
+# `.claude/project.json` n'est jamais copié : `project_config.py migrate` l'écrit à
+# partir des hooks actifs de la cible (créé s'il manque, v1 mis à niveau, v2 laissé
+# tel quel). Un fichier invalide reste intact : l'install le signale et continue.
+# Tant que le lecteur actif de la cible est plus ancien, le fichier n'est pas touché :
+# `snapshot` garde les valeurs des hooks encore anciens dans .claude/project.snapshot.json
+# (jamais lu par un hook), que la prochaine passe `migrate` reprend puis supprime.
+# KIT_WAS_HERE : la cible avait déjà un kit, donc une migration sans valeur trouvée le dit.
+migrate_config() {
+    local out rc=0 mode=()
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : .claude/project.json non migré (installe python3, puis relance install.sh)." >&2
+        return 0
+    fi
+    if reader_stale "$1"; then
+        out="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" snapshot "$1" 2>&1)" || true
+        [[ -z "$out" ]] || printf '  %s\n' "$out"
+        return 0
+    fi
+    ! ${KIT_WAS_HERE:-false} || mode=(--existing)
+    out="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" migrate "$1" ${mode[@]+"${mode[@]}"} 2>&1)" || rc=$?
+    [[ -z "$out" ]] || printf '  %s\n' "$out"
+    if [[ "$rc" != 0 ]]; then
+        echo "  ! .claude/project.json invalide, laissé intact : corrige-le, puis relance install.sh ou /kit:init." >&2
+    fi
+    return 0
 }
 
 GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
              prevent-destructive-commands.sh enforce-git-workflow.sh
-             tdd-require-red.sh auto-approve-config.sh kit-attempts.py project_config.py)
+             tdd-require-red.sh auto-approve-config.sh kit-attempts.py project_config.py
+             tdd-freeze-tests.sh no-forbidden-icons.sh enforce-architecture.py tdd-prove-red.sh)
+# The FastAPI addon hooks that share tdd_py_lib.py: a mixed pair (old hook with the new
+# library, or the reverse) fails on an import or an attribute, so they are held back like
+# the guard hooks. Only checked with --fastapi: the .new copies exist only then.
+ADDON_GUARD_FILES=(tdd_py_lib.py tdd-require-red-py.py tdd-freeze-tests-py.py tdd-prove-red-py.py
+                   enforce-backend-layers.py ruff-on-save.sh)
 P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
             "Bash(git branch --show-current)", "Bash(git worktree list)"]'
 RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
@@ -253,6 +311,16 @@ guard_api_missing() {
             missing+=(".claude/hooks/$f")
         fi
     done
+    if $WITH_FASTAPI; then
+        for f in "${ADDON_GUARD_FILES[@]}"; do
+            [[ -f "$target/.claude/hooks/$f" ]] || continue
+            want="$(guard_api_number "$KIT_DIR/addons/fastapi/hooks/$f")"
+            have="$(guard_api_number "$target/.claude/hooks/$f")"
+            if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
+                missing+=(".claude/hooks/$f")
+            fi
+        done
+    fi
     if ! grep -q 'source .*hook-guarded\.sh' "$target/.claude/hooks/hook-lib.sh" 2>/dev/null \
         && [[ " ${missing[*]:-} " != *" .claude/hooks/hook-lib.sh "* ]]; then
         missing+=(".claude/hooks/hook-lib.sh")
@@ -311,6 +379,9 @@ install_settings() {
         local merge="" f
         for f in $held; do merge+="${merge:+, }$f.new"; done
         echo "P1 held back: $held — merge $merge, then re-run install.sh"
+        if [[ -e "$(dirname "$target")/project.snapshot.json" ]]; then
+            echo "  (the values of your current hooks are saved in .claude/project.snapshot.json: the re-run moves them into project.json, whatever the merge order)"
+        fi
     fi
 
     mkdir -p "$(dirname "$target")"
@@ -356,7 +427,7 @@ install_settings() {
 # jamais réécrit — il repart en instruction manuelle, comme le reste.
 #
 # Ce qui est câblé ici : les 6 hooks dans settings.json, @07-backend.md dans
-# l'index de CLAUDE.md, app|alembic dans PROTECTED_DIRS.
+# l'index de CLAUDE.md, app et alembic dans protected_dirs (.claude/project.json).
 # Ce qui ne peut pas l'être : 01-stack.md, 00-project.md, 02-architecture.md,
 # ship.md, reviewer.md — ils demandent de savoir ce que fait ton projet.
 # add_py_hooks <fichier settings.json>  → déclare les 6 hooks de l'addon.
@@ -403,10 +474,9 @@ add_py_hooks() {
 }
 
 wire_fastapi() {
-    local t="$1" f installed_claude=false installed_guard=false
+    local t="$1" f installed_claude=false
     for f in "${INSTALLED[@]:-}"; do
         [[ "$f" == "$t/CLAUDE.md" ]] && installed_claude=true
-        [[ "$f" == "$t/.claude/hooks/prevent-destructive-commands.sh" ]] && installed_guard=true
     done
 
     if ! command -v jq &> /dev/null; then
@@ -422,52 +492,60 @@ wire_fastapi() {
         echo "  câblé : @07-backend.md dans l'index de règles de CLAUDE.md"
     fi
 
-    if $installed_guard && ! grep -q '^PROTECTED_DIRS=.*alembic' \
-                                "$t/.claude/hooks/prevent-destructive-commands.sh"; then
-        perl -0pi -e 's{PROTECTED_DIRS="src\|shared}{PROTECTED_DIRS="src|shared|app|alembic}' \
-            "$t/.claude/hooks/prevent-destructive-commands.sh"
-        echo "  câblé : app|alembic dans PROTECTED_DIRS"
+    local wired=""
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : fastapi non câblé dans .claude/project.json." >&2
+    elif reader_stale "$t"; then
+        echo "  ! fastapi non câblé dans .claude/project.json (voir ci-dessus)." >&2
+    elif wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" fastapi)"; then
+        if [[ "$wired" == *protected_dirs=changed* ]]; then
+            echo "  câblé : app et alembic dans .claude/project.json (protected_dirs)"
+        fi
+    else
+        echo "  ! .claude/project.json illisible : fastapi non câblé (lance /kit:doctor)." >&2
     fi
 
-    # PROTECTED_DIRS est écrit deux fois — le hook l'applique, CLAUDE.md le
-    # déclare — et le kit dit partout de changer les deux ensemble. Patcher le
-    # seul hook laissait une divergence créée par l'installeur lui-même, que
-    # /kit:doctor signalait sur une install neuve.
+    # protected_dirs est écrit deux fois — .claude/project.json l'applique,
+    # CLAUDE.md le déclare — et le kit dit partout de changer les deux ensemble.
+    # Câbler le seul project.json laissait une divergence créée par l'installeur
+    # lui-même, que /kit:doctor signalait sur une install neuve.
     if $installed_claude && ! grep -q '`alembic/`' "$t/CLAUDE.md"; then
         perl -0pi -e 's{(Recursive delete on: `src/`, `shared/`,)}{$1 `app/`, `alembic/`,}' "$t/CLAUDE.md"
         echo "  câblé : app/ et alembic/ dans la liste protégée de CLAUDE.md"
     elif ! grep -q '`alembic/`' "$t/CLAUDE.md"; then
         echo "  ! CLAUDE.md préexistant : ajoute \`app/\` et \`alembic/\` à ta liste de" >&2
-        echo "    dossiers protégés. PROTECTED_DIRS les a, sa copie déclarée non —" >&2
+        echo "    dossiers protégés. project.json les a, sa copie déclarée non —" >&2
         echo "    /kit:doctor signale la paire." >&2
     fi
 }
 
 # wire_supabase <target>
 # Une seule chose, et c'est la plus coûteuse à oublier : le client vit en
-# `src/lib/supabase.ts` avec cet addon, alors que le hook garde `lib/client` par
-# défaut. Non câblé, `enforce-architecture.py` surveille un module que personne
-# n'importe : le vrai client passe partout, silencieusement, pendant que
-# 01-stack.md affirme que la couche est couverte. /kit:doctor le signale en
+# `src/lib/supabase.ts` avec cet addon, alors que `.claude/project.json` garde
+# `lib/client` par défaut. Non câblé, `enforce-architecture.py` surveille un module
+# que personne n'importe : le vrai client passe partout, silencieusement, pendant
+# que 01-stack.md affirme que la couche est couverte. /kit:doctor le signale en
 # DIVERGENCE data-client — autant ne pas le créer.
 #
-# Même règle que wire_fastapi : uniquement le fichier que CE run vient
-# d'installer. Un enforce-architecture.py préexistant a peut-être déjà ses
-# propres valeurs, et les écraser serait pire que la divergence.
+# `project_config.py wire` ne change data_client que s'il est encore à la valeur
+# par défaut : un projet qui a déjà ses propres valeurs les garde.
 wire_supabase() {
-    local t="$1" f installed_arch=false installed_claude=false installed_guard=false
+    local t="$1" f installed_claude=false
     for f in "${INSTALLED[@]:-}"; do
-        [[ "$f" == "$t/.claude/hooks/enforce-architecture.py" ]] && installed_arch=true
         [[ "$f" == "$t/CLAUDE.md" ]] && installed_claude=true
-        [[ "$f" == "$t/.claude/hooks/prevent-destructive-commands.sh" ]] && installed_guard=true
     done
 
-    if $installed_arch && grep -q 'DATA_CLIENT_MODULE = "lib/client"' \
-                              "$t/.claude/hooks/enforce-architecture.py"; then
-        perl -0pi -e 's{DATA_CLIENT_MODULE = "lib/client"}{DATA_CLIENT_MODULE = "lib/supabase"};
-                      s{DATA_CLIENT_OWN_PATH = "lib/client\.ts"}{DATA_CLIENT_OWN_PATH = "lib/supabase.ts"}' \
-            "$t/.claude/hooks/enforce-architecture.py"
-        echo "  câblé : lib/supabase dans DATA_CLIENT_MODULE / DATA_CLIENT_OWN_PATH"
+    local wired=""
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : supabase non câblé dans .claude/project.json." >&2
+    elif reader_stale "$t"; then
+        echo "  ! supabase non câblé dans .claude/project.json (voir ci-dessus)." >&2
+    else
+        wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" supabase)" \
+            || echo "  ! .claude/project.json illisible : supabase non câblé (lance /kit:doctor)." >&2
+    fi
+    if [[ "$wired" == *data_client=changed* ]]; then
+        echo "  câblé : lib/supabase dans .claude/project.json (data_client)"
         # Les templates nomment le client : le module change, l'export aussi
         # (`supabase`, pas `client`). Un alias garde les corps des exemples
         # intacts ; /kit:doctor client-copies vérifie les copies.
@@ -481,28 +559,21 @@ wire_supabase() {
             "s{'src/lib/client\.ts',}{'src/lib/supabase.ts',}" "$t/.claude/skills/templates/tooling-config.md"
         [[ -f "$t/.claude/rules/05-testing.md" ]] && perl -pi -e \
             's{`lib/client\.ts`}{`lib/supabase.ts`}' "$t/.claude/rules/05-testing.md"
-    elif ! $installed_arch && ! grep -q 'DATA_CLIENT_MODULE = "lib/supabase"' \
-                                   "$t/.claude/hooks/enforce-architecture.py"; then
-        echo "  ! enforce-architecture.py préexistant : mets DATA_CLIENT_MODULE à" >&2
-        echo "    \"lib/supabase\" et DATA_CLIENT_OWN_PATH à \"lib/supabase.ts\" à la main." >&2
-        echo "    Non câblé, le garde-fou de couche ne garde rien (README, § 2)." >&2
+    elif ! grep -q '"lib/supabase"' "$t/.claude/project.json" 2>/dev/null; then
+        echo "  ! data_client déjà personnalisé dans .claude/project.json : mets" >&2
+        echo "    data_client.module à \"lib/supabase\" à la main si c'est le client." >&2
     fi
+    [[ "$wired" == *protected_dirs=changed* ]] && echo "  câblé : supabase dans .claude/project.json (protected_dirs)"
 
     # `supabase/` porte les migrations et les edge functions : un rm -rf dessus
     # coûte le schéma. Les deux copies de la liste bougent ensemble, sinon
     # l'installeur fabrique lui-même la divergence que /kit:doctor signale.
-    if $installed_guard && ! grep -q '^PROTECTED_DIRS=.*supabase' \
-                                "$t/.claude/hooks/prevent-destructive-commands.sh"; then
-        perl -0pi -e 's{PROTECTED_DIRS="src\|shared}{PROTECTED_DIRS="src|shared|supabase}' \
-            "$t/.claude/hooks/prevent-destructive-commands.sh"
-        echo "  câblé : supabase dans PROTECTED_DIRS"
-    fi
     if $installed_claude && ! grep -q '`supabase/`' "$t/CLAUDE.md"; then
         perl -0pi -e 's{(Recursive delete on: `src/`, `shared/`,)}{$1 `supabase/`,}' "$t/CLAUDE.md"
         echo "  câblé : supabase/ dans la liste protégée de CLAUDE.md"
     elif ! grep -q '`supabase/`' "$t/CLAUDE.md"; then
         echo "  ! CLAUDE.md préexistant : ajoute \`supabase/\` à ta liste de dossiers" >&2
-        echo "    protégés. PROTECTED_DIRS l'a, sa copie déclarée non — /kit:doctor" >&2
+        echo "    protégés. project.json l'a, sa copie déclarée non — /kit:doctor" >&2
         echo "    signale la paire." >&2
     fi
 }
@@ -663,7 +734,12 @@ fi
 
 echo "Installation du kit dans : $TARGET"
 
+KIT_WAS_HERE=false
+if [[ -e "$TARGET/.claude/hooks/hook-lib.sh" ]]; then
+    KIT_WAS_HERE=true
+fi
 copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
+migrate_config "$TARGET"
 install_settings "$TARGET/.claude/settings.json" "$WITH_REACT_TS"
 if $WITH_REACT_TS; then
     printf '%s\n' 'react-ts' > "$TARGET/.claude/INSTALL_PROFILE"
@@ -827,13 +903,13 @@ depuis .claude/skills/templates/lib-core.md. Tous les patterns les importent,
 et les defauts de React Query (staleTime, retry) ne sont nulle part ailleurs.
 
 Addon installé ? Son câblage n'est PAS automatique :
-  .claude/skills/patterns/SUPABASE-ADDON.md  (DATA_CLIENT_MODULE et
-  PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent
+  .claude/skills/patterns/SUPABASE-ADDON.md  (data_client et protected_dirs
+  de .claude/project.json sont câblés automatiquement ; restent
   à faire : la section Backend de 02-architecture.md, les FILL de 01-stack.md,
   le gate edge-function de 00-project.md. Puis vérifier le layer copié :
   cd supabase/functions && deno check _shared/**/*.ts)
   .claude/skills/patterns/FASTAPI-ADDON.md   (les hooks, @07-backend.md et
-  PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent à
+  protected_dirs sont câblés automatiquement sur une install neuve ; restent à
   faire : 01-stack.md, 00-project.md, 02-architecture.md, EXTERNAL_CLIENTS,
   et surtout les gates backend dans commands/ship.md + 07-backend.md dans
   guides/review/correctness.md et security.md)

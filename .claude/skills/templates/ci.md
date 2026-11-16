@@ -132,8 +132,8 @@ ruleset nor classic protection):
   required status check is `Gates` (the `ci.yml` job), no force push, no
   deletion.
 - **`CODEOWNERS`**: `install.sh` ships `.github/CODEOWNERS` with the CI. It
-  covers `.claude/hooks/`, `.claude/settings.json`, `.github/workflows/` and
-  itself (`.github/CODEOWNERS`); replace `@OWNER`, then turn on "Require review from Code Owners" in the same
+  covers `.claude/hooks/`, `.claude/settings.json`, `.claude/project.json`,
+  `.github/workflows/` and itself (`.github/CODEOWNERS`); replace `@OWNER`, then turn on "Require review from Code Owners" in the same
   ruleset, so a change to the guardrails needs its owner.
 - **An environment `production`** with a required reviewer: `deploy.yml` runs in
   it, so a deploy waits for a human even after a green push.

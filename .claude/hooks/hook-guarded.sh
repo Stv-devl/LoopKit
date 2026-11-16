@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 4
+# cwk-guard-api: 6
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -24,7 +24,8 @@ CWK_GUARDED=(
     '.claude/settings.local.json'
     '.claude/.tdd-unfrozen'      # the freeze's escape hatch
     '.claude/.size-exempt'       # the size limits' escape hatch
-    '.claude/project.json'       # app roots and codegen commands: it widens a pass
+    '.claude/project.json'       # every project value: it widens a pass
+    '.claude/project.snapshot.json' # the values saved at an upgrade: migrate writes them into project.json
     'vitest.config.*'
     'eslint.config.*'            # the lint that forbids assertionless tests
     'vite.config.*'              # the coverage floor lives here
@@ -65,22 +66,126 @@ cwk_guard_denied_why() {
 CWK_APP_ROOT_PATTERNS=('vitest.config.*' 'eslint.config.*' 'vite.config.*' 'playwright.config.*'
                        'package.json' 'tsconfig*.json')
 __CWK_GUARD_LIB_DIR="${BASH_SOURCE[0]%/*}"
-__CWK_APP_ROOTS_LOADED=0
 __CWK_APP_ROOTS=()
+__CWK_CFG_LOADED=0
+CWK_NEVER_RE='[^[:print:][:space:]]{255}'
+CWK_CFG_STATUS=0
+CWK_CFG_DEGRADED=0
+CWK_CFG_REASON=''
 
-# cwk_app_roots: fill __CWK_APP_ROOTS from the project's `.claude/project.json`, once per
-# process, through the one reader. A missing, invalid or unreadable file gives no root:
-# the reader prints nothing then, so nothing is ever guarded or passed from a bad file.
+# The project's values, read from `.claude/project.json` by `project_config.py shell`, once
+# per process and only when a rule asks (cwk_config). Fixed globals, never a nameref.
+__cwk_cfg_reset() {
+    CWK_CFG_APP_ROOTS=()
+    CWK_CFG_PROTECTED_BRANCHES=()
+    CWK_CFG_TEST_COMMAND=()
+    CWK_CFG_FORMATTER=()
+    CWK_CFG_PROTECTED_DIRS_ERE=''
+    CWK_CFG_PROTECTED_DIRS_TEXT=''
+    CWK_CFG_LINTER=''
+    CWK_CFG_ENV_SUFFIX_ERE=''
+    CWK_CFG_ICONS_ERE=''
+    CWK_CFG_TDD_LAYERS_ERE=''
+    CWK_CFG_PY_TARGET_ERE=''
+    CWK_CFG_MODULE_ROOT=''
+    CWK_CFG_TESTS_ROOT=''
+    __CWK_CFG_SEEN=''
+}
+__cwk_cfg_reset
+
+# shellcheck disable=SC2034  # read by the hooks that source this file
+__cwk_cfg_put() {
+    local key="${1%%=*}" value="${1#*=}"
+    [[ "$1" == *=* ]] || return 1
+    case "$key" in
+        app_roots) CWK_CFG_APP_ROOTS+=("$value") ;;
+        protected_branches) CWK_CFG_PROTECTED_BRANCHES+=("$value") ;;
+        test_command) CWK_CFG_TEST_COMMAND+=("$value") ;;
+        formatter) CWK_CFG_FORMATTER+=("$value") ;;
+        protected_dirs_ere) CWK_CFG_PROTECTED_DIRS_ERE="$value" ;;
+        protected_dirs_text) CWK_CFG_PROTECTED_DIRS_TEXT="$value" ;;
+        linter) CWK_CFG_LINTER="$value" ;;
+        env_suffix_ere) CWK_CFG_ENV_SUFFIX_ERE="$value" ;;
+        icons_ere) CWK_CFG_ICONS_ERE="$value" ;;
+        tdd_layers_ere) CWK_CFG_TDD_LAYERS_ERE="$value" ;;
+        py_target_ere) CWK_CFG_PY_TARGET_ERE="$value" ;;
+        module_root) CWK_CFG_MODULE_ROOT="$value" ;;
+        tests_root) CWK_CFG_TESTS_ROOT="$value" ;;
+        *) return 1 ;;
+    esac
+    __CWK_CFG_SEEN+=" $key "
+}
+
+__cwk_cfg_complete() {
+    local key
+    for key in protected_dirs_ere protected_dirs_text protected_branches test_command linter \
+               env_suffix_ere icons_ere tdd_layers_ere py_target_ere module_root tests_root; do
+        [[ "$__CWK_CFG_SEEN" == *" $key "* ]] || return 1
+    done
+}
+
+# __cwk_cfg_parse <separator>: reads `#status=<n>`, records, `#end=<count>` from stdin.
+# Prints nothing; returns the in-band status, or 3 when the frame is incomplete.
+__cwk_cfg_parse() {
+    local sep="$1" rec status=3 end=-1 count=0 bad=0
+    __cwk_cfg_reset
+    while IFS= read -r -d "$sep" rec || [[ -n "$rec" ]]; do
+        case "$rec" in
+            '#status='[0-9]) status="${rec#*=}" ;;
+            '#end='*) end="${rec#*=}" ;;
+            *) count=$((count + 1)); __cwk_cfg_put "$rec" || bad=1 ;;
+        esac
+    done
+    if [[ "$status" == 0 ]] && { [[ "$end" != "$count" || "$bad" == 1 ]] || ! __cwk_cfg_complete; }; then
+        status=3
+    fi
+    return "$status"
+}
+
+# cwk_config: fills the CWK_CFG_* values once per process and returns CWK_CFG_STATUS (0 ok,
+# 3 invalid or incomplete, 4 absent, 5 no absolute CLAUDE_PROJECT_DIR, 6 no python3 or no
+# reader). On any non-zero status the values are the kit defaults (project-defaults.records)
+# and CWK_CFG_DEGRADED=1: a hook then keeps its denies and asks where it would pass.
+# shellcheck disable=SC2034  # read by the hooks that source this file
+cwk_config() {
+    local status=0 dir="${CLAUDE_PROJECT_DIR:-}" reader="$__CWK_GUARD_LIB_DIR/project_config.py"
+    if [[ "$__CWK_CFG_LOADED" == 1 ]]; then
+        return "$CWK_CFG_STATUS"
+    fi
+    __CWK_CFG_LOADED=1
+    if [[ "$dir" != /* ]]; then
+        status=5
+    elif ! command -v python3 >/dev/null 2>&1 || [[ ! -f "$reader" ]]; then
+        status=6
+    else
+        __cwk_cfg_parse '' < <(python3 -I -B "$reader" shell "$dir" 2>/dev/null) || status=$?
+    fi
+    CWK_CFG_STATUS="$status"
+    if [[ "$status" != 0 ]]; then
+        CWK_CFG_DEGRADED=1
+        case "$status" in
+            4) CWK_CFG_REASON=".claude/project.json is missing" ;;
+            5) CWK_CFG_REASON=".claude/project.json cannot be found: CLAUDE_PROJECT_DIR is not an absolute path" ;;
+            6) CWK_CFG_REASON=".claude/project.json cannot be read: python3 or .claude/hooks/project_config.py is missing" ;;
+            *) CWK_CFG_REASON=".claude/project.json is invalid or could not be read" ;;
+        esac
+        CWK_CFG_REASON+=", so the hooks run on the kit defaults and ask instead of passing. Restore it: rerun install.sh on this project, or /kit:init."
+        __cwk_cfg_parse $'\n' <"$__CWK_GUARD_LIB_DIR/project-defaults.records" 2>/dev/null || {
+            __cwk_cfg_reset
+            CWK_CFG_PROTECTED_DIRS_ERE="$CWK_NEVER_RE"
+            CWK_CFG_ENV_SUFFIX_ERE="$CWK_NEVER_RE"
+            CWK_CFG_ICONS_ERE="$CWK_NEVER_RE"
+            CWK_CFG_PY_TARGET_ERE="$CWK_NEVER_RE"
+        }
+    fi
+    return "$status"
+}
+
+# cwk_app_roots: fill __CWK_APP_ROOTS from the project's app_roots through cwk_config. A bad
+# file gives the defaults (no root), and the hook, degraded, asks where it would pass.
 cwk_app_roots() {
-    local root out status=0
-    [[ "$__CWK_APP_ROOTS_LOADED" == 1 ]] && return 0
-    __CWK_APP_ROOTS_LOADED=1
-    [[ "${CLAUDE_PROJECT_DIR:-}" == /* ]] || return 0
-    out="$(python3 -I -B "$__CWK_GUARD_LIB_DIR/project_config.py" roots "$CLAUDE_PROJECT_DIR" 2>/dev/null)" || status=$?
-    [[ "$status" == 0 ]] || return 0
-    while IFS= read -r root || [[ -n "$root" ]]; do
-        [[ -n "$root" ]] && __CWK_APP_ROOTS+=("$root")
-    done <<<"$out"
+    cwk_config || true
+    __CWK_APP_ROOTS=(${CWK_CFG_APP_ROOTS[@]+"${CWK_CFG_APP_ROOTS[@]}"})
     return 0
 }
 

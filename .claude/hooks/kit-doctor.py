@@ -86,61 +86,126 @@ def fmt(value: object) -> str:
 
 # ----------------------------------------------------------------- twin checks
 
+PROJECT_JSON = ".claude/project.json"
+_PROJECT: list = []
+
+
+def project_values():
+    """`(config, None)` from `.claude/project.json` through the hooks' one reader, or
+    `(None, reason)` when the value twins cannot be checked against it."""
+    if not _PROJECT:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import project_config
+        except ImportError:
+            _PROJECT.append((None, "not checked: project_config.py missing next to kit-doctor.py"))
+            return _PROJECT[0]
+        try:
+            _PROJECT.append((project_config.load_strict(str(ROOT)), None))
+        except project_config.ConfigError as error:
+            reason = (f"source absent: {PROJECT_JSON}" if error.status == 4
+                      else f"not checked: {PROJECT_JSON} is invalid")
+            _PROJECT.append((None, reason))
+    return _PROJECT[0]
+
+
+def unchecked(check: str, reason: str) -> list[Finding]:
+    return [Finding(check, SKIP, reason)]
+
+
 def check_protected_dirs() -> list[Finding]:
-    doc, hook = read("CLAUDE.md"), read(".claude/hooks/prevent-destructive-commands.sh")
-    if doc is None or hook is None:
-        return skip("protected-dirs", "CLAUDE.md", "prevent-destructive-commands.sh")
+    """The protected folders, against CLAUDE.md's "Recursive delete on:" list. A project that
+    came with its own CLAUDE.md has no list there: MISSING, so the two copies get created."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("protected-dirs", reason)
+    doc = read("CLAUDE.md")
+    if doc is None:
+        return skip("protected-dirs", "CLAUDE.md")
 
     block = re.search(r"Recursive delete on:(.*?)(?:\n\s*\n|\n- )", doc, re.S)
-    enforced = re.search(r'^PROTECTED_DIRS="([^"]+)"', hook, re.M)
-    if not enforced:
-        return [Finding("protected-dirs", MISSING, "PROTECTED_DIRS no longer parses in the hook")]
+    actual = set(config.protected_dirs)
     if not block:
-        # The common case is not a rename: it is a project that came with its own
-        # CLAUDE.md, so the installer patched the hook and could not patch the doc.
-        return [Finding("protected-dirs", MISSING, "CLAUDE.md declares no protected list — the hook guards alone", [
-            f".claude/hooks/prevent-destructive-commands.sh  →  {fmt({d.replace(chr(92) + '.', '.') for d in enforced.group(1).split('|')})}",
+        return [Finding("protected-dirs", MISSING, "CLAUDE.md declares no protected list — the hooks guard alone", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
             "add that list to CLAUDE.md under \"Recursive delete on:\", so the two copies exist",
         ])]
 
-    # The doc writes them as `src/`; the hook as an alternation with escaped dots.
     declared = set(re.findall(r"`([^`]+?)/`", block.group(1)))
-    actual = {d.replace("\\.", ".") for d in enforced.group(1).split("|")}
-    return compare("protected-dirs", ("CLAUDE.md", declared),
-                   (".claude/hooks/prevent-destructive-commands.sh", actual))
+    return compare("protected-dirs", ("CLAUDE.md", declared), (PROJECT_JSON, actual))
 
 
 def check_data_client() -> list[Finding]:
-    stack, hook = read(".claude/rules/01-stack.md"), read(".claude/hooks/enforce-architecture.py")
-    if stack is None or hook is None:
-        return skip("data-client", "01-stack.md", "enforce-architecture.py")
+    config, reason = project_values()
+    if config is None:
+        return unchecked("data-client", reason)
+    stack = read(".claude/rules/01-stack.md")
+    if stack is None:
+        return skip("data-client", "01-stack.md")
 
     row = re.search(r"\|\s*Where does the client live\?\s*\|\s*`([^`]+)`", stack)
-    own = re.search(r'^DATA_CLIENT_OWN_PATH = "([^"]+)"', hook, re.M)
-    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook, re.M)
-    if not row or not own or not module:
-        return [Finding("data-client", MISSING, "one side no longer parses — the row or the constant moved")]
-
-    findings: list[Finding] = []
-    # A hook whose two constants disagree matches an import path that never
-    # resolves: the layer reads as guarded and is not.
-    if own.group(1) != module.group(1) + ".ts":
-        findings.append(Finding("data-client", DIVERGENCE, "the hook disagrees with itself", [
-            f"DATA_CLIENT_MODULE    →  {module.group(1)}",
-            f"DATA_CLIENT_OWN_PATH  →  {own.group(1)}",
-        ]))
-
+    if not row:
+        return [Finding("data-client", MISSING, "01-stack.md no longer parses — the row moved")]
+    own = config.data_client["own_path"]
     declared = row.group(1)
     if "<" in declared:
-        findings.append(Finding("data-client", FILL, "the rule still carries its placeholder", [
-            f".claude/rules/01-stack.md            →  {declared}",
-            f".claude/hooks/enforce-architecture.py →  src/{own.group(1)} (already enforced)",
-        ]))
-        return findings
+        return [Finding("data-client", FILL, "the rule still carries its placeholder", [
+            f".claude/rules/01-stack.md  →  {declared}",
+            f"{PROJECT_JSON}       →  src/{own} (already enforced)",
+        ])]
+    return compare("data-client", (".claude/rules/01-stack.md", re.sub(r"^src/", "", declared)),
+                   (PROJECT_JSON, own))
 
-    findings += compare("data-client", (".claude/rules/01-stack.md", re.sub(r"^src/", "", declared)),
-                        (".claude/hooks/enforce-architecture.py", own.group(1)))
-    return findings
+
+def check_protected_branches() -> list[Finding]:
+    """The branches the git hook refuses a commit on, against the github agent's sentence."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("protected-branches", reason)
+    agent = read(".claude/agents/github.md")
+    if agent is None:
+        return skip("protected-branches", "github.md")
+    sentence = re.search(r"a commit on ((?:`[^`]+`/?)+) and a signed", agent)
+    if not sentence:
+        return [Finding("protected-branches", MISSING, "github.md no longer names the protected branches")]
+    declared = set(re.findall(r"`([^`]+)`", sentence.group(1)))
+    return compare("protected-branches", (".claude/agents/github.md", declared),
+                   (PROJECT_JSON, set(config.protected_branches)))
+
+
+def check_env_suffixes() -> list[Finding]:
+    """The env template suffixes the hooks let through, against settings.json's Read allows."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("env-suffixes", reason)
+    settings = read(".claude/settings.json")
+    if settings is None:
+        return skip("env-suffixes", "settings.json")
+    try:
+        perms = json.loads(settings).get("permissions", {})
+    except (ValueError, AttributeError):
+        return [Finding("env-suffixes", MISSING, "settings.json does not parse")]
+    entries = [e for key in ("allow", "deny", "ask") for e in perms.get(key, []) if isinstance(e, str)]
+    plain = {m.group(1) for e in entries if (m := re.fullmatch(r"Read\(!\.env\.([a-z0-9]+)\)", e))}
+    nested = {m.group(1) for e in entries if (m := re.fullmatch(r"Read\(!\.env\.\*\.([a-z0-9]+)\)", e))}
+    actual = set(config.env_template_suffixes)
+    out = compare("env-suffixes", (".claude/settings.json Read(!.env.<s>)", plain), (PROJECT_JSON, actual))
+    if plain == actual and nested != actual:
+        out = compare("env-suffixes", (".claude/settings.json Read(!.env.*.<s>)", nested), (PROJECT_JSON, actual))
+    return out
+
+
+def check_test_command() -> list[Finding]:
+    """The hook's run-once command against 00-project.md. A project may run its runner on one
+    file while the rule names the gate script, so a difference is reported, never failing."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("test-command", reason)
+    rule = read(".claude/rules/00-project.md")
+    command = " ".join(config.test_command)
+    if rule is not None and any(line.strip() == command for line in rule.splitlines()):
+        return [Finding("test-command", OK, command)]
+    return [Finding("test-command", INFO, f"the hook runs `{command}`, 00-project.md does not list it")]
 
 
 def check_client_copies() -> list[Finding]:
@@ -148,15 +213,14 @@ def check_client_copies() -> list[Finding]:
 
     The templates show a gateway importing the client, a test mocking it, and the
     coverage floor excluding its instance file. `/kit:init` declares the client in
-    `enforce-architecture.py`; a template still on `@/lib/client` then teaches a
+    `.claude/project.json`; a template still on `@/lib/client` then teaches a
     path that does not exist, and an exclusion on the wrong file leaves the real
     client counted against the floor.
     """
-    hook = read(".claude/hooks/enforce-architecture.py")
-    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook or "", re.M)
-    if not module:
-        return skip("client-copies", "enforce-architecture.py")
-    declared = module.group(1)
+    config, reason = project_values()
+    if config is None:
+        return unchecked("client-copies", reason)
+    declared = config.data_client["module"]
 
     seen: dict[str, set[str]] = {}
     for path in (".claude/skills/templates/feature.md", ".claude/skills/templates/fixtures.md",
@@ -184,19 +248,20 @@ def check_client_copies() -> list[Finding]:
 
 
 def check_composition_roots() -> list[Finding]:
-    arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
-    if arch is None or hook is None:
-        return skip("composition-roots", "02-architecture.md", "enforce-architecture.py")
+    config, reason = project_values()
+    if config is None:
+        return unchecked("composition-roots", reason)
+    arch = read(".claude/rules/02-architecture.md")
+    if arch is None:
+        return skip("composition-roots", "02-architecture.md")
 
     row = next((ln for ln in arch.splitlines() if "composition root:" in ln), None)
-    tup = re.search(r"COMPOSITION_ROOTS = \(([^)]*)\)", hook, re.S)
-    if row is None or not tup:
-        return [Finding("composition-roots", MISSING, "one side no longer parses — the row or the constant moved")]
+    if row is None:
+        return [Finding("composition-roots", MISSING, "02-architecture.md no longer parses — the row moved")]
 
     declared = set(re.findall(r"`src/([^`]+)`", row))
-    actual = set(re.findall(r'"([^"]+)"', tup.group(1)))
     return compare("composition-roots", (".claude/rules/02-architecture.md", declared),
-                   (".claude/hooks/enforce-architecture.py", actual))
+                   (PROJECT_JSON, set(config.data_client["composition_roots"])))
 
 
 def check_shared_dirs() -> list[Finding]:
@@ -208,15 +273,12 @@ def check_shared_dirs() -> list[Finding]:
     `CLAUDE.md`'s non-negotiable, and the reviewer's correctness checklist — which restates the list AND
     its count, the cheapest of the four to let rot.
     """
-    arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
+    config, reason = project_values()
+    if config is None:
+        return unchecked("shared-dirs", reason)
+    arch = read(".claude/rules/02-architecture.md")
     doc, rev = read("CLAUDE.md"), read(".claude/guides/review/correctness.md")
-    if hook is None:
-        return skip("shared-dirs", "enforce-architecture.py")
-
-    tup = re.search(r"SHARED_DIRS = \(([^)]*)\)", hook, re.S)
-    if not tup:
-        return [Finding("shared-dirs", MISSING, "SHARED_DIRS no longer parses in the hook")]
-    actual = {d.rstrip("/") for d in re.findall(r'"([^"]+)"', tup.group(1))}
+    actual = {d.rstrip("/") for d in config.data_client["shared_dirs"]}
 
     # Every doc copy wraps across lines, so each is matched as a block, never a line.
     # Each copy is compared INDEPENDENTLY. An installed project that arrived with
@@ -239,16 +301,16 @@ def check_shared_dirs() -> list[Finding]:
         block = re.search(block_re, text, re.S)
         if not block:
             out.append(Finding(name, MISSING, f"{fname} declares no leaf list — the wording moved", [
-                f".claude/hooks/enforce-architecture.py  →  {fmt(actual)}",
+                f"{PROJECT_JSON}  →  {fmt(actual)}",
                 f"restate that list in {fname}, so the two copies exist",
             ]))
             continue
         out += compare(name, (fname, set(re.findall(item_re, block.group(1)))),
-                       (".claude/hooks/enforce-architecture.py", actual))
+                       (PROJECT_JSON, actual))
 
     # The correctness checklist also states the COUNT in prose — a number nothing else compares.
     words = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
-    n = re.search(r"of `enforce-architecture\.py`, (\w+) entries", rev) if rev else None
+    n = re.search(r"of\s+`\.claude/project\.json`,\s+(\w+)\s+entries", rev) if rev else None
     if rev is None:
         out += skip("shared-dirs (count)", ".claude/guides/review/correctness.md")
     elif not n:
@@ -256,7 +318,7 @@ def check_shared_dirs() -> list[Finding]:
     elif words.get(n.group(1)) != len(actual):
         out.append(Finding("shared-dirs (count)", DIVERGENCE, "the stated count is wrong", [
             f".claude/guides/review/correctness.md  →  {n.group(1)} entries",
-            f".claude/hooks/enforce-architecture.py  →  {len(actual)} entries",
+            f"{PROJECT_JSON}  →  {len(actual)} entries",
         ]))
     else:
         out.append(Finding("shared-dirs (count)", OK, f"{n.group(1)} entries"))
@@ -323,27 +385,28 @@ def check_token_thresholds() -> list[Finding]:
 
 
 def check_tdd_layers() -> list[Finding]:
-    """The four layer words, in the three places that act on them."""
-    lib = read(".claude/hooks/hook-lib.sh")
+    """The layer words, in the three places that act on them."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("tdd-layers", reason)
     cfg = read(".claude/skills/templates/tooling-config.md")
     mutation = read(".claude/commands/audit/mutation.md")
-    if lib is None or cfg is None or mutation is None:
-        return skip("tdd-layers", "hook-lib.sh", "tooling-config.md", "audit/mutation.md")
+    if cfg is None or mutation is None:
+        return skip("tdd-layers", "tooling-config.md", "audit/mutation.md")
 
-    hooks = re.search(r'CWK_TDD_LAYERS="([^"]+)"', lib)
     coverage = re.search(r"TEST_FIRST = '\{([^}]+)\}'", cfg)
-    if not hooks or not coverage:
-        return [Finding("tdd-layers", MISSING, "one side no longer parses — the layer list moved")]
+    if not coverage:
+        return [Finding("tdd-layers", MISSING, "tooling-config.md no longer parses — the layer list moved")]
 
     sources = {
-        ".claude/hooks/hook-lib.sh": set(hooks.group(1).split("|")),
+        PROJECT_JSON: set(config.tdd_layers),
         ".claude/skills/templates/tooling-config.md": set(coverage.group(1).split(",")),
     }
     globs = re.findall(r"\{([a-z,]+)\}\.ts", mutation)
     if globs:
         sources[".claude/commands/audit/mutation.md"] = set(globs[0].split(","))
 
-    reference = sources[".claude/hooks/hook-lib.sh"]
+    reference = sources[PROJECT_JSON]
     off = {name: words for name, words in sources.items() if words != reference}
     if not off:
         return [Finding("tdd-layers", OK, fmt(reference))]
@@ -764,7 +827,7 @@ RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
     ".claude/.token-delegate", ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
-    ".claude/settings.local.json", ".claude/worktrees",
+    ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
 }
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
@@ -819,7 +882,8 @@ def scanned_docs() -> list[Path]:
     docs = [ROOT / name for name in KIT_DOCS]
     if is_kit_source():
         docs.append(ROOT / "README.md")
-    docs += sorted((ROOT / ".claude").rglob("*.md"))
+    worktrees = ROOT / ".claude" / "worktrees"
+    docs += sorted(p for p in (ROOT / ".claude").rglob("*.md") if worktrees not in p.parents)
     return [d for d in docs if d.is_file()]
 
 
@@ -1316,7 +1380,7 @@ def check_kit_health() -> list[Finding]:
 
 CHECKS = [
     ("twins", [check_protected_dirs, check_data_client, check_client_copies, check_composition_roots,
-               check_shared_dirs,
+               check_shared_dirs, check_protected_branches, check_env_suffixes, check_test_command,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
                check_ignored_loop_paths, check_project_config,

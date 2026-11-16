@@ -7,6 +7,23 @@ SMALL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CWK_HOOK_TIMING=0
 # shellcheck source=../hooks/hook-lib.sh
 source "$SMALL_LIB_DIR/../hooks/hook-lib.sh"
+SMALL_ROOT="$(cd "$SMALL_LIB_DIR/../.." && pwd)"
+
+# The test-first layer words of THIS kit's .claude/project.json, never $CLAUDE_PROJECT_DIR's.
+# An unreadable config exits non-zero with the reason: skipping the test-first check is never
+# the answer to a file the lane cannot read.
+small_tdd_load() {
+    local rc=0
+    if ! declare -F cwk_tdd_load >/dev/null 2>&1; then
+        echo "small lane: hook-lib.sh is older than the small-lane scripts (no cwk_tdd_load)" >&2
+        exit 3
+    fi
+    CLAUDE_PROJECT_DIR="$SMALL_ROOT" cwk_tdd_load || rc=$?
+    if [[ "$rc" != 0 ]]; then
+        echo "small lane: $CWK_CFG_REASON" >&2
+        exit 3
+    fi
+}
 
 # The small spec of ticket <name>, repo-relative.
 small_spec_file() {
@@ -39,6 +56,7 @@ small_layer() {
         *.errors.ts) echo errors; return ;;
         *.gateway.ts) echo gateway; return ;;
     esac
+    small_tdd_load
     if [[ "$path" =~ $CWK_TDD_IMPL_RE ]]; then
         case "${BASH_REMATCH[2]}" in
             services | repository) echo repository ;;
@@ -63,6 +81,7 @@ small_test_of() {
 # Whether a layer needs a test file: a test-first layer word of the hook lib, or hooks.
 small_needs_test() {
     local layer="$1" word
+    small_tdd_load
     [[ "$layer" == hooks ]] && return 0
     for word in ${CWK_TDD_LAYERS//|/ }; do
         [[ "$word" == "$layer" ]] && return 0

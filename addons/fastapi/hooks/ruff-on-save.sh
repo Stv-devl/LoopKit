@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: ruff-on-save
 # Event: PostToolUse (Write|Edit)
@@ -34,13 +35,9 @@ if ! command -v ruff &> /dev/null; then
     exit 0
 fi
 
-# jq, not sed: ruff's output carries ANSI escapes and tabs, and one raw control
-# character makes the whole JSON unparseable — the message is then dropped in
-# silence, which is the one failure mode a feedback hook must not have.
-# Same idiom as tdd-prove-red.sh.
-json_escape() {
-    jq -Rs . | sed -e 's/^"//' -e 's/"$//'
-}
+# The message is built by jq below, not by hand: ruff's output carries ANSI escapes and
+# tabs, and one raw control character makes the whole JSON unparseable — the message is
+# then dropped in silence, which is the one failure mode a feedback hook must not have.
 
 # A FROZEN test is never formatted. This hook is PostToolUse and writes the file,
 # so no Pre hook sees the edit — and once ruff has normalised a quote or a blank
@@ -52,14 +49,68 @@ json_escape() {
 # Linting it is still useful and changes nothing on disk, so only the write is
 # skipped. Twin of the same carve-out in `.claude/hooks/format-on-save.sh`.
 #
-# The set mirrors `is_frozen_test()` in tdd_py_lib.py — `tests/` mirroring
-# `app/`, and TEST_FIRST_DIRS = ("services/",) plus its flat spelling. Change
-# them together; a `tests/api/test_*.py` is test-after and stays formatted.
-FROZEN_TEST_PY_RE='(^|/)tests/(services/([A-Za-z0-9_-]+/)*test_[A-Za-z0-9_]+\.py|test_services\.py)$'
+# The set is `tdd_py_lib.is_frozen_test`, line for line, over `.claude/project.json`
+# (`fastapi.module_root`, `tests_root`, `test_first_dirs`): a `test_*.py` whose mirrored
+# implementation is a test-first module, found by path SEGMENT so a monorepo or worktree
+# prefix does not matter. `tests/api/test_*.py` and `tests/test_main.py` are test-after
+# and stay formatted. Only the formatting needs the config: `ruff check` always runs.
+
+# split_root <rel path> <root>: sets SPLIT_PREFIX and SPLIT_INNER around the LAST `<root>/`
+# segment, returns 1 when there is none (tdd_py_lib._split_root).
+split_root() {
+    local re="^(.*)/${2//./\\.}/(.*)\$"
+    if [[ "/$1" =~ $re ]]; then
+        SPLIT_PREFIX="${BASH_REMATCH[1]#/}"
+        SPLIT_INNER="${BASH_REMATCH[2]}"
+        return 0
+    fi
+    return 1
+}
+
+# is_frozen_test <path> <project dir> <module root> <tests root> <test-first dir>...
+# (tdd_py_lib.is_frozen_test: rel_path, impl_for_test, is_test_first_impl).
+is_frozen_test() {
+    local path="$1" project="${2%/}" module_root="$3" tests_root="$4" rel base impl dir head=""
+    shift 4
+    if [[ "$path" == "$project"/* ]]; then
+        rel="${path#"$project"/}"
+    else
+        rel="${path#/}"
+    fi
+    base="${rel##*/}"
+    [[ "$base" == test_* && "$rel" == *.py ]] || return 1
+    split_root "$rel" "$tests_root" || return 1
+    [[ "$SPLIT_INNER" != */* ]] || head="${SPLIT_INNER%/*}/"
+    impl="${SPLIT_PREFIX:+$SPLIT_PREFIX/}$module_root/$head${base#test_}"
+    [[ "${impl##*/}" != __init__.py ]] || return 1
+    split_root "$impl" "$module_root" || return 1
+    for dir in "$@"; do
+        dir="${dir%/}"
+        [[ "$SPLIT_INNER" == "$dir"/* || "$SPLIT_INNER" == "$dir.py" ]] && return 0
+    done
+    return 1
+}
+
+MESSAGE=""
+FORMAT=true
+if ! declare -F cwk_config >/dev/null 2>&1; then
+    MESSAGE="ruff-on-save: hook-lib.sh is older than this hook (no cwk_config), so $FILE_PATH was not formatted. The user re-copies the kit hooks files from a terminal."
+    FORMAT=false
+else
+    cwk_config || true
+    if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+        MESSAGE="ruff-on-save: $FILE_PATH was not formatted: $CWK_CFG_REASON"
+        FORMAT=false
+    fi
+fi
 
 # Format first, then report what formatting could not fix.
-if [[ ! "$FILE_PATH" =~ $FROZEN_TEST_PY_RE ]]; then
-    ruff format "$FILE_PATH" &> /dev/null || true
+if $FORMAT; then
+    mapfile -t TEST_FIRST_DIRS < <(jq -r '.fastapi.test_first_dirs[]?' "${CLAUDE_PROJECT_DIR:-$PWD}/.claude/project.json" 2>/dev/null)
+    if ! is_frozen_test "$FILE_PATH" "${CLAUDE_PROJECT_DIR:-$PWD}" "$CWK_CFG_MODULE_ROOT" "$CWK_CFG_TESTS_ROOT" \
+        ${TEST_FIRST_DIRS[@]+"${TEST_FIRST_DIRS[@]}"}; then
+        ruff format "$FILE_PATH" &> /dev/null || true
+    fi
 fi
 
 if ! LINT_OUTPUT=$(ruff check "$FILE_PATH" 2>&1); then
@@ -67,12 +118,12 @@ if ! LINT_OUTPUT=$(ruff check "$FILE_PATH" 2>&1); then
     # that prints bare text writes to the transcript, not to the model. The kit's
     # convention for "say something without blocking" is a systemMessage — see
     # eslint-batch.sh, its front-end twin.
-    TAIL=$(echo "$LINT_OUTPUT" | tail -20 | json_escape)
-    cat << EOF
-{
-  "systemMessage": "Ruff reported issues in $FILE_PATH:\\n\\n$TAIL"
-}
-EOF
+    BREAK=$'\n\n'
+    MESSAGE="${MESSAGE:+$MESSAGE$BREAK}Ruff reported issues in $FILE_PATH:$BREAK$(echo "$LINT_OUTPUT" | tail -20)"
+fi
+
+if [[ -n "$MESSAGE" ]]; then
+    jq -n --arg m "$MESSAGE" '{systemMessage: $m}'
 fi
 
 exit 0

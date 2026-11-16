@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 3
+# cwk-guard-api: 4
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
@@ -78,6 +78,12 @@ set -e
 CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
 INPUT=$(cat)
 
@@ -94,9 +100,6 @@ NORM="${NORM//[\'\"\\]/}"
 # Nothing git-shaped in either reading → cheapest possible exit.
 printf '%s\n%s\n' "$COMMAND" "$NORM" | grep -qE 'git|\bgh\b' || exit 0
 
-# CONFIGURE: branches that only ever receive merges.
-PROTECTED_BRANCHES="main|master"
-
 # jq, never a heredoc: the reasons below interpolate $BRANCH, and a branch name
 # holding a `"` produced unparseable JSON — dropped by the harness, so the gate
 # silently disappeared. Only the authored `\n` is expanded;
@@ -104,7 +107,8 @@ PROTECTED_BRANCHES="main|master"
 decide() {
     local decision="$1" reason
     local cut=" [reason truncated]"
-    reason="${2//\\n/$'\n'}"
+    cwk_cfg_reason "${2//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     ((${#reason} > 4000)) && reason="${reason:0:$((4000 - ${#cut}))}$cut"
     jq -n --arg d "$decision" --arg r "$reason" '{
       hookSpecificOutput: {
@@ -157,15 +161,33 @@ BASE_DIR="$CWD"
 GIT_DIR_ARG=$(echo "$COMMAND" | grep -oE 'git\s+-C\s+[^ ]+' | head -1 | awk '{print $3}')
 [[ -n "$GIT_DIR_ARG" ]] && CWD="$GIT_DIR_ARG"
 
+# True when <name> matches one of the project's `protected_branches` globs
+# (`.claude/project.json`, read on the first call). `main` and `master` stand in when
+# even the kit defaults cannot be read.
+branch_protected() {
+    local pattern
+    [[ -n "$1" ]] || return 1
+    cwk_config || true
+    if [[ "${#CWK_CFG_PROTECTED_BRANCHES[@]}" -eq 0 ]]; then
+        [[ "$1" == main || "$1" == master ]]
+        return
+    fi
+    for pattern in "${CWK_CFG_PROTECTED_BRANCHES[@]}"; do
+        # shellcheck disable=SC2053  # the pattern is a glob on purpose
+        [[ "$1" == $pattern ]] && return 0
+    done
+    return 1
+}
+
 on_protected_branch() {
-    [[ "$HAS_COMMITS" -eq 1 ]] && echo "$BRANCH" | grep -qE "^($PROTECTED_BRANCHES)$"
+    [[ "$HAS_COMMITS" -eq 1 ]] && branch_protected "$BRANCH"
 }
 
 # Sets SEG_BRANCH. True when <dir> has commits and sits on a protected branch.
 dir_protected() {
     git -C "$1" rev-parse --verify HEAD >/dev/null 2>&1 || return 1
     SEG_BRANCH=$(git -C "$1" branch --show-current 2>/dev/null || echo "")
-    echo "$SEG_BRANCH" | grep -qE "^($PROTECTED_BRANCHES)$"
+    branch_protected "$SEG_BRANCH"
 }
 
 # One line per git call: subcommand, directory, alias-on-command-line, force,
@@ -175,7 +197,7 @@ dir_protected() {
 # A command shlex cannot read prints UNPARSABLE. When it cannot read a call, a
 # fallback scan of the raw text adds `?fb-add` / `?fb-flags` rows.
 parse_segments() {
-    python3 -I - "$1" "$2" "$CWK_TDD_SHELL_TARGET_RE" "$CWK_TDD_SHELL_FROZEN_TEST_RE" <<'PY'
+    python3 -I - "$1" "$2" "$CWK_TDD_SHELL_TARGET_RE" "$CWK_TDD_SHELL_FROZEN_TEST_RE" "$CWK_CFG_ENV_SUFFIX_ERE" <<'PY'
 import os
 import re
 import shlex
@@ -194,7 +216,9 @@ HIDDEN = "?hidden"
 MAX_GIT_SEGMENTS = 50
 ALLOWED_ADD_GLOBALS = {"-C", "--no-pager", "-P"}
 DRY_RUN_BUDGET = 2.0
-SECRET_KEEP = {".env.example", ".env.sample", ".env.template"}
+TEMPLATE_KEEP = re.compile(r"^\.env(\..+)?\.(" + "|".join(
+    re.escape(word.replace("\\", "")) for word in (sys.argv[5] if len(sys.argv) > 5 else "").split("|")
+    if word) + r")$") if len(sys.argv) > 5 and sys.argv[5] else re.compile(r"(?!)")
 REDIRECT_CHARS = set("<>&")
 HEREDOC = re.compile(r"(?<!<)<<(-?)[ \t]*['\"]?([A-Za-z0-9_.-]+)['\"]?")
 COMMIT = {
@@ -423,7 +447,7 @@ def flags_column(args):
 def is_secret(path):
     base = path.rsplit("/", 1)[-1]
     if base.startswith(".env"):
-        return base not in SECRET_KEEP
+        return TEMPLATE_KEEP.match(base) is None
     return base.endswith((".pem", ".key")) or re.match(r"\.?credentials(\.|$)", base) is not None
 
 
@@ -1320,6 +1344,7 @@ PY
 # marker last; anything else leaves PARSED empty and arms the floor below.
 PARSE_FAILED=0
 PARSE_TRUSTED=0
+cwk_tdd_load || true
 if command -v python3 >/dev/null 2>&1 && PARSED=$(parse_segments "$COMMAND" "$BASE_DIR") \
    && [[ "${PARSED##*$'\n'}" =~ ^#end$'\t'[0-9]+$ ]]; then
     PARSE_TRUSTED=1

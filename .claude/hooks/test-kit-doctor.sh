@@ -42,7 +42,8 @@ IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          ignored-loop-paths' <<<"$IGNORED_OUTPUT"
 
 mkdir -p "$SCRATCH/.claude/skills/templates" "$SCRATCH/.claude/skills/patterns"
-printf 'DATA_CLIENT_MODULE = "lib/api"\nDATA_CLIENT_OWN_PATH = "lib/api.ts"\n' > "$SCRATCH/.claude/hooks/enforce-architecture.py"
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults \
+    | jq '.data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts"' > "$SCRATCH/.claude/project.json"
 printf 'import { client } from "@/lib/client";\n' > "$SCRATCH/.claude/skills/templates/feature.md"
 printf 'vi.mock("@/lib/client", () => ({}));\n' > "$SCRATCH/.claude/skills/templates/fixtures.md"
 printf 'import { client } from "@/lib/api";\n' > "$SCRATCH/.claude/skills/patterns/react-query.md"
@@ -57,6 +58,7 @@ printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',
     > "$SCRATCH/.claude/skills/templates/tooling-config.md"
 CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
+rm "$SCRATCH/.claude/project.json"
 
 mkdir -p "$SCRATCH/.claude/agents"
 printf '| Tier | For | Effort | Agents |\n| --- | --- | --- | --- |\n| `inherit` | gates | set at the call | `reviewer` |\n| `sonnet` | tests | `high` | `test-writer` |\n| `sonnet` | production | `medium` | `github` |\n' \
@@ -181,5 +183,75 @@ mkdir -p "$SCRATCH/frontend"
 KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          project-config' <<<"$KD_OUT"
 rm "$SCRATCH/.claude/project.json"
+
+# PD1-PD7 (project-config step 1b): every value twin reads .claude/project.json, never hook text.
+pd_json() {
+    python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq "$1" > "$SCRATCH/.claude/project.json"
+}
+pd_run() {
+    python3 "$SCRATCH/.claude/hooks/kit-doctor.py" "$@" || true
+}
+mkdir -p "$SCRATCH/.claude/rules" "$SCRATCH/.claude/agents" "$SCRATCH/.claude/commands/audit" \
+    "$SCRATCH/.claude/skills/templates"
+printf -- '- Recursive delete on: `src/`, `shared/`, `.claude/`, `public/`, `node_modules/`,\n  `dist/`\n\nend\n' \
+    > "$SCRATCH/CLAUDE.md"
+printf '| Where does the client live? | `src/lib/client.ts` |\n' > "$SCRATCH/.claude/rules/01-stack.md"
+printf "TEST_FIRST = '{repository,services,mapper,utils}'\n" > "$SCRATCH/.claude/skills/templates/tooling-config.md"
+printf 'src/**/*.{repository,services,mapper,utils}.ts\n' > "$SCRATCH/.claude/commands/audit/mutation.md"
+printf '```bash\npnpm test:run\n```\n' > "$SCRATCH/.claude/rules/00-project.md"
+printf 'they are not yours to interpret: a commit on `main`/`master` and a signed or\n' \
+    > "$SCRATCH/.claude/agents/github.md"
+jq -n '{permissions: {deny: ["Read(.env.*)"], allow: ["Read(!.env.example)", "Read(!.env.sample)",
+    "Read(!.env.template)", "Read(!.env.*.example)", "Read(!.env.*.sample)", "Read(!.env.*.template)"]}}' \
+    > "$SCRATCH/.claude/settings.json"
+rm -f "$SCRATCH/.claude/hooks/enforce-architecture.py" "$SCRATCH/.claude/hooks/hook-lib.sh" \
+    "$SCRATCH/.claude/hooks/prevent-destructive-commands.sh"
+
+pd_json '.'
+KD_OUT="$(pd_run)"
+grep -q 'ok          protected-dirs' <<<"$KD_OUT"
+grep -q 'ok          data-client' <<<"$KD_OUT"
+grep -q 'ok          tdd-layers' <<<"$KD_OUT"
+grep -q 'ok          env-suffixes' <<<"$KD_OUT"
+grep -q 'DIVERGENCE  protected-branches' <<<"$KD_OUT" && exit 1
+
+# PD1 protected_dirs plus frontend, not in CLAUDE.md.
+pd_json '.protected_dirs += ["frontend"]'
+grep -q 'DIVERGENCE  protected-dirs' <<<"$(pd_run)"
+# PD2 data_client lib/api against an 01-stack.md naming src/lib/client.ts.
+pd_json '.data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts"'
+grep -q 'DIVERGENCE  data-client' <<<"$(pd_run)"
+# PD3 a usecase layer against the default tooling-config.
+pd_json '.tdd_layers += ["usecase"]'
+grep -q 'DIVERGENCE  tdd-layers' <<<"$(pd_run)"
+# PD4 a different test command is INFO, never a divergence.
+pd_json '.test_command = ["npm", "test"]'
+KD_OUT="$(pd_run)"
+grep -q 'INFO        test-command' <<<"$KD_OUT"
+grep -q 'DIVERGENCE  test-command' <<<"$KD_OUT" && exit 1
+# PD5 protected_branches ["main"]: diverges from `main`/`master`, agrees with `main`.
+pd_json '.protected_branches = ["main"]'
+grep -q 'DIVERGENCE  protected-branches' <<<"$(pd_run)"
+printf 'they are not yours to interpret: a commit on `main` and a signed or\n' > "$SCRATCH/.claude/agents/github.md"
+KD_OUT="$(pd_run)"
+grep -q 'ok          protected-branches' <<<"$KD_OUT"
+# PD6 `kit-doctor.py <root>` reads that root's file: an invalid one is reported, the twins are not checked.
+mkdir -p "$SCRATCH/other/.claude"
+printf '{"schema_version":2}\n' > "$SCRATCH/other/.claude/project.json"
+KD_OUT="$(pd_run "$SCRATCH/other")"
+grep -q 'DIVERGENCE  project-config' <<<"$KD_OUT"
+grep -q 'not checked' <<<"$KD_OUT"
+# PD7 env_template_suffixes ["example"] against the default settings.json Read entries.
+pd_json '.env_template_suffixes = ["example"]'
+grep -q 'DIVERGENCE  env-suffixes' <<<"$(pd_run)"
+rm "$SCRATCH/.claude/project.json"
+
+# KD10 A worktree under .claude/worktrees/ is another track's tree: its docs are not this
+# kit's, so a path one of them names is never reported missing here.
+mkdir -p "$SCRATCH/.claude/worktrees/other/.claude/rules"
+printf 'See `.claude/hooks/kd10-absent.sh`.\n' > "$SCRATCH/.claude/worktrees/other/.claude/rules/x.md"
+KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+if grep -q 'kd10-absent' <<<"$KD_OUT"; then echo 'KD10: a worktree doc was scanned' >&2; exit 1; fi
+rm -r "$SCRATCH/.claude/worktrees"
 
 echo 'kit-doctor version fixtures: green.'

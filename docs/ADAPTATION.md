@@ -21,21 +21,28 @@ vraie barrière d'autorisation **côté serveur**. Les dimensions `correctness`,
 `security` et `db` de l'agent `reviewer` lisent ce tableau ; un tableau vide, et
 la review gate contre du vide.
 
-## 2. `.claude/hooks/enforce-architecture.py` → `DATA_CLIENT_MODULE` + `COMPOSITION_ROOTS` + `SHARED_DIRS`
+## 2. `.claude/project.json` → `data_client` (`module`, `own_path`, `composition_roots`, `shared_dirs`)
 
-`DATA_CLIENT_MODULE` doit correspondre au point 1, sinon le hook garde une porte
-qui n'existe pas. `None` désactive ce contrôle (cross-feature et shared→feature
-restent actifs).
+Toutes les valeurs de projet appliquées par les hooks vivent dans
+`.claude/project.json`, lu par un seul lecteur (`project_config.py`). **Aucun hook
+ne s'édite** : `install.sh` crée ou met à niveau ce fichier (il reprend les
+valeurs d'un ancien hook modifié à la main), `/kit:init` le remplit. Un fichier
+invalide ou absent fait tourner les hooks sur les défauts du kit, en mode
+dégradé : un refus reste un refus, mais un passage devient une demande, avec la
+réparation dans le message.
 
-`COMPOSITION_ROOTS` liste les fichiers qui **créent** l'instance du client et
+`data_client.module` doit correspondre au point 1, sinon le hook garde une porte
+qui n'existe pas.
+
+`data_client.composition_roots` liste les fichiers qui **créent** l'instance du client et
 l'injectent dans le contexte routeur/provider — par défaut `main.tsx` et
 `routes/__root.tsx`. Ce sont les seuls, hors couche data, autorisés à l'importer.
 Si ton point d'entrée est ailleurs, corrige la liste ici **et** le tableau
 « composition root » de `02-architecture.md` : c'est le même contrat écrit deux
 fois, une fois pour la machine, une fois pour l'agent.
 
-`SHARED_DIRS` est la troisième, et elle a **quatre** copies, pas deux : le tuple
-du hook, les deux listes d'import de `02-architecture.md`, la case « shared
+`data_client.shared_dirs` est la troisième, et elle a **quatre** copies, pas
+deux : la liste de `.claude/project.json`, les deux listes d'import de `02-architecture.md`, la case « shared
 leaf » de `.claude/guides/review/correctness.md` — qui en donne aussi le **nombre** — et la
 ligne « code partagé » de `CLAUDE.md`. Le kit livre six entrées —
 `components/ hooks/ lib/ types/ stores/ config/`. `providers/` et `routes/` en
@@ -46,26 +53,25 @@ oublier le reviewer est le plus coûteux des quatre, parce que le hook n'inspect
 que le **delta inséré** d'un Edit : un import déjà présent ailleurs dans le
 fichier ne lui arrive jamais, et le reviewer est alors le seul filet.
 
-`/kit:doctor` compare désormais le tuple à **trois** de ces copies — la liste
+`/kit:doctor` compare désormais cette liste à **trois** de ces copies — la liste
 « Forbidden » de `02-architecture.md`, `CLAUDE.md`, `guides/review/correctness.md` — plus le
 compte que le reviewer annonce en toutes lettres (`check_shared_dirs`). La liste
 « Allowed from anywhere » de `02-architecture.md` reste **manuelle** : elle est
-énumérative et non miroir du tuple (`providers/` y figure, pas dans
-`SHARED_DIRS`). La synchronisation reste à ta charge, mais l'oubli ne passe plus
+énumérative et non miroir de la liste (`providers/` y figure, pas dans
+`shared_dirs`). La synchronisation reste à ta charge, mais l'oubli ne passe plus
 en silence.
 
-### 2 bis. `ENV_TEMPLATE_RE` → la seule constante écrite deux fois sans filet
+### 2 bis. `env_template_suffixes` → les suffixes `.env` sans secret
 
-`protect-files.sh` (`ENV_TEMPLATE_RE`) et `prevent-destructive-commands.sh` (le
-sanitizer de `SECRET_RE`) décident tous les deux quels suffixes `.env` ne portent
-aucun secret — le kit livre `example|sample|template` des deux côtés. Si ton repo
-utilise une autre convention (`.env.dist`, `.env.tpl`), **change les deux**. Une
-seule des deux modifiée, et les outils et le shell cessent de protéger le même
-ensemble : `Read .env.dist` refusé, `cat .env.dist` autorisé, ou l'inverse.
-
-Ces deux-là ne sont pas des `FILL` mais des `CONFIGURE`, comme les sept autres
-constantes câblées dans les hooks — c'est pour ça que la commande d'inventaire
-en tête de ce fichier cherche **les deux mots**.
+Une seule liste dans `.claude/project.json` (le kit livre `example`, `sample`,
+`template`) : `protect-files.sh`, `auto-approve-config.sh`,
+`prevent-destructive-commands.sh` et `enforce-git-workflow.sh` la lisent tous,
+donc les outils et le shell protègent toujours le même ensemble. Si ton repo
+utilise une autre convention (`.env.dist`, `.env.tpl`), change la liste **et** les
+entrées `Read(!.env.<suffixe>)` de `settings.json`, que `/kit:init` écrit avec.
+Les mots qui nomment un vrai secret (`local`, `production`, `development`, `prod`,
+`dev`, `staging`, `test`) sont refusés : le fichier devient invalide et les hooks
+passent en mode dégradé.
 
 ## 3. `src/lib/result.ts` + `src/lib/errors.ts` + `src/lib/queryClient.ts` → à scaffolder
 
@@ -104,14 +110,15 @@ puisse virer au rouge **sans qu'un octet du dépôt ait changé**, donc le seul 
 ni une relecture ni un test ne remplacent. Pas de `pnpm` ? Nomme l'équivalent
 (`npm audit`, `yarn npm audit`, `pip-audit`) ; pas d'équivalent, dis-le.
 
-Le script run-once est aussi codé en dur dans `.claude/hooks/tdd-prove-red.sh`
-(`RUN_TESTS`) : si le tien ne s'appelle pas `pnpm test:run`, change-le là aussi.
+La commande run-once que `tdd-prove-red.sh` lance sur un fichier de test est
+`test_command` dans `.claude/project.json` : si la tienne n'est pas `pnpm test:run`,
+change-la là aussi (de même `formatter` et `linter` pour les hooks d'après-save).
 Le hook le dit dans les deux cas — script absent, **ou binaire absent** (projet
 npm/yarn/bun) — mais il ne peut alors plus rien prouver, et `tdd-require-red.sh`
 refusera toute création de module, faute de rouge constaté. C'est voulu : mieux
 vaut un blocage bruyant qu'un TDD qui se croit actif. Le seul piège serait un
 blocage **silencieux** : si tu vois des refus de création sans jamais voir de
-verdict `RED confirmed`, c'est `RUN_TESTS` qu'il faut regarder en premier.
+verdict `RED confirmed`, c'est `test_command` qu'il faut regarder en premier.
 
 **Le `include`/`exclude` de Vitest n'est pas optionnel**, lui. Le glob par défaut
 (`**/*.{test,spec}.?(c|m)[jt]s?(x)`) ramasse les specs Playwright de `e2e/` et,
@@ -222,7 +229,7 @@ copie, pour la seule chose que `/loop:ship` ne peut pas couvrir : une machine qu
 n'est pas la tienne. Le jour où tu pousses, relance l'installeur avec
 `--deploy=<cible>`.
 
-Avec le CI, `install.sh` dépose aussi `.github/CODEOWNERS` (remplace `@OWNER` ; il couvre les hooks, `settings.json`, les workflows et lui-même), et les réglages du
+Avec le CI, `install.sh` dépose aussi `.github/CODEOWNERS` (remplace `@OWNER` ; il couvre les hooks, `settings.json`, `project.json`, les workflows et lui-même), et les réglages du
 dépôt qui rendent les gates bloquantes (ruleset sur `main`, check requis
 `Gates`, environnement `production`) sont décrits dans
 `.claude/skills/templates/ci.md`, « Repository settings ». Dans le dépôt du kit
@@ -342,7 +349,8 @@ corps, un titre ou un `--body-file` envoyé par `gh`), et `git push`, `gh pr`,
 `gh issue`, tout commentaire et tout merge dans une branche protégée repassent
 par ta validation, quels que soient les options globales, le `-C` ou l'alias de
 l'appel git. Si tes branches protégées ne s'appellent pas `main`/`master`,
-change `PROTECTED_BRANCHES` en tête du hook.
+change `protected_branches` dans `.claude/project.json` (globs admis, ex.
+`release/*`).
 
 ## 8. `.claude/rules/03-conventions.md` → les deux langues
 
@@ -370,9 +378,9 @@ Dans le doute, tu es dans le troisième cas.
 
 ## 11. `.claude/rules/09-icons.md`
 
-Liste d'interdits maison (étoile, fusée, éclair), doublée par le hook
-`no-forbidden-icons.sh`. À garder, modifier ou supprimer — mais les deux
-ensemble, jamais l'un sans l'autre.
+Liste d'interdits maison (étoile, fusée, éclair), doublée par `forbidden_icons`
+dans `.claude/project.json`, que lit `no-forbidden-icons.sh`. À garder, modifier
+ou vider — mais les deux ensemble, jamais l'un sans l'autre.
 
 ## 12. `.claude/guides/10-worktrees.md`
 
@@ -574,8 +582,18 @@ affiche :
 P1 held back: <fichiers> — merge <fichiers>.new, then re-run install.sh
 ```
 
-Fusionne les `.new` de ces fichiers (en gardant tes réglages, `PROTECTED_DIRS`,
-`PROTECTED_BRANCHES`), puis relance `install.sh`. `PROMPT_ALLOWS` (les 23
+Fusionne les `.new` de ces fichiers (avec `--fastapi`, ceux des hooks de l'addon
+compris), dans l'ordre que tu veux, puis relance `install.sh`. Tes réglages ne
+sont pas dans ces hooks : ils vivent dans `.claude/project.json`, que l'installeur
+ne remplace jamais (il le crée, ou le met à niveau en reprenant les valeurs d'un
+ancien hook modifié à la main, et nomme chaque valeur qu'il n'a pas pu lire ; un
+élément illisible d'`PROTECTED_DIRS` ou `PROTECTED_BRANCHES` est écarté seul, avec
+une note, et les valeurs par défaut s'ajoutent). Tant que ton lecteur actif est plus
+ancien que celui du kit, `project.json` n'est pas écrit (un ancien lecteur ignore en
+silence un schéma 2) : la première passe garde les valeurs de tes hooks encore
+anciens dans `.claude/project.snapshot.json`, que aucun hook ne lit, et la relance
+les reprend puis supprime ce fichier. Sans valeur trouvée ni sauvegarde, la
+migration écrit les valeurs par défaut et le dit. `PROMPT_ALLOWS` (les 23
 autorisations exactes des runners de test, des scripts du kit et de `git fetch`)
 est retenu avec P1 ; les suites de développement du kit `test-install` et `test-workflow-contracts`
 gardent leur autorisation dans le kit seul, jamais dans une cible : une autorisation identique ajoutée par toi est retirée avec
@@ -602,7 +620,7 @@ H=.claude/hooks/enforce-architecture.py
 # DENY — import cross-feature
 echo '{"tool_input":{"file_path":"src/features/a/x.ts","content":"import {b} from \"@/features/b\";"}}' | python3 $H
 
-# DENY — code partagé qui dépend d'une feature (les 6 entrées de SHARED_DIRS)
+# DENY — code partagé qui dépend d'une feature (les 6 entrées de shared_dirs)
 echo '{"tool_input":{"file_path":"src/components/ui/Nav.tsx","content":"import {u} from \"@/features/auth/hooks/hooks\";"}}' | python3 $H
 echo '{"tool_input":{"file_path":"src/stores/theme.ts","content":"import {u} from \"@/features/auth/types/types\";"}}' | python3 $H
 echo '{"tool_input":{"file_path":"src/config/nav.ts","content":"import {u} from \"@/features/auth/types/types\";"}}' | python3 $H
@@ -665,7 +683,7 @@ Le trio TDD se vérifie surtout **en marche** : écris un
 `x.repository.test.ts`, regarde `tdd-prove-red` annoncer `RED confirmed`, puis
 crée `x.repository.ts` — il doit passer. Refais-le sans le test : la création
 doit être refusée. Si `tdd-prove-red` répond « could not run the test runner »,
-c'est `RUN_TESTS` qui ne correspond pas à ton script (point 4).
+c'est `test_command` qui ne correspond pas à ton script (point 4).
 
 Puis un tour à blanc : `/loop:spec une petite feature` doit produire
 `docs/specs/<slug>.md`, enchaîner la boucle et s'arrêter au premier gate pour te

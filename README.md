@@ -36,9 +36,10 @@ git clone <this-repo> loopkit && cd loopkit
                                       # spec and chains /loop:orchestrate
 ```
 
-`install.sh` writes existing kit files as `.new`; the sole exception is
+`install.sh` writes existing kit files as `.new`; the two exceptions are
 `.claude/settings.json`, whose selected hook blocks are merged idempotently while
-preserving user keys. `/kit:init` adapts the markers it can prove, asks closed questions
+preserving user keys, and `.claude/project.json`, which is created or upgraded in
+place from the values of your active hooks and never gets a `.new`. `/kit:init` adapts the markers it can prove, asks closed questions
 for choices, and reports every marker it must leave open with its exact path. It also
 writes `.claude/project.json`: the app roots (`frontend/`, `backend/`) whose configs are
 guarded like the root's, and the code generators allowed to redirect into a source.
@@ -48,7 +49,11 @@ directly, changed ones as `.new` beside your adapted copy, and `settings.json`
 merges (retired allows removed, deny list unioned in order). The narrow
 permissions (P1: `acceptEdits` plus exact git and gate allows) are held back,
 with a `P1 held back: …` line, until every guard hook of the project is at the
-kit's `cwk-guard-api` version — merge those `.new` first, then re-run.
+kit's `cwk-guard-api` version (with `--fastapi`, the addon hooks too) — merge those
+`.new` in any order, then re-run. While a reader is stale `.claude/project.json` is
+not written: the first run saves the values your old hooks hold in
+`.claude/project.snapshot.json` (no hook reads it), and the re-run moves them into
+`project.json` and deletes it.
 
 **CI/CD.** Unless `--no-ci`, the project gets `ci.yml` (the same gates as
 `/loop:ship`), a push-only `deploy.yml` assembled for the chosen target,

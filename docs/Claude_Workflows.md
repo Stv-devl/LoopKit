@@ -502,18 +502,18 @@ boucle, mêmes agents, des règles et des commandes en plus :
 L'installation copie les fichiers. Sur une install **neuve**, elle câble en plus
 ce qu'elle peut : `--fastapi` déclare les six hooks Python dans `settings.json`,
 `@07-backend.md` dans l'index de `CLAUDE.md` et `app|alembic` dans
-`PROTECTED_DIRS` ; `--supabase` pointe `DATA_CLIENT_MODULE` /
-`DATA_CLIENT_OWN_PATH` sur `lib/supabase` et ajoute `supabase` à
-`PROTECTED_DIRS`. Uniquement des fichiers que le kit vient d'écrire, jamais un
-fichier préexistant (il repart en `.new`).
+`protected_dirs` ; `--supabase` pointe `data_client.module` /
+`own_path` sur `lib/supabase` et ajoute `supabase` à `protected_dirs`. Les
+valeurs vont dans `.claude/project.json`, jamais dans un hook ; l'installeur ne
+touche pas un `CLAUDE.md` préexistant (il repart en `.new`).
 
-Chaque valeur ainsi câblée est écrite **deux fois** — le hook l'applique,
-`CLAUDE.md` ou une règle la déclare — et l'installeur patche les deux copies.
+Chaque valeur ainsi câblée est écrite **deux fois** — `.claude/project.json`
+l'applique, `CLAUDE.md` ou une règle la déclare — et l'installeur écrit les deux.
 C'est `/kit:doctor` qui vérifie qu'elles n'ont pas divergé depuis.
 
 **Le reste du câblage est à faire à la main**, décrit dans le README de l'addon
-(recopié en `.claude/skills/patterns/<NOM>-ADDON.md`) : `EXTERNAL_CLIENTS` dans
-`enforce-backend-layers.py`, la table du client dans `01-stack.md`, les scripts
+(recopié en `.claude/skills/patterns/<NOM>-ADDON.md`) : `fastapi.external_clients` dans
+`.claude/project.json`, la table du client dans `01-stack.md`, les scripts
 de `00-project.md`, et les deux que personne ne pense à faire — **les gates
 backend dans `commands/ship.md`** (le bloc est en `pnpm`, il ne teste rien sur un
 repo Python) et **`07-backend.md` dans la checklist `guides/review/tests-python.md`**.

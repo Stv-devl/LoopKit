@@ -40,9 +40,8 @@ names (not values) or check `.env.example`.
 - `rm -rf` on directories without explicit user confirmation
 - `rm -rf *`, `rm -rf .`, `rm -rf ..`
 - Recursive delete on: `src/`, `shared/`, `.claude/`, `public/`, `node_modules/`,
-  `dist/` <!-- FILL: add yours. The enforced copy is PROTECTED_DIRS in
-  .claude/hooks/prevent-destructive-commands.sh — change both together, never one
-  alone. -->
+  `dist/` <!-- FILL: add yours. The enforced copy is `protected_dirs` in
+  .claude/project.json — change both together, never one alone. -->
 - `chmod 777`, `mkfs`, `dd` to devices
 - `git worktree remove --force`, or deleting a worktree with `rm` — use
   `git worktree remove` (it refuses a dirty tree, and that refusal is the point)

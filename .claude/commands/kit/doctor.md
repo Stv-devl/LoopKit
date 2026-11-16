@@ -48,16 +48,16 @@ Exit 0 = no divergence. Exit 1 = at least one.
 
 | Check | The rule | The enforced copy |
 | --- | --- | --- |
-| `protected-dirs` | `CLAUDE.md`, "Recursive delete on" | `PROTECTED_DIRS` in `prevent-destructive-commands.sh` |
-| `data-client` | `01-stack.md`, "Where does the client live?" | `DATA_CLIENT_MODULE` / `DATA_CLIENT_OWN_PATH` in `enforce-architecture.py` |
-| `client-copies` | `DATA_CLIENT_MODULE` in `enforce-architecture.py` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
+| `protected-dirs` | `CLAUDE.md`, "Recursive delete on" | `protected_dirs` in `.claude/project.json` |
+| `data-client` | `01-stack.md`, "Where does the client live?" | `data_client.module` / `own_path` in `.claude/project.json` |
+| `client-copies` | `data_client.module` in `.claude/project.json` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
 | `project-config` | `.claude/project.json`, read by `project_config.py` | every declared `app_roots` folder exists; an invalid file is reported, since the hooks then ignore it |
-| `composition-roots` | `02-architecture.md`, the composition-root row | `COMPOSITION_ROOTS` in `enforce-architecture.py` |
-| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `guides/review/correctness.md` — which restates the list *and* its count | `SHARED_DIRS` in `enforce-architecture.py`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
+| `composition-roots` | `02-architecture.md`, the composition-root row | `data_client.composition_roots` in `.claude/project.json` |
+| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `guides/review/correctness.md` — which restates the list *and* its count | `data_client.shared_dirs` in `.claude/project.json`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |
 | `coverage-holes` | `05-testing.md`, "three wiring files and only three" | the coverage `exclude` array in `tooling-config.md` |
 | `token-thresholds` | `11-token-budget.md`, the three markers | the `used >=` blocks in `token-statusline.py` |
-| `tdd-layers` | — | `CWK_TDD_LAYERS`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
+| `tdd-layers` | — | `tdd_layers` in `.claude/project.json`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
 | `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
 | `ignored-loop-paths` | `docs/work/` and the shipped `.claude/` folders are versioned | `git check-ignore` on one probe path per folder; only the per-session handoff may be ignored |
@@ -182,7 +182,7 @@ decision each one needs, and nothing else — a clean run is one line.
 
 - **Prose that contradicts prose.** Two rules disagreeing in words is a
   `/loop:review` matter, not a parser's.
-- **The addon wiring beyond file presence** — `EXTERNAL_CLIENTS`, the backend
+- **The addon wiring beyond file presence** — `fastapi.external_clients`, the backend
   gates in `commands/ship.md`, `07-backend.md` in the reviewer's dimensions. The
   addon README lists them; they are prose edits inside larger files, and a false
   positive there would cost more than the check is worth.
