@@ -34,6 +34,8 @@ verifiers. You get the finding texts, the entry artifact path, and the repo.
 
 - `.claude/rules/` — the non-negotiables the finding may be invoking
 - the diff: `git diff` / `git diff --staged` via Bash
+- in a re-review, also the `fix-base` tree sha and the fix diff
+  (`python3 .claude/hooks/kit-gate-route.py diff docs/work/<slug>/plan.md fix`)
 
 ## Method
 
@@ -49,7 +51,10 @@ verifiers. You get the finding texts, the entry artifact path, and the repo.
 3. **If you can't refute it, try to sharpen it**: name the concrete failing input
    or state, and what the user would actually see. A finding you can't turn into
    a failure scenario is weak evidence, not strong.
-4. Repeat for each assigned finding. Do not audit anything else. Off-topic
+4. **A `regression: yes` claim** is refuted unless two things hold. The scenario holds after the
+   fix and not at the base: read the base with `git show <fix-base tree>:<path>`. And it runs
+   through a fix-diff hunk.
+5. Repeat for each assigned finding. Do not audit anything else. Off-topic
    problems go in `notes`, not in a verdict.
 
 ## Output format (mandatory)

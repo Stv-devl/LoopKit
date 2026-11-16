@@ -145,6 +145,8 @@ track ran in a worktree.
 2. Present the branch, the diff summary, every `amended` frozen case of
    `## Gate` (section 2 above) — id, old and new case line, reason, and the test hunk
    from the diff, so the user confirms the change itself, not its description —
+   the count of lines in `docs/work/<slug>/follow-ups.md` with its path (or
+   `follow-ups: none`), no board line written from it,
    and the exact merge command, and **wait for the go-ahead**. Merging is as gated
    as pushing. A refused amendment first re-adds its
    `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
@@ -236,6 +238,7 @@ then `/loop:small --status` to run in the main session, then `close this termina
 - Deploy: <done / pending your validation / n/a>
 - Commit: <hash> <subject>   (remote: <pushed / awaiting validation / not asked>)
 - Branch: feat/<slug> <in main tree | in .claude/worktrees/<slug>> — <merged | awaiting your validation | still open>
+- Follow-ups: <n> in docs/work/<slug>/follow-ups.md   (or "none")
 - Board: <feature> → SHIPPED
 - Next: <feature> — <command>
 ```

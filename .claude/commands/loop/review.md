@@ -8,8 +8,9 @@ argument-hint: [path docs/work/<slug>/plan.md, docs/specs/<x>.md or a story]
 Confront the written code with the project rules and the acceptance criteria.
 
 This is gate `review` under `/loop:orchestrate`'s attempt protocol. A pass clears
-that key. Any surviving Critical/Major records one failed attempt; the third
-returns the board line as `BLOCKED` before another fix/review cycle begins.
+that key. What records a failed attempt is the route `kit-gate-route.py` gives the
+surviving findings (stage 3); the third failure returns the board line as
+`BLOCKED` before another fix/review cycle begins.
 
 Two stages, because a reviewer's job is to be suspicious and a suspicious reviewer
 produces false positives. Stage 1 finds, stage 2 refutes. Only what survives
@@ -228,6 +229,26 @@ dimension.
    of what the reviewers said.
 3. Global verdict: **FAIL** if ≥1 Critical or an uncovered criterion, **CONCERNS**
    if only Major/Minor, else **PASS**.
+3bis. **Route the survivors.** Write them with Write to
+   `docs/work/<slug>/route-review-<round>.json`. Each one carries `id`, `severity`, `dimension`,
+   `class`, `path`, `line`, `problem`, `scenario`, `regression`, `status` and `closure`.
+   Round 1 is the first review: a fresh `/loop:review` is round 1, and only
+   `orchestrate.md` Phase 5 step 3 increments the round. A prior finding the re-review
+   answered `not fixed` enters the file again with `status: not-fixed`. The findings the
+   main thread raised itself (stage 0, Impeccable, the acceptance walk) have no verifier
+   to write their `Closure:`: the main thread writes it before the route. Then run
+   `python3 .claude/hooks/kit-gate-route.py route docs/work/<slug>/route-review-<round>.json`.
+   The script appends every Minor and every out-of-scope finding to
+   `docs/work/<slug>/follow-ups.md`, never twice. Its `attempt` is the one `review` records:
+   - `fail` → `kit-attempts.py fail … review "<attempt.reason>"`;
+   - `pass` → `kit-attempts.py pass … review`;
+   - `none` → nothing.
+
+   Branch on `next`:
+   - `write-closure`: write the `Closure:` of each `needs-closure` finding, Edit the input
+     file, and rerun with the same round.
+   - `fix-batch`: the `blocking` findings are the batch (`orchestrate.md` Phase 5).
+   - `clear`: the gate clears. A Minor never starts a fix batch.
 4. Report the refuted findings in one line each — they are the proof the gate
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller

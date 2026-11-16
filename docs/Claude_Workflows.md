@@ -355,9 +355,47 @@ fait que `/loop:review` note ensuite un écart en Major. `/loop:plan` imprime so
 et attend ton feu vert : ça fixe **ce que « correct » veut dire pour la logique**,
 et c'est le dernier moment gratuit — juste après, ces fichiers de test gèlent.
 Avant de te le présenter, `plan-critic` cherche les omissions et les défauts
-d'exécution sur deux scores indépendants ; tout Critical/Major est réfuté puis
-corrigé. Chaque gate est plafonné à trois échecs dans `attempts.json` : au
+d'exécution sur deux scores indépendants ; tout Critical/Major est réfuté.
+Chaque gate est plafonné à trois échecs dans `attempts.json` : au
 troisième, la ligne revient `BLOCKED` avec le gate et sa raison.
+
+**Ce qui bloque un plan, et ce qui bloque une review.** Le routage n'est pas de la
+prose appliquée à la main : `kit-gate-route.py` le calcule à partir des champs de
+chaque finding, et le thread principal applique son résultat.
+
+- **Plan.** Seul un trou de contrat bloque :
+  - (a) un critère sans écriture ni cas ;
+  - (b) un comportement sans cas ;
+  - (c) un ordre qui ne s'exécute pas ;
+  - (d) une règle d'architecture ou un invariant violé.
+
+  Un tel finding est **démontré** quand il apporte sa preuve. Il relève de
+  l'**interprétation** quand il dépend d'une lecture du contrat que le contrat ne
+  tranche pas. Tout le reste (un mécanisme d'implémentation, une valeur de mise en
+  page, un cas limite que le code révélera) va en `## Vigilance` : `/loop:review` le
+  vérifie sur le vrai code. Un oubli qu'un hook TDD refuse déjà à EXECUTE est corrigé
+  sans tentative échouée. À la deuxième passe, si tout ce qui survit relève de
+  l'interprétation, il n'y a pas de troisième réécriture : tu arbitres au gate du plan
+  de test, sous `Plan critic, open`, avec une réponse proposée pour chacun. Un
+  finding démontré va en passe 3, puis `BLOCKED`.
+- **Condition de clôture.** Chaque Critical/Major porte un `Closure:`, l'état
+  observable qui le ferme. La passe suivante répond `fixed | not fixed` contre cette
+  condition, sans re-juger la zone. Un Major sans condition descend en Minor ; un
+  Critical sans condition en reçoit une avant tout lot de correctifs.
+- **Re-review après un lot de correctifs.** `kit-gate-route.py snapshot` fixe la base
+  du lot (`fix-base`). La re-review reçoit le diff du lot et le diff de toute la
+  feature. Un bug (sécurité, correctness, intégrité des données, avec un scénario
+  d'échec) bloque partout dans la feature. Une régression causée par le lot bloque
+  même hors de la feature. Le reste (architecture, qualité des tests, maintenabilité)
+  ne bloque que dans les lignes du lot.
+- **Réduire avant d'étendre.** Un finding dans un hunk du lot, ou une régression
+  qu'il a causée, est marqué `fix-introduced`. Le lot suivant y répond d'abord par le
+  correctif plus petit (annuler ou resserrer), et déclare toute croissance sur une
+  ligne `Growth:`. Une réécriture de plan suit la même règle.
+- **`follow-ups.md`.** Les Minors confirmés et les findings hors périmètre sont
+  écrits dans `docs/work/<slug>/follow-ups.md`, sans doublon. Un Minor ne lance jamais
+  de lot de correctifs. `/loop:ship` en affiche le compte au merge, sans écrire de
+  ligne au board.
 Aucune ne remplace l'autre, aucune ne passe sur ton silence. Les gates de `/loop:ship`
 (push, PR, merge) et celui de `/loop:tracks` sont d'une autre nature : ils décident ce
 qui **sort de la machine**, jamais ce qu'elle doit produire.

@@ -79,12 +79,39 @@ You **do not write code here**.
    never average them. Hand every Critical/Major claim to a `verifier` using the
    same find-then-refute mechanics as `/loop:review`.
 
-   Any surviving Critical/Major rewrites the plan before EXECUTE, then reruns
-   only the affected critic axis. Record a failed pass as gate `plan-critic` in
-   `docs/work/<slug>/attempts.json` through `kit-attempts.py`. At the third failed
-   pass, stop and apply the loop's `BLOCKED` contract; a fourth rewrite is never
-   attempted. Clear that gate after both axes have no surviving blocker. Persist
-   the final two scores under `## Plan critic` in the plan.
+   **Route the survivors.** Write them with Write to
+   `docs/work/<slug>/route-plan-<pass>.json` (fields: `plan-critic.md` output plus
+   `status`, `in_rewritten_section`, `hook`, `leg`, `test_path`), then run
+   `python3 .claude/hooks/kit-gate-route.py route docs/work/<slug>/route-plan-<pass>.json`.
+   Fill `leg` from `.claude/workflow-routing.yml`: the `provider` of the role that owns the
+   finding's step (`execute-green` and `review-fixes` may be `codex`); `execute-red` is
+   always `claude`. `hook` is the guard hook the finding names (`require-red` or `freeze`)
+   and `test_path` the test file it concerns, both `null` when the finding names none.
+   The script decides the route; you apply it. First, whatever `next` is:
+   - a `demonstrated` finding the verifier refuted is dropped before the route,
+     never re-entered as `interpretation`;
+   - every `vigilance` finding is appended to the plan's `## Vigilance` as a line
+     the review must check, unless that line is already there;
+   - every `hook-covered` finding (a missing RED leg or `.tdd-unfrozen` line on a
+     leg a registered hook guards) is fixed in place, with no failed attempt.
+
+   Then branch on `next`:
+   - `write-closure`: write the `Closure:` of each `needs-closure` finding into the
+     finding and the input file (Edit), and rerun the route with the same pass.
+   - `rewrite`: rewrite the plan for the `rewrite` findings only. A finding inside
+     a section a previous pass rewrote is answered first by narrowing that rewrite.
+     Rerun the affected axis on the surviving findings and the
+     rewritten sections only (`plan-critic.md`, "Rerun after a rewrite").
+   - `arbitrate`: no rewrite; step 7 prints them under `Plan critic, open`.
+   - `blocked`: apply the loop's `BLOCKED` contract.
+   - `clear`: the gate clears.
+
+   `attempt.action` `fail` records a failed pass as gate `plan-critic` in
+   `docs/work/<slug>/attempts.json` through `kit-attempts.py` with
+   `attempt.reason`; `pass` records the pass; `none` records nothing. At the third
+   failed pass, stop and apply the loop's `BLOCKED` contract; a fourth rewrite is
+   never attempted. Persist the final two scores under `## Plan critic` in the
+   plan.
 7. **TEST PLAN GATE — stop and ask the user.** Print the `Test plan` section in
    full and wait for an explicit go.
 
@@ -123,6 +150,14 @@ You **do not write code here**.
      command, before EXECUTE, deletes `## Gate`; a frozen-test amendment during
      EXECUTE appends to it, creating it if absent (`orchestrate.md`, Phase 4).
 
+   **`Plan critic, open`**, when step 6 routed `arbitrate` (pass 2, every
+   surviving Major an `interpretation`): print each one with the critic's claim
+   and a proposed answer, that answer already written into the printed plan, in
+   the same `AskUserQuestion` call as the test plan. `go` accepts them as printed
+   and clears the gate (`kit-attempts.py pass` on `plan-critic`); any other reply
+   amends and asks step 7 again. Every pipeline takes this, `full` and `BUG`
+   included.
+
    `full` and `BUG` keep this step exactly as written, contract and proposed
    answers aside; `## Gate` is still written on their go.
 
@@ -156,6 +191,7 @@ You **do not write code here**.
 ```markdown
 # Plan: <feature>   (entry: <path> · research: <path> · design: <path|n/a>)
 Token profile: economy | standard | critical
+Base: <sha>   <the merge-base of the branch: `kit-gate-route.py` diffs the feature from it>
 
 ## Skips
 - <step> : SKIP — <why>

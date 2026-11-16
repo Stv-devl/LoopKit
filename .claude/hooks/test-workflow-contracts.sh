@@ -717,13 +717,13 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
-  "Bash(git stash list)"]'
-for hp_suite in attempts hooks kit-doctor measure rules-floor small-lane; do
+  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)"]'
+for hp_suite in attempts gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 23' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 26' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -794,7 +794,7 @@ grep -Eq '^[[:space:]]+run: actionlint \.github/workflows/\*\.yml$' "$K2_CI"
 grep -Fq 'for f in templates/github/publish/*.yml; do' "$K2_CI"
 grep -Fq -- './install.sh "$d" --deploy="$t" </dev/null' "$K2_CI"
 grep -Fq 'actionlint "$d"/.github/workflows/*.yml' "$K2_CI"
-for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-workflow-contracts test-rules-floor test-measure; do
+for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-gate-route test-workflow-contracts test-rules-floor test-measure; do
     grep -Eq "^[[:space:]]+run: \.claude/hooks/${k2_suite}\.sh$" "$K2_CI"
 done
 grep -Eq '^[[:space:]]+run: python3 \.claude/hooks/kit-doctor\.py$' "$K2_CI"
@@ -1028,5 +1028,61 @@ grep -Eq '^/\.claude/project\.json[[:space:]]+@' "$ROOT/templates/github/CODEOWN
     || { echo 'PK9: CODEOWNERS does not own .claude/project.json' >&2; exit 1; }
 grep -Fq '.claude/project.json' <<<"$(grep -A4 '^- \*\*`CODEOWNERS`\*\*' "$ROOT/.claude/skills/templates/ci.md")" \
     || { echo 'PK9: ci.md does not list .claude/project.json among the owned paths' >&2; exit 1; }
+
+# review-convergence: the routed gates (plan critic and review), their prose contracts.
+rc_has() {
+    local id="$1" text="$2" needle
+    shift 2
+    for needle in "$@"; do
+        grep -Fq -- "$needle" <<<"$text" || { echo "$id failed: lacks $needle" >&2; exit 1; }
+    done
+}
+RC_REVIEWER="$ROOT/.claude/agents/reviewer.md"
+RC_VERIFIER="$ROOT/.claude/agents/verifier.md"
+RC_IMPLEMENTER="$ROOT/.claude/agents/implementer.md"
+RC_WORKFLOWS="$ROOT/docs/Claude_Workflows.md"
+# T1 plan-critic carries the P1 classes, the kinds, the closure and the rerun answer.
+rc_has T1 "$(cat "$CRITIC")" vigilance '(a)' '(b)' '(c)' '(d)' demonstrated interpretation \
+    'Closure:' 'fixed | not fixed'
+# T2 plan.md step 6 routes through kit-gate-route.py, the unconditional block first.
+rc_step6="$(section "$PLAN" '6. **PLAN CRITIC GATE' '7. **TEST PLAN GATE')"
+rc_has T2 "$rc_step6" 'rewritten sections' '## Vigilance' 'no failed attempt' kit-gate-route.py \
+    write-closure 'narrowing that rewrite' 'never re-entered as `interpretation`' \
+    'Critical/Major claim to a `verifier`' 'whatever `next` is'
+awk -v a='whatever `next` is' -v b='write-closure' '
+    { buf = buf $0 "\n" }
+    END { i = index(buf, a); j = index(buf, b); exit !(i > 0 && j > 0 && i < j) }' <<<"$rc_step6" \
+    || { echo "T2 failed: whatever \`next\` is must precede the first write-closure" >&2; exit 1; }
+# T3 plan.md step 7 opens arbitration and records the pass on the go.
+rc_has T3 "$(section "$PLAN" '7. **TEST PLAN GATE' '8. **Stop')" 'Plan critic, open' 'kit-attempts.py pass'
+# T4 orchestrate Phase 5 snapshots, routes and re-reviews on the fix diff.
+rc_has T4 "$(section "$ORCHESTRATE" '## Phase 5 —' '## Phase 6 —')" 'fix diff' follow-ups.md \
+    'kit-gate-route.py snapshot' kit-gate-route.py write-closure 'Growth:'
+# T5 reviewer re-review mode, review.md stage 3 routing, ship reads the follow-ups.
+rc_has T5 "$(cat "$RC_REVIEWER")" 'fixed | not fixed' regression 'Closure:' fix-introduced 'only when'
+rc_has T5 "$(section "$REVIEW" '### Stage 3 — SYNTHESIS' '## Output')" follow-ups.md kit-gate-route.py \
+    write-closure
+rc_has T5 "$(cat "$SHIP")" follow-ups.md
+# T6 implementer answers a fix-introduced finding with the smaller fix and reports growth.
+rc_has T6 "$(cat "$RC_IMPLEMENTER")" fix-introduced 'smaller fix' 'Growth:'
+# T7 verifier gets the fix base and checks a regression claim.
+rc_has T7 "$(cat "$RC_VERIFIER")" fix-base regression
+# T8 one source for what records a failed review attempt.
+rc_head="$(sed -n 1,15p "$REVIEW")"
+! grep -Fq 'Any surviving Critical/Major records one failed attempt' <<<"$rc_head" \
+    || { echo "T8 failed: review.md still records its own attempt rule" >&2; exit 1; }
+rc_has T8 "$rc_head" kit-gate-route.py
+# T9 the plan template records its Base.
+rc_has T9 "$(cat "$PLAN")" 'Base: <sha>'
+# T10 a Codex fix batch resumes on the fix diff.
+rc_has T10 "$(section "$ORCHESTRATE" '`review_status: fixes-handed-to-codex` →' '`ship` → Phase 6')" 'fix diff'
+# T11 the French map names the new mechanics.
+rc_has T11 "$(cat "$RC_WORKFLOWS")" follow-ups.md fix-introduced Vigilance 'interprétation'
+# T12 plan.md step 6 derives leg from the routing file, execute-red always claude.
+rc_has T12 "$rc_step6" 'workflow-routing.yml' 'execute-red' 'always `claude`'
+# T13 review.md 3bis: a not-fixed finding re-enters the route, the main thread writes its own
+# findings' Closure, and only orchestrate Phase 5 increments the round.
+rc_3bis="$(section "$REVIEW" '3bis. **Route the survivors' '4. Report the refuted')"
+rc_has T13 "$rc_3bis" 'status: not-fixed' 'main thread' 'a fresh `/loop:review` is round 1'
 
 echo 'workflow contract fixtures: green.'

@@ -60,14 +60,44 @@ Every row is a criterion to clear explicitly, with the severity it states.
 | Major | Violated pattern, cross-feature import, `any`, data client outside services, `throw` instead of `Result`, an action on an `<a>` or a navigation on a `<button>` |
 | Minor | Naming, missing JSDoc, tag choice (`<div>` over a semantic element, unnamed `<section>`), missing refetch indicator |
 
+Every Critical and Major carries four fields more:
+- `class`: security, correctness, data-integrity, architecture, test-quality, maintainability
+  or other;
+- the scenario: entry point, input, wrong result. Write `none` when you have none.
+- `regression: yes|no`. Answer `yes` only when the scenario behaves correctly at the fix-batch
+  base and fails after it, with a fix-diff hunk on its causal path.
+- `Closure:`: the observable state that closes it, such as a named case that passes, a line
+  that no longer exists, or a scenario that now gives the right result.
+
+## Re-review after a fix batch
+
+This mode applies **only when** the launch hands you a fix diff (`kit-gate-route.py diff …
+fix`). A second review handed no fix diff keeps the behaviour above, unchanged.
+
+You receive:
+- the confirmed findings with their `Closure:`;
+- the fix diff;
+- the whole feature diff (`diff … feature`).
+
+Answer `fixed | not fixed` per prior finding, against its `Closure:`, with `path:line` evidence.
+Do not judge the area again: wanting a different closing state is a new finding.
+
+Report new findings with the fields above. Whether one is admissible, and whether it is
+`fix-introduced`, is decided by `kit-gate-route.py` from those fields, never by you.
+
 ## Output format (mandatory)
 
 ```
 ## Review: <dimension group>
+### Prior findings (re-review only)
+- F<n> — fixed | not fixed — path:line evidence
 ### Critical
 - path:line — problem + why it breaks
+  class: <class> · scenario: <entry, input, wrong result | none> · regression: yes|no
+  Closure: <observable closing state>
 ### Major
 - path:line — problem
+  class: … · scenario: … · regression: … · Closure: …
 ### Minor
 - path:line — problem
 ### Verdict

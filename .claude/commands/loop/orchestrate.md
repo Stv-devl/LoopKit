@@ -119,7 +119,7 @@ Shell discipline for the whole pass:
    amendment re-entry interrupted) `/loop:plan` reruns in full; `execute` → Phase 4,
    from the layer `## In progress` names (`execute_status: done` → Phase 5);
    `review` → Phase 5 (`review_status: fixes-handed-to-codex` → re-run only the
-   dimensions those fixes came from, never a fresh judgment pass);
+   dimensions those fixes came from, on the fix diff, never a fresh judgment pass);
    `ship` → Phase 6. Nothing completed is redone. A `plan.md` with no sibling handoff
    jumps to Phase 4; with one, the handoff decides.
 3. **FEATURE READY check**, if `docs/product/backlog.md` exists. Not listed → add
@@ -285,13 +285,25 @@ this track's tree, never as extra worktrees.
 ## Phase 5 — REVIEW
 
 (Small: replaced by the review of Phase 0 step 1.) `/loop:review docs/work/<slug>/plan.md`, handing it the plan's **`Vigilance`**
-section. Claude keeps the verdict; the fixes of the surviving Critical/Major always
-leave the main thread. Codex routed for `review-fixes` and running → the handoff
-(`phase: review`, `review_status: fixes-handed-to-codex`, `codex_safe`), same
-guards, `./codex-handoff.sh docs/work/<slug>/handoff.md review-fixes --auto`.
-Otherwise → one `implementer`, the findings as its fix batch. An e2e spec the
-change broke → `e2e-tester` in repair mode. Then re-run only the affected
-dimensions.
+section. Claude keeps the verdict. `kit-gate-route.py` routes the survivors (review stage 3)
+and writes Minors and out-of-scope findings to `docs/work/<slug>/follow-ups.md`. On
+`write-closure`, close those findings and rerun the route before anything else.
+
+On `fix-batch`, the `blocking` findings always leave the main thread, in three steps:
+1. Run `python3 .claude/hooks/kit-gate-route.py snapshot docs/work/<slug>/plan.md` first. It
+   records the batch's base in `fix-base`.
+2. Hand off the batch:
+   - Codex routed for `review-fixes` and running → the handoff (`phase: review`,
+     `review_status: fixes-handed-to-codex`, `codex_safe`), same guards,
+     `./codex-handoff.sh docs/work/<slug>/handoff.md review-fixes --auto`;
+   - otherwise → one `implementer`, the findings as its fix batch, `fix-introduced` ones first.
+     Print its `Growth:` line.
+   - An e2e spec the change broke → `e2e-tester` in repair mode.
+3. Re-run only the affected dimensions, round + 1, on the fix diff.
+   - Each reviewer gets the confirmed findings with their `Closure:`, plus
+     `kit-gate-route.py diff docs/work/<slug>/plan.md fix` and `… feature`.
+   - The verifier gets `fix-base` and the fix diff.
+   - The route then tags `fix-introduced` and keeps only admissible findings blocking.
 
 ## Phase 6 — SHIP
 

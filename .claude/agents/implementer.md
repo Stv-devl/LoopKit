@@ -24,6 +24,12 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
   case that passes before the fix means the finding is not what it claims:
   stop on that finding and report it.
 
+  Take the `fix-introduced` findings first. They sit in a hunk of the previous fix
+  batch, or are a regression it caused. Answer each one first with the
+  smaller fix: revert or narrow the part of the previous batch that created it, before
+  adding code. Growth beyond the files named in the findings and their tests is
+  declared on the `Growth:` line, with its reason.
+
 ## What you receive
 
 - the plan (`docs/work/<slug>/plan.md`): read its `Contracts`, the `Files` row of
@@ -56,4 +62,5 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 - Files: <path — what changed>
 - Proof: <command> → <pass/fail counts, the real output's last lines>
 - Blocked on: <case — why>   (or "none")
+- Growth: none | <files beyond the findings and their tests> — <reason>   (fix batch only)
 ```

@@ -451,12 +451,12 @@ HP_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
-  "Bash(git stash list)"]'
-for hp_suite in attempts hooks kit-doctor measure rules-floor small-lane; do
+  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)"]'
+for hp_suite in attempts gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_ALLOWS="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_ALLOWS")"
 done
-jq -e 'length == 23' <<<"$HP_ALLOWS" >/dev/null
+jq -e 'length == 26' <<<"$HP_ALLOWS" >/dev/null
 hp_all() {
     jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w))' \
         "$1/.claude/settings.json" >/dev/null
