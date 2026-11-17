@@ -129,6 +129,9 @@ app/
 └── core/                 # config, database, auth, exceptions, middleware, clients
 ```
 
+and replace `Server roots: none.` with ``Server roots: `app`, `alembic`.`` — the twin of
+`server_roots` in `.claude/project.json`, which `install.sh --fastapi` wires.
+
 Rules: no business logic in `api/` · no `fastapi` import in `services/` ·
 business exceptions converted by one global handler · every query filtered by
 the isolation key · async everywhere. Details in

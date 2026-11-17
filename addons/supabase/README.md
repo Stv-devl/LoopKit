@@ -89,6 +89,9 @@ supabase/functions/
     └── types.ts             # local types
 ```
 
+and replace `Server roots: none.` with ``Server roots: `supabase`.`` — the twin of
+`server_roots` in `.claude/project.json`, which `install.sh --supabase` wires.
+
 Rules: each function autonomous (no cross-function import) · `_shared/` = infra,
 never business logic · manual Zod `safeParse()` · auth/CORS/rate-limit called by
 hand in the handler · flat error shape `{ "error": "message" }`.

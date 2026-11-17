@@ -267,5 +267,25 @@ grep -A1 'DIVERGENCE  stamp' <<<"$KD_OUT" | grep -q 'install.sh'
 # KD13 The kit repo with no stamp: mode "kit source", and no `stamp` row.
 grep -q 'mode: kit source' <<<"$SOURCE_OUTPUT"
 if grep -qE '^  [A-Za-z]+ +stamp ' <<<"$SOURCE_OUTPUT"; then echo 'KD13: the kit repo has a stamp row' >&2; exit 1; fi
+# KD14 (ship-audit-surface) server-roots: 02-architecture.md's `Server roots:` line against
+# project.json; a deleted Backend section is fine only with no root.
+mkdir -p "$SCRATCH/.claude/rules"
+KD_ARCH="$SCRATCH/.claude/rules/02-architecture.md"
+kd_roots() {
+    python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq --argjson r "$1" '.server_roots = $r' \
+        > "$SCRATCH/.claude/project.json"
+    python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true
+}
+printf '# Arch\n\n## Backend (fill or delete)\n\nNone.\nServer roots: none.\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'ok +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: none ↔ [] not ok' >&2; exit 1; }
+printf '# Arch\n\n## Backend\n\nServer roots: `app`, `alembic`.\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'ok +server-roots' <<<"$(kd_roots '["app","alembic"]')" || { echo 'KD11: app/alembic pair not ok' >&2; exit 1; }
+grep -Eq 'DIVERGENCE +server-roots' <<<"$(kd_roots '["supabase"]')" || { echo 'KD11: drift not red' >&2; exit 1; }
+printf '# Arch\n\n## Backend\n\nNone.\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'MISSING +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: missing line not red' >&2; exit 1; }
+printf '# Arch\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'ok +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: deleted section with no root not ok' >&2; exit 1; }
+grep -Eq 'MISSING +server-roots' <<<"$(kd_roots '["app"]')" || { echo 'KD11: deleted section with roots not red' >&2; exit 1; }
+rm "$KD_ARCH" "$SCRATCH/.claude/project.json"
 
 echo 'kit-doctor version fixtures: green.'

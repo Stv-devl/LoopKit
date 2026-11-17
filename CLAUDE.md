@@ -116,7 +116,7 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
   fallback `/handoff:codex` then `./codex-handoff.sh`.
 - Out of the loop, read-only, never a gate: `/audit:security`, `/audit:mutation`,
   `/audit:part <name>`, `/kit:doctor`. Their fixes come back through the loop.
-  Exception: a `critical` profile arms one `/audit:security` surface at ship.
+  Exception: a `critical` profile arms one `security-auditor` on the surfaces the diff touches at ship.
 
 Full map: `docs/Claude_Workflows.md`.
 

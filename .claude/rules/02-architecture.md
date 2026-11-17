@@ -62,6 +62,7 @@ No business logic in pages/components. Use `index.ts` only for 20+ exports.
 ## Backend (fill or delete)
 
 None — this repo is front-end only.
+Server roots: none.
 
 ## Router
 

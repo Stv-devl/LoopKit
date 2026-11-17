@@ -259,12 +259,13 @@ HP_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
-  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)"]'
-for hp_suite in attempts gate-route hooks kit-doctor measure rules-floor small-lane; do
+  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
+  "Bash(python3 .claude/hooks/kit-audit-surface.py *)"]'
+for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_ALLOWS="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_ALLOWS")"
 done
-jq -e 'length == 26' <<<"$HP_ALLOWS" >/dev/null
+jq -e 'length == 29' <<<"$HP_ALLOWS" >/dev/null
 hp_all() {
     jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w))' \
         "$1/.claude/settings.json" >/dev/null
@@ -362,7 +363,7 @@ cmp -s "$ROOT/.claude/project.json" "$TARGET/.claude/project.json"
 printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' > "$TARGET/.claude/project.json"
 rm -f "$TARGET/.claude/project.json.new"
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
-jq -e '.schema_version == 2 and .app_roots == ["frontend"]' "$TARGET/.claude/project.json" >/dev/null
+jq -e '.schema_version == 3 and .app_roots == ["frontend"]' "$TARGET/.claude/project.json" >/dev/null
 [ ! -e "$TARGET/.claude/project.json.new" ]
 grep -q '^# cwk-guard-api: [0-9]' "$TARGET/.claude/hooks/project_config.py"
 
@@ -416,7 +417,7 @@ mig_tree "$IN6" enforce-git-workflow.sh 'PROTECTED_BRANCHES="main"'
 printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[["supabase","gen","types"]]}\n' \
     >"$IN6/.claude/project.json"
 "${MIGRATE[@]}" "$IN6" >/dev/null 2>&1
-jq -e '.schema_version == 2 and .app_roots == ["frontend"] and .codegen_commands == [["supabase","gen","types"]]
+jq -e '.schema_version == 3 and .app_roots == ["frontend"] and .codegen_commands == [["supabase","gen","types"]]
     and .protected_branches == ["main"]' "$IN6/.claude/project.json" >/dev/null
 # IN7 a fresh install writes the kit defaults, and no .new.
 IN7="$SCRATCH/in7"
@@ -554,7 +555,7 @@ if git -C "$ROOT" cat-file -e a8efa59:.claude/project.json 2>/dev/null; then
         "$IN23/.claude/hooks/enforce-architecture.py"
     cp "$IN23/.claude/hooks/enforce-git-workflow.sh" "$SCRATCH/in23-old-git.sh"
     "$ROOT/install.sh" "$IN23" --no-ci >/dev/null 2>&1
-    jq -e '.schema_version == 2 and .protected_branches == ["main","trunk"]
+    jq -e '.schema_version == 3 and .protected_branches == ["main","trunk"]
         and .protected_dirs == ["src","infra",".claude"] and .data_client.module == "lib/api"' \
         "$IN23/.claude/project.json" >/dev/null
     cmp -s "$IN23/.claude/hooks/enforce-git-workflow.sh" "$ROOT/.claude/hooks/enforce-git-workflow.sh"
@@ -709,7 +710,7 @@ if grep -Fq 'P1 held back' <<<"$KP_OUT"; then exit 1; fi
 mkdir -p "$KP/web"
 printf '{"schema_version":1,"app_roots":["web"],"codegen_commands":[]}\n' >"$KP/.claude/project.json"
 "$ROOT/install.sh" "$KP" --no-ci >/dev/null 2>&1
-jq -e '.schema_version == 2 and .app_roots == ["web"]' "$KP/.claude/project.json" >/dev/null
+jq -e '.schema_version == 3 and .app_roots == ["web"]' "$KP/.claude/project.json" >/dev/null
 # IN40 an upgrade from hooks that still hold the values, with no project.json: migrate reads
 # them before the overwrite.
 if git -C "$ROOT" cat-file -e ac3c9a4^:.claude/hooks/enforce-git-workflow.sh 2>/dev/null; then
@@ -722,5 +723,59 @@ if git -C "$ROOT" cat-file -e ac3c9a4^:.claude/hooks/enforce-git-workflow.sh 2>/
     jq -e '.protected_branches == ["main","develop"]' "$KV/.claude/project.json" >/dev/null
     cmp -s "$KV/.claude/hooks/enforce-git-workflow.sh" "$ROOT/.claude/hooks/enforce-git-workflow.sh"
 fi
+
+# IN27-IN29 (ship-audit-surface): v3 adds server_roots. A v2 file migrates with the roots its
+# protected dirs imply; wiring an addon adds its roots, once.
+v2_doc() { jq --argjson d "$1" 'del(.server_roots) | .schema_version = 2 | .protected_dirs = $d' "$ROOT/.claude/project.json"; }
+IN27="$SCRATCH/in27"
+mkdir -p "$IN27/.claude"
+v2_doc '["src","shared",".claude"]' >"$IN27/.claude/project.json"
+"${MIGRATE[@]}" "$IN27" >/dev/null 2>&1
+jq -e '.schema_version == 3 and .server_roots == [] and (keys_unsorted | last) == "server_roots"' \
+    "$IN27/.claude/project.json" >/dev/null
+IN28="$SCRATCH/in28"
+mkdir -p "$IN28/.claude"
+v2_doc '["src","shared","app","alembic",".claude"]' >"$IN28/.claude/project.json"
+"${MIGRATE[@]}" "$IN28" >/dev/null 2>&1
+jq -e '.schema_version == 3 and .server_roots == ["app","alembic"]' "$IN28/.claude/project.json" >/dev/null
+v2_doc '["src","shared","supabase",".claude"]' >"$IN28/.claude/project.json"
+"${MIGRATE[@]}" "$IN28" >/dev/null 2>&1
+jq -e '.schema_version == 3 and .server_roots == ["supabase"]' "$IN28/.claude/project.json" >/dev/null
+IN29="$SCRATCH/in29"
+mkdir -p "$IN29/.claude"
+cp "$ROOT/.claude/project.json" "$IN29/.claude/project.json"
+WIRE=(python3 -I -B "$ROOT/.claude/hooks/project_config.py" wire "$IN29")
+"${WIRE[@]}" fastapi >/dev/null 2>&1
+jq -e '.server_roots == ["app","alembic"]' "$IN29/.claude/project.json" >/dev/null
+"${WIRE[@]}" supabase >/dev/null 2>&1
+"${WIRE[@]}" fastapi >/dev/null 2>&1
+jq -e '.server_roots == ["app","alembic","supabase"]' "$IN29/.claude/project.json" >/dev/null
+
+# IN41 (review 1, F1, re-decided on kit-boundary): a target whose reader carries the previous api
+# number is migrated by the kit's reader and gets the current one; nothing is held back.
+IN41="$SCRATCH/in41"
+mkdir -p "$IN41"
+"$ROOT/install.sh" "$IN41" --no-ci >/dev/null 2>&1
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 4/' "$IN41/.claude/hooks/project_config.py"
+v2_doc '["src","shared","supabase",".claude"]' >"$IN41/.claude/project.json"
+IN41_OUT="$("$ROOT/install.sh" "$IN41" --no-ci 2>&1)"
+jq -e '.schema_version == 3 and .server_roots == ["supabase"]' "$IN41/.claude/project.json" >/dev/null
+grep -q '^# cwk-guard-api: 5$' "$IN41/.claude/hooks/project_config.py"
+if grep -Fq 'non migré' <<<"$IN41_OUT"; then echo 'IN41: install still says non migré' >&2; exit 1; fi
+
+# IN42 (review 1, F5): a v1 file migrates with the server roots of the active hooks' protected dirs.
+IN42="$SCRATCH/in42"
+mkdir -p "$IN42/.claude/hooks"
+printf '{"schema_version":1,"app_roots":[],"codegen_commands":[]}\n' >"$IN42/.claude/project.json"
+printf 'PROTECTED_DIRS="src|shared|supabase|\\.claude"\n' >"$IN42/.claude/hooks/prevent-destructive-commands.sh"
+"${MIGRATE[@]}" "$IN42" >/dev/null 2>&1
+jq -e '.schema_version == 3 and .server_roots == ["supabase"]' "$IN42/.claude/project.json" >/dev/null
+
+# IN43 (review 1, F5): the same from an absent file.
+IN43="$SCRATCH/in43"
+mkdir -p "$IN43/.claude/hooks"
+printf 'PROTECTED_DIRS="src|shared|app|alembic|\\.claude"\n' >"$IN43/.claude/hooks/prevent-destructive-commands.sh"
+"${MIGRATE[@]}" "$IN43" >/dev/null 2>&1
+jq -e '.schema_version == 3 and .server_roots == ["app","alembic"]' "$IN43/.claude/project.json" >/dev/null
 
 echo 'install fixtures: green.'

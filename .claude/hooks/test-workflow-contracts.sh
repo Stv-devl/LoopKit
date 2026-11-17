@@ -718,13 +718,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
-  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)"]'
-for hp_suite in attempts gate-route hooks kit-doctor measure rules-floor small-lane; do
+  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
+  "Bash(python3 .claude/hooks/kit-audit-surface.py *)"]'
+for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 26' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 29' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -794,7 +795,7 @@ grep -Eq '^[[:space:]]+run: actionlint \.github/workflows/\*\.yml$' "$K2_CI"
 grep -Fq 'for f in templates/github/publish/*.yml; do' "$K2_CI"
 grep -Fq -- './install.sh "$d" --deploy="$t" </dev/null' "$K2_CI"
 grep -Fq 'actionlint "$d"/.github/workflows/*.yml' "$K2_CI"
-for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-gate-route test-workflow-contracts test-rules-floor test-measure; do
+for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-audit-surface test-gate-route test-workflow-contracts test-rules-floor test-measure; do
     grep -Eq "^[[:space:]]+run: \.claude/hooks/${k2_suite}\.sh$" "$K2_CI"
 done
 grep -Eq '^[[:space:]]+run: python3 \.claude/hooks/kit-doctor\.py$' "$K2_CI"
@@ -1121,5 +1122,22 @@ done
 for pk_needle in '/kit:init' 'bash .claude/scripts/kit-apply.sh'; do
     grep -Fq "$pk_needle" "$ROOT/.claude/hooks/tdd-prove-red.sh" || { echo "PK14: tdd-prove-red.sh lacks $pk_needle" >&2; exit 1; }
 done
+# ship-audit-surface: step 1bis picks the surfaces from the diff and files the follow-ups.
+sa_1bis="$(section "$SHIP" '### 1bis.' '### 2. Acceptance criteria')"
+# T14 ship.md 1bis runs the selector, never drops, says not armed, files follow-ups.
+rc_has T14 "$sa_1bis" kit-audit-surface.py 'not armed' follow-ups.md 'never drops' \
+    'review security ran' 'one `security-auditor`' 'Audit added:' 'the surfaces the user named'
+# T15 the guide names the diff as the selector, not one surface per profile reason.
+sa_guide="$(section "$ROOT/.claude/guides/ship.md" '## Why `critical` arms an audit' '## Why advancing the state')"
+rc_has T15 "$sa_guide" kit-audit-surface.py diff
+! grep -Fq 'One surface is one `security-auditor`' <<<"$sa_guide" \
+    || { echo "T15 failed: the guide still says one surface is one security-auditor" >&2; exit 1; }
+# T16 the ship report carries both not-armed variants.
+rc_has T16 "$(section "$SHIP" '## Output' '## Rules')" 'not armed — profile' \
+    'not armed — diff touches no audit surface'
+# T17 the French map names the selector and the follow-ups beside step 1bis.
+rc_has T17 "$(grep -F 1bis "$RC_WORKFLOWS")" kit-audit-surface.py follow-ups.md
+# T18 any non-zero exit of the selector stops the ship, not only exit 2.
+rc_has T18 "$sa_1bis" 'any non-zero exit'
 
 echo 'workflow contract fixtures: green.'

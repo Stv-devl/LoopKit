@@ -43,7 +43,7 @@ because they are steps you can delete, not because `00-project.md` counts them.
 | dev server | ✓ | — | a local role. There is nothing to serve in CI |
 | *(not a role)* coverage floor | ✓ | ✓ | thresholds live in `vite.config.ts` (`tooling-config.md`), **not** in the YAML |
 | *(not a role)* bundle secret scan | ✓ | ✓ | the other half of `/loop:ship`'s deterministic security pair |
-| `/audit:security` (one surface) | on a `critical` profile only | — | it needs an agent's judgement, not a runner's |
+| `security-auditor` (the surfaces the diff touches) | on a `critical` profile only | — | it needs an agent's judgement, not a runner's |
 
 > **Why the tests and the floor are two steps and not one.** `test:coverage`
 > covers both in one command, and that is exactly what made it dangerous: it

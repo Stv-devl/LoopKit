@@ -25,7 +25,7 @@ planning. You don't write code, you don't design the technical architecture (tha
    own `AskUserQuestion` call, two answers spelled out: does it need `critical`?
    Otherwise print the PRD's `Token profile: economy` for the user to validate.
    `11-token-budget.md` holds the only copy of the `critical` list (the user asking
-   outright is the fourth trigger), `/loop:ship` arms one `/audit:security` surface
+   outright is the fourth trigger), `/loop:ship` arms one `security-auditor` on the surfaces the diff touches (none if none)
    on it, and the profile rides the stories (`/bmad:sm` carries it verbatim) all
    the way to the commit. No later step can re-derive it, so a trigger is never
    answered by a default.

@@ -22,7 +22,7 @@ Produce a **spec on disk** that will serve as the single source of truth for
    Otherwise print `Token profile: economy` in the summary the user validates.
    `11-token-budget.md` holds the only copy of the `critical` list (the user asking
    outright is the fourth trigger), and `/loop:ship` reads the profile off this
-   file to arm one `/audit:security` surface before the commit. This interview is
+   file to arm one `security-auditor` on the surfaces the diff touches (none if none) before the commit. This interview is
    the only moment the fact is known — nothing downstream can re-derive it, so a
    trigger is never answered by a default.
 2. **Read `docs/product/brief.md` if it exists**, before anything else — the

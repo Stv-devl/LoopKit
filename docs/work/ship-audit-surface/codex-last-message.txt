@@ -1,0 +1,5 @@
+Blocked before reading the workflow artifacts: every workspace command fails at sandbox startup with:
+
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`
+
+No files were read or changed. Please restore the workspace shell/sandbox, then I can resume from `docs/work/ship-audit-surface/handoff.md`.

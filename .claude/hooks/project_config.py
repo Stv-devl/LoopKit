@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cwk-guard-api: 4
+# cwk-guard-api: 5
 """The one reader of `.claude/project.json`, every value a project adapts.
 
 Imported by `shell_targets.py`, `kit-doctor.py` and the Python hooks; run by the shell
@@ -19,7 +19,8 @@ import sys
 import tempfile
 from typing import NamedTuple
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+VERSIONS = (1, 2, SCHEMA_VERSION)
 MAX_BYTES = 64 * 1024
 KEYS_V1 = ("schema_version", "app_roots", "codegen_commands")
 SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
@@ -60,8 +61,11 @@ DEFAULTS = {
         "session_names": ["db", "session", "async_session"],
         "external_clients": {},
     },
+    "server_roots": [],
 }
 KEYS = tuple(DEFAULTS)
+KEYS_V2 = tuple(key for key in KEYS if key != "server_roots")
+ADDON_DIRS = {"supabase": ("supabase",), "fastapi": ("app", "alembic")}
 
 
 class ConfigError(Exception):
@@ -89,9 +93,32 @@ class Config(NamedTuple):
     forbidden_icons: tuple = tuple(DEFAULTS["forbidden_icons"])
     tdd_layers: tuple = tuple(DEFAULTS["tdd_layers"])
     fastapi: dict = DEFAULTS["fastapi"]
+    server_roots: tuple = ()
 
 
 EMPTY = Config((), ())
+
+
+def derived_server_roots(protected_dirs):
+    """The server roots a v2 file implies: each addon whose every dir is protected, in
+    `ADDON_DIRS` order. `wire` protects those dirs, so a wired v2 project is never read as `()`."""
+    out = []
+    for dirs in ADDON_DIRS.values():
+        if all(d in protected_dirs for d in dirs):
+            out += [d for d in dirs if d not in out]
+    return tuple(out)
+
+
+def _server_roots(path, value):
+    if not isinstance(value, list):
+        raise ConfigError(f"{path} server_roots must be a list")
+    roots = tuple(_root(item) for item in value)
+    for item in roots:
+        if "/" in item:
+            raise ConfigError(f"{path} server_roots: {item!r} is not one path segment")
+    if len(set(roots)) != len(roots):
+        raise ConfigError(f"{path} lists a server root twice")
+    return roots
 
 
 def _root(value):
@@ -258,12 +285,13 @@ def _branches(value):
 
 def _parse(project_dir, path, raw):
     version = raw.get("schema_version") if isinstance(raw, dict) else None
-    if type(version) is not int or version not in (1, SCHEMA_VERSION):
+    allowed = f"{path} schema_version must be the integer 1, 2 or {SCHEMA_VERSION}"
+    if type(version) is not int or version not in VERSIONS:
         if isinstance(raw, dict) and "schema_version" in raw:
-            raise ConfigError(f"{path} schema_version must be the integer 1 or {SCHEMA_VERSION}")
-    _keys(path, raw, KEYS_V1 if version == 1 else KEYS)
-    if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, SCHEMA_VERSION):
-        raise ConfigError(f"{path} schema_version must be the integer 1 or {SCHEMA_VERSION}")
+            raise ConfigError(allowed)
+    _keys(path, raw, KEYS_V1 if version == 1 else KEYS_V2 if version == 2 else KEYS)
+    if type(raw["schema_version"]) is not int or raw["schema_version"] not in VERSIONS:
+        raise ConfigError(allowed)
     roots, commands = raw["app_roots"], raw["codegen_commands"]
     if not isinstance(roots, list) or not isinstance(commands, list):
         raise ConfigError(f"{path} app_roots and codegen_commands must be lists")
@@ -281,6 +309,10 @@ def _parse(project_dir, path, raw):
     dirs = _list("protected_dirs", raw["protected_dirs"], SEGMENT)
     for item in dirs:
         _segment("protected_dirs", item)
+    if raw["schema_version"] == 2:
+        server_roots = derived_server_roots(dirs)
+    else:
+        server_roots = _server_roots(path, raw["server_roots"])
     return Config(
         app_roots,
         codegen,
@@ -294,6 +326,7 @@ def _parse(project_dir, path, raw):
         _list("forbidden_icons", raw["forbidden_icons"], ICON),
         _list("tdd_layers", raw["tdd_layers"], WORD, allow_empty=False),
         _fastapi(raw["fastapi"]),
+        server_roots,
     )
 
 
@@ -362,7 +395,7 @@ def serialise(raw):
 
 
 def document(config):
-    """The schema-2 document of `config`, keys in schema order."""
+    """The current-schema document of `config`, keys in schema order."""
     return {
         "schema_version": SCHEMA_VERSION,
         "app_roots": list(config.app_roots),
@@ -380,6 +413,7 @@ def document(config):
         "fastapi": {key: ({k: list(v) for k, v in value.items()} if isinstance(value, dict)
                           else list(value) if isinstance(value, tuple) else value)
                     for key, value in config.fastapi.items()},
+        "server_roots": list(config.server_roots),
     }
 
 
@@ -398,7 +432,6 @@ def write(project_dir, raw):
         raise
 
 
-ADDON_DIRS = {"supabase": ("supabase",), "fastapi": ("app", "alembic")}
 SUPABASE_CLIENT = {"module": "lib/supabase", "own_path": "lib/supabase.ts"}
 
 
@@ -418,6 +451,11 @@ def wire(project_dir, addon):
     if addon == "supabase" and (client["module"], client["own_path"]) == (default["module"], default["own_path"]):
         client.update(SUPABASE_CLIENT)
         changed.append("data_client")
+    roots = raw["server_roots"]
+    new_roots = [d for d in ADDON_DIRS[addon] if d not in roots]
+    if new_roots:
+        raw["server_roots"] = roots + new_roots
+        changed.append("server_roots")
     if changed or config.app_roots != tuple(raw["app_roots"]) or _version(project_dir) != SCHEMA_VERSION:
         write(project_dir, raw)
     return changed
@@ -621,15 +659,20 @@ def _migrated(project_dir, notes):
 
 
 def migrate(project_dir, notes, upgrade=False):
-    """Writes the target's v2 `project.json` from its active hooks, which install.sh reads before
-    it overwrites them. A v2 file is left alone; a v1 file keeps its roots and codegen; an absent
+    """Writes the target's current-schema `project.json` from its active hooks, which install.sh
+    reads before it overwrites them. A current file is left alone; a v2 file is rewritten as is,
+    with the server roots its protected dirs imply; a v1 file keeps its roots and codegen; an absent
     one is created. With `upgrade` (or a v1 file) and no value found, the defaults are written with
     a note. Raises ConfigError when the existing file is invalid (left untouched)."""
     path = os.path.join(project_dir, ".claude", "project.json")
     if os.path.lexists(path):
         config = load_strict(project_dir)
-        if _version(project_dir) == SCHEMA_VERSION:
+        version = _version(project_dir)
+        if version == SCHEMA_VERSION:
             return False
+        if version == 2:
+            write(project_dir, document(config))
+            return True
         raw = document(config)
         upgrade = True
     else:
@@ -650,6 +693,7 @@ def migrate(project_dir, notes, upgrade=False):
             notes.append(f"migrate: {key} not valid ({error}), default kept")
             continue
         raw = candidate
+    raw["server_roots"] = list(derived_server_roots(raw["protected_dirs"]))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     write(project_dir, raw)
     return True

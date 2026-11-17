@@ -242,8 +242,8 @@ Le profil ne réduit jamais les gates mécaniques (typecheck, lint, tests,
 coverage, build, `audit`). Il réduit les relectures identiques par plusieurs
 modèles.
 
-**Il en ajoute un, dans un sens seulement.** `critical` arme un `/audit:security`
-d'**une** surface à `/loop:ship` (étape 1bis) : la liste qui justifie `critical` est
+**Il en ajoute un, dans un sens seulement.** `critical` arme **un** `security-auditor`
+à `/loop:ship` (étape 1bis), sur les surfaces que le diff touche : la liste qui justifie `critical` est
 mot pour mot celle des features où une barrière serveur manquante n'est pas un
 Minor. Descendre une feature en `economy` pour éviter cet agent est une décision
 de sécurité, pas de budget — `.claude/rules/11-token-budget.md`.
@@ -503,7 +503,7 @@ boucle, jamais en gate.
 | Commande              | Quand                                                             |
 | --------------------- | ----------------------------------------------------------------- |
 | `/database:migration` | Toute migration SQL — jamais de SQL écrit à la main               |
-| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/loop:ship` sur profil `critical`, une surface |
+| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/loop:ship` sur profil `critical` : un `security-auditor` sur les surfaces que le diff touche (aucun sinon) |
 | `/audit:mutation`     | Est-ce que les tests gelés **contraignent** le code, ou se contentent-ils de l'exécuter ? |
 | `/audit:part <nom>`   | Est-ce que **cette partie-là** (react-query, zustand, ci-cd, testing, forms, guardrails…) est cohérente, vraie et réellement appliquée ? Fan-out sur des fichiers disjoints, **réfutation obligatoire** de chaque constat, registre dans `docs/audits/<partie>.md`. Le premier passage est un échantillon ; tous les suivants sont un diff |
 | `/refactor:split`     | Un fichier dépasse son seuil (`.claude/rules/02-architecture.md`) |
@@ -596,8 +596,9 @@ qu'un finding de `/loop:review` devient quand une dimension doit creuser.
   assertion, un `it.only` et un composant que le compilateur React a sauté. Les
   deux dernières lignes non plus : une CVE publiée cette semaine ne change rien
   au diff, donc aucune relecture ne peut la voir (`.claude/rules/00-project.md`).
-  Puis, **sur profil `critical` uniquement**, un `security-auditor` d'une surface
-  avant le commit (étape 1bis) — zéro sur les deux autres profils.
+  Puis, **sur profil `critical` uniquement**, un `security-auditor` avant le commit
+  (étape 1bis : `kit-audit-surface.py` choisit les surfaces que le diff touche, ses Majors et Minors vont dans `follow-ups.md`) ;
+  rien de touché → pas d'auditeur, et le rapport dit pourquoi — zéro sur les deux autres profils.
 
 **Hors boucle**
 

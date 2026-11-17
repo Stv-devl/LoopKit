@@ -1696,7 +1696,7 @@ rc=0"
     python3 -I -B "$HOOKS_DIR/project_config.py" check "$tmp/p24" >/dev/null 2>&1 \
         || fail project_config.py PC24 "check on an absent file must still exit 0"
 
-    write_project_json "$tmp/p25a" "$(printf '%s' "$v2" | jq -c '.schema_version = 3')"
+    write_project_json "$tmp/p25a" "$(printf '%s' "$v2" | jq -c '.schema_version = 4')"
     pc_shell_reject PC25 "$tmp/p25a" 3 "schema_version"
     write_project_json "$tmp/p25b" "$(printf '%s' "$v2" | jq -c 'del(.protected_branches)')"
     pc_shell_reject PC25 "$tmp/p25b" 3 "protected_branches"

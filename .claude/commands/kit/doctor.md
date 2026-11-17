@@ -52,6 +52,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `data-client` | `01-stack.md`, "Where does the client live?" | `data_client.module` / `own_path` in `.claude/project.json` |
 | `client-copies` | `data_client.module` in `.claude/project.json` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
 | `project-config` | `.claude/project.json`, read by `project_config.py` | every declared `app_roots` folder exists; an invalid file is reported, since the hooks then ignore it |
+| `server-roots` | `02-architecture.md`, the `Server roots:` line of `## Backend` (`none` = no root; a deleted section is fine with no root) | `server_roots` in `.claude/project.json`, which aims the ship audit's `authz` |
 | `composition-roots` | `02-architecture.md`, the composition-root row | `data_client.composition_roots` in `.claude/project.json` |
 | `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `guides/review/correctness.md` — which restates the list *and* its count | `data_client.shared_dirs` in `.claude/project.json`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |

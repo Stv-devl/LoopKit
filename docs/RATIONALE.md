@@ -221,7 +221,7 @@ read again.
 | `reviewer`     | Adversarial review on one bounded group of dimensions                                              | no                                     |
 | `e2e-tester`   | Writes and runs ONE Playwright spec — proves a flow in a real browser                              | 1 spec                                 |
 | `verifier`     | Tries to **refute** a finding — what survives is real                                              | no                                     |
-| `security-auditor` | Security audit of **one surface**, on the whole repository (not on a diff) — out of the loop, except on a `critical` profile where `/loop:ship` arms one | no |
+| `security-auditor` | Security audit of **one surface**, on the whole repository (not on a diff) — out of the loop, except on a `critical` profile where `/loop:ship` arms one on the surfaces the diff touches (none if none) | no |
 | `github`       | Local commits; anything touching GitHub asks for your go-ahead                                     | yes                                    |
 
 ## The guardrails
@@ -284,7 +284,7 @@ including a wrong one. Details: `.claude/rules/05-testing.md`.
 | --- | --- | --- |
 | On the diff | `/loop:review`'s `security` dimension — the server-side barrier, exposed keys, Zod at the boundaries, leaks between users | every review; a Critical means FAIL |
 | At ship | `pnpm audit --prod --audit-level=high` (dev-only CVEs reported, not blocking) + a grep for secret-shaped `VITE_*` names | every ship, deterministic, zero tokens |
-| On the repository | `/audit:security` — 6 surfaces, `security-auditor` fan-out, then refutation | on demand; **and automatically on a `critical` profile**, one surface, before the commit |
+| On the repository | `/audit:security` — 6 surfaces, `security-auditor` fan-out, then refutation | on demand; **and automatically on a `critical` profile**, one `security-auditor` on the surfaces the diff touches (none if none), before the commit |
 
 The last row is the one that matters. An audit that only runs when someone
 remembers is an audit that does not run — so the four triggers of the `critical`

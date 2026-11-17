@@ -135,6 +135,35 @@ def check_protected_dirs() -> list[Finding]:
     return compare("protected-dirs", ("CLAUDE.md", declared), (PROJECT_JSON, actual))
 
 
+def check_server_roots() -> list[Finding]:
+    """The server folders, against `02-architecture.md`'s `Server roots:` line. The rule says
+    "fill or delete" its Backend section: deleted is fine only while no root is declared."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("server-roots", reason)
+    rule = ".claude/rules/02-architecture.md"
+    doc = read(rule)
+    if doc is None:
+        return skip("server-roots", rule)
+    actual = set(config.server_roots)
+    section = re.search(r"^## Backend\b.*?$(.*?)(?=^## |\Z)", doc, re.S | re.M)
+    if not section:
+        if not actual:
+            return [Finding("server-roots", OK, "no Backend section, no server root")]
+        return [Finding("server-roots", MISSING, "the Backend section is deleted but roots are declared", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
+            f"add a `## Backend` section with `Server roots:` to {rule}",
+        ])]
+    line = re.search(r"^Server roots:(.*)$", section.group(1), re.M)
+    if not line:
+        return [Finding("server-roots", MISSING, f"{rule} `## Backend` has no `Server roots:` line", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
+            "add `Server roots: none.` or the backticked folders",
+        ])]
+    declared = set(re.findall(r"`([^`]+)`", line.group(1)))
+    return compare("server-roots", (rule, declared), (PROJECT_JSON, actual))
+
+
 def check_data_client() -> list[Finding]:
     config, reason = project_values()
     if config is None:
@@ -835,8 +864,8 @@ RUNTIME_PATHS = {
 # one per language.
 NON_HOOKS = {
     "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "kit-gate-route.py", "kit-measure.py", "kit-pr-assets.py", "project_config.py",
-    "test-attempts.sh", "test-gate-route.sh",
+    "kit-attempts.py", "kit-audit-surface.py", "kit-gate-route.py", "kit-measure.py", "kit-pr-assets.py",
+    "project_config.py", "test-attempts.sh", "test-audit-surface.sh", "test-gate-route.sh",
     "test-hooks.sh", "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-pr-assets.sh",
     "test-rules-floor.sh",
     "test-small-lane.sh", "test-workflow-contracts.sh",
@@ -1405,7 +1434,7 @@ def check_kit_health() -> list[Finding]:
 
 
 CHECKS = [
-    ("twins", [check_protected_dirs, check_data_client, check_client_copies, check_composition_roots,
+    ("twins", [check_protected_dirs, check_server_roots, check_data_client, check_client_copies, check_composition_roots,
                check_shared_dirs, check_protected_branches, check_env_suffixes, check_test_command,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,

@@ -73,21 +73,44 @@ exit 1 with no output is clean; exit 2 means a path could not be read — name i
 and say the check did not run. Do not change a character of that pipeline without
 reading the guide.
 
-### 1bis. Security audit — armed by the token profile, not by memory
+### 1bis. Security audit — armed by the profile, aimed by the diff
 
-Read the profile carried by the artifact. **On `critical` only**, one
-`/audit:security` runs before the commit, scoped to **one surface** — one
-`security-auditor`:
+Read the profile carried by the artifact. `economy` and `standard`: no auditor,
+the report prints `not armed — profile <…>`. **On `critical` only**, before the
+commit:
 
-| What made it `critical` | The surface to audit |
-| --- | --- |
-| authorization, roles, guards, a new table or endpoint | `authz` |
-| payment, billing, anything with a money amount | `authz`, and `input-output` if a webhook or a callback is involved |
-| destructive data change (delete, bulk update, migration with data loss) | `authz` |
-| session, login, logout, token handling | `session` |
-| explicit user request | ask which surface, or run `everything` if they said so |
+1. `<base>` is the plan's `Base:`, else `git merge-base HEAD <default branch>`.
+   Run `python3 .claude/hooks/kit-audit-surface.py select --base <base>`: it reads
+   the working tree against `<base>`, untracked files included, and returns the
+   surfaces the diff touches with one reason each — `authz` for a path under a
+   declared server root, `session` and `input-output` for added trigger lines.
+   The ship stops like a red gate on any non-zero exit of the script.
+2. The profile reason is kept as the record of why the work is `critical`; its
+   surface counts only when the diff touches it, so the selection is the script's:
 
-A Critical finding stops the ship like a red gate: the track stays in its
+   | What made it `critical` | Its surface, when the diff touches it |
+   | --- | --- |
+   | authorization, roles, guards, a new table or endpoint | `authz` |
+   | payment, billing, anything with a money amount | `authz`, and `input-output` if a webhook or a callback is involved |
+   | destructive data change (delete, bulk update, migration with data loss) | `authz` |
+   | session, login, logout, token handling | `session` |
+
+3. The main thread may add a surface the script missed, printing `Audit added:
+   <surface> — <reason>`; it **never drops** one the script returned. An explicit user request runs
+   the surfaces the user named, whatever the script returned.
+4. Something selected → launch **one `security-auditor`** directly with every
+   selected surface, each surface's definition from `/audit:security`, the changed
+   files and the script's reasons — never `/audit:security <list>`, which runs all
+   six. Nothing selected → no auditor; the report prints `Audit: not armed — diff
+   touches no audit surface (<the script's reason>); review security ran`.
+5. Write the auditor's Critical, Major and Minor items with Write to
+   `docs/work/<slug>/audit-1.json` (`surface`, `severity`, `path`, `line` or
+   `null`, `problem`) and run
+   `python3 .claude/hooks/kit-audit-surface.py follow-ups docs/work/<slug>/audit-1.json`:
+   every Major and Minor lands in `follow-ups.md`. Exit 2 means that JSON is wrong:
+   correct it and rerun, never invent a line or drop a finding.
+
+`next: stop` — a Critical — stops the ship like a red gate: the track stays in its
 worktree and the fix comes back through the loop with its reproduction test, never inline here. Not `critical` but the diff
 seems to deserve it → say so in one line and ask.
 
@@ -233,7 +256,7 @@ then `/loop:small --status` to run in the main session, then `close this termina
 ## Ship: <feature>
 - Gates: typecheck ✓ | lint ✓ | test:run ✓ (<n> tests) | coverage ✓ (<n>%, or "no config") | build ✓
 - Security: audit ✓ (<n> advisories, or "<pkg> — no fix published, your call") | bundle secrets ✓ (or "SCAN NOT RUN: <the missing path>")
-- Audit: <surface> — <n> Critical / <n> Major   (or "not armed — profile <economy|standard>")
+- Audit: <surfaces> — <n> Critical / <n> Major / <n> Minor → <k> in docs/work/<slug>/follow-ups.md   (or "not armed — profile <economy|standard>", or "not armed — diff touches no audit surface (<reason>); review security ran")
 - Criteria: <n>/<n> met — <the unmet ones, if any>
 - Deploy: <done / pending your validation / n/a>
 - Commit: <hash> <subject>   (remote: <pushed / awaiting validation / not asked>)

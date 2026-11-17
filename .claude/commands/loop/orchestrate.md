@@ -309,7 +309,8 @@ On `fix-batch`, the `blocking` findings always leave the main thread, in three s
 
 `/loop:ship docs/work/<slug>/plan.md`: gates, acceptance criteria one by one,
 commit via the `github` agent, board advanced, next feature named. A `critical`
-profile also arms one `/audit:security` surface before the commit (step 1bis). On
+profile also arms one `security-auditor` on the surfaces the diff touches before
+the commit (step 1bis). On
 a forked track the gates run in its worktree and the merge is `/loop:ship`'s last,
 user-gated step.
 

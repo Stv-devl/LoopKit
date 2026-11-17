@@ -62,6 +62,8 @@ jobs:
         run: .claude/hooks/test-small-lane.sh
       - name: Test loop attempt counter
         run: .claude/hooks/test-attempts.sh
+      - name: Test ship audit surface
+        run: .claude/hooks/test-audit-surface.sh
       - name: Test gate routing
         run: .claude/hooks/test-gate-route.sh
       - name: Test PR screenshot assets
