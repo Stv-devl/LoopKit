@@ -425,4 +425,5 @@ feeds 7 and 8).
   (it read Phase 1 items and the whole file).
 - amended 2026-11-18 PK18, PK20 (review round 1 T2, user approved): `kp_prompt_paths` also flags
   addon prompt paths (`addons/*/<rel>`), not only core ones.
+- confirmed at ship 2026-11-18 by the user: amended IN56/IN57, PK18, PK18+PK20 (commit 98d00ba).
 - Amendments accepted with this go: `test-install.sh:660-663` (init.md → overwritten, step 5); `check_protected_branches` (4b) and `check_shared_dirs` reviewer copy + count (7) deleted with their pins; step 4b pins `test-kit-doctor.sh:53, :214, :226` + protected-branches pins, `test-install.sh:86-87` → SKIP, `:477` deleted, `:481-482` unchanged; step 7 `test-install.sh:88-89` → byte-identical (IN54); CLAUDE.md +≤1 line
