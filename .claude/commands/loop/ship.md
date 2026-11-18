@@ -44,19 +44,26 @@ pnpm audit --dev --audit-level=high || true   # dev-only CVEs: reported, never
 # Bundle secrets. Read the comment under this block before changing a character
 # of it: the `set -o pipefail` and the `test -f` are the check, not decoration.
 set -o pipefail
-test -d src/ || echo "SCAN NOT RUN: no src/"
+roots="$(jq -r '.app_roots[]? | . + "/src"' .claude/project.json 2>/dev/null)"
+[ -n "$roots" ] || roots=src
+dirs=""
+for d in $roots; do
+  if test -d "$d"; then dirs="$dirs $d"; else echo "SCAN NOT RUN: no $d"; fi
+  [ -f "${d%/src}/.env.example" ] && dirs="$dirs ${d%/src}/.env.example"
+done
+[ -n "$dirs" ] || dirs=/dev/null
 grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
-     src/ $( [ -f .env.example ] && echo .env.example ) \
+     $dirs $( [ -f .env.example ] && echo .env.example ) \
   | grep -vE '(ANON|PUBLIC|PUBLISHABLE)_KEY'   # everything VITE_* ships in the
                         # bundle — the second grep drops the keys that are
                         # public by design, or this line cries wolf every run
 ```
 
-<!-- FILL: if this repo has a second unit runner (backend), add it to the same
-     batch when the diff touches its surface. E2E is NOT added here: it runs in its
-     own command AFTER this batch is green, never alongside vitest and coverage —
-     sharing the machine with them is what makes a browser suite flaky
-     (`e2e-playwright` skill, "When it runs"). -->
+**Project slot `extra-gates`** — `## extra-gates` in `.claude/overlays/commands/loop/ship.md`; absent → none: only the fence above runs.
+A second unit runner (backend) listed there joins the same batch when the diff touches its
+surface. E2E is NOT added here: it runs in its own command AFTER this batch is green, never
+alongside vitest and coverage — sharing the machine with them is what makes a browser suite
+flaky (`e2e-playwright` skill, "When it runs").
 
 All green is the condition to continue. **Red = stop and fix** — never ship
 "green except one", and never skip this batch because CI repeats it.
@@ -127,10 +134,10 @@ reaches). A refused amendment goes back to EXECUTE before the merge, then
 
 ### 3. Deploy (only if the diff requires it, and only on request)
 
-<!-- FILL: the real deploy commands, and their traps. Two that bite everywhere:
-     a bulk deploy silently resets per-unit flags, and a migration push applies
-     EVERY pending migration — including ones another session wrote. List the
-     pending state before pushing. -->
+**Project slot `deploy`** — `## deploy` in `.claude/overlays/commands/loop/ship.md`; absent → no deploy known: ask the user.
+The section holds the real deploy commands and their traps. Two that bite everywhere: a bulk
+deploy silently resets per-unit flags, and a migration push applies EVERY pending migration —
+including ones another session wrote. List the pending state before pushing.
 
 Announce what needs deploying and **ask** before running it.
 

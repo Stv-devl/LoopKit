@@ -1,8 +1,8 @@
 # Edge Function Tests
 
-<!-- FILL: `example-*` are placeholder function names. What must not change:
-     `deno test` is the runner, the error shape is flat, and business logic in a
-     function is covered like any other business logic (`05-testing.md`). -->
+> Note: `example-*` names are placeholders, use this repo's names when applying. What must
+> not change: `deno test` is the runner, the error shape is flat, and business logic in a
+> function is covered like any other business logic (`05-testing.md`).
 
 > See `edge-function.md` for the main pattern (helpers, plain/Hono styles).
 
@@ -177,8 +177,8 @@ Deno.test("webhook without signature returns 401", async () => {
 
 ## Commands
 
-<!-- FILL: replace the task names with this repo's real ones (`deno task` with
-     no argument lists them). A gate cannot call a task that does not exist. -->
+> Note: the task names below are placeholders, use this repo's real ones (`deno task` with
+> no argument lists them). A gate cannot call a task that does not exist.
 
 Declare one task per function in `supabase/functions/deno.json`, so a gate has a
 name to call rather than a path to guess:

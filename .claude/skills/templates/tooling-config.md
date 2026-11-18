@@ -321,9 +321,9 @@ const TEST_FIRST = '{utils,mapper,repository,services}';
       // the one file the rule declares excluded. Read the row, write the path.
       exclude: [
         ...coverageConfigDefaults.exclude,
-        'src/lib/client.ts',      // FILL: the data client INSTANCE — `01-stack.md`,
-                                  // "The data client", row 1. `supabase.ts` here
-                                  // if the Supabase addon is installed.
+        'src/lib/client.ts',      // the data client INSTANCE: the `data_client.own_path`
+                                  // of `.claude/project.json` (`01-stack.md`, "The data
+                                  // client", row 1), `supabase.ts` with the Supabase addon.
         'src/lib/queryClient.ts',
         'src/lib/utils/cn.ts',
       ],
@@ -357,4 +357,5 @@ deliberately **outside this floor**: a percentage on a React Query orchestration
 or on a one-line transport call measures rendering plumbing, not logic. The gate
 on those two is the review's `tests` dimension, not a number.
 
-<!-- FILL: adjust the include/exclude globs to this repo's real layout. -->
+**Project slot `coverage-globs`** — `## coverage-globs` in `.claude/overlays/skills/templates/tooling-config.md`; absent → the scope of `05-testing.md`.
+The section holds the include/exclude globs of this repo's real layout.

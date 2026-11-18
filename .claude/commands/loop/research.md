@@ -87,7 +87,8 @@ refresh what's stale, don't silently start a second folder under a different nam
 
 ### Mandatory probes (`explorer`, triggered by surface)
 
-<!-- FILL: keep the four generic rows, add the ones this repo's surfaces need. -->
+**Project slot `probes`** — `## probes` in `.claude/overlays/commands/loop/research.md`; absent → the four generic rows below.
+The section adds the rows this repo's surfaces need.
 
 | If the change touches…                                   | MANDATORY probe |
 | --- | --- |

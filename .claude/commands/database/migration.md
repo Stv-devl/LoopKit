@@ -9,9 +9,10 @@ argument-hint: [migration description]
 
 Creates migrations for this repo's database.
 
-<!-- FILL: the migrations folder, the CLI, and the apply command. Everything
-     else on this page is provider-agnostic. Using Supabase? Replace this file
-     with addons/supabase/commands/database/migration.md. -->
+**Project slot `migrations`** — `## migrations` in `.claude/overlays/commands/database/migration.md`; absent → stop and ask the user.
+The section holds the migrations folder, the CLI and the apply command; everything else on
+this page is provider-agnostic. Using Supabase? The `--supabase` install ships its own
+version of this command.
 
 ## Core rules
 

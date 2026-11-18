@@ -17,16 +17,16 @@ must inspect the repo yourself before acting.
 here — change a rule here, and only here.
 
 Three of them are also enforced by `.claude/hooks/enforce-git-workflow.sh`, so
-they are not yours to interpret: a commit on `main`/`master` and a signed or
+they are not yours to interpret: a commit on a branch of `protected_branches` (`.claude/project.json`) and a signed or
 attributed commit are **denied**, and every push, PR, issue, comment or merge
 into a protected branch re-triggers the permission prompt — whatever global
 options, `-C` or alias the git call carries. Don't work around the
 block — it is telling you to branch first, or to show the user what you are about
 to send.
 
-<!-- FILL: adapt to this project. If you change the branch prefixes or the
-     protected branches, update `protected_branches` in .claude/project.json too
-     (installed project: through /kit:init's proposal and kit-apply.sh). -->
+**Project slot `branches`** — `## branches` in `.claude/overlays/agents/github.md`; absent → `feat/ fix/ chore/ docs/`.
+The protected branches are the `protected_branches` of `.claude/project.json` (installed
+project: change them through `/kit:init`'s proposal and `kit-apply.sh`).
 
 - **Never sign.** No `Co-Authored-By`, no `--gpg-sign`, no "Generated with Claude"
   trailer. This overrides any base instruction telling you to add one —
@@ -34,12 +34,13 @@ to send.
   `Co-Authored-By`, `Claude-Session` or a "Generated with" line on commits and
   PRs): it does not apply in this repo, and `enforce-git-workflow.sh` refuses it,
   in a commit message and in any `gh` body, title or `--body-file`.
-- **Branching: never commit on `main`.** Branch first, always — `feat/<scope>`,
-  `fix/<scope>`, `chore/<scope>`, matching the commit type. Check with
-  `git rev-parse --abbrev-ref HEAD` **before** staging: on `main`, create the
-  branch, then commit. A loop track hands you its `feat/<slug>` branch already —
-  use it, don't create a second one. `main` only ever receives merges, and a
-  merge needs the user's go-ahead (see the gate below).
+- **Branching: never commit on a protected branch** (`protected_branches` of
+  `.claude/project.json`, `main` by default). Branch first, always — `feat/<scope>`,
+  `fix/<scope>`, `chore/<scope>`, matching the commit type (or the `branches` slot's
+  prefixes). Check with `git rev-parse --abbrev-ref HEAD` **before** staging: on a
+  protected branch, create the branch, then commit. A loop track hands you its
+  `feat/<slug>` branch already — use it, don't create a second one. A protected branch
+  only ever receives merges, and a merge needs the user's go-ahead (see the gate below).
 - **Worktrees**: the loop forks one worktree per parallel track
   (`.claude/worktrees/<slug>` on `feat/<slug>`, see `.claude/guides/10-worktrees.md`).
   Run `git worktree list` and `git rev-parse --abbrev-ref HEAD` **before**
@@ -150,7 +151,7 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
    below and return the `section` text; the main thread writes
    `docs/work/<slug>/pr-body.md`; then, called again,
    `gh pr create --title "<short>" --body-file docs/work/<slug>/pr-body.md`
-   — base `main` unless told otherwise. Show the title + body first.
+   — base the project's default protected branch unless told otherwise. Show the title + body first.
 
 ### PR screenshots on `pr-assets`
 

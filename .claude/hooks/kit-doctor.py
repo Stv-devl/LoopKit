@@ -113,6 +113,14 @@ def unchecked(check: str, reason: str) -> list[Finding]:
     return [Finding(check, SKIP, reason)]
 
 
+def kit_source_only(check: str) -> list[Finding] | None:
+    """A twin whose one side is a kit prompt runs in the kit repo only: in an installed project
+    the prompt is kit code and holds the kit's default by design, so it never diverges there."""
+    if is_kit_source():
+        return None
+    return unchecked(check, "installed project: the kit prompt keeps the kit default (kit-source check)")
+
+
 def check_protected_dirs() -> list[Finding]:
     """The protected folders, against CLAUDE.md's "Recursive delete on:" list. A project that
     came with its own CLAUDE.md has no list there: MISSING, so the two copies get created."""
@@ -186,22 +194,6 @@ def check_data_client() -> list[Finding]:
                    (PROJECT_JSON, own))
 
 
-def check_protected_branches() -> list[Finding]:
-    """The branches the git hook refuses a commit on, against the github agent's sentence."""
-    config, reason = project_values()
-    if config is None:
-        return unchecked("protected-branches", reason)
-    agent = read(".claude/agents/github.md")
-    if agent is None:
-        return skip("protected-branches", "github.md")
-    sentence = re.search(r"a commit on ((?:`[^`]+`/?)+) and a signed", agent)
-    if not sentence:
-        return [Finding("protected-branches", MISSING, "github.md no longer names the protected branches")]
-    declared = set(re.findall(r"`([^`]+)`", sentence.group(1)))
-    return compare("protected-branches", (".claude/agents/github.md", declared),
-                   (PROJECT_JSON, set(config.protected_branches)))
-
-
 def check_env_suffixes() -> list[Finding]:
     """The env template suffixes the hooks let through, against settings.json's Read allows."""
     config, reason = project_values()
@@ -246,6 +238,9 @@ def check_client_copies() -> list[Finding]:
     path that does not exist, and an exclusion on the wrong file leaves the real
     client counted against the floor.
     """
+    gated = kit_source_only("client-copies")
+    if gated is not None:
+        return gated
     config, reason = project_values()
     if config is None:
         return unchecked("client-copies", reason)
@@ -298,15 +293,15 @@ def check_shared_dirs() -> list[Finding]:
     that has already diverged once (`config/` was missing from both import lists
     while the structure diagram carried it).
 
-    Four copies, not two: the tuple, `02-architecture.md`'s forbidden bullet,
-    `CLAUDE.md`'s non-negotiable, and the reviewer's correctness checklist — which restates the list AND
-    its count, the cheapest of the four to let rot.
+    Three copies: the project.json list, `02-architecture.md`'s forbidden bullet and
+    `CLAUDE.md`'s non-negotiable. The reviewer's checklist is a kit prompt: it reads
+    `data_client.shared_dirs` and restates neither the list nor its count.
     """
     config, reason = project_values()
     if config is None:
         return unchecked("shared-dirs", reason)
     arch = read(".claude/rules/02-architecture.md")
-    doc, rev = read("CLAUDE.md"), read(".claude/guides/review/correctness.md")
+    doc = read("CLAUDE.md")
     actual = {d.rstrip("/") for d in config.data_client["shared_dirs"]}
 
     # Every doc copy wraps across lines, so each is matched as a block, never a line.
@@ -318,8 +313,6 @@ def check_shared_dirs() -> list[Finding]:
          r"\*\*Forbidden:\*\*(.*?)→ `features/\*`", r"`src/([a-z]+)/\*`", arch),
         ("shared-dirs (CLAUDE.md)", "CLAUDE.md",
          r"shared leaf code \((.*?)\) never imports a feature", r"`([a-z]+)/`", doc),
-        ("shared-dirs (reviewer)", ".claude/guides/review/correctness.md",
-         r"No shared \*\*leaf\*\* code depending on a feature:(.*?)— the full", r"`src/([a-z]+)`", rev),
     )
 
     out: list[Finding] = []
@@ -336,25 +329,13 @@ def check_shared_dirs() -> list[Finding]:
             continue
         out += compare(name, (fname, set(re.findall(item_re, block.group(1)))),
                        (PROJECT_JSON, actual))
-
-    # The correctness checklist also states the COUNT in prose — a number nothing else compares.
-    words = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
-    n = re.search(r"of\s+`\.claude/project\.json`,\s+(\w+)\s+entries", rev) if rev else None
-    if rev is None:
-        out += skip("shared-dirs (count)", ".claude/guides/review/correctness.md")
-    elif not n:
-        out.append(Finding("shared-dirs (count)", MISSING, "the correctness checklist no longer states the entry count"))
-    elif words.get(n.group(1)) != len(actual):
-        out.append(Finding("shared-dirs (count)", DIVERGENCE, "the stated count is wrong", [
-            f".claude/guides/review/correctness.md  →  {n.group(1)} entries",
-            f"{PROJECT_JSON}  →  {len(actual)} entries",
-        ]))
-    else:
-        out.append(Finding("shared-dirs (count)", OK, f"{n.group(1)} entries"))
     return out
 
 
 def check_coverage_floor() -> list[Finding]:
+    gated = kit_source_only("coverage-floor")
+    if gated is not None:
+        return gated
     rule, cfg = read(".claude/rules/05-testing.md"), read(".claude/skills/templates/tooling-config.md")
     if rule is None or cfg is None:
         return skip("coverage-floor", "05-testing.md", "tooling-config.md")
@@ -372,6 +353,9 @@ def check_coverage_floor() -> list[Finding]:
 
 def check_coverage_holes() -> list[Finding]:
     """The floor's exclusion list — the rule calls it "three wiring files and only three"."""
+    gated = kit_source_only("coverage-holes")
+    if gated is not None:
+        return gated
     rule, cfg = read(".claude/rules/05-testing.md"), read(".claude/skills/templates/tooling-config.md")
     if rule is None or cfg is None:
         return skip("coverage-holes", "05-testing.md", "tooling-config.md")
@@ -415,6 +399,9 @@ def check_token_thresholds() -> list[Finding]:
 
 def check_tdd_layers() -> list[Finding]:
     """The layer words, in the three places that act on them."""
+    gated = kit_source_only("tdd-layers")
+    if gated is not None:
+        return gated
     config, reason = project_values()
     if config is None:
         return unchecked("tdd-layers", reason)
@@ -859,6 +846,7 @@ RUNTIME_PATHS = {
     ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
     ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
 }
+PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
 # one per language.
@@ -1044,6 +1032,10 @@ def check_shipped_paths() -> list[Finding]:
                 path = raw.rstrip("./`,;:)")
                 if path in RUNTIME_PATHS or path.startswith((".claude/worktrees/", ".claude/kit-backup/")):
                     continue
+                if path in PROJECT_HOMES or path.startswith(tuple(h + "/" for h in PROJECT_HOMES)):
+                    continue
+                if path == ".claude/kit-manifest" and is_kit_source():
+                    continue
                 # A glob is a legitimate way to name a family of files
                 # (`patterns/edge-function*.md`): one match is enough.
                 if "*" in path:
@@ -1207,9 +1199,47 @@ def check_agent_references() -> list[Finding]:
     return [Finding("agent-refs", OK, f"{len(known - {'general-purpose', 'explore', 'plan', 'claude'})} agents, every reference resolves")]
 
 
+PROMPT_DIRS = (".claude/agents", ".claude/commands", ".claude/skills", ".claude/guides")
+PROMPT_FILL = re.compile(r"<!-- FILL|— FILL>")
+
+
+def check_prompt_fill() -> list[Finding]:
+    """Kit source only: a kit prompt holds no project value, so no FILL marker, core or addon.
+    The values live in `.claude/overlays/` and `.claude/project.json`."""
+    if not is_kit_source():
+        return []
+    folders = [ROOT / d for d in PROMPT_DIRS]
+    folders += [a / d.split("/", 1)[1] for a in sorted((ROOT / "addons").glob("*")) for d in PROMPT_DIRS]
+    hits = []
+    for folder in folders:
+        for path in sorted(folder.rglob("*.md")) if folder.is_dir() else []:
+            if PROMPT_FILL.search(path.read_text(encoding="utf-8")):
+                hits.append(path.relative_to(ROOT).as_posix())
+    if not hits:
+        return [Finding("prompt-fill", OK, "no FILL marker in a kit prompt")]
+    return [Finding("prompt-fill", DIVERGENCE, "a kit prompt holds a FILL: move the value to an overlay", hits)]
+
+
+def check_kit_manifest() -> list[Finding]:
+    """Installed only: `.claude/kit-manifest` says which prompts are kit code; the hooks fail
+    closed without it, and an entry whose file is gone is a stale install."""
+    if is_kit_source():
+        return []
+    manifest = read(".claude/kit-manifest")
+    if manifest is None:
+        return [Finding("kit-manifest", MISSING, "no .claude/kit-manifest: every prompt counts as kit code",
+                        ["rerun install.sh from the LoopKit repo to write it"])]
+    entries = [ln for ln in manifest.splitlines() if ln.strip()]
+    gone = [e for e in entries if not (ROOT / e).is_file()]
+    if gone:
+        return [Finding("kit-manifest", MISSING, f"{len(gone)} listed prompt(s) absent from disk", gone)]
+    return [Finding("kit-manifest", OK, f"{len(entries)} kit prompt(s) listed")]
+
+
 def check_fill_markers() -> list[Finding]:
     targets = [ROOT / "CLAUDE.md"]
-    for folder in (".claude/rules", ".claude/commands", ".claude/skills/templates", ".claude/skills/patterns"):
+    overlays = "templates/overlays" if is_kit_source() else ".claude/overlays"
+    for folder in (".claude/rules", overlays):
         targets += sorted((ROOT / folder).rglob("*.md")) if (ROOT / folder).is_dir() else []
 
     for folder in ("templates/github", ".github/workflows"):
@@ -1435,17 +1465,17 @@ def check_kit_health() -> list[Finding]:
 
 CHECKS = [
     ("twins", [check_protected_dirs, check_server_roots, check_data_client, check_client_copies, check_composition_roots,
-               check_shared_dirs, check_protected_branches, check_env_suffixes, check_test_command,
+               check_shared_dirs, check_env_suffixes, check_test_command,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
                check_ignored_loop_paths, check_project_config,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
-    ("wiring", [check_install_stamp, check_kit_backup, check_hook_prerequisites, check_hook_wiring,
-                check_github_protection]),
+    ("wiring", [check_install_stamp, check_kit_backup, check_kit_manifest, check_hook_prerequisites,
+                check_hook_wiring, check_github_protection]),
     ("links", [check_shipped_paths, check_command_references,
                check_command_references_plain, check_agent_references]),
-    ("placeholders", [check_fill_markers]),
+    ("placeholders", [check_prompt_fill, check_fill_markers]),
     ("health", [check_kit_health]),
 ]
 

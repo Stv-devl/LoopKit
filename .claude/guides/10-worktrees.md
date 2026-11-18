@@ -90,6 +90,9 @@ in the same pass.
 | `docs/design-system.md`, `docs/product/backlog.md`, `docs/product/brief.md` | Single product-level files, written by every track. The brief joins the list because `/loop:ship` step 5 refreshes its `Current surface` after the merge. |
 | `package.json` / lockfile | Two tracks adding deps = a lockfile conflict, every time. |
 
+**Project slot `foundations`** — `## foundations` in `.claude/overlays/guides/10-worktrees.md`; absent → the list above.
+The section adds this project's own shared foundations to that list.
+
 **Shared foundations are done first, in the main tree, and committed — then the
 tracks fork from that commit.** A track that needs a foundation change mid-flight
 stops, hands it back to the main tree, and rebases.

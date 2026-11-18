@@ -42,6 +42,8 @@ IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          ignored-loop-paths' <<<"$IGNORED_OUTPUT"
 
 mkdir -p "$SCRATCH/.claude/skills/templates" "$SCRATCH/.claude/skills/patterns"
+# client-copies runs in the kit source only (kit-prompts 4b): the scratch wears the kit markers here.
+printf 'x\n' > "$SCRATCH/install.sh"; mkdir -p "$SCRATCH/addons"
 python3 -I -B "$HOOKS_DIR/project_config.py" defaults \
     | jq '.data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts"' > "$SCRATCH/.claude/project.json"
 printf 'import { client } from "@/lib/client";\n' > "$SCRATCH/.claude/skills/templates/feature.md"
@@ -58,7 +60,7 @@ printf "exclude: [\n  ...coverageConfigDefaults.exclude,\n  'src/lib/client.ts',
     > "$SCRATCH/.claude/skills/templates/tooling-config.md"
 CLIENT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'templates/tooling-config.md' <<<"$CLIENT_OUTPUT"
-rm "$SCRATCH/.claude/project.json"
+rm "$SCRATCH/.claude/project.json" "$SCRATCH/install.sh"; rmdir "$SCRATCH/addons"
 
 mkdir -p "$SCRATCH/.claude/agents"
 printf '| Tier | For | Effort | Agents |\n| --- | --- | --- | --- |\n| `inherit` | gates | set at the call | `reviewer` |\n| `sonnet` | tests | `high` | `test-writer` |\n| `sonnet` | production | `medium` | `github` |\n' \
@@ -211,7 +213,7 @@ pd_json '.'
 KD_OUT="$(pd_run)"
 grep -q 'ok          protected-dirs' <<<"$KD_OUT"
 grep -q 'ok          data-client' <<<"$KD_OUT"
-grep -q 'ok          tdd-layers' <<<"$KD_OUT"
+grep -q 'skip        tdd-layers' <<<"$KD_OUT"
 grep -q 'ok          env-suffixes' <<<"$KD_OUT"
 grep -q 'DIVERGENCE  protected-branches' <<<"$KD_OUT" && exit 1
 
@@ -221,20 +223,19 @@ grep -q 'DIVERGENCE  protected-dirs' <<<"$(pd_run)"
 # PD2 data_client lib/api against an 01-stack.md naming src/lib/client.ts.
 pd_json '.data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts"'
 grep -q 'DIVERGENCE  data-client' <<<"$(pd_run)"
-# PD3 a usecase layer against the default tooling-config.
+# PD3 a usecase layer against the default tooling-config (tdd-layers is kit-source only).
 pd_json '.tdd_layers += ["usecase"]'
+printf 'x\n' > "$SCRATCH/install.sh"; mkdir -p "$SCRATCH/addons"
 grep -q 'DIVERGENCE  tdd-layers' <<<"$(pd_run)"
+rm "$SCRATCH/install.sh"; rmdir "$SCRATCH/addons"
 # PD4 a different test command is INFO, never a divergence.
 pd_json '.test_command = ["npm", "test"]'
 KD_OUT="$(pd_run)"
 grep -q 'INFO        test-command' <<<"$KD_OUT"
 grep -q 'DIVERGENCE  test-command' <<<"$KD_OUT" && exit 1
-# PD5 protected_branches ["main"]: diverges from `main`/`master`, agrees with `main`.
+# PD5 (kit-prompts 4b) protected_branches has no prompt copy left: no protected-branches row.
 pd_json '.protected_branches = ["main"]'
-grep -q 'DIVERGENCE  protected-branches' <<<"$(pd_run)"
-printf 'they are not yours to interpret: a commit on `main` and a signed or\n' > "$SCRATCH/.claude/agents/github.md"
-KD_OUT="$(pd_run)"
-grep -q 'ok          protected-branches' <<<"$KD_OUT"
+grep -q 'protected-branches' <<<"$(pd_run)" && { echo 'PD5: a protected-branches row is left' >&2; exit 1; }
 # PD6 `kit-doctor.py <root>` reads that root's file: an invalid one is reported, the twins are not checked.
 mkdir -p "$SCRATCH/other/.claude"
 printf '{"schema_version":2}\n' > "$SCRATCH/other/.claude/project.json"
@@ -287,5 +288,116 @@ printf '# Arch\n\n## Router\n' > "$KD_ARCH"
 grep -Eq 'ok +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: deleted section with no root not ok' >&2; exit 1; }
 grep -Eq 'MISSING +server-roots' <<<"$(kd_roots '["app"]')" || { echo 'KD11: deleted section with roots not red' >&2; exit 1; }
 rm "$KD_ARCH" "$SCRATCH/.claude/project.json"
+
+# kp_tree <dir> <installed|source>: a tmp root holding the kit's own copies of the prompts the
+# twins read; `installed` adds the stamp, `source` the kit markers (install.sh + addons/).
+KIT="$(cd "$HOOKS_DIR/../.." && pwd)"
+kp_tree() {
+    local dir="$1" f
+    for f in skills/templates/feature.md skills/templates/fixtures.md skills/patterns/react-query.md \
+             skills/templates/tooling-config.md commands/audit/mutation.md agents/github.md rules/05-testing.md; do
+        mkdir -p "$(dirname "$dir/.claude/$f")"
+        cp "$KIT/.claude/$f" "$dir/.claude/$f"
+    done
+    if [[ "$2" == installed ]]; then
+        printf 'core\n' > "$dir/.claude/INSTALL_PROFILE"
+    else
+        printf 'x\n' > "$dir/install.sh"; mkdir -p "$dir/addons"
+    fi
+}
+# KD17 (kit-prompts 4b) installed: project values that differ from the kit's prompt defaults
+# are no divergence; the prompt-side twins are skipped there.
+KP="$SCRATCH/kp17"
+kp_tree "$KP" installed
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults \
+    | jq '.protected_branches = ["develop"] | .data_client.module = "lib/api" | .data_client.own_path = "lib/api.ts"' \
+    > "$KP/.claude/project.json"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+if grep -Eq 'DIVERGENCE +(protected-branches|client-copies|tdd-layers)' <<<"$KD_OUT"; then
+    echo 'KD17: an installed project diverges from a kit prompt default' >&2; exit 1
+fi
+grep -Eq 'skip +client-copies' <<<"$KD_OUT" || { echo 'KD17: client-copies not skipped' >&2; exit 1; }
+grep -Eq 'skip +tdd-layers' <<<"$KD_OUT" || { echo 'KD17: tdd-layers not skipped' >&2; exit 1; }
+# KD20 (kit-prompts 4b) kit source: lib/api in fixtures.md still diverges from lib/client.
+KP="$SCRATCH/kp20"
+kp_tree "$KP" source
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults > "$KP/.claude/project.json"
+sed 's#@/lib/client#@/lib/api#' "$KIT/.claude/skills/templates/fixtures.md" > "$KP/.claude/skills/templates/fixtures.md"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -q 'DIVERGENCE  client-copies' <<<"$KD_OUT" || { echo 'KD20: kit-source client-copies lost' >&2; exit 1; }
+# KD21 (kit-prompts 4b) installed: 05-testing.md with lib/api.ts and a floor of 80, beside the
+# kit tooling-config.md, is no divergence on coverage-holes nor coverage-floor.
+KP="$SCRATCH/kp21"
+kp_tree "$KP" installed
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults > "$KP/.claude/project.json"
+sed -e 's#`lib/client\.ts`#`lib/api.ts`#' -e 's#lines 90 / functions 90 / branches 85#lines 80 / functions 80 / branches 80#' \
+    "$KIT/.claude/rules/05-testing.md" > "$KP/.claude/rules/05-testing.md"
+grep -q 'lib/api.ts' "$KP/.claude/rules/05-testing.md" || { echo 'KD21: fixture did not change' >&2; exit 1; }
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+if grep -Eq 'DIVERGENCE +coverage-(holes|floor)' <<<"$KD_OUT"; then
+    echo 'KD21: an installed 05-testing.md diverges from the kit tooling-config' >&2; exit 1
+fi
+grep -Eq 'skip +coverage-holes' <<<"$KD_OUT" || { echo 'KD21: coverage-holes not skipped' >&2; exit 1; }
+grep -Eq 'skip +coverage-floor' <<<"$KD_OUT" || { echo 'KD21: coverage-floor not skipped' >&2; exit 1; }
+
+# KD15 (kit-prompts step 7) kit source: a FILL marker in a prompt is a divergence; the real kit has none.
+KP="$SCRATCH/kp15"
+kp_tree "$KP" source
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults > "$KP/.claude/project.json"
+printf -- '---\nname: x\n---\n<!-- FILL: a value -->\n' > "$KP/.claude/agents/x.md"
+set +e
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP")"; KD_RC=$?
+set -e
+grep -q 'DIVERGENCE  prompt-fill' <<<"$KD_OUT" || { echo 'KD15: no prompt-fill divergence' >&2; exit 1; }
+[[ "$KD_RC" -eq 1 ]] || { echo "KD15: exit $KD_RC" >&2; exit 1; }
+grep -q 'ok          prompt-fill' <<<"$SOURCE_OUTPUT" || { echo 'KD15: the real kit is not ok on prompt-fill' >&2; exit 1; }
+# KD16 installed: an overlay section still holding its FILL note is a FILL row naming it; filled, it is gone.
+KP="$SCRATCH/kp16"
+kp_tree "$KP" installed
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults > "$KP/.claude/project.json"
+mkdir -p "$KP/.claude/overlays/commands/loop"
+printf '## deploy\n\n<!-- FILL: the deploy commands -->\n' > "$KP/.claude/overlays/commands/loop/ship.md"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -A30 'FILL        fill-markers' <<<"$KD_OUT" | grep -Fq '.claude/overlays/commands/loop/ship.md' \
+    || { echo 'KD16: the unfilled overlay is not listed' >&2; exit 1; }
+printf '## deploy\n\npnpm deploy\n' > "$KP/.claude/overlays/commands/loop/ship.md"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -Fq '.claude/overlays/commands/loop/ship.md' <<<"$KD_OUT" && { echo 'KD16: a filled overlay is listed' >&2; exit 1; }
+# KD18 installed: no manifest → MISSING naming install.sh; every entry present → ok; a gone entry → MISSING naming it.
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -A1 'MISSING     kit-manifest' <<<"$KD_OUT" | grep -q 'install.sh' || { echo 'KD18: absent manifest not reported' >&2; exit 1; }
+printf '%s\n' .claude/agents/github.md .claude/commands/audit/mutation.md > "$KP/.claude/kit-manifest"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -q 'ok          kit-manifest' <<<"$KD_OUT" || { echo 'KD18: full manifest not ok' >&2; exit 1; }
+printf '%s\n' .claude/agents/github.md .claude/agents/gone.md > "$KP/.claude/kit-manifest"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -q 'MISSING     kit-manifest' <<<"$KD_OUT" && grep -Fq '.claude/agents/gone.md' <<<"$KD_OUT" \
+    || { echo 'KD18: a gone entry not reported' >&2; exit 1; }
+# KD19 kit source: no kit-manifest row.
+if grep -qE '^  [A-Za-z]+ +kit-manifest ' <<<"$SOURCE_OUTPUT"; then echo 'KD19: kit source has a kit-manifest row' >&2; exit 1; fi
+# KD22 installed: 7 shared_dirs, stated alike in 02-architecture.md and CLAUDE.md → no count row, no divergence.
+KP="$SCRATCH/kp22"
+kp_tree "$KP" installed
+python3 -I -B "$HOOKS_DIR/project_config.py" defaults \
+    | jq '.data_client.shared_dirs = ["components/","hooks/","lib/","types/","stores/","config/","utils/"]' \
+    > "$KP/.claude/project.json"
+printf '**Forbidden:** `src/components/*`, `src/hooks/*`, `src/lib/*`, `src/types/*`, `src/stores/*`,\n`src/config/*`, `src/utils/*` → `features/*`.\n' \
+    > "$KP/.claude/rules/02-architecture.md"
+printf 'shared leaf code (`components/`, `hooks/`, `lib/`, `types/`, `stores/`, `config/`, `utils/`) never imports a feature\n' \
+    > "$KP/CLAUDE.md"
+mkdir -p "$KP/.claude/guides/review"
+cp "$KIT/.claude/guides/review/correctness.md" "$KP/.claude/guides/review/correctness.md"
+KD_OUT="$(python3 "$HOOKS_DIR/kit-doctor.py" "$KP" || true)"
+grep -q 'shared-dirs (count)' <<<"$KD_OUT" && { echo 'KD22: a shared-dirs count row' >&2; exit 1; }
+grep -Eq '(DIVERGENCE|MISSING) +shared-dirs' <<<"$KD_OUT" && { echo 'KD22: a shared-dirs divergence' >&2; exit 1; }
+# KD23 the kit source names overlays, recipes and the manifest with no MISSING; a fresh install is clean.
+if grep -A40 'MISSING     shipped-paths' <<<"$SOURCE_OUTPUT" | grep -Eq '\.claude/(overlays|recipes|kit-manifest)'; then
+    echo 'KD23: kit source reports an overlay, recipe or manifest path missing' >&2; exit 1
+fi
+KP="$SCRATCH/kp23"
+mkdir -p "$KP"
+"$KIT/install.sh" "$KP" --no-ci >/dev/null 2>&1
+[[ ! -e "$KP/.claude/recipes" ]] || { echo 'KD23: the install created .claude/recipes' >&2; exit 1; }
+python3 "$KP/.claude/hooks/kit-doctor.py" | grep -Fq 'No divergence.' || { echo 'KD23: a fresh install diverges' >&2; exit 1; }
 
 echo 'kit-doctor version fixtures: green.'

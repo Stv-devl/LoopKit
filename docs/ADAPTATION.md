@@ -45,21 +45,21 @@ Si ton point d'entrée est ailleurs, corrige la liste ici **et** le tableau
 « composition root » de `02-architecture.md` : c'est le même contrat écrit deux
 fois, une fois pour la machine, une fois pour l'agent.
 
-`data_client.shared_dirs` est la troisième, et elle a **quatre** copies, pas
-deux : la liste de `.claude/project.json`, les deux listes d'import de `02-architecture.md`, la case « shared
-leaf » de `.claude/guides/review/correctness.md` — qui en donne aussi le **nombre** — et la
+`data_client.shared_dirs` est la troisième, et elle a **trois** copies : la liste de
+`.claude/project.json`, les deux listes d'import de `02-architecture.md` et la
 ligne « code partagé » de `CLAUDE.md`. Le kit livre six entrées —
 `components/ hooks/ lib/ types/ stores/ config/`. `providers/` et `routes/` en
 sont volontairement absents : ce sont des câblages, ils ont le droit de connaître
 les features qu'ils composent. Ajoute un répertoire feuille à ton arborescence
-(`src/constants/`, `src/utils/`…) et il faut le mettre aux quatre endroits —
-oublier le reviewer est le plus coûteux des quatre, parce que le hook n'inspecte
-que le **delta inséré** d'un Edit : un import déjà présent ailleurs dans le
-fichier ne lui arrive jamais, et le reviewer est alors le seul filet.
+(`src/constants/`, `src/utils/`…) et il faut le mettre à ces endroits. Le reviewer
+`correctness` lit la liste directement dans `.claude/project.json` (il ne la
+recopie plus), ce qui compte, parce que le hook n'inspecte que le **delta inséré**
+d'un Edit : le reviewer est le seul filet pour un import déjà présent ailleurs.
 
-`/kit:doctor` compare désormais cette liste à **trois** de ces copies — la liste
-« Forbidden » de `02-architecture.md`, `CLAUDE.md`, `guides/review/correctness.md` — plus le
-compte que le reviewer annonce en toutes lettres (`check_shared_dirs`). La liste
+Les templates du kit ne sont jamais réécrits pour ton client : ils disent de lire
+`data_client.module` dans `.claude/project.json` (`install.sh --supabase` n'y touche
+plus non plus). `/kit:doctor` compare la liste à la case « Forbidden » de
+`02-architecture.md` et à `CLAUDE.md` (`check_shared_dirs`). La liste
 « Allowed from anywhere » de `02-architecture.md` reste **manuelle** : elle est
 énumérative et non miroir de la liste (`providers/` y figure, pas dans
 `shared_dirs`). La synchronisation reste à ta charge, mais l'oubli ne passe plus
@@ -362,16 +362,19 @@ change `protected_branches` dans `.claude/project.json` par la proposition du §
 Une langue pour les humains qui utilisent le produit, une pour la trace machine.
 Le kit part sur user FR / logs EN. Tout le reste y fait référence.
 
-## 9. `.claude/skills/patterns/feedback.md` et `guards.md`
+## 9. `.claude/overlays/skills/patterns/feedback.md` et `guards.md`
 
-Remplace les noms de composants et de helpers par ceux du projet. Un agent qui ne
-trouve pas `<State>` en invente un — et c'est un composant de plus à maintenir,
-né d'un fichier périmé.
+Un prompt du kit n'est jamais édité dans un projet installé : tes valeurs vivent
+dans `.claude/overlays/<chemin du prompt sous .claude/>`, une section `## <slot>`
+par valeur. Ici : `components` et `strings` (feedback), `names` (guards) — les noms
+de composants et de helpers du projet. Un agent qui ne trouve pas `<State>` en
+invente un — et c'est un composant de plus à maintenir, né d'un fichier périmé.
 
-## 10. `.claude/skills/e2e-playwright/SKILL.md` → « Which backend does the suite hit? »
+## 10. `.claude/overlays/skills/e2e-playwright/SKILL.md` → `backend-case`
 
-La section la plus dangereuse à laisser vide : elle décide si un agent a le droit
-de **muter des données**. Trois cas, une règle chacun :
+Sections `drivers`, `harness` et `backend-case` de cet overlay. `backend-case` est la
+section la plus dangereuse à laisser vide : elle décide si un agent a le droit
+de **muter des données** (absente, l'agent s'arrête et demande). Trois cas, une règle chacun :
 
 | Cas                                      | Règle pour l'agent                                                    |
 | ---------------------------------------- | --------------------------------------------------------------------- |
@@ -387,25 +390,26 @@ Liste d'interdits maison (étoile, fusée, éclair), doublée par `forbidden_ico
 dans `.claude/project.json`, que lit `no-forbidden-icons.sh`. À garder, modifier
 ou vider — mais les deux ensemble, jamais l'un sans l'autre.
 
-## 12. `.claude/guides/10-worktrees.md`
+## 12. `.claude/overlays/guides/10-worktrees.md` → `foundations`
 
 > `.claude/guides/` n'est **pas** chargé au démarrage — contrairement à
 > `.claude/rules/`, dont tout le contenu arrive dans le contexte, importé ou non
 > dans `CLAUDE.md`. Les fichiers de `guides/` portent le rationnel des règles et
-> les règles qu'on lit à la demande ; ils se citent par chemin. Adapter un guide
-> ne change rien au coût d'une session.
+> les règles qu'on lit à la demande ; ils se citent par chemin. Ce guide est du
+> code du kit : tes ajouts vont dans son overlay, jamais dans le guide.
 
 Utile seulement si tu mènes plusieurs features de front. Quatre choses à vérifier :
 
 - `.claude/worktrees/` est dans le `.gitignore` du projet ;
 - `worktree.baseRef` dans `.claude/settings.json` : le kit livre `head` (dépôt
   local, pas d'`origin` d'où brancher). Repo d'équipe avec un remote → `fresh` ;
-- la branche de base est bien `main` (sinon corrige-la dans la règle et dans
-  l'agent `github`) ;
+- la branche de base est bien une des `protected_branches` de `.claude/project.json`
+  (sinon corrige-la dans la proposition `.claude/project.proposed.json`, et les
+  préfixes de branche dans la section `branches` de l'overlay de l'agent `github`) ;
 - la liste des **fondations partagées** correspond à ton repo — la règle liste
   `src/lib`, `shared/`, le router, les providers, le lockfile, les migrations.
-  Ajoute les tiennes (dossier infra, thème, i18n) : c'est cette liste qui décide
-  ce qui ne forke jamais.
+  Ajoute les tiennes (dossier infra, thème, i18n) dans la section `foundations` de
+  l'overlay : c'est cette liste qui décide ce qui ne forke jamais.
 
 Si tu ne travailles jamais sur deux features en parallèle, la règle est inerte —
 la garder ne coûte rien, elle ne déclenche que sur ≥ 2 tracks.
@@ -417,9 +421,10 @@ choses sur la machine : de quoi lancer l'app (la skill `run`, donc les scripts d
 point 4) et de quoi piloter un navigateur (`claude-in-chrome`, ou la skill
 `e2e-playwright` si tu préfères prouver au spec plutôt qu'à l'œil).
 
-Ce n'est pas un `FILL` et rien ne le vérifie au démarrage : c'est une capacité de
-poste, pas un fichier. Si elle manque, la règle est dans `commands/review.md` —
-la review le **déclare comme un trou du gate**, pas comme un skip, et les
+Ce n'est pas un marqueur à remplir et rien ne le vérifie au démarrage : c'est une
+capacité de poste, rien à écrire dans `.claude/overlays/` ni dans
+`.claude/project.json`. Si elle manque, la règle est dans la commande
+`/loop:review` — la review le **déclare comme un trou du gate**, pas comme un skip, et les
 critères d'acceptation qui supposaient qu'on voie l'écran ressortent en « non
 observés ». Un contraste illisible, un débordement à 1280px et un état vide cassé
 passent tous les autres gates sans faire un bruit.
@@ -442,9 +447,9 @@ brief, dans un autre passage.
 ### Motion (optionnel, UI uniquement)
 
 Le kit ne fournit aucune bibliothèque : ton app installe ce dont elle a besoin.
-Les conventions sont dans `.claude/skills/patterns/motion.md` (défaut : CSS ou
-Motion) et `patterns/gsap.md` (seulement si le spec déclare `Motion: gsap -
-<raison>`). Versions et licences : `docs/research-cache/motion.md` et `gsap.md`,
+Les conventions sont dans les patterns `motion` (défaut : CSS ou Motion) et `gsap`
+(seulement si le spec déclare `Motion: gsap - <raison>`), du dossier `patterns/` des
+skills du kit. Versions et licences : `docs/research-cache/motion.md` et `gsap.md`,
 à revérifier au-delà de 30 jours. Limite à connaître : l'étage 0 ne juge pas le
 mouvement, et Impeccable n'attrape que des motifs de code connus.
 
@@ -452,11 +457,14 @@ mouvement, et Impeccable n'attrape que des motifs de code connus.
 
 ### Context7 (optionnel, priorité basse)
 
-`doc-researcher` pèse peu (environ 0,3 % du coût mesuré). Si le serveur MCP
-Context7 est installé, relève le nom exact de ses outils avec `/mcp` et ajoute-les
-au `tools:` de `.claude/agents/doc-researcher.md` (le commentaire FILL en tête du
-fichier). Sans lui, l'agent saute cette étape de son ordre de recherche ; rien
-d'autre ne change. `install.sh` ne le câble pas.
+`doc-researcher` pèse peu (environ 0,3 % du coût mesuré). Son `tools:` liste déjà
+les outils de Context7 pour un serveur enregistré sous le nom `context7`
+(`claude mcp add … context7 …`, cf. `docs/research-cache/context7.md`) : rien à
+faire si c'est ton cas. Un outil listé qu'aucun serveur ne fournit est ignoré par
+Claude Code, donc sans Context7 l'agent saute cette étape ; rien d'autre ne change.
+Enregistré sous un autre nom (vérifie avec `/mcp`) : l'agent ne l'atteint pas ;
+c'est du code du kit, refusé dans un projet installé, et l'overlay ne peut pas
+atteindre son frontmatter — réenregistre le serveur sous `context7`.
 
 ## 14. Chemins gardés
 
@@ -506,7 +514,13 @@ approuve si le changement est voulu.
 écrit `.claude/INSTALL_PROFILE` refuse, sans demander, toute écriture du code du
 kit : `.claude/hooks/*`, `.claude/scripts/*`, `workflow.py`, `workflow.sh`,
 `codex-handoff.sh`, `install.sh`, `addons/`, `.claude/project.json`,
-`.claude/project.snapshot.json` et le tampon lui-même. Le refus vaut pour `Write`/`Edit`
+`.claude/project.snapshot.json`, le tampon lui-même, `.claude/kit-manifest` et les
+**prompts du kit** : les fichiers des dossiers `agents/`, `commands/`, `skills/` et
+`guides/` de `.claude/` que liste `.claude/kit-manifest` (écrit par `install.sh`) ;
+(par exemple `.claude/skills/patterns/motion.md`, lu comme tel : jamais édité sur place) ;
+un prompt à toi, absent du manifeste, reste modifiable. Les valeurs et règles locales
+d'un prompt vont dans `.claude/overlays/<son chemin sous .claude/>`, que la ligne
+« Kit prompts » de `CLAUDE.md` demande de lire avant de suivre le prompt. Le refus vaut pour `Write`/`Edit`
 (chemin lu tel quel ou après résolution des liens), pour le shell (écriture,
 suppression, déplacement, copie dans un dossier, y compris le dossier parent) et
 pour git (un `checkout`, `restore`, `reset`, `stash`, `apply`, `merge`, `pull`…

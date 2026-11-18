@@ -37,7 +37,8 @@ git clone <this-repo> loopkit && cd loopkit
 ```
 
 `install.sh` overwrites kit code (`.claude/hooks/`, `.claude/scripts/`, the root
-launchers) after backing up every file that differs to `.claude/kit-backup/<UTC time>/`,
+launchers, and the kit prompts of `.claude/{agents,commands,skills,guides}/` that it lists in
+`.claude/kit-manifest`) after backing up every file that differs to `.claude/kit-backup/<UTC time>/`,
 and writes the other existing kit files as `.new`; the two exceptions are
 `.claude/settings.json`, whose selected hook blocks are merged idempotently while
 preserving user keys, and `.claude/project.json`, which is created or upgraded in
@@ -56,7 +57,9 @@ old hooks before they are replaced.
 
 **The kit boundary.** In an installed project (`.claude/INSTALL_PROFILE` present) the
 hooks deny every write to kit code, by Write/Edit, shell or git: change it in this
-repo, then re-run `install.sh`. `/kit:init` writes your values as
+repo, then re-run `install.sh`. A kit prompt is kit code too (the list is
+`.claude/kit-manifest`): your values and local rules for it live in
+`.claude/overlays/<its path under .claude/>`, never in the prompt. `/kit:init` writes your values as
 `.claude/project.proposed.json`; you apply it from your own terminal with
 `bash .claude/scripts/kit-apply.sh`. In this repo nothing changes: those paths ask.
 

@@ -83,10 +83,16 @@ SB_TARGET="$SCRATCH/supabase-target"
 mkdir -p "$SB_TARGET"
 "$ROOT/install.sh" "$SB_TARGET" --supabase --no-ci >/dev/null 2>&1
 SB_DOCTOR="$(python3 "$SB_TARGET/.claude/hooks/kit-doctor.py" || true)"
-grep -q 'ok          client-copies' <<<"$SB_DOCTOR"
-grep -q 'ok          coverage-holes' <<<"$SB_DOCTOR"
-grep -Fq 'import { supabase as client } from "@/lib/supabase";' "$SB_TARGET/.claude/skills/templates/feature.md"
-grep -Fq 'supabase: createMockClient(),' "$SB_TARGET/.claude/skills/templates/fixtures.md"
+grep -q 'skip        client-copies' <<<"$SB_DOCTOR"
+grep -q 'skip        coverage-holes' <<<"$SB_DOCTOR"
+# IN54 (kit-prompts step 7) a fresh --supabase install leaves the kit templates as the kit ships them;
+# the data client lives in project.json and its 05-testing.md twin.
+for f in skills/templates/feature.md skills/patterns/react-query.md skills/templates/fixtures.md \
+         skills/templates/tooling-config.md; do
+    cmp -s "$SB_TARGET/.claude/$f" "$ROOT/.claude/$f" || { echo "IN54: $f rewritten by the install" >&2; exit 1; }
+done
+jq -e '.data_client.module == "lib/supabase"' "$SB_TARGET/.claude/project.json" >/dev/null
+grep -Fq 'lib/supabase.ts' "$SB_TARGET/.claude/rules/05-testing.md"
 
 # The handoff is ignored on a fresh install and added to an older kit's block.
 grep -qxF 'docs/work/*/handoff.md' "$PY_TARGET/.gitignore"
@@ -474,7 +480,6 @@ jq -e '([.protected_dirs[] | select(. == "supabase")] | length) == 1
     and ([.protected_dirs[] | select(. == "app")] | length) == 1
     and ([.protected_dirs[] | select(. == "alembic")] | length) == 1
     and .data_client.module == "lib/supabase"' "$IN13/.claude/project.json" >/dev/null
-grep -q 'lib/supabase' "$IN13/.claude/skills/templates/feature.md"
 for f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/*.py; do
     cmp -s "$f" "$IN13/.claude/hooks/$(basename "$f")" || { echo "IN13: $(basename "$f") differs" >&2; exit 1; }
 done
@@ -656,10 +661,13 @@ for f in .claude/hooks/hook-lib.sh workflow.sh workflow.py codex-handoff.sh .cla
     cmp -s "${KO_BK[0]}/$f" "$SCRATCH/ko-old/$f"
     [[ ! -e "$KO/$f.new" ]]
 done
-for f in CLAUDE.md .claude/rules/00-project.md .claude/commands/kit/init.md docs/ADAPTATION.md; do
+for f in CLAUDE.md .claude/rules/00-project.md docs/ADAPTATION.md; do
     [[ -e "$KO/$f.new" ]]
 done
-grep -Fq 'Fusionne d'"'"'abord .claude/commands/kit/init.md.new' <<<"$KO_OUT"
+# kit-prompts step 5: init.md is a kit prompt, overwritten with its backup, never left in .new.
+cmp -s "$KO/.claude/commands/kit/init.md" "$ROOT/.claude/commands/kit/init.md"
+grep -Fxq 'local line' "${KO_BK[0]}/.claude/commands/kit/init.md"
+[[ ! -e "$KO/.claude/commands/kit/init.md.new" ]]
 [[ ! -e "$KO/.claude/settings.json.new" ]]
 cmp -s "$KO/.claude/scripts/small-plan.sh" "$ROOT/.claude/scripts/small-plan.sh"
 [[ ! -e "${KO_BK[0]}/.claude/scripts/small-plan.sh" ]]
@@ -777,5 +785,147 @@ mkdir -p "$IN43/.claude/hooks"
 printf 'PROTECTED_DIRS="src|shared|app|alembic|\\.claude"\n' >"$IN43/.claude/hooks/prevent-destructive-commands.sh"
 "${MIGRATE[@]}" "$IN43" >/dev/null 2>&1
 jq -e '.schema_version == 3 and .server_roots == ["app","alembic"]' "$IN43/.claude/project.json" >/dev/null
+
+# ---- kit-prompts step 5: kit prompts are copy_kit, listed in .claude/kit-manifest.
+fail_in() { echo "$1" >&2; exit 1; }
+# in_backups_with <target> <rel>: how many backup runs hold <rel>.
+in_backups_with() {
+    local n=0 d
+    for d in "$1"/.claude/kit-backup/*/; do
+        [[ -e "$d$2" ]] && n=$((n + 1))
+    done
+    echo "$n"
+}
+# IN44 a fresh install writes the sorted manifest of the kit's four prompt dirs, nothing else.
+IN44="$SCRATCH/in44"
+mkdir -p "$IN44"
+"$ROOT/install.sh" "$IN44" --no-ci >/dev/null 2>&1
+MAN="$IN44/.claude/kit-manifest"
+[[ -f "$MAN" ]] || fail_in 'IN44: no .claude/kit-manifest'
+LC_ALL=C sort -c "$MAN" || fail_in 'IN44: manifest not sorted'
+KIT_PROMPTS="$(cd "$ROOT" && find .claude/agents .claude/commands .claude/skills .claude/guides -type f \
+    ! -name '*.pyc' ! -name '.DS_Store' | wc -l)"
+[[ "$(wc -l <"$MAN")" -eq "$KIT_PROMPTS" ]] || fail_in "IN44: $(wc -l <"$MAN") lines, kit has $KIT_PROMPTS"
+grep -Ev '^\.claude/(agents|commands|skills|guides)/' "$MAN" && fail_in 'IN44: a line outside the four dirs'
+# IN45 --fastapi also lists the addon prompts.
+IN45="$SCRATCH/in45"
+mkdir -p "$IN45"
+"$ROOT/install.sh" "$IN45" --fastapi --no-ci >/dev/null 2>&1
+grep -q '^\.claude/commands/backend/' "$IN45/.claude/kit-manifest" || fail_in 'IN45: no backend command listed'
+grep -Fxq .claude/commands/database/migration.md "$IN45/.claude/kit-manifest" || fail_in 'IN45: migration.md not listed'
+# IN46 a re-install over an edited ship.md overwrites it, keeps the old copy, lists it as adapted.
+printf 'adapted\n' >>"$IN44/.claude/commands/loop/ship.md"
+cp "$IN44/.claude/commands/loop/ship.md" "$SCRATCH/in46-ship.md"
+mkdir -p "$IN44/.claude/skills/own"
+printf 'own\n' >"$IN44/.claude/skills/own/SKILL.md"
+IN46_OUT="$("$ROOT/install.sh" "$IN44" --no-ci 2>&1)"
+cmp -s "$IN44/.claude/commands/loop/ship.md" "$ROOT/.claude/commands/loop/ship.md" || fail_in 'IN46: ship.md not overwritten'
+IN46_BK=("$IN44"/.claude/kit-backup/*/.claude/commands/loop/ship.md)
+cmp -s "${IN46_BK[0]}" "$SCRATCH/in46-ship.md" || fail_in 'IN46: backup differs from the adapted copy'
+[[ ! -e "$IN44/.claude/commands/loop/ship.md.new" ]] || fail_in 'IN46: ship.md.new written'
+IN46_BLOCK="$(sed -n '/prompts adaptés/,/^$/p' <<<"$IN46_OUT")"
+grep -Fq '.claude/commands/loop/ship.md' <<<"$IN46_BLOCK" || fail_in 'IN46: ship.md not in the adapted block'
+grep -Fq '/kit:init' <<<"$IN46_BLOCK" || fail_in 'IN46: the adapted block does not name /kit:init'
+# IN47 a project-owned skill is untouched, unlisted, never backed up.
+grep -Fxq own "$IN44/.claude/skills/own/SKILL.md" || fail_in 'IN47: own skill changed'
+grep -Fq .claude/skills/own "$IN44/.claude/kit-manifest" && fail_in 'IN47: own skill listed'
+[[ "$(in_backups_with "$IN44" .claude/skills/own/SKILL.md)" -eq 0 ]] || fail_in 'IN47: own skill backed up'
+# IN48 the ship overlay is seeded from the kit template; an edited overlay is kept.
+cmp -s "$IN45/.claude/overlays/commands/loop/ship.md" "$ROOT/templates/overlays/commands/loop/ship.md" \
+    || fail_in 'IN48: overlay not seeded'
+printf '## extra-gates\npnpm test:py\n' >"$IN45/.claude/overlays/commands/loop/ship.md"
+cp "$IN45/.claude/overlays/commands/loop/ship.md" "$SCRATCH/in48-overlay.md"
+"$ROOT/install.sh" "$IN45" --fastapi --no-ci >/dev/null 2>&1
+cmp -s "$IN45/.claude/overlays/commands/loop/ship.md" "$SCRATCH/in48-overlay.md" || fail_in 'IN48: edited overlay replaced'
+# IN49 a previous entry whose file exists stays listed; one whose file is gone is dropped.
+printf 'x\n' >"$IN44/.claude/skills/patterns/from-earlier.md"
+printf '%s\n' .claude/skills/patterns/from-earlier.md .claude/skills/patterns/gone.md >>"$IN44/.claude/kit-manifest"
+"$ROOT/install.sh" "$IN44" --no-ci >/dev/null 2>&1
+grep -Fxq .claude/skills/patterns/from-earlier.md "$IN44/.claude/kit-manifest" || fail_in 'IN49: surviving entry dropped'
+grep -Fxq .claude/skills/patterns/gone.md "$IN44/.claude/kit-manifest" && fail_in 'IN49: gone entry kept'
+# IN50 a re-install with no change: kit code up to date, the same manifest.
+cp "$IN44/.claude/kit-manifest" "$SCRATCH/in50-manifest"
+IN50_OUT="$("$ROOT/install.sh" "$IN44" --no-ci 2>&1)"
+grep -Fq 'kit code: up to date' <<<"$IN50_OUT" || fail_in 'IN50: not up to date'
+grep -Fq 'prompts adaptés' <<<"$IN50_OUT" && fail_in 'IN50: an adapted block on a no-change run'
+cmp -s "$IN44/.claude/kit-manifest" "$SCRATCH/in50-manifest" || fail_in 'IN50: manifest changed'
+# IN51 an EcoCrew-shaped target: no project.json, older hooks, six adapted prompts, an own pattern.
+IN51="$SCRATCH/in51"
+mkdir -p "$IN51"
+"$ROOT/install.sh" "$IN51" --no-ci >/dev/null 2>&1
+rm "$IN51/.claude/project.json" "$IN51/.claude/kit-manifest"
+printf '# older\n' >>"$IN51/.claude/hooks/hook-lib.sh"
+IN51_ADAPTED=(.claude/agents/github.md .claude/commands/loop/ship.md .claude/skills/e2e-playwright/SKILL.md
+    .claude/skills/templates/tooling-config.md .claude/guides/review/correctness.md .claude/guides/10-worktrees.md)
+for f in "${IN51_ADAPTED[@]}"; do
+    printf 'ecocrew value\n' >>"$IN51/$f"
+    mkdir -p "$SCRATCH/in51-old/$(dirname "$f")"
+    cp "$IN51/$f" "$SCRATCH/in51-old/$f"
+done
+printf 'snap\n' >"$IN51/.claude/skills/patterns/snapshot-tests.md"
+IN51_OUT="$("$ROOT/install.sh" "$IN51" --no-ci 2>&1)"
+jq -e '.schema_version == 3' "$IN51/.claude/project.json" >/dev/null || fail_in 'IN51: no project.json v3'
+IN51_BLOCK="$(sed -n '/prompts adaptés/,/^$/p' <<<"$IN51_OUT")"
+for f in "${IN51_ADAPTED[@]}"; do
+    IN51_BK=("$IN51"/.claude/kit-backup/*/"$f")
+    cmp -s "${IN51_BK[0]}" "$SCRATCH/in51-old/$f" || fail_in "IN51: $f backup differs"
+    grep -Fq "$f" <<<"$IN51_BLOCK" || fail_in "IN51: $f not listed as adapted"
+done
+grep -Fxq snap "$IN51/.claude/skills/patterns/snapshot-tests.md" || fail_in 'IN51: snapshot-tests.md changed'
+grep -Fq snapshot-tests.md <<<"$IN51_OUT" && fail_in 'IN51: snapshot-tests.md listed'
+grep -Fq snapshot-tests.md "$IN51/.claude/kit-manifest" && fail_in 'IN51: snapshot-tests.md in the manifest'
+# IN52 --fastapi over an adapted fastapi migration.md: the fastapi copy, the adapted one backed up, listed once.
+MIG=.claude/commands/database/migration.md
+printf 'adapted\n' >>"$IN45/$MIG"
+cp "$IN45/$MIG" "$SCRATCH/in52-mig.md"
+IN52_OUT="$("$ROOT/install.sh" "$IN45" --fastapi --no-ci 2>&1)"
+cmp -s "$IN45/$MIG" "$ROOT/addons/fastapi/commands/database/migration.md" || fail_in 'IN52: not the fastapi copy'
+IN52_BK=("$IN45"/.claude/kit-backup/*/"$MIG")
+cmp -s "${IN52_BK[0]}" "$SCRATCH/in52-mig.md" || fail_in 'IN52: backup differs from the adapted copy'
+[[ ! -e "$IN45/$MIG.new" ]] || fail_in 'IN52: migration.md.new written'
+[[ "$(grep -Fc "$MIG" <<<"$IN52_OUT")" -eq 1 ]] || fail_in 'IN52: migration.md not listed exactly once'
+# IN53 a second --fastapi run with no edit: no backup of it, no adapted line.
+IN53_BEFORE="$(in_backups_with "$IN45" "$MIG")"
+IN53_OUT="$("$ROOT/install.sh" "$IN45" --fastapi --no-ci 2>&1)"
+cmp -s "$IN45/$MIG" "$ROOT/addons/fastapi/commands/database/migration.md" || fail_in 'IN53: not the fastapi copy'
+[[ "$(in_backups_with "$IN45" "$MIG")" -eq "$IN53_BEFORE" ]] || fail_in 'IN53: migration.md backed up'
+grep -Fq "$MIG" <<<"$IN53_OUT" && fail_in 'IN53: migration.md listed'
+# IN56 after --fastapi, a re-install with no addon flag keeps the fastapi migration.md.
+IN56="$SCRATCH/in56"
+mkdir -p "$IN56"
+"$ROOT/install.sh" "$IN56" --fastapi --no-ci >/dev/null 2>&1
+IN56_OUT="$("$ROOT/install.sh" "$IN56" --no-ci 2>&1)"
+cmp -s "$IN56/$MIG" "$ROOT/addons/fastapi/commands/database/migration.md" || fail_in 'IN56: fastapi migration.md replaced'
+[[ "$(in_backups_with "$IN56" "$MIG")" -eq 0 ]] || fail_in 'IN56: migration.md backed up'
+grep -Fq "$MIG" <<<"$IN56_OUT" && fail_in 'IN56: migration.md listed'
+# IN57 the same after --supabase, scoped to migration.md.
+IN57="$SCRATCH/in57"
+mkdir -p "$IN57"
+"$ROOT/install.sh" "$IN57" --supabase --no-ci >/dev/null 2>&1
+IN57_OUT="$("$ROOT/install.sh" "$IN57" --no-ci 2>&1)"
+cmp -s "$IN57/$MIG" "$ROOT/addons/supabase/commands/database/migration.md" || fail_in 'IN57: supabase migration.md replaced'
+[[ "$(in_backups_with "$IN57" "$MIG")" -eq 0 ]] || fail_in 'IN57: migration.md backed up'
+grep -Fq "$MIG" <<<"$IN57_OUT" && fail_in 'IN57: migration.md listed'
+# IN58 both addons, a hand-merged migration.md, a re-install with no addon flag: left in place, named.
+IN58="$SCRATCH/in58"
+mkdir -p "$IN58"
+"$ROOT/install.sh" "$IN58" --supabase --no-ci >/dev/null 2>&1
+"$ROOT/install.sh" "$IN58" --fastapi --no-ci >/dev/null 2>&1
+printf 'merged by hand\n' >>"$IN58/$MIG"
+cp "$IN58/$MIG" "$SCRATCH/in58-mig.md"
+IN58_BEFORE="$(in_backups_with "$IN58" "$MIG")"
+IN58_OUT="$("$ROOT/install.sh" "$IN58" --no-ci 2>&1)"
+cmp -s "$IN58/$MIG" "$SCRATCH/in58-mig.md" || fail_in 'IN58: the merge was replaced'
+[[ "$(in_backups_with "$IN58" "$MIG")" -eq "$IN58_BEFORE" ]] || fail_in 'IN58: migration.md backed up'
+grep -Fq 'prompts adaptés' <<<"$IN58_OUT" && grep -A20 'prompts adaptés' <<<"$IN58_OUT" | grep -Fq "$MIG" \
+    && fail_in 'IN58: migration.md listed as adapted'
+grep -Fq "$MIG" <<<"$IN58_OUT" || fail_in 'IN58: migration.md not named in the summary'
+grep -Fxq "$MIG" "$IN58/.claude/kit-manifest" || fail_in 'IN58: migration.md left the manifest'
+# IN55 the closing summary's addon paragraph names .claude/overlays/ and no prompt to edit.
+IN55_PARA="$(sed -n '/^Addon installé ?/,/^Lanceur supervisé/p' <<<"$IN52_OUT")"
+grep -Fq '.claude/overlays/' <<<"$IN55_PARA" || fail_in 'IN55: no .claude/overlays/ in the addon paragraph'
+IN55_BAD="$(grep -oE '[A-Za-z0-9./_-]*(agents|commands|skills|guides)/[A-Za-z0-9/._-]+\.md' <<<"$IN55_PARA" \
+    | grep -vE '^\.claude/overlays/' | grep -vE '^\.claude/skills/patterns/[A-Z]+-ADDON\.md$' || true)"
+[[ -z "$IN55_BAD" ]] || fail_in "IN55: prompt paths outside .claude/overlays/: $IN55_BAD"
 
 echo 'install fixtures: green.'

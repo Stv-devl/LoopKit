@@ -31,7 +31,7 @@ and never replaces them · `.claude/guides/rules-index.md`.
 - `*.pem`, `*.key`, `credentials.*`
 
 If a task needs environment variables, ask for their names (not values) or check `.env.example`.
-Kit code (hooks, scripts, launchers, `project.json`) is denied in an installed project: change it in the LoopKit repo, then `install.sh`.
+Kit code (hooks, scripts, launchers, `project.json`) is denied in an installed project: change it in the LoopKit repo, then `install.sh`. Kit prompts are kit code too; a prompt's project values and local rules live in `.claude/overlays/<its path>`, read it before following the prompt.
 
 ### Destructive Commands
 

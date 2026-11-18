@@ -14,7 +14,7 @@ Read by a `reviewer` assigned `correctness` (`.claude/agents/reviewer.md`). Also
 - [ ] No cross-feature import (`features/A` → `features/B`)
 - [ ] No shared **leaf** code depending on a feature: `src/components`, `src/hooks`,
       `src/lib`, `src/types`, `src/stores`, `src/config` — the full
-      `data_client.shared_dirs` of `.claude/project.json`, six entries — must not import `features/*`.
+      `data_client.shared_dirs` of `.claude/project.json`, whatever its length — must not import `features/*`.
       `src/routes` and `src/providers` are wiring and may. You are the backstop
       that matters here: the hook inspects only the **inserted delta** of an
       Edit, so an import already sitting elsewhere in the file reaches you and
@@ -126,3 +126,6 @@ Read by a `reviewer` assigned `correctness` (`.claude/agents/reviewer.md`). Also
       behind. Major when the stale path can still run or contradict the new one;
       Minor when it is inert residue. This is not a request for unrelated cleanup:
       report only rot created or made obsolete by this diff.
+
+**Project slot `extra-checks`** — `## extra-checks` in `.claude/overlays/guides/review/correctness.md`; absent → none.
+The section adds this project's own correctness checks, read as part of the list above.

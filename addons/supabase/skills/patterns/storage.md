@@ -1,8 +1,8 @@
 # Storage
 
-<!-- FILL: bucket names, size and MIME limits, the path convention. What must not
-     change: buckets are private by default, the path encodes ownership, and
-     upload calls live in the data layer. -->
+> Note: bucket names, size and MIME limits and the path convention are placeholders, use this
+> repo's when applying. What must not change: buckets are private by default, the path
+> encodes ownership, and upload calls live in the data layer.
 
 > Storage calls are data-client calls: they belong in `*.gateway.ts` /
 > `services.ts` like any other (`02-architecture.md`).

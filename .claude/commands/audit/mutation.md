@@ -50,7 +50,8 @@ pnpm add -D @stryker-mutator/core @stryker-mutator/vitest-runner
 }
 ```
 
-<!-- FILL: adjust the globs to this repo's real layout, cf. 02-architecture.md. -->
+**Project slot `globs`** — `## globs` in `.claude/overlays/commands/audit/mutation.md`; absent → the globs built from `app_roots` and `tdd_layers` of `.claude/project.json`.
+The section holds this repo's real globs, cf. `02-architecture.md`.
 
 - **`break: null` on purpose.** This is not a gate. Past ~80 % the returns
   collapse, and a threshold nobody reaches is a threshold somebody disables —

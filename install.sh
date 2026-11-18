@@ -22,9 +22,11 @@
 #           Omis dans un terminal, la question est posee, non par defaut ;
 #           sans terminal, rien n'est installe.
 #
-# Le code du kit (hooks, scripts, lanceurs) est remplacé par la version du kit, après une
-# sauvegarde de chaque fichier qui diffère dans .claude/kit-backup/<heure UTC>/. Tout autre
-# fichier existant n'est jamais remplacé : il écrit `<fichier>.new` à côté. Exception
+# Le code du kit (hooks, scripts, lanceurs, et les prompts : agents, commands, skills, guides)
+# est remplacé par la version du kit, après une sauvegarde de chaque fichier qui diffère dans
+# .claude/kit-backup/<heure UTC>/. Les prompts livrés sont listés dans .claude/kit-manifest ;
+# les valeurs propres au projet vivent dans .claude/overlays/ et .claude/project.json. Tout
+# autre fichier existant n'est jamais remplacé : il écrit `<fichier>.new` à côté. Exception
 # volontaire : settings.json fusionne les hooks sélectionnés dans le fichier actif, faute
 # de quoi une mise à jour installe des guardrails muets.
 
@@ -108,7 +110,7 @@ copy_file() {
 }
 
 # copy_kit <source> <destination>
-# Le code du kit (hooks, scripts, lanceurs) appartient au kit : il est écrasé, jamais
+# Le code du kit (hooks, scripts, lanceurs, prompts) appartient au kit : il est écrasé, jamais
 # laissé en .new. Un fichier qui diffère est d'abord sauvegardé, à son chemin relatif,
 # sous .claude/kit-backup/<heure UTC>/ (un dossier par run, créé seulement si besoin).
 copy_kit() {
@@ -126,6 +128,100 @@ copy_kit() {
     cp -p "$dst" "$TARGET/$KIT_BACKUP/$rel"
     cp "$src" "$dst"
     KIT_OVERWRITTEN+=("$rel")
+}
+
+# Prompts du kit : une seule source par destination, copiée une seule fois (une sauvegarde
+# par chemin et par run). PROMPT_RELS[i] (chemin relatif) ← PROMPT_SRCS[i] ; une source vide
+# laisse le fichier en place. PROMPT_KEPT : laissés en place et différents des deux addons.
+PROMPT_RELS=()
+PROMPT_SRCS=()
+PROMPT_KEPT=()
+
+# prompt_source <source> <chemin relatif> : la source d'un prompt ; un appel plus tardif pour
+# le même chemin la remplace (le coeur d'abord, puis l'addon choisi).
+prompt_source() {
+    local src="$1" rel="$2" i
+    for i in "${!PROMPT_RELS[@]}"; do
+        if [[ "${PROMPT_RELS[$i]}" == "$rel" ]]; then
+            PROMPT_SRCS[i]="$src"
+            return 0
+        fi
+    done
+    PROMPT_RELS+=("$rel")
+    PROMPT_SRCS+=("$src")
+}
+
+# addon_marker <addon> : le fichier qu'un run de cet addon laisse dans le projet.
+addon_marker() {
+    case "$1" in
+        supabase) echo ".claude/skills/patterns/SUPABASE-ADDON.md" ;;
+        fastapi) echo ".claude/skills/patterns/FASTAPI-ADDON.md" ;;
+    esac
+}
+
+# resolve_prompt_winners : un prompt que livre aussi un addon, quand aucun addon choisi par ce
+# run ne l'a pris : l'addon installé par un run précédent (son marqueur, lu avant les copies)
+# gagne ; deux tels addons → le fichier reste en place.
+resolve_prompt_winners() {
+    local i rel src a cands
+    for i in "${!PROMPT_RELS[@]}"; do
+        rel="${PROMPT_RELS[$i]}"
+        src="${PROMPT_SRCS[$i]}"
+        [[ "$src" == "$KIT_DIR/.claude/"* ]] || continue
+        cands=()
+        for a in "${ADDONS_BEFORE[@]:-}"; do
+            [[ -n "$a" && -f "$KIT_DIR/addons/$a/${rel#.claude/}" ]] && cands+=("$KIT_DIR/addons/$a/${rel#.claude/}")
+        done
+        if [[ ${#cands[@]} -eq 1 ]]; then
+            PROMPT_SRCS[i]="${cands[0]}"
+        elif [[ ${#cands[@]} -ge 2 ]]; then
+            PROMPT_SRCS[i]=""
+            if [[ -e "$TARGET/$rel" ]] && ! cmp -s "$TARGET/$rel" "${cands[0]}" \
+                    && ! cmp -s "$TARGET/$rel" "${cands[1]}"; then
+                PROMPT_KEPT+=("$rel")
+            fi
+        fi
+    done
+}
+
+# flush_prompts : chaque prompt copié une fois depuis sa source gagnante (copy_kit).
+flush_prompts() {
+    local i
+    for i in "${!PROMPT_RELS[@]}"; do
+        if [[ -n "${PROMPT_SRCS[$i]}" ]]; then
+            copy_kit "${PROMPT_SRCS[$i]}" "$TARGET/${PROMPT_RELS[$i]}"
+        fi
+    done
+}
+
+# write_manifest : .claude/kit-manifest, trié, après les copies : les prompts de ce run, plus
+# les entrées d'un run précédent dont le fichier existe encore. Écrit d'un coup (tmp + mv).
+write_manifest() {
+    local man="$TARGET/.claude/kit-manifest" tmp line
+    tmp="$(mktemp "$TARGET/.claude/.kit-manifest.XXXXXX")"
+    {
+        printf '%s\n' "${PROMPT_RELS[@]}"
+        if [[ -f "$man" ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ "$line" =~ ^\.claude/(agents|commands|skills|guides)/[A-Za-z0-9._/-]+$ ]] || continue
+                [[ "/$line/" == */../* || "/$line/" == */./* ]] && continue
+                if [[ -f "$TARGET/$line" ]]; then printf '%s\n' "$line"; fi
+            done <"$man"
+        fi
+    } | LC_ALL=C sort -u >"$tmp"
+    mv "$tmp" "$man"
+}
+
+# seed_overlays : les modèles d'overlay du kit, copiés une fois ; un overlay existant est au
+# projet (copy_file : .new seulement s'il diffère du modèle).
+seed_overlays() {
+    local f dst
+    [[ -d "$KIT_DIR/templates/overlays" ]] || return 0
+    while IFS= read -r -d '' f; do
+        dst="$TARGET/.claude/overlays/${f#"$KIT_DIR/templates/overlays/"}"
+        if [[ -e "$dst" ]] && cmp -s "$f" "$dst"; then continue; fi
+        copy_file "$f" "$dst"
+    done < <(find "$KIT_DIR/templates/overlays" -type f -name '*.md' -print0)
 }
 
 # copy_override <source> <destination>
@@ -236,6 +332,8 @@ copy_tree() {
         rel="${f#"$src"/}"
         case "$dst/$rel" in
             "$TARGET/.claude/hooks/"* | "$TARGET/.claude/scripts/"*) copy_kit "$f" "$dst/$rel" ;;
+            "$TARGET/.claude/agents/"* | "$TARGET/.claude/commands/"* | "$TARGET/.claude/skills/"* \
+                | "$TARGET/.claude/guides/"*) prompt_source "$f" "${dst#"$TARGET"/}/$rel" ;;
             *) copy_file "$f" "$dst/$rel" ;;
         esac
     done < <(find "$src" \
@@ -488,17 +586,8 @@ wire_supabase() {
     fi
     if [[ "$wired" == *data_client=changed* ]]; then
         echo "  câblé : lib/supabase dans .claude/project.json (data_client)"
-        # Les templates nomment le client : le module change, l'export aussi
-        # (`supabase`, pas `client`). Un alias garde les corps des exemples
-        # intacts ; /kit:doctor client-copies vérifie les copies.
-        for f in "$t/.claude/skills/templates/feature.md" "$t/.claude/skills/patterns/react-query.md"; do
-            [[ -f "$f" ]] && perl -pi -e 's{import \{ client \} from "\@/lib/client";}{import { supabase as client } from "\@/lib/supabase";}g' "$f"
-        done
-        [[ -f "$t/.claude/skills/templates/fixtures.md" ]] && perl -0pi -e \
-            's#vi\.mock\("\@/lib/client", \(\) => \(\{\n  client: createMockClient\(\),#vi.mock("\@/lib/supabase", () => ({\n  supabase: createMockClient(),#g' \
-            "$t/.claude/skills/templates/fixtures.md"
-        [[ -f "$t/.claude/skills/templates/tooling-config.md" ]] && perl -pi -e \
-            "s{'src/lib/client\.ts',}{'src/lib/supabase.ts',}" "$t/.claude/skills/templates/tooling-config.md"
+        # Les templates du kit restent tels quels (prompts du kit) : ils disent de lire
+        # data_client.module dans .claude/project.json. Seule la règle du projet change.
         [[ -f "$t/.claude/rules/05-testing.md" ]] && perl -pi -e \
             's{`lib/client\.ts`}{`lib/supabase.ts`}' "$t/.claude/rules/05-testing.md"
     elif ! grep -q '"lib/supabase"' "$t/.claude/project.json" 2>/dev/null; then
@@ -683,6 +772,11 @@ if [[ -e "$TARGET/.claude/hooks/hook-lib.sh" ]]; then
     KIT_WAS_HERE=true
 fi
 migrate_config "$TARGET"
+# Les addons d'un run précédent, lus avant toute copie (leur marqueur est un prompt copié).
+ADDONS_BEFORE=()
+for a in supabase fastapi; do
+    if [[ -e "$TARGET/$(addon_marker "$a")" ]]; then ADDONS_BEFORE+=("$a"); fi
+done
 copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
 install_settings "$TARGET/.claude/settings.json" "$WITH_REACT_TS"
 if $WITH_REACT_TS; then
@@ -732,39 +826,35 @@ if $WITH_SUPABASE; then
     ADDON="$KIT_DIR/addons/supabase"
     copy_override "$ADDON/rules/01-stack.md" "$TARGET/.claude/rules/01-stack.md"
     copy_override "$ADDON/rules/06-database.md" "$TARGET/.claude/rules/06-database.md"
-    copy_override "$ADDON/commands/database/migration.md" "$TARGET/.claude/commands/database/migration.md"
+    prompt_source "$ADDON/commands/database/migration.md" .claude/commands/database/migration.md
     for f in "$ADDON/skills/patterns/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/patterns/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/patterns/$(basename "$f")"
     done
     for f in "$ADDON/skills/templates/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/templates/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/templates/$(basename "$f")"
     done
     # Le layer _shared/ des edge functions : du code, pas de la doc.
     copy_tree "$ADDON/functions" "$TARGET/supabase/functions"
-    copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/SUPABASE-ADDON.md"
-    wire_supabase "$TARGET"
+    prompt_source "$ADDON/README.md" "$(addon_marker supabase)"
 fi
 
 if $WITH_FASTAPI; then
     echo "Addon FastAPI inclus."
     ADDON="$KIT_DIR/addons/fastapi"
     copy_override "$ADDON/rules/06-database.md" "$TARGET/.claude/rules/06-database.md"
-    copy_override "$ADDON/commands/database/migration.md" \
-                  "$TARGET/.claude/commands/database/migration.md"
+    prompt_source "$ADDON/commands/database/migration.md" .claude/commands/database/migration.md
     copy_file "$ADDON/rules/07-backend.md" "$TARGET/.claude/rules/07-backend.md"
     # Le rationnel va dans guides/, jamais chargé au démarrage — même partage que
     # le coeur du kit : un piège reste dans la règle, une rétrospective part ici.
-    copy_file "$ADDON/guides/07-backend.md" "$TARGET/.claude/guides/07-backend.md"
+    prompt_source "$ADDON/guides/07-backend.md" .claude/guides/07-backend.md
     for f in "$ADDON/commands/backend/"*.md; do
-        copy_file "$f" "$TARGET/.claude/commands/backend/$(basename "$f")"
+        prompt_source "$f" ".claude/commands/backend/$(basename "$f")"
     done
-    copy_file "$ADDON/commands/refactor/clean-python.md" \
-              "$TARGET/.claude/commands/refactor/clean-python.md"
+    prompt_source "$ADDON/commands/refactor/clean-python.md" .claude/commands/refactor/clean-python.md
     for f in "$ADDON/skills/patterns/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/patterns/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/patterns/$(basename "$f")"
     done
-    copy_file "$ADDON/skills/templates/endpoint.md" \
-              "$TARGET/.claude/skills/templates/endpoint.md"
+    prompt_source "$ADDON/skills/templates/endpoint.md" .claude/skills/templates/endpoint.md
     # Extensions explicites, jamais `*` : le glob nu ramasse aussi le
     # `__pycache__/` que laisse le moindre import des hooks Python, et copy_file
     # fait un `cp` sans -r — il échoue sur un dossier. Un run d'install qui casse
@@ -775,8 +865,7 @@ if $WITH_FASTAPI; then
         [[ "$(basename "$f")" == test_* ]] && continue
         copy_kit "$f" "$TARGET/.claude/hooks/$(basename "$f")"
     done
-    copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/FASTAPI-ADDON.md"
-    wire_fastapi "$TARGET"
+    prompt_source "$ADDON/README.md" "$(addon_marker fastapi)"
 
     if $WITH_SUPABASE; then
         echo "  ! Les deux addons écrivent 06-database.md et database/migration.md :" >&2
@@ -784,6 +873,14 @@ if $WITH_FASTAPI; then
         echo "    Fusionne à la main si le projet utilise vraiment les deux." >&2
     fi
 fi
+
+resolve_prompt_winners
+flush_prompts
+write_manifest
+seed_overlays
+# Le câblage des addons vient après les prompts : wire_supabase réécrit des templates copiés ici.
+if $WITH_SUPABASE; then wire_supabase "$TARGET"; fi
+if $WITH_FASTAPI; then wire_fastapi "$TARGET"; fi
 
 chmod +x "$TARGET/.claude/hooks/"*.sh "$TARGET/.claude/hooks/"*.py 2>/dev/null || true
 chmod +x "$TARGET/.claude/scripts/"*.sh 2>/dev/null || true
@@ -795,21 +892,37 @@ GITIGNORE_FILLED=0
 ensure_gitignore "$TARGET"
 
 echo
-if [[ ${#KIT_OVERWRITTEN[@]} -gt 0 ]]; then
-    echo "kit code: ${#KIT_OVERWRITTEN[@]} fichier(s) remplacé(s) par la version du kit ; l'ancienne version est dans $KIT_BACKUP/ :"
-    printf '  %s\n' "${KIT_OVERWRITTEN[@]}"
+KIT_CODE_LIST=()
+PROMPTS_ADAPTED=()
+for rel in "${KIT_OVERWRITTEN[@]:-}"; do
+    case "$rel" in
+        "") ;;
+        .claude/agents/* | .claude/commands/* | .claude/skills/* | .claude/guides/*) PROMPTS_ADAPTED+=("$rel") ;;
+        *) KIT_CODE_LIST+=("$rel") ;;
+    esac
+done
+if [[ ${#KIT_CODE_LIST[@]} -gt 0 ]]; then
+    echo "kit code: ${#KIT_CODE_LIST[@]} fichier(s) remplacé(s) par la version du kit ; l'ancienne version est dans $KIT_BACKUP/ :"
+    printf '  %s\n' "${KIT_CODE_LIST[@]}"
     echo
 else
     echo "kit code: up to date (aucun fichier du kit à remplacer)."
     echo
 fi
+if [[ ${#PROMPT_KEPT[@]} -gt 0 ]]; then
+    echo "prompts laissés en place (deux addons installés, aucun choisi par ce run) : ton fichier est gardé tel quel."
+    printf '  %s\n' "${PROMPT_KEPT[@]}"
+    echo
+fi
+if [[ ${#PROMPTS_ADAPTED[@]} -gt 0 ]]; then
+    echo "prompts adaptés : ${#PROMPTS_ADAPTED[@]} prompt(s) du kit remplacé(s) ; ta copie est dans $KIT_BACKUP/."
+    echo "  Porte leurs valeurs dans .claude/overlays/ avec /kit:init (étape Port) :"
+    printf '  %s\n' "${PROMPTS_ADAPTED[@]}"
+    echo
+fi
 if [[ ${#SKIPPED[@]} -gt 0 ]]; then
     echo "Déjà présents — écrits en .new, à fusionner à la main :"
     printf '  %s\n' "${SKIPPED[@]}"
-    if [[ " ${SKIPPED[*]} " == *" $TARGET/.claude/commands/kit/init.md "* ]]; then
-        echo "  ! Fusionne d'abord .claude/commands/kit/init.md.new : dans un projet installé, /kit:init écrit"
-        echo "    .claude/project.proposed.json, que tu appliques avec bash .claude/scripts/kit-apply.sh."
-    fi
     echo
 fi
 
@@ -868,8 +981,10 @@ Addon installé ? Son câblage n'est PAS automatique :
   .claude/skills/patterns/FASTAPI-ADDON.md   (les hooks, @07-backend.md et
   protected_dirs sont câblés automatiquement sur une install neuve ; restent à
   faire : 01-stack.md, 00-project.md, 02-architecture.md, EXTERNAL_CLIENTS,
-  et surtout les gates backend dans commands/ship.md + 07-backend.md dans
-  guides/review/correctness.md et security.md)
+  et surtout les gates backend dans la section extra-gates de
+  .claude/overlays/commands/loop/ship.md, et les lignes 07-backend.md dans les
+  sections extra-checks de .claude/overlays/guides/review/correctness.md et de
+  .claude/overlays/guides/review/security.md ; les prompts eux-mêmes sont au kit)
 
 Lanceur supervisé recommandé :
   ./workflow.sh

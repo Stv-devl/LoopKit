@@ -1140,4 +1140,149 @@ rc_has T17 "$(grep -F 1bis "$RC_WORKFLOWS")" kit-audit-surface.py follow-ups.md
 # T18 any non-zero exit of the selector stops the ship, not only exit 2.
 rc_has T18 "$sa_1bis" 'any non-zero exit'
 
+# ---- kit-prompts step 6: no project value in a kit prompt; values live in overlays/project.json.
+kp_dirs=()
+for d in "$ROOT"/.claude/{agents,commands,skills,guides} "$ROOT"/addons/*/{agents,commands,skills,guides}; do
+    [[ -d "$d" ]] && kp_dirs+=("$d")
+done
+# kp_prompt_paths <text>: kit prompt paths named in <text> and not under .claude/overlays/, one per line.
+kp_prompt_paths() {
+    local p rel
+    grep -oE '[A-Za-z0-9./_-]*(agents|commands|skills|guides|templates|patterns)/[A-Za-z0-9/._-]+\.md' <<<"$1" \
+        | while IFS= read -r p; do
+            [[ "$p" == .claude/overlays/* ]] && continue
+            rel="${p#.claude/}"
+            case "$rel" in templates/* | patterns/*) rel="skills/$rel" ;; esac
+            if [[ -f "$ROOT/.claude/$rel" ]] || compgen -G "$ROOT/addons/*/$rel" >/dev/null; then
+                printf '%s\n' "$p"
+            fi
+        done || true
+}
+# PK15 no FILL marker left in a kit prompt, core or addon.
+if grep -rnE -- '<!-- FILL|— FILL>' "${kp_dirs[@]}"; then echo 'PK15: a FILL marker in a kit prompt' >&2; exit 1; fi
+# PK16 every slot line names its own overlay, whose template holds the section, and back.
+kp16_lines="$(grep -rnoE '\*\*Project slot `[a-z-]+`\*\* — `## [a-z-]+` in `\.claude/overlays/[^`]+`' "$ROOT/.claude" || true)"
+[[ -n "$kp16_lines" ]] || { echo 'PK16: no slot line at all' >&2; exit 1; }
+while IFS= read -r kp_line; do
+    kp_file="${kp_line%%:*}"; kp_rel="${kp_file#"$ROOT/.claude/"}"
+    kp_slot="$(sed -E 's/.*\*\*Project slot `([a-z-]+)`.*/\1/' <<<"$kp_line")"
+    kp_sect="$(sed -E 's/.*`## ([a-z-]+)` in.*/\1/' <<<"$kp_line")"
+    kp_over="$(sed -E 's/.*`\.claude\/overlays\/([^`]+)`.*/\1/' <<<"$kp_line")"
+    [[ "$kp_slot" == "$kp_sect" ]] || { echo "PK16: $kp_rel slot $kp_slot names section $kp_sect" >&2; exit 1; }
+    [[ "$kp_over" == "$kp_rel" ]] || { echo "PK16: $kp_rel names the overlay of $kp_over" >&2; exit 1; }
+    grep -qx "## $kp_slot" "$ROOT/templates/overlays/$kp_rel" 2>/dev/null \
+        || { echo "PK16: templates/overlays/$kp_rel lacks ## $kp_slot" >&2; exit 1; }
+done <<<"$kp16_lines"
+while IFS= read -r -d '' kp_tpl; do
+    kp_rel="${kp_tpl#"$ROOT/templates/overlays/"}"
+    while IFS= read -r kp_sect; do
+        case "$kp_sect" in 'Recipes' | 'Local rules') continue ;; esac
+        grep -Fq "**Project slot \`$kp_sect\`**" "$ROOT/.claude/$kp_rel" 2>/dev/null \
+            || { echo "PK16: overlay section $kp_rel ## $kp_sect has no slot line" >&2; exit 1; }
+    done < <(sed -n 's/^## //p' "$kp_tpl")
+done < <(find "$ROOT/templates/overlays" -type f -name '*.md' -print0)
+# PK17 github.md reads protected_branches; correctness.md reads data_client.shared_dirs, no count.
+kp_gh="$ROOT/.claude/agents/github.md"
+grep -Fq 'protected_branches' "$kp_gh" && grep -Fq '.claude/project.json' "$kp_gh" \
+    || { echo 'PK17: github.md does not read protected_branches' >&2; exit 1; }
+if grep -F 'a commit on' "$kp_gh" | grep -Eq '`(main|master)`'; then echo 'PK17: github.md names a protected branch' >&2; exit 1; fi
+kp_cr="$ROOT/.claude/guides/review/correctness.md"
+grep -Fq 'data_client.shared_dirs' "$kp_cr" || { echo 'PK17: correctness.md does not read shared_dirs' >&2; exit 1; }
+if grep -Eq 'project\.json`,[[:space:]]+[a-z]+[[:space:]]+entries' "$kp_cr"; then echo 'PK17: correctness.md states a count' >&2; exit 1; fi
+# PK18 ADAPTATION §2/§9/§10/§12/§13 and init.md steps 2/9/10/12 write overlays or the proposal,
+# never a kit prompt; init.md has a Port step naming the backup.
+kp_adapt="$ROOT/docs/ADAPTATION.md"
+for kp_n in 2 9 10 12 13; do
+    kp_text="$(awk -v n="$kp_n" '$0 ~ "^## "n"\\. " { on = 1; print; next } on && /^## [0-9]+\. |^## [A-Z]/ { exit } on' "$kp_adapt")"
+    [[ -n "$kp_text" ]] || { echo "PK18: ADAPTATION §$kp_n not found" >&2; exit 1; }
+    grep -Eq '\.claude/overlays/|project\.proposed\.json|\.claude/project\.json' <<<"$kp_text" \
+        || { echo "PK18: ADAPTATION §$kp_n names no overlay nor project.json" >&2; exit 1; }
+    kp_bad="$(kp_prompt_paths "$kp_text")"
+    [[ -z "$kp_bad" ]] || { echo "PK18: ADAPTATION §$kp_n names kit prompts: $kp_bad" >&2; exit 1; }
+done
+kp_init="$ROOT/.claude/commands/kit/init.md"
+for kp_n in 2 9 10 12; do
+    kp_text="$(awk -v n="$kp_n" '/^## Phase 3/ { p3 = 1; next } p3 && /^## / { exit } p3 && $0 ~ "^"n"\\. " { on = 1; print; next } on && /^[0-9]+\. / { exit } on' "$kp_init")"
+    [[ -n "$kp_text" ]] || { echo "PK18: init.md step $kp_n not found" >&2; exit 1; }
+    grep -Eq '\.claude/overlays/|project\.proposed\.json|\.claude/project\.json' <<<"$kp_text" \
+        || { echo "PK18: init.md step $kp_n names no overlay nor project.json" >&2; exit 1; }
+    kp_bad="$(kp_prompt_paths "$kp_text")"
+    [[ -z "$kp_bad" ]] || { echo "PK18: init.md step $kp_n names kit prompts: $kp_bad" >&2; exit 1; }
+done
+kp_port="$(awk '/^## Phase [0-9]+ — Port/ { on = 1; print; next } on && /^## / { exit } on' "$kp_init")"
+[[ -n "$kp_port" ]] && grep -Fq '.claude/kit-backup/' <<<"$kp_port" \
+    || { echo 'PK18: init.md has no Port step naming .claude/kit-backup/' >&2; exit 1; }
+# PK19 recipes, the CLAUDE.md kit-code line, the manifest in README and ADAPTATION.
+grep -Fq '.claude/recipes/' "$ROOT/.claude/commands/kit/recipe.md" && grep -Fq '## Recipes' "$ROOT/.claude/commands/kit/recipe.md" \
+    || { echo 'PK19: recipe.md does not route an installed project to .claude/recipes/' >&2; exit 1; }
+grep -F 'Kit code' "$ROOT/CLAUDE.md" | grep -F 'prompts' | grep -Fq '.claude/overlays/' \
+    || { echo 'PK19: CLAUDE.md kit-code line does not name prompts and overlays' >&2; exit 1; }
+grep -Fq '.claude/kit-manifest' "$ROOT/README.md" || { echo 'PK19: README lacks .claude/kit-manifest' >&2; exit 1; }
+grep -Fq '.claude/kit-manifest' "$kp_adapt" || { echo 'PK19: ADAPTATION lacks .claude/kit-manifest' >&2; exit 1; }
+# PK20 the fastapi README §3/§4 name overlays and no kit prompt to edit; security.md has its section.
+kp_fa="$(section "$ROOT/addons/fastapi/README.md" '### 3.' '### 5.')"
+grep -Fq '.claude/overlays/' <<<"$kp_fa" || { echo 'PK20: fastapi README §3/§4 name no overlay' >&2; exit 1; }
+kp_bad="$(kp_prompt_paths "$kp_fa")"
+[[ -z "$kp_bad" ]] || { echo "PK20: fastapi README §3/§4 name kit prompts: $kp_bad" >&2; exit 1; }
+grep -qx '## extra-checks' "$ROOT/templates/overlays/guides/review/security.md" 2>/dev/null \
+    || { echo 'PK20: security.md overlay lacks ## extra-checks' >&2; exit 1; }
+# PK21 the ship bundle-secret scan computes its directories from app_roots, never a literal src/.
+kp_ship="$ROOT/.claude/commands/loop/ship.md"
+kp_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp_ship")"
+[[ -n "$kp_fence" ]] || { echo 'PK21: ship.md bundle-scan fence not found' >&2; exit 1; }
+grep -Fq 'app_roots' <<<"$kp_fence" && grep -Fq '.claude/project.json' <<<"$kp_fence" \
+    || { echo 'PK21: ship.md bundle-scan fence does not read app_roots from .claude/project.json' >&2; exit 1; }
+! grep -Fq 'test -d src/' <<<"$kp_fence" || { echo 'PK21: ship.md bundle-scan fence still tests a literal src/' >&2; exit 1; }
+if command -v jq >/dev/null 2>&1; then
+    kp_tmp="$(mktemp -d)"
+    mkdir -p "$kp_tmp/.claude" "$kp_tmp/frontend/src"
+    printf '{"app_roots": ["frontend"]}\n' >"$kp_tmp/.claude/project.json"
+    printf 'const a = import.meta.env.VITE_X_SECRET\nVITE_X_SECRET=1\n' >"$kp_tmp/frontend/src/a.ts"
+    kp_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp_fence")"
+    kp_out="$(cd "$kp_tmp" && bash -c "$kp_scan" 2>&1 || true)"
+    rm -rf "$kp_tmp"
+    grep -Fq 'frontend/src/a.ts' <<<"$kp_out" || { echo "PK21: executed fence did not scan frontend/src: $kp_out" >&2; exit 1; }
+    ! grep -Fq 'SCAN NOT RUN' <<<"$kp_out" || { echo "PK21: executed fence reported SCAN NOT RUN: $kp_out" >&2; exit 1; }
+fi
+# PK22 every kit prompt importing @/lib/client in an example names data_client.module.
+for kp_f in templates/feature.md templates/fixtures.md patterns/react-query.md; do
+    kp_p="$ROOT/.claude/skills/$kp_f"
+    grep -Fq '@/lib/client' "$kp_p" || continue
+    grep -Fq 'data_client.module' "$kp_p" || { echo "PK22: $kp_f imports @/lib/client without naming data_client.module" >&2; exit 1; }
+done
+# PK23 the bundle-scan fence falls back to src on empty app_roots, and reports each missing root.
+kp23_ship="${KP23_SHIP:-$ROOT/.claude/commands/loop/ship.md}"
+kp23_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp23_ship")"
+if command -v jq >/dev/null 2>&1; then
+    kp23_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp23_fence")"
+    kp23_tmp="$(mktemp -d)"
+    mkdir -p "$kp23_tmp/.claude" "$kp23_tmp/src"
+    printf '{"app_roots": []}\n' >"$kp23_tmp/.claude/project.json"
+    printf 'VITE_X_SECRET=1\n' >"$kp23_tmp/src/a.ts"
+    kp23_out="$(cd "$kp23_tmp" && bash -c "$kp23_scan" 2>&1 || true)"
+    rm -rf "$kp23_tmp"
+    grep -Fq 'src/a.ts' <<<"$kp23_out" || { echo "PK23: empty app_roots did not fall back to src: $kp23_out" >&2; exit 1; }
+    ! grep -Fq 'SCAN NOT RUN' <<<"$kp23_out" || { echo "PK23: empty app_roots reported SCAN NOT RUN: $kp23_out" >&2; exit 1; }
+    kp23_tmp="$(mktemp -d)"
+    mkdir -p "$kp23_tmp/.claude" "$kp23_tmp/frontend/src"
+    printf '{"app_roots": ["frontend","web"]}\n' >"$kp23_tmp/.claude/project.json"
+    kp23_out="$(cd "$kp23_tmp" && bash -c "$kp23_scan" 2>&1 || true)"
+    rm -rf "$kp23_tmp"
+    grep -Fq 'SCAN NOT RUN: no web/src' <<<"$kp23_out" || { echo "PK23: missing web/src not reported: $kp23_out" >&2; exit 1; }
+fi
+# PK24 the bundle-scan fence also scans <root>/.env.example for each declared root.
+kp24_ship="${KP24_SHIP:-$ROOT/.claude/commands/loop/ship.md}"
+kp24_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp24_ship")"
+if command -v jq >/dev/null 2>&1; then
+    kp24_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp24_fence")"
+    kp24_tmp="$(mktemp -d)"
+    mkdir -p "$kp24_tmp/.claude" "$kp24_tmp/frontend/src"
+    printf '{"app_roots": ["frontend"]}\n' >"$kp24_tmp/.claude/project.json"
+    printf 'const a = 1\n' >"$kp24_tmp/frontend/src/a.ts"
+    printf 'VITE_X_SECRET=\n' >"$kp24_tmp/frontend/.env.example"
+    kp24_out="$(cd "$kp24_tmp" && bash -c "$kp24_scan" 2>&1 || true)"
+    rm -rf "$kp24_tmp"
+    grep -Fq 'frontend/.env.example' <<<"$kp24_out" || { echo "PK24: fence did not scan frontend/.env.example: $kp24_out" >&2; exit 1; }
+fi
+
 echo 'workflow contract fixtures: green.'

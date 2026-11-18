@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 7
+# cwk-guard-api: 8
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -38,6 +38,7 @@ CWK_GUARDED=(
     'workflow.sh'
     'codex-handoff.sh'
     'addons/*'                   # the allowed test-hooks.sh runs addons/fastapi/hooks/*.py
+    '.claude/kit-manifest'       # which prompts are kit code in an installed project
 )
 
 # Kit code: changed in the LoopKit repo and brought by install.sh. In an installed
@@ -55,8 +56,74 @@ CWK_KIT_CODE=(
     '.claude/project.json'
     '.claude/project.snapshot.json' # an older install.sh's leftover
     '.claude/INSTALL_PROFILE'       # the install stamp
+    '.claude/kit-manifest'          # the prompts install.sh shipped
 )
 CWK_KIT_DENY='kit code changes in the LoopKit repo, then `install.sh`'
+
+# The four prompt dirs. In an installed project the prompts install.sh shipped there are
+# kit code: .claude/kit-manifest lists them, and a project's own prompt stays writable.
+CWK_KIT_PROMPT_DIRS=(
+    '.claude/agents'
+    '.claude/commands'
+    '.claude/skills'
+    '.claude/guides'
+)
+
+# __cwk_kit_manifest: print the valid entries of $CLAUDE_PROJECT_DIR/.claude/kit-manifest,
+# exit 1 when there is no readable manifest. A line with a character outside
+# [A-Za-z0-9._/-], a `.` or `..` segment, or outside the four dirs is ignored.
+__cwk_kit_manifest() {
+    local project="${CLAUDE_PROJECT_DIR:-}" file line dir
+    [[ "$project" == /* ]] || return 1
+    file="$project/.claude/kit-manifest"
+    [[ -f "$file" && -r "$file" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^[A-Za-z0-9._/-]+$ ]] || continue
+        [[ "/$line/" == */../* || "/$line/" == */./* || "$line" == *//* ]] && continue
+        for dir in "${CWK_KIT_PROMPT_DIRS[@]}"; do
+            if [[ "$line" == "$dir"/?* ]]; then
+                printf '%s\n' "$line"
+                break
+            fi
+        done
+    done <"$file"
+    return 0
+}
+
+# cwk_kit_prompt <repo-relative path> [--reach]: exit 0 for a prompt the manifest lists or a
+# path under it; with --reach a folder above a listed prompt counts too. No readable manifest
+# fails closed: every path under the four dirs counts. Never prints.
+cwk_kit_prompt() {
+    local rel="$1" reach="${2:-}" entries entry dir
+    [[ -n "$rel" && "$rel" != . ]] || return 1
+    if entries="$(__cwk_kit_manifest)"; then
+        while IFS= read -r entry; do
+            [[ -n "$entry" ]] || continue
+            [[ "$rel" == "$entry" || "$rel" == "$entry"/* ]] && return 0
+            [[ "$reach" == --reach && "$entry" == "$rel"/* ]] && return 0
+        done <<<"$entries"
+        return 1
+    fi
+    for dir in "${CWK_KIT_PROMPT_DIRS[@]}"; do
+        [[ "$rel" == "$dir" || "$rel" == "$dir"/* ]] && return 0
+        [[ "$reach" == --reach && "$dir" == "$rel"/* ]] && return 0
+    done
+    return 1
+}
+
+# cwk_kit_patterns: the kit-code patterns, one per line, for a reader that matches them itself
+# (the git hook's fnmatch): CWK_KIT_CODE, then in an installed project the manifest's prompts,
+# or the four dirs when there is no readable manifest. Manifest entries are literal paths.
+cwk_kit_patterns() {
+    local entries
+    printf '%s\n' "${CWK_KIT_CODE[@]}"
+    cwk_installed || return 0
+    if entries="$(__cwk_kit_manifest)"; then
+        [[ -z "$entries" ]] || printf '%s\n' "$entries"
+    else
+        printf '%s\n' "${CWK_KIT_PROMPT_DIRS[@]}"
+    fi
+}
 
 # cwk_installed: exit 0 when $CLAUDE_PROJECT_DIR is a project the kit was installed
 # into, 1 for the LoopKit repo itself. Installed = the stamp is present, or install.sh
@@ -70,8 +137,9 @@ cwk_installed() {
 }
 
 # cwk_is_kit_code <repo-relative path> [--reach]: exit 0 for a kit-code entry or a path
-# under it. With --reach (a removal or move operand), a folder above an entry counts
-# too (`.claude`, `.claude/hooks`), never `.` itself.
+# under it, and in an installed project for a kit prompt (cwk_kit_prompt). With --reach
+# (a removal or move operand), a folder above an entry counts too (`.claude`,
+# `.claude/hooks`), never `.` itself.
 cwk_is_kit_code() {
     local rel="$1" reach="${2:-}" pattern dir
     [[ -n "$rel" && "$rel" != . ]] || return 1
@@ -84,6 +152,7 @@ cwk_is_kit_code() {
             [[ "$rel" == "$dir" || "$dir" == "$rel"/* ]] && return 0
         fi
     done
+    cwk_installed && cwk_kit_prompt "$rel" "$reach" && return 0
     return 1
 }
 

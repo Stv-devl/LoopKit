@@ -1,8 +1,8 @@
 # Edge Function Core
 
-<!-- FILL: `example-api` / `example-worker` are placeholder function names. Replace
-     them with this repo's. What must not change: each function is autonomous,
-     `_shared/` holds infra only, and the error shape is flat. -->
+> Note: `example-api` / `example-worker` are placeholder function names, use this repo's
+> names when applying. What must not change: each function is autonomous, `_shared/` holds
+> infra only, and the error shape is flat.
 
 > **The convention**: no `createApp()` factory, no `_shared/app/`, no
 > `_shared/clients/`, no shared `error-codes.ts`. Each function is **autonomous**.

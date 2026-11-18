@@ -1,7 +1,8 @@
 # Webhook Template (full scaffold)
 
-<!-- FILL: function name, provider, event types. What must not change: signature
-     first, raw body before parsing, idempotence, flat error shape. -->
+> Note: function name, provider and event types are placeholders, use this repo's when
+> applying. What must not change: signature first, raw body before parsing, idempotence,
+> flat error shape.
 
 > See `patterns/edge-function-webhooks.md` for the reference of the signature
 > verification helpers, and `patterns/edge-function.md` for the main pattern

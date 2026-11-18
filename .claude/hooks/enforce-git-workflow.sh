@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 5
+# cwk-guard-api: 6
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
@@ -80,14 +80,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
 # shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
 CWK_DEGRADED_ASK=1
-if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason cwk_installed >/dev/null 2>&1 || [[ -z "${CWK_KIT_DENY:-}" ]]; then
-    echo "BLOCKED: hook-lib.sh or hook-guarded.sh is older than this hook (no cwk_config/cwk_tdd_load/cwk_installed or kit-code list), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason cwk_installed cwk_kit_patterns >/dev/null 2>&1 || [[ -z "${CWK_KIT_DENY:-}" ]]; then
+    echo "BLOCKED: hook-lib.sh or hook-guarded.sh is older than this hook (no cwk_config/cwk_tdd_load/cwk_installed/cwk_kit_patterns or kit-code list), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
     exit 2
 fi
 # Kit code (hook-guarded.sh): its writers are denied, and a call that brings it asks, only in a
 # project the kit was installed into; the LoopKit repo keeps today's verdicts.
 if cwk_installed; then KIT_INSTALLED=1; else KIT_INSTALLED=0; fi
-KIT_PATTERNS="$(printf '%s\n' "${CWK_KIT_CODE[@]}")"
+KIT_PATTERNS="$(cwk_kit_patterns)"
 
 INPUT=$(cat)
 

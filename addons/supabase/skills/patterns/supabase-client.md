@@ -1,8 +1,8 @@
 # Supabase Client & Auth (front end)
 
-<!-- FILL: file paths, provider and hook names. What must not change: the client
-     is created once, only the data layer imports it, and the generated DB types
-     are the source of truth for row shapes. -->
+> Note: file paths, provider and hook names are placeholders, use this repo's when applying.
+> What must not change: the client is created once, only the data layer imports it, and the
+> generated DB types are the source of truth for row shapes.
 
 > The client lives in `src/lib/supabase.ts` and **only `*.gateway.ts` /
 > `services.ts` may import it** (`.claude/rules/02-architecture.md`, enforced by

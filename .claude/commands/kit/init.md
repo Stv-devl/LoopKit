@@ -33,7 +33,8 @@ Never read `.env*`, credentials, keys, or secret values. File existence, imports
 Build an evidence table with `value`, `evidence path`, and `confidence` for:
 
 1. package manager, from lockfile existence (do not read the lockfile body);
-2. framework and test/build/lint/typecheck scripts, from manifests and config;
+2. framework and test/build/lint/typecheck scripts, from manifests and config (the
+   run-once test command ends up as `test_command` of `.claude/project.json`);
 3. source roots, feature roots, shared directories, and composition-root files;
 4. data-client candidates, from imports and client creation sites — never from
    secret files; distinguish the module path from the exported instance;
@@ -50,7 +51,8 @@ Build an evidence table with `value`, `evidence path`, and `confidence` for:
    `openapi`, each as the argv prefix of the generator up to its first option or
    redirect (`supabase gen types --local > x` → `["supabase","gen","types"]`);
    generators named in installed addon rules are proposed too (supabase:
-   `["supabase","gen","types"]`).
+   `["supabase","gen","types"]`). The chosen ones become `app_roots` and
+   `codegen_commands` of `.claude/project.json`.
 
 Absence is evidence only for optional capability (`no backend detected`, `no
 remote detected`). It is not permission to invent the missing value.
@@ -85,13 +87,9 @@ For every section, re-read that section immediately before editing it:
    `shared_dirs`), written at step 14; then section 2 bis secret-template twins
    (`env_template_suffixes` against the settings.json `Read(!.env.<s>)` entries). No hook
    under `.claude/hooks/` is ever edited: every hook reads these values from `.claude/project.json`.
-   When the client is not `lib/client`, rewrite its copies in the same step:
-   `import { <its export> as client } from "@/<module>"` in `templates/feature.md`
-   and `patterns/react-query.md`, the mock path and key in `templates/fixtures.md`,
-   and the instance file in the coverage `exclude` of
-   `templates/tooling-config.md` with its twin in `05-testing.md`
-   (`install.sh --supabase` already does this). Probe: `/kit:doctor`
-   `client-copies` and `coverage-holes`.
+   The kit templates are never rewritten: they say to read `data_client.module` of
+   `.claude/project.json`. Only the instance file in the coverage `exclude` twin of
+   `05-testing.md` moves with the proposal. Probe: `/kit:doctor` `project-config`.
 3. Scaffold `src/lib/result.ts`, `errors.ts`, `queryClient.ts` only when the
    detected stack matches the shipped template and the files do not exist.
 4. `00-project.md`: exact run-once gates and the same script names in every twin;
@@ -100,10 +98,15 @@ For every section, re-read that section immediately before editing it:
 6. `06-database.md`: database and migration ownership.
 7. `CLAUDE.md`: project name, Environment, protected directories, invariants.
 8. `03-conventions.md`: user language and English logs/errors.
-9. feedback/guard patterns.
-10. E2E backend choice, only if that skill is installed.
+9. feedback/guard patterns: write the `components`, `strings` and `names` sections of
+   `.claude/overlays/skills/patterns/feedback.md` and `.claude/overlays/skills/patterns/guards.md`.
+10. E2E backend choice, only if that skill is installed: write the `backend-case`, `drivers`
+    and `harness` sections of `.claude/overlays/skills/e2e-playwright/SKILL.md`.
 11. icon rule `09-icons.md`, and `forbidden_icons` for `.claude/project.json` (step 14) together.
-12. worktree base and branch convention.
+12. worktree base and branch convention: the `foundations` section of
+    `.claude/overlays/guides/10-worktrees.md`, the `branches` section of
+    `.claude/overlays/agents/github.md`, and the protected branches in the
+    `.claude/project.proposed.json` proposal.
 13. review level-zero browser capability; report absence, never fake it.
 14. The project values, written once: the chosen `app_roots` and `codegen_commands`,
     plus every value decided above that a hook applies — `data_client`, `protected_dirs`
@@ -125,12 +128,26 @@ For every section, re-read that section immediately before editing it:
 After each section, run only its deterministic probe from `docs/ADAPTATION.md`.
 Do not run an application gate until its command has been resolved.
 
-## Phase 4 — audit and handoff
+## Phase 4 — Port (after an upgrade)
+
+Only when `install.sh` printed a "prompts adaptés" block. A kit prompt is overwritten on
+upgrade; its old copy is under `.claude/kit-backup/<run>/`.
+
+1. Read the copies of the listed prompts in the newest `.claude/kit-backup/<run>/`, and in
+   every backup run since the last Port.
+2. For each adapted slot (the `**Project slot ...**` lines of the new prompt), show the old
+   text and the new default; write the overlay section the user confirms in
+   `.claude/overlays/<the prompt's path under .claude/>`. Never edit the prompt.
+3. Protected branches and data-client values go in the `.claude/project.proposed.json`
+   proposal, applied by the user with `bash .claude/scripts/kit-apply.sh`.
+4. Remind the user to merge `CLAUDE.md.new`: it carries the overlay line.
+
+## Phase 5 — audit and handoff
 
 Run:
 
 ```bash
-grep -rnE "FILL|CONFIGURE" .claude/ CLAUDE.md docs/
+grep -rnE "FILL|CONFIGURE" .claude/overlays .claude/rules CLAUDE.md
 ```
 
 Classify every remaining marker as:

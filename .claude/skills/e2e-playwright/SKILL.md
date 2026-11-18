@@ -5,14 +5,15 @@ description: Write and run end-to-end Playwright tests against the web app. Use 
 
 # E2E Playwright — the web app
 
-<!-- FILL: if this repo also drives a browser for something else (a scraper, a
-     worker), say so here and state that it shares nothing with this harness.
-     Two Playwright setups in one repo is how a test suite ends up running with
-     a production session. -->
+**Project slot `drivers`** — `## drivers` in `.claude/overlays/skills/e2e-playwright/SKILL.md`; absent → this harness is the only browser driver of the repo.
+If this repo also drives a browser for something else (a scraper, a worker), the section says
+so and states that it shares nothing with this harness. Two Playwright setups in one repo is
+how a test suite ends up running with a production session.
 
 ## The harness
 
-<!-- FILL: the real paths and scripts. -->
+**Project slot `harness`** — `## harness` in `.claude/overlays/skills/e2e-playwright/SKILL.md`; absent → the table below is the default layout.
+The section holds the real paths and scripts.
 
 | Piece | Where |
 | --- | --- |
@@ -62,21 +63,21 @@ Don't start it by hand.
 
 ## Which backend does the suite hit? (the hazard)
 
-<!-- FILL — this is the most important section of the file, and the one an agent
-     will act on. State exactly one of:
+**Project slot `backend-case`** — `## backend-case` in `.claude/overlays/skills/e2e-playwright/SKILL.md`; absent → stop and ask the user which case applies before any spec runs.
+This is the most important section of the file, and the one an agent will act on. The overlay
+states exactly one of:
 
-     A. Disposable local stack, reset per run → mutation allowed, each spec
-        seeds and cleans its own data.
-     B. Seeded test project, shared → mutation allowed on data the suite owns;
-        never touch anything else.
-     C. The real project, partially mocked → READ-ONLY by default. Name what the
-        mock layer actually covers, and state that everything else reaches
-        production data. List the actions that must never fire (anything with an
-        external side effect: emails, payments, third-party API calls).
+- A. Disposable local stack, reset per run → mutation allowed, each spec seeds and cleans its
+  own data.
+- B. Seeded test project, shared → mutation allowed on data the suite owns; never touch
+  anything else.
+- C. The real project, partially mocked → READ-ONLY by default. Name what the mock layer
+  actually covers, and state that everything else reaches production data. List the actions
+  that must never fire (anything with an external side effect: emails, payments, third-party
+  API calls).
 
-     Case C is the dangerous default when a mock layer runs with "bypass unhandled
-     requests" — it looks mocked and isn't. If you are not sure which case you are
-     in, you are in case C. -->
+Case C is the dangerous default when a mock layer runs with "bypass unhandled requests" — it
+looks mocked and isn't. If you are not sure which case you are in, you are in case C.
 
 Consequences, whichever case applies:
 

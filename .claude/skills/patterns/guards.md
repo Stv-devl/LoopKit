@@ -1,10 +1,10 @@
 # Guards Patterns (TanStack Router)
 
-<!-- FILL: this page describes a concrete implementation — helper names, provider
-     names, route paths. Rewrite them to match this repo, or implement this shape
-     as-is. What must not change: `beforeLoad` protects a route, guard components
-     only hide UI, and the real security barrier is server-side (see
-     `.claude/rules/01-stack.md`), never the client. -->
+**Project slot `names`** — `## names` in `.claude/overlays/skills/patterns/guards.md`; absent → the names below are an example.
+This page describes a concrete implementation (helper names, provider names, route paths):
+the section maps them to this repo's, or the shape is implemented as-is. What must not
+change: `beforeLoad` protects a route, guard components only hide UI, and the real security
+barrier is server-side (see `.claude/rules/01-stack.md`), never the client.
 
 > **Routing = TanStack Router** (file-based routes in `src/routes/`,
 > `routeTree.gen.ts`). **No** `react-router-dom`, **no** `createBrowserRouter`.

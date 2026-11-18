@@ -4346,6 +4346,119 @@ run_kit_boundary_ship_cases() {
     rm -r "$tmp"
 }
 
+# kp_manifest <project> <line>…: write the project's .claude/kit-manifest, one argument per line.
+kp_manifest() {
+    local dir="$1"; shift
+    mkdir -p "$dir/.claude"
+    printf '%s\n' "$@" >"$dir/.claude/kit-manifest"
+}
+
+# KB27-KB33 (kit-prompts step 1): kit prompts are kit code through the install's manifest.
+run_kit_prompts_step1_cases() {
+    local tmp rel
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/installed" "$tmp/nomanifest" "$tmp/kitlike" "$tmp/malformed"
+    kb_setup "$tmp/installed" installed
+    kb_setup "$tmp/nomanifest" installed
+    kb_setup "$tmp/kitlike" kitlike
+    kb_setup "$tmp/malformed" installed
+    kp_manifest "$tmp/installed" .claude/commands/loop/ship.md .claude/agents/github.md
+    kp_manifest "$tmp/kitlike" .claude/commands/loop/ship.md
+    kb_expect KB27 0 "$tmp/installed" cwk_is_kit_code .claude/commands/loop/ship.md
+    kb_expect KB28 1 "$tmp/installed" cwk_is_kit_code .claude/skills/own/SKILL.md
+    kb_expect KB28 1 "$tmp/installed" cwk_is_kit_code .claude/overlays/commands/loop/ship.md
+    kb_expect KB29 0 "$tmp/installed" cwk_is_kit_code .claude/commands --reach
+    kb_expect KB29 0 "$tmp/installed" cwk_is_kit_code .claude/commands/loop --reach
+    kb_expect KB29 1 "$tmp/installed" cwk_is_kit_code .claude/skills/own --reach
+    kb_expect KB30 0 "$tmp/nomanifest" cwk_is_kit_code .claude/skills/own/SKILL.md
+    kb_expect KB30 0 "$tmp/nomanifest" cwk_is_kit_code .claude/guides/x.md
+    kb_expect KB30 1 "$tmp/nomanifest" cwk_is_kit_code .claude/overlays/x.md
+    kb_expect KB30 1 "$tmp/nomanifest" cwk_is_kit_code .claude/recipes/r.md
+    kb_expect KB31 1 "$tmp/kitlike" cwk_is_kit_code .claude/commands/loop/ship.md
+    kp_manifest "$tmp/malformed" ../x /abs .claude/hooks/y src/a.ts '.claude/skills/*' \
+        '.claude/skills/a b.md' .claude/commands/loop/ship.md
+    for rel in ../x /abs .claude/hooks/y src/a.ts '.claude/skills/*' .claude/skills/x.md \
+               '.claude/skills/a b.md'; do
+        kb_expect KB32 1 "$tmp/malformed" cwk_kit_prompt "$rel"
+    done
+    kb_expect KB32 0 "$tmp/malformed" cwk_kit_prompt .claude/commands/loop/ship.md
+    kb_expect KB33 0 "$tmp/installed" cwk_is_kit_code .claude/kit-manifest
+    kb_expect KB33 0 "$tmp/nomanifest" cwk_is_kit_code .claude/kit-manifest
+    kb_expect KB33 0 "$PROJECT_ROOT" cwk_is_guarded .claude/kit-manifest
+    rm -r "$tmp"
+}
+
+# kp_prompts <project>: the kit prompts and the project-owned files the KB34-KB40 cases name.
+kp_prompts() {
+    local dir="$1"
+    mkdir -p "$dir/.claude/commands/loop" "$dir/.claude/agents" "$dir/.claude/skills/own" \
+        "$dir/.claude/overlays/commands/loop" "$dir/.claude/recipes"
+    printf 'x\n' >"$dir/.claude/commands/loop/ship.md"
+    printf 'x\n' >"$dir/.claude/agents/github.md"
+    printf 'a\n' >"$dir/.claude/skills/own/SKILL.md"
+    printf 'a\n' >"$dir/.claude/overlays/commands/loop/ship.md"
+    kp_manifest "$dir" .claude/agents/github.md .claude/commands/loop/ship.md
+}
+
+# KB34-KB40 (kit-prompts steps 2-3): Write/Edit and shell writes on a kit prompt.
+run_kit_prompts_step23_cases() {
+    local tmp v deny_text='kit code changes in the LoopKit repo, then `install.sh`'
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+        kp_prompts "$tmp/$v"
+    done
+    printf 'a\n' >"$tmp/kitlike/.claude/commands/loop/ship.md"
+    kb_pf KB34 deny "$tmp/installed" Write .claude/commands/loop/ship.md "$deny_text"
+    kb_pf KB34 deny "$tmp/installed" Edit .claude/commands/loop/ship.md "$deny_text"
+    kb_pf KB35 pass "$tmp/installed" Write .claude/skills/own/SKILL.md
+    kb_pf KB35 pass "$tmp/installed" Write .claude/overlays/commands/loop/ship.md
+    kb_pf KB35 pass "$tmp/installed" Write .claude/recipes/r.md
+    kb_pf KB36 pass "$tmp/kitlike" Edit .claude/commands/loop/ship.md
+    kb_pd KB37 deny "$tmp/installed" 'sed -i s/a/b/ .claude/commands/loop/ship.md' 'kit code:'
+    kb_pd KB37 deny "$tmp/installed" 'printf x > .claude/agents/github.md' 'kit code:'
+    kb_pd KB38 deny "$tmp/installed" 'rm -r .claude/commands' 'kit code:'
+    kb_pd KB38 deny "$tmp/installed" 'mv .claude/agents/github.md /tmp/' 'kit code:'
+    kb_nokit_pd KB39 "$tmp/installed" 'printf x > .claude/skills/own/SKILL.md'
+    kb_nokit_pd KB39 "$tmp/installed" 'printf x > .claude/overlays/a.md'
+    kb_nokit_pd KB40 "$tmp/kitlike" 'sed -i s/a/b/ .claude/commands/loop/ship.md'
+    rm -r "$tmp"
+}
+
+# kp_repo <dir> <installed|kitlike> [manifest|nomanifest]: kb_repo plus committed prompts
+# (ship.md, github.md, a project-owned skill, a guide), each edited after the commit, and an
+# untracked manifest listing ship.md and github.md unless `nomanifest`.
+kp_repo() {
+    local r="$1" f
+    kb_repo "$r" "$2"
+    mkdir -p "$r/.claude/commands/loop" "$r/.claude/agents" "$r/.claude/skills/own" "$r/.claude/guides"
+    for f in .claude/commands/loop/ship.md .claude/agents/github.md .claude/skills/own/SKILL.md .claude/guides/x.md; do
+        printf 'a\n' >"$r/$f"
+        git -C "$r" add "$f"
+    done
+    git -C "$r" commit -q -m prompts
+    for f in .claude/commands/loop/ship.md .claude/skills/own/SKILL.md .claude/guides/x.md; do
+        printf 'b\n' >"$r/$f"
+    done
+    [[ "${3:-manifest}" == nomanifest ]] || kp_manifest "$r" .claude/agents/github.md .claude/commands/loop/ship.md
+}
+
+# G19.051-G19.055 (kit-prompts step 4): git writers on a kit prompt.
+run_kit_prompts_step4_cases() {
+    local tmp kit='kit code changes in the LoopKit repo'
+    tmp="$(mktemp -d)"
+    kp_repo "$tmp/installed" installed
+    kp_repo "$tmp/nomanifest" installed nomanifest
+    kp_repo "$tmp/kitlike" kitlike
+    kb_git G19.051 deny "$tmp/installed" 'git checkout HEAD -- .claude/commands/loop/ship.md' '.claude/commands/loop/ship.md'
+    kb_git G19.052 deny "$tmp/installed" 'git rm .claude/agents/github.md' "$kit"
+    kb_git_nokit G19.053 "$tmp/installed" 'git checkout HEAD -- .claude/skills/own/SKILL.md'
+    kb_git G19.054 deny "$tmp/nomanifest" 'git restore .claude/guides/x.md' "$kit"
+    kb_git_nokit G19.055 "$tmp/kitlike" 'git checkout HEAD -- .claude/commands/loop/ship.md'
+    rm -r "$tmp"
+}
+
 set -e
 [[ "${1:-}" == --kb-only ]] || run_fixture_sweep
 if [[ "${1:-}" == --kb-only ]]; then
@@ -4359,6 +4472,9 @@ if [[ "${1:-}" == --kb-only ]]; then
     run_kit_boundary_review2_git_cases
     run_kit_boundary_review3_git_cases
     run_kit_boundary_ship_cases
+    run_kit_prompts_step1_cases
+    run_kit_prompts_step23_cases
+    run_kit_prompts_step4_cases
     [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
     printf 'Hook fixtures (kit-boundary only): %d case(s), all green.\n' "$CASES"
     exit 0
@@ -4374,6 +4490,9 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_kit_boundary_review2_git_cases
     run_kit_boundary_review3_git_cases
     run_kit_boundary_ship_cases
+    run_kit_prompts_step1_cases
+    run_kit_prompts_step23_cases
+    run_kit_prompts_step4_cases
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases

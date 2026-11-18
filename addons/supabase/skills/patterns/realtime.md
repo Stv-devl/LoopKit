@@ -1,7 +1,8 @@
 # Realtime
 
-<!-- FILL: table and channel names. What must not change: the subscription lives
-     in the data layer, it is always cleaned up, and RLS applies to it. -->
+> Note: table and channel names are placeholders, use this repo's names when applying. What
+> must not change: the subscription lives in the data layer, it is always cleaned up, and
+> RLS applies to it.
 
 > `04-state.md` routes real-time to the data layer: the subscription is created
 > in `*.gateway.ts` / `services.ts`, never in a component. What it feeds is the

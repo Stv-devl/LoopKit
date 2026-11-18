@@ -54,7 +54,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `project-config` | `.claude/project.json`, read by `project_config.py` | every declared `app_roots` folder exists; an invalid file is reported, since the hooks then ignore it |
 | `server-roots` | `02-architecture.md`, the `Server roots:` line of `## Backend` (`none` = no root; a deleted section is fine with no root) | `server_roots` in `.claude/project.json`, which aims the ship audit's `authz` |
 | `composition-roots` | `02-architecture.md`, the composition-root row | `data_client.composition_roots` in `.claude/project.json` |
-| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` and `guides/review/correctness.md` — which restates the list *and* its count | `data_client.shared_dirs` in `.claude/project.json`. Four lines of output, one per copy plus the count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
+| `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` | `data_client.shared_dirs` in `.claude/project.json`. One line per copy; the reviewer checklist reads the project.json list and restates neither it nor its count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |
 | `coverage-holes` | `05-testing.md`, "three wiring files and only three" | the coverage `exclude` array in `tooling-config.md` |
 | `token-thresholds` | `11-token-budget.md`, the three markers | the `used >=` blocks in `token-statusline.py` |
@@ -86,6 +86,12 @@ too, and reading it would price that agent by accident. The direction of the
 failure is always the same: a new agent is started by copying its nearest
 neighbour, inherits that neighbour's tier, and a **judge** ends up on the cheap
 model — which is the one thing `11-token-budget.md` forbids outright.
+
+`client-copies`, `coverage-floor`, `coverage-holes` and `tdd-layers` compare a kit
+prompt (`templates/*.md`, `audit/mutation.md`) and run in the kit source only: in an
+installed project the prompt is kit code that keeps the kit default, so they print
+`skip` with the reason. Their project side lives in `.claude/project.json` and the
+overlays.
 
 `tdd-layers` has no rule side on purpose: the four layer words appear in
 `05-testing.md` as prose among a dozen other filenames, and a parser guessing
@@ -132,13 +138,17 @@ is `.claude/skills/templates/ci.md`, "Repository settings". `stamp` is a
 divergence when an installed project has no `.claude/INSTALL_PROFILE` (the guard
 hooks read it to deny kit code): re-run `install.sh`. `kit-backup` is `INFO` naming
 the latest `.claude/kit-backup/` folder `install.sh` saved replaced kit code into.
+`kit-manifest` (installed only) is `MISSING` when `.claude/kit-manifest` is absent
+(the hooks then treat every prompt as kit code) or lists a prompt gone from disk:
+re-run `install.sh`.
 
 **Links** — `shipped-paths`, `command-refs`, `agent-refs`: every `.claude/**`
 path, every backticked slash-command and every `` `x` agent `` named by a doc has a
 file behind it. A glob (`patterns/edge-function*.md`) is satisfied by one match.
 Paths under `docs/work|product|prd|stories|architecture|specs` are **not**
 checked — `CLAUDE.md` declares them produced by the loop, so absent is their
-normal state.
+normal state. Nor are `.claude/overlays/**` and `.claude/recipes/**`: the project
+writes them, and `.claude/kit-manifest` in the kit source, where install.sh never ran.
 
 **Only kit-owned docs are scanned** — `CLAUDE.md`, `AGENTS.md`, `.claude/**` and
 the two `docs/` files the installer ships. An installed project's own README and
@@ -147,9 +157,11 @@ about, and a doctor reporting someone else's vocabulary as broken is a doctor
 that gets turned off. Same reason a backticked slash-token on a line carrying an
 HTTP verb is read as a route, not a command.
 
-**Placeholders** — `fill-markers`: counted, never a failure. The script says
+**Placeholders** — `prompt-fill` (kit source only): a FILL marker in a kit prompt,
+core or addon, is a `DIVERGENCE`: the value belongs in an overlay. `fill-markers`
+scans `CLAUDE.md`, the rules and the overlays: counted, never a failure. The script says
 which mode it is in, and that changes what the count means: in the kit source
-they are the template's own `<FILL>`, in an installed project they are an
+they are the overlay templates' own notes, in an installed project they are an
 unfinished adaptation.
 
 ## Reading the output

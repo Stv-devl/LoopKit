@@ -227,6 +227,9 @@ function definedOnly<T extends object>(patch: T): Partial<T> {
 > The transport below is **Server-Sent Events**; swap it for a WebSocket or BaaS
 > channel and only the gateway changes. Supabase channels:
 > `addons/supabase/skills/patterns/realtime.md`.
+>
+> The gateway below imports `@/lib/client` as the neutral example: replace `@/lib/client` by
+> the `data_client.module` of `.claude/project.json`.
 
 ```typescript
 // features/items/services/items.gateway.ts — raw I/O, no mapping, no Result
