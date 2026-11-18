@@ -1,0 +1,6 @@
+{"mode": "plan", "pass": 2, "findings": [
+  {"id": "F8", "severity": "Minor", "claim": "The dirty-tree half of the report-not-fix rule was not pinned (applied before the gate: GS4 pins it).", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+  {"id": "F9", "severity": "Minor", "claim": "Files table labelled the fixture rows GS7-GS8 (fixed to G20.001-002).", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+  {"id": "F10", "severity": "Minor", "claim": "GS5 block end undefined while the fenced report opens with ## Git (fixed: to end of file).", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+  {"id": "F11", "severity": "Minor", "claim": "G20.001 near-duplicates G17.26; G20.002 is a weak pin since origin/main does not resolve in the fixture repo; watch it passes at RED.", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+]}

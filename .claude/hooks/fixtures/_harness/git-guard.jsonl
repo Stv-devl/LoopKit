@@ -542,3 +542,5 @@
 {"id":"G14.143","verdict":"ask","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\"","reason":"outside the project"}
 {"id":"G14.144","verdict":"ask","setup":"proj","cwd":"__FEAT_TREE__/src","command":"git -C .. commit -m x","reason":"not a plain git call"}
 {"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}
+{"id":"G20.001","verdict":"ask","command":"git fetch origin main:main","reason":"local branch"}
+{"id":"G20.002","verdict":"pass","command":"git merge --ff-only origin/main"}

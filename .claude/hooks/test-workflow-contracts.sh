@@ -1285,4 +1285,39 @@ if command -v jq >/dev/null 2>&1; then
     grep -Fq 'frontend/.env.example' <<<"$kp24_out" || { echo "PK24: fence did not scan frontend/.env.example: $kp24_out" >&2; exit 1; }
 fi
 
+# github-sync-local: the github agent keeps local in sync, ff-only, never forced.
+gs_never='Never `--force`, `reset --hard`, `pull --rebase` or a rebase to make the sync fit.'
+gs_sec="$(awk '/^### Keeping local in sync/ { on = 1; print; next } on && /^##/ { exit } on' "$GITHUB_AGENT")"
+# GS1 the section exists, before ## Output format.
+[[ -n "$gs_sec" ]] || { echo 'GS1: github.md has no ### Keeping local in sync section' >&2; exit 1; }
+gs_at="$(grep -n '^### Keeping local in sync' "$GITHUB_AGENT" | head -1 | cut -d: -f1)"
+gs_out="$(grep -n '^## Output format' "$GITHUB_AGENT" | head -1 | cut -d: -f1)"
+[[ -n "$gs_out" && "$gs_at" -lt "$gs_out" ]] || { echo 'GS1: Keeping local in sync is not before ## Output format' >&2; exit 1; }
+# GS2 the three sync commands.
+for gs_p in '`git fetch origin`' '`git merge --ff-only origin/<branch>`' '`git fetch origin <base>:<base>`'; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS2: sync section lacks $gs_p" >&2; exit 1; }
+done
+# GS3 the three triggers.
+for gs_p in 'after a merge you ran' 'after a PR you merged or found' 'at the start of a task, when origin is ahead'; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS3: sync section lacks trigger: $gs_p" >&2; exit 1; }
+done
+# GS4 report-not-fix, dirty tree, and the one-line Never sentence.
+for gs_p in 'Diverged or blocked: report it, change nothing.' 'a dirty tree the fast-forward would overwrite' "$gs_never"; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS4: sync section lacks: $gs_p" >&2; exit 1; }
+done
+# GS5 the Local: report line with its three forms.
+gs_local="$(sed -n "${gs_out},\$p" "$GITHUB_AGENT" | grep -E '^- Local:' || true)"
+for gs_p in '<old>..<new>' 'up to date' 'diverged:'; do
+    grep -Fq "$gs_p" <<<"$gs_local" || { echo "GS5: Output format - Local: line lacks $gs_p" >&2; exit 1; }
+done
+# GS6a inside the section, force/reset/rebase appear only on the Never line.
+gs_bad="$(grep -E -- '--force|reset --hard|rebase' <<<"$gs_sec" | grep -vF "$gs_never" || true)"
+[[ -z "$gs_bad" ]] || { echo "GS6a: sync section names force/reset/rebase outside the Never sentence: $gs_bad" >&2; exit 1; }
+# GS6b file-wide, reset --hard and pull --rebase only on the Never line.
+gs_bad="$(grep -E -- 'reset --hard|pull --rebase' "$GITHUB_AGENT" | grep -vF "$gs_never" || true)"
+[[ -z "$gs_bad" ]] || { echo "GS6b: github.md names reset --hard / pull --rebase outside the Never sentence: $gs_bad" >&2; exit 1; }
+# GS7 diverged means commits on both sides; a branch only ahead has its own Local: form.
+grep -Fq 'commits on both sides' <<<"$gs_sec" || { echo "GS7: sync section does not define diverged as commits on both sides" >&2; exit 1; }
+grep -Fq 'ahead:' <<<"$gs_local" || { echo "GS7: Output format - Local: line lacks the ahead: form" >&2; exit 1; }
+
 echo 'workflow contract fixtures: green.'

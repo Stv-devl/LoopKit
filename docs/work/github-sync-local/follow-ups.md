@@ -1,0 +1,4 @@
+- [correctness] .claude/agents/github.md:229 — Base branch checked out in another worktree: git refuses fetch <b>:<b>, outcome unstated; Q1 start-of-task fetch only implicit, not in ## Method; pr-assets clause only on the push path. (minor)
+- [tests] .claude/hooks/test-workflow-contracts.sh:1290 — GS6 drops the whole Never line (a permissive clause on it passes); unpinned vigilance: never stashed, update-ref/branch -f ban, strictly behind, the two then-sync clauses; G20.001 near-duplicates G17.26, G20.002 weak pin. (minor)
+- [security] .claude/agents/github.md:230 — 'that ask is the user's, expected here' frames the hook ask as routine; the agent must not pre-announce it as just approve. (minor)
+- [tests] .claude/hooks/test-workflow-contracts.sh:1320 — GS7 pins the substring commits on both sides but not the 'a branch only ahead is not diverged' clause; step 4 heading 'Diverged or blocked' now also covers the ahead case. (minor)

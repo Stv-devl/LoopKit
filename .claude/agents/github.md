@@ -179,7 +179,7 @@ Exit 2 is a refusal with its reason on stderr: report it, never retry around it.
 2. `gh pr view <n> --json body --jq .body | python3 .claude/hooks/kit-pr-assets.py drop --branch <B>`.
    The folders it removes are the ones the merged PR's body published, so a rebase or a squash at merge changes nothing.
 3. Show the removed folders (`git show --stat refs/heads/pr-assets`). **Ask**, then
-   `git push origin refs/heads/pr-assets`.
+   `git push origin refs/heads/pr-assets`, then Keeping local in sync.
 
 `drop` removes the images from the tip of `pr-assets` only: they stay in its git
 history. `nothing to clean` means there is nothing to push. Never put any other image
@@ -210,10 +210,34 @@ on main/master, through the default permission prompt otherwise. Do not copy
    into the main tree, check the copy with `diff -r`, and say so. An unconsumed
    handoff file is copied the same way.
 6. Clean up: `git worktree remove .claude/worktrees/<slug>` — never `--force` on a dirty
-   tree, report it instead — then `git branch -d feat/<slug>`.
+   tree, report it instead — then `git branch -d feat/<slug>`, then Keeping local in sync.
    **Exception**: if that worktree is the one the session is standing in, git
    cannot remove it and you have no tool that can. Merge, then report
    "worktree still active, main thread must exit it" — don't improvise.
+
+### Keeping local in sync
+
+The remote moved, so local follows: never left behind, never forced.
+
+When:
+- after a merge you ran (a track or small branch merged back);
+- after a PR you merged or found `MERGED` on GitHub;
+- at the start of a task, when origin is ahead of the current branch (the fetch says so).
+
+1. `git fetch origin` — always first, it runs without a prompt.
+2. Current branch strictly behind → `git merge --ff-only origin/<branch>`.
+3. A PR merged into a base branch that is not checked out → `git fetch origin <base>:<base>`.
+   The hook asks on it (it moves a local branch): that ask is the user's, expected here —
+   never route around it with `update-ref` or `branch -f`.
+4. Diverged or blocked: report it, change nothing. Diverged = commits on both sides (local commits origin lacks
+   and origin commits local lacks); a branch only ahead of origin is not diverged: report
+   `ahead:` in the Local: line, change nothing, push nothing (pushing stays gated).
+   Blocked = a dirty tree the fast-forward would overwrite (never stashed). In an installed
+   project the fast-forward may bring kit files: the hook asks, you report it.
+
+Never `--force`, `reset --hard`, `pull --rebase` or a rebase to make the sync fit.
+
+Report it in the `Local:` line.
 
 ## Output format
 
@@ -225,6 +249,7 @@ Return a compact report to the main thread:
 - Committed: <hash> <subject>          (or "staged only", "nothing to commit")
 - Merge: <base ← feat/<slug>, worktree removed>  (or "awaiting your validation" / "n/a")
 - Remote: pushed to <remote>/<branch>  (or "awaiting your validation" / "skipped")
+- Local: <branch> <old>..<new> fast-forwarded  (or "up to date" / "ahead: <branch> — <n> local, not pushed" / "diverged: <branch> — <n> local / <m> remote commits, not touched")
 - PR: <url>                            (or "drafted, awaiting validation" / "n/a")
 - Notes: <anything the user must know — unrelated changes left unstaged, etc.>
 ```
