@@ -6,6 +6,7 @@ Status: DRAFT. This is pass 2a-3.
   - After plan-critic pass 2, `APP_ROOTS`/`CODEGEN_COMMANDS` moved to `app-roots-codegen.md` (2a-1), and the move of the values to `project-config.md` (2a-2).
 - **Depends on** 2a-1 and 2a-2 being shipped: by then no hook holds a project value, so a hook can be denied without blocking an adaptation.
 - **Next:** `kit-prompts.md`, then `loop-to-pr.md`, then `auto-mode.md`.
+- **Amended 2026-11-17 (user), after plan-critic 3/3 blocked on F1.** "The same calls in the kit repo ask" is deleted: in the LoopKit repo nothing changes (`:44`, AC), for git, shell and Write/Edit alike.
 - **The earlier plan** (`docs/work/kit-boundary/plan.md`, plan-critic 2/3, both passes recorded there) is superseded. Its findings on git routes and the installed check carry over to this pass's plan.
 
 Token profile: critical (it changes what is denied in every installed project)
@@ -69,7 +70,6 @@ No app code. Expected files:
 - F7 in an installed project: each of the following on `.claude/hooks/x` is denied: a Write, a shell write, a symlink alias, `git apply` (git and unified patches), `checkout --`, `rm -r .claude/hooks`, `mv`, `stash pop -u`, `merge-file`.
 - Creating `install.sh`, or copying it into `.`, is denied.
 - With the stamp dropped and no `install.sh` + `addons/`, every write is still denied.
-- The same calls in the kit repo ask.
 - `switch` to a branch cut before a kit upgrade asks.
 - Running `/kit:init`'s apply command from a tool call is denied, whatever the spelling.
 - An upgrade overwrites kit code, backs it up, and leaves prompts and rules on `.new`.

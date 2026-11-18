@@ -127,7 +127,10 @@ hook without `+x` **fails open**: the guardrail does not run and the write goes
 through. `github-protection` prints `INFO` when `gh` is authenticated and `main`
 has neither a ruleset nor classic protection (or the latter is unreadable, HTTP
 403): informational, never a divergence, silent offline or without `gh`. The fix
-is `.claude/skills/templates/ci.md`, "Repository settings".
+is `.claude/skills/templates/ci.md`, "Repository settings". `stamp` is a
+divergence when an installed project has no `.claude/INSTALL_PROFILE` (the guard
+hooks read it to deny kit code): re-run `install.sh`. `kit-backup` is `INFO` naming
+the latest `.claude/kit-backup/` folder `install.sh` saved replaced kit code into.
 
 **Links** — `shipped-paths`, `command-refs`, `agent-refs`: every `.claude/**`
 path, every backticked slash-command and every `` `x` agent `` named by a doc has a

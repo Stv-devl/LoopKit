@@ -30,8 +30,8 @@ and never replaces them · `.claude/guides/rules-index.md`.
 - Any file containing secrets, API keys, or credentials
 - `*.pem`, `*.key`, `credentials.*`
 
-If a task requires environment variables, ask the user to provide the variable
-names (not values) or check `.env.example`.
+If a task needs environment variables, ask for their names (not values) or check `.env.example`.
+Kit code (hooks, scripts, launchers, `project.json`) is denied in an installed project: change it in the LoopKit repo, then `install.sh`.
 
 ### Destructive Commands
 

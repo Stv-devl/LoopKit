@@ -1,73 +1,135 @@
-# Research: Kit boundary   (entry: docs/specs/kit-boundary.md)
+# Research: Kit boundary, pass 2a-3   (entry: docs/specs/kit-boundary.md)
 Token profile: critical
 
-Sources: 3 explorers (adaptation values / guarded paths + cfg + redirects / kit-code deny surfaces), 2026-11-10, reconciled on the main thread; spot-checks re-read on the main thread are marked (verified).
+Written 2026-11-16 from three explorers (hooks and shell, git routes, install/doctor/init), reconciled on the main thread. Key claims were re-read on the main thread and are marked [verified]. Prior critic findings: `prior-critic.md`. HEAD is 364f906.
 
 ## Pattern to follow
-- Guarded-path machinery: `CWK_GUARDED` list + `cwk_is_guarded` in `.claude/hooks/hook-guarded.sh:20-39, :76-87` (root-anchored `[[ "$rel" == $pattern ]]`, `*` crosses `/`), sourced by `hook-lib.sh:60`; denied list `CWK_GUARD_DENIED` `:45-48` with `cwk_is_guard_denied` `:91` — the deny tier the kit-code deny should extend.
-- Write/Edit decision: `protect-files.sh:191-255` (denied → deny `:196-198`, guarded → ask `:251-253`, else pass). Shell decision: `prevent-destructive-commands.sh` `guard_classify` `:538`, `guard_classify_tool` `:618-619`, `>` branch `:595-607`, source-writer deny `:608-617`.
-- Git: `parse_segments` (`enforce-git-workflow.sh:173-1244`, one TSV row per git call) + `DESTRUCTIVE_RULES` / `destructive_verdict` `:966-986`; `checkout_rule` `:736-790` already derives the paths of `checkout -- <path>` / `restore` and checks them against the TDD regexes passed as argv `:219-221` — the template for a kit-path check.
-- Kit vs installed: only `kit-doctor.py:793-794` `is_kit_source()` = `install.sh` file and `addons/` dir (verified). No guard hook distinguishes them today.
-- Previous pass with the same shape (guard values + fixtures + prompts): `docs/work/fewer-asks/` (handoff, plan) — fixture series, `## Gate` amendments, suite list.
+- **Guarded-path classification.** One hard-coded list, `CWK_GUARDED` (`.claude/hooks/hook-guarded.sh:20-41`) [verified]. It is matched as a glob where `*` crosses `/`. A folder above a pattern is guarded too, and `.` is always guarded (`cwk_is_guarded`, `:206-214`) [verified].
+  - A separate list, `CWK_GUARD_DENIED` (`:47`: `.claude/.tdd-red/*`, `.git/*`), already denies with "BLOCKED: $REL is never written by hand" (protect-files.sh, around `:213`).
+  - That deny tier is the analogue for an installed-only kit-code tier.
+- **Installed detection.** `kit-doctor.py:878-879` defines `is_kit_source()` as `install.sh` a file and `addons/` a dir under ROOT [verified]. It is the same heuristic the spec names. Nothing equivalent exists in any hook.
+- **Path checks on a git route.** `checkout_rule` (`enforce-git-workflow.sh:798-852`) already denies a TDD or frozen-test operand (`:817-822`). It receives the per-call `directory` (the `-C` target). It is the model for a kit-path check on the other git writers.
 
 ## Wiring points
-Adaptation values, definition → readers (all hard-coded; none read from a file):
-- `DATA_CLIENT_MODULE` `enforce-architecture.py:82`, `DATA_CLIENT_OWN_PATH` `:84`, `COMPOSITION_ROOTS` `:88`, `SHARED_DIRS` `:101`; readers same file `:192, :206-229`. kit-doctor twins: `check_data_client` `:113`, `check_client_copies` `:146`, `check_composition_roots` `:186`, `check_shared_dirs` `:202` — regexes anchored on the Python syntax (`:119, :192, :216`).
-- `PROTECTED_DIRS` `prevent-destructive-commands.sh:78`; readers `:92, :486-487`; twin `check_protected_dirs` `kit-doctor.py:89-110` (regex `^PROTECTED_DIRS="…"` `:95`, CLAUDE.md "Recursive delete on:" `CLAUDE.md:42-44`).
-- `PROTECTED_BRANCHES` `enforce-git-workflow.sh:94`; readers `:157, :164`; copy `.claude/agents/github.md:27-28`, `docs/ADAPTATION.md:344-345`. **No kit-doctor twin.**
-- RED test command `RUN_TESTS="pnpm test:run"` `tdd-prove-red.sh:43` (readers `:182-183, :230-232`); copy `.claude/rules/00-project.md:14`, `docs/ADAPTATION.md:107-108`. **No kit-doctor twin.**
-- Formatter: `format-on-save.sh:50-51` (`cwk_bin prettier`, CONFIGURE `:6`). **No twin, not in ADAPTATION.**
-- `ENV_TEMPLATE_RE` `protect-files.sh:100` (reader `:146`) — **four copies, docs name two**: `prevent-destructive-commands.sh:183`, `auto-approve-config.sh:69`, `shell_targets.py:152` (`SECRET_KEEP`). No twin.
-- Also hook-held, outside the spec list: `CWK_TDD_LAYERS` `hook-lib.sh:253` (twin `check_tdd_layers` `kit-doctor.py:325`); fastapi `MODULE_ROOT` twice (`addons/fastapi/hooks/enforce-backend-layers.py:59` "app/", `tdd_py_lib.py:28` "app").
-- Channels hooks have today: shell hooks source `hook-lib.sh` → `hook-guarded.sh` (relative to the hook's own dir, not the project); shell → Python only through argv (`prevent-destructive-commands.sh:199`, `enforce-git-workflow.sh:174`); Python hooks read no shell value and no config file; project root from `CLAUDE_PROJECT_DIR`. No project config file exists (`.tdd-unfrozen`, `.size-exempt` are the only project files hooks read).
-- `install.sh`: `copy_file` `:86-96` writes `<dst>.new` when dst exists and never touches the active file (verified); `copy_tree` `:201-212` (hooks, fixtures, test suites all copied); `hook-guarded.sh` copied verbatim; in-place perl only on files installed in the same run (`wire_fastapi` `:405-440`, `wire_supabase` `:457-501`); `.claude/INSTALL_PROFILE` rewritten every run `:664-668`; `install.sh` and `addons/` never copied into a target; `GUARD_FILES` + `# cwk-guard-api: N` stamps `:212-263` hold P1 back when a guard is behind.
-- `/kit:init` (`.claude/commands/kit/init.md:67-96`) writes hooks today: `enforce-architecture.py` (`:72-73`), `no-forbidden-icons.sh` (`:91`), ENV twins in `protect-files.sh` + `prevent-destructive-commands.sh` (`:73`), plus kit prompts (templates `:74-78`, rules, guides via ADAPTATION). It asks protected branches (`:50-60`) but no step writes them. `/kit:recipe` (`recipe.md:18, :27-28`) writes `.claude/guides/<name>.md` + one citation in an **argument-chosen** file.
-- cfg options: `shell_targets.py` `flag_kind` `:1086-1104`, `package_base` `:1068-1083` (walks up from cwd to the project root to the first `package.json`), rows `tool_rows` `:1375`; decision `prevent-destructive-commands.sh:526-533` (dir passes only if it is the project root; a **guarded file passes** `:529-530`; else ask "`<rel> (cfg)`" `:532`, text `:734-736`) (verified).
-- Redirections: `Walker.finish` `shell_targets.py:566-576` emits `(">", target)` rows with **no command word attached** (verified); decision `>` branch `prevent-destructive-commands.sh:595-607`, TS-source ask text `:832-834` ("TypeScript source from the shell").
+- **Write/Edit.** `protect-files.sh`.
+  - Guarded asks at `:266-267`: "guarded path: $REL (kit guardrail; approve only if you meant to change it)".
+  - The `.tdd-unfrozen` removal-only pass is at `:258-260`.
+  - Symlinks are followed through `cwk_real_file` (`hook-guarded.sh:314`, last component, 40 hops). Each probe is at `protect-files.sh:128-138`.
+- **Shell.**
+  - `prevent-destructive-commands.sh` runs `shell_targets.py` at `:505`, then `guard_classify` per row (`:652-790`). The guarded ask is at `:771-786`. The final ask text is at `:889-892`, with a second hard-coded copy of the launcher names at `:889`.
+  - `shell_targets.py` `target()` (`:2303-2341`) resolves lexically. It follows links only for `/tmp` paths outside the project (`link_side`, `tmp_physical`) [verified].
+  - `cp`/`mv` are LAST_OPERAND verbs (`shell_targets.py:128`), so `cp x .` yields target `.`. `ln -s x install.sh` yields `install.sh` (writer_rows `:1670-1690`).
+- **Git.**
+  - The real parser is the python heredoc `parse_segments` (`enforce-git-workflow.sh:199`, run at `:1348`). `parse_git` is at `:1082`; it reads the `-C`/`--git-dir`/`--work-tree` globals at `:1103-1123`, and an unreadable `-C` sets `dir_unread`. `walk` is at `:1174` and tracks `cd`/prior commands at `:1191`.
+  - The dispatch table is `DESTRUCTIVE_RULES` (`:1059-1063`) [verified]: clean, reset, stash, branch, update-ref, checkout, restore, worktree, config, init, and the network set.
+  - The grammar fallback `grammar_triggered` (`:1649`) fires on the words add/stage/commit/switch.
+  - The bash floor is `floor_subs` (`:1512`).
+- **Project root.**
+  - Shell hooks use `CLAUDE_PROJECT_DIR` (`hook-guarded.sh:151,352`, `prevent-destructive-commands.sh:556`) and `.cwd` for the relative base. They find their libs and `project_config.py` from their own dir (`hook-guarded.sh:68,151`).
+  - The git hook uses `.cwd`, then `CLAUDE_PROJECT_DIR`, then `$PWD` (`enforce-git-workflow.sh:91-94`). `project_repo` is at `:484-490`.
+- **install.sh.**
+  - `copy_tree` (`:201-211`) handles every `.claude/` file through `copy_file` (`:87-97`). `copy_file` writes `dst.new` whenever the dst exists, with no compare [verified].
+  - `copy_override` is at `:102-111`.
+  - Top-level files go through `copy_file` (`:751-760`): CLAUDE.md, AGENTS.md, codex-handoff.sh, workflow.py, workflow.sh, Claude_Workflows.md, ADAPTATION.md.
+  - FastAPI addon hooks go through `copy_file` (`:830-835`).
+  - Order: `copy_tree` `:743`, then `migrate_config` `:744`, then `install_settings` `:745` [verified].
+  - `install.sh` and `addons/` are never copied into a project.
+  - Backup logic: none.
+- **Stamp candidates.**
+  - `.claude/INSTALL_PROFILE` is written every run (`install.sh:746-750`: `react-ts`|`core`) [verified]. It is not tracked in the kit repo (`git ls-files` empty) [verified]. It is read by `kit-doctor.py:912`.
+  - `.claude/VERSION` is kit-tracked and copied, so it is not a stamp: it exists in the kit repo too.
+- **kit-doctor.py.** ROOT comes from `sys.argv[1]` (`:40`), default `parents[2]`. The reader is imported from the script's own dir (`:97-99`). The mode message is at `:1413-1418`. The CHECKS list is at `:1382-1395`.
+- **`/kit:init`.** `.claude/commands/kit/init.md`.
+  - Today it writes no kit code: `:84-87` says no hook is edited.
+  - Step 14 (`:108-113`) edits `.claude/project.json` in one Edit, "a guarded file: the write asks". That is the write that becomes a proposal.
+  - The final report is at `:124-146`.
 
 ## Reusable
-- `cwk_is_guarded` / `cwk_is_guard_denied` / `cwk_guard_rel` / `cwk_real_path` (hook-guarded.sh) — extend, do not duplicate.
-- `checkout_rule` path derivation + the argv-regex channel of `parse_segments` (`enforce-git-workflow.sh:219-221, :756-760`) for kit-path checks on `checkout -- `/`restore`.
-- Source-writer deny branch `prevent-destructive-commands.sh:608-617` (fewer-asks V3) — the codegen deny is its redirect sibling.
-- `package_base` for "directory with its own package.json".
-- Test infra: `test-hooks.sh` per-fixture `case "$hook:$fixture_name"` setups `:297-400`, shell-guard `setup` trees `:131-295` (`pkgsub` `:152-156` is the only app-subdir tree), `run_harness_reproduction` `:30-41` (copies hooks into a tmp dir: model for an installed-like tree), `guard_call` `:686`; `test-install.sh` scratch targets `:5-26` and the value-survives-rerun case `:259-269`; `test-kit-doctor.sh` divergence pattern `:44-56`.
+- `cwk_is_guarded`, `cwk_is_guard_denied`, `cwk_real_file`, `cwk_real_rel` (`:349`) and `cwk_guard_rel` (`:367`), all in `hook-guarded.sh`.
+- `checkout_rule` operand classification and its `directory` handling.
+- `kit-gate-route.py:151-171` `fix_hunks`, which parses `diff --git`/`---`/`+++` headers. It does not handle `-p<n>` or `--directory`.
+- `kit-gate-route.py:425`: `git diff --name-only base current`.
+- `kit-pr-assets.py:191` (`merge-base --is-ancestor`), `:227` (`ls-tree --name-only`).
+- `is_kit_source()` (kit-doctor.py) is the heuristic to share; do not write a second spelling.
+- test-hooks.sh:
+  - `run_case` (`:114`, `project_dir` defaults to the kit `:131`);
+  - `seed_project` (`:1444-1451`, copies project.json, and `project_config.py` with `--reader`);
+  - the fixture sweep (`:576`, decision from the `-pass|deny|ask|allow` suffix);
+  - the git JSONL harness `fixtures/_harness/git-guard.jsonl`, run by `run_git_guard_cases` (`:994-1037`).
 
 ## Blast radius
-- Every guard file whose behaviour changes needs its `# cwk-guard-api:` bumped (hook-guarded 3, prevent-destructive 3, enforce-git 3, protect-files 2, shell_targets 3, hook-lib 2) and `GUARD_FILES` in install.sh kept in sync (`test-workflow-contracts.sh:765`).
-- kit-doctor twin regexes (`:95, :119, :192, :216, :336`) break if the values leave the hook syntax; `check_protected_dirs` and `install.sh:437` depend on the literal CLAUDE.md "Recursive delete on:" text.
-- `install.sh` addon perl (`:427, :467, :496`) targets the hook text of `PROTECTED_DIRS` / `DATA_CLIENT_*`: they must retarget the config file.
-- Docs: `CLAUDE.md:42-44`, `01-stack.md:38-40`, `02-architecture.md:36-37`, `github.md:27-28`, `docs/ADAPTATION.md` §2, §2 bis, §4, §7, §14 (`:462-464` says installed projects ask only on package.json/vite.config — contradicted by the deny), upgrade `:560-567`; `kit/doctor.md:51-55`; addons `supabase/rules/01-stack.md:119-120`, `supabase/README.md:38-43`.
-- Suites: `test-hooks.sh:739-742` pin `apps/web/package.json` NOT guarded with no config; `fixtures/protect-files.sh/30-w5-nested-package-pass.json` pins it pass; X32.07/X32.08/X42.05 pin `echo x > src/a.ts` / `cat >> src/a.ts <<EOF` as **ask** (frozen — the codegen deny flips them); `test-workflow-contracts.sh:440-441` (ADAPTATION §14 sentence), `:702-711` (CLAUDE.md shell-write rule needles), `:737-739` (`python3 -I` everywhere), `:63` (13 loop commands); `test-rules-floor.sh` 516/520 (verified) → 4 lines of headroom for CLAUDE.md + rules.
-- Installed projects: EcoCrew carries `cwk-guard-api: 3` (verified) and no `.new` files.
+- **Hard-coded duplicates of the kit list.** `hook-guarded.sh:20-41`, `prevent-destructive-commands.sh:889`, `install.sh:264` (`GUARD_FILES`, 14 names) and `test-workflow-contracts.sh:440`.
+- **Fixture flips.** Existing protect-files fixtures 06, 07, 19, 20, 38-42 and PDC 18 ask on a kit path. They all use `__PROJECT_ROOT__` (the kit repo), so they stay ask under "kit repo unchanged".
+  - The installed-project denies need new fixtures with a tmp project.
+  - The installed flips are new cases, not edits of frozen ones.
+  - Fixtures 08, 09 and 25 (settings), 10 (`.tdd-unfrozen`), 11 (`.size-exempt`) and 43 (`project.snapshot.json`) are outside the spec list.
+- **Git cases at risk.**
+  - Asks on uncommitted state: G16.004, G16.055-056, G16.060-062, G16.124-125, G16.129-131.
+  - Passes that must not flip outside kit paths: G16.071, G16.072, G16.077 (`checkout main`), G2.07, G8.05, G14.13.
+  - Not one fixture today covers `apply`, `am`, `rm`, `mv`, `stash pop`, `merge`, `reset --keep`, `cherry-pick`, `revert`, `read-tree`, `checkout-index` or `merge-file`.
+- **test-install.sh rows that depend on the hold-back or on hooks written as `.new`:**
+  - I2 block `:129-342`: (a) `:152-178`, A0, A2, A3, A4, A8, A9, A7 at `:180-255`, (c) `:257-262`, (d) `:264-275`, which survives, (e) `:277-286`, which flips, DA1 `:288-313`, (f) `:315-322`, (g) `:324-332`, (h) `:334-341`;
+  - I3 `:343-395`;
+  - HP-B2 `:446-486`;
+  - A9 kit-attempts `:523-527`;
+  - IN16 `:725-742`, IN18 `:750-779`, IN19 `:781-792`, IN24 `:846-855`;
+  - IN23 `:827-845`, to re-check: it runs `reader_stale`;
+  - IN26 `:869-881`.
+  - test-kit-doctor.sh `:44-58` does not depend on it, and `:259-269` does not exist (the file ends at `:257`). That corrects the prior critic.
+- **install.sh code that goes dead once kit code is overwritten.**
+  - `guard_api_missing` `:307-331`, `GUARD_FILES` `:264-267`, `ADDON_GUARD_FILES` `:271-272`, `guard_api_number` `:298-301`;
+  - the held branch `:374-388` and the `$held` clauses `:397-414`;
+  - `reader_stale` `:220-234` and its calls at `:250`, `:500`, `:543`;
+  - the `.new` branch for kit files.
+  - `P1_ALLOWS`/`PROMPT_ALLOWS`/`RETIRED_ALLOWS` (`:273-294`) stay alive only if P1 becomes unconditional.
+- **test-workflow-contracts.sh pins.**
+  - `:495` P1_ALLOWS, `:714-727` held-back list `== 26`, `:765`/`:983` GUARD_FILES, `:984` and `:1005-1010` `cwk-guard-api` stamps, `:972-977`, `:870-877`.
+  - ADAPTATION needles: `:439-442` §14, `:487-488` `P1 held back`, `:495-509` `merge <fichiers>.new, then re-run install.sh`, `:516` §15.
+  - init.md needles: `:854-860`, `:987-991`.
+- **Docs to rewrite.**
+  - ADAPTATION §15 `:507-611`: hold-back `:564-572`, message `:582-588`, reader-stale `:590-602`; §2 `:24-28`.
+  - README `:39-58`: the `.new` rule and "Updating".
+  - install.sh header `:25-27`: "Ne remplace jamais".
+- **Rules floor.** `test-rules-floor.sh` is at 516/520. 00, 06 and 11 are exactly at budget, so any rule line this pass adds must be paid for.
+- **No per-project FILL in kit code.** `grep FILL` in hooks, scripts and launchers finds only kit-doctor's own strings. An overwrite erases no adaptation.
 
 ## Live DB state
-n/a (kit tooling).
+n/a, kit tooling.
 
 ## External surface
-n/a — no third party. Claude Code hook semantics used as today (PreToolUse allow/ask/deny JSON), nothing new [settled by the existing suites].
+n/a. Git's own behaviour (`apply` reading stdin, `-p<n>`/`--directory`, `stash -u`) is checked in the plan with local `git` runs, not fetched.
 
 ## Traps (points of vigilance for the review)
-- **The stamp is lost on re-install.** `copy_file` keeps the existing `hook-guarded.sh` and writes `.new`; a stamp written into it only by a fresh install never reaches an existing project (EcoCrew), and "no stamp" must not read as "kit repo" there — fail closed, or detect another way.
-- **Stamp forgeability**: the stamp lives in a guarded/denied file, but the "kit repo" side (no stamp) must not be reachable by deleting a line; a reader that treats a missing/unreadable stamp as "installed" is the safe default only if the kit repo has its own positive marker.
-- `/kit:init` writes hooks and kit prompts today; after the move it must write only the config file + rules/docs, else the "outside a pass" exception becomes a blanket bypass. `/kit:recipe`'s target is an argument: its exception cannot be a fixed path list.
-- The config file is a judge (PROTECTED_BRANCHES, RUN_TESTS, APP_ROOTS, CODEGEN_COMMANDS): any read failure, parse error or missing key must fail closed (ask/deny), never fall back to permissive defaults; the Python and shell readers must parse it identically (one parser).
-- `RUN_TESTS` from a file is a command the hook executes: it must not become a code-injection channel (quoting, no `eval`), and must stay guarded/denied.
-- A guarded config **file** already passes as a cfg target (`prevent-destructive-commands.sh:529-530`): guarding `frontend/tsconfig*.json` through APP_ROOTS also makes `-p frontend/tsconfig.app.json` pass — acceptable only when APP_ROOTS declares `frontend`; with no APP_ROOTS the behaviour must be today's (ask).
-- `apps/web/package.json` must stay unguarded when nothing is declared (`test-hooks.sh:742`, fixture 30-w5).
-- Redirect rows carry no command: the codegen exemption needs the segment's command words attached to `>` rows; matching on raw text would be bypassable (`echo $(supabase gen types) > src/a.ts`, `supabase gen types; echo x > src/a.ts`).
-- `.py` redirects get no verdict today (`echo x > src/a.py` passes, contrary to fewer-asks.md:52): the codegen deny on `.py` is a new verdict, not a tightening of an ask.
-- ENV_TEMPLATE_RE has four copies; moving two leaves two silent ones.
-- Git routes that bring kit changes with no path logic today: `git apply`, `git am`, `stash pop`, feature-branch `merge`, `cherry-pick`, `revert`, `switch` to a branch whose kit files differ; `checkout <ref> -- <kit path>` passes on a clean tree (`enforce-git-workflow.sh:786`).
-- Installed projects ship the test suites and fixtures (`copy_tree`), so kit-code deny covers them too; the suites run from the kit repo only.
-- Rules floor headroom 4 lines: CLAUDE.md/rules edits must be net ≤ +4 or the ceiling decision is explicit.
-- Every new python call in shell needs `python3 -I` (`test-workflow-contracts.sh:737-739`).
+- **The tmp-fixture trap.** Every tmp fixture project has no `install.sh`/`addons/`, so it counts as installed. Any new deny must scope to kit paths only, and the kit-repo control cases must run against `__PROJECT_ROOT__`.
+- **Where the installed check looks.** It must read `CLAUDE_PROJECT_DIR`, never the hook's own dir. Fixtures run the kit's hooks against a tmp project (prior Critical).
+- **`.` is always guarded.** A deny keyed on `cwk_is_guarded` would deny every `cp x .`. "Copy install.sh into `.`" must key on the destination basename.
+- **Shell symlinks.** The shell side does not follow in-project symlinks, so `ln -s install.sh a; echo >> a` passes today (found by reading). Write/Edit does follow them. The spec requires both.
+- **Clean files on git checkout/restore.** `checkout_rule` passes a clean file, so `git checkout -- .claude/hooks/x` on a clean tree overwrites silently today.
+- **Git route coverage today.**
+  - `checkout <branch>` passes, while `switch <branch>` asks only through the grammar word.
+  - `merge`/`rebase` ask only on a protected branch.
+  - `pull`, `cherry-pick` and `revert` pass.
+- **`git apply` input.** Patch paths depend on `-p<n>`, `--directory` and the `-C` cwd, and the input may be stdin. Unreadable input asks.
+- **Path resolution under `-C`.** A git pathspec resolves against the per-call `-C` directory, not `BASE_DIR`. `cd X && git …` is not followed; it already asks.
+- **Two parsers.** The bash `floor_subs` and the python `parse_git` must agree on any new subcommand.
+- **Re-install never rewrites itself.** `install.sh` is not in the project, so the overwrite must not try to copy it, and must not trip over the deny when it runs under Claude Code. It runs outside, by the spec.
+- **`.new` on identical files.** `copy_file` writes `.new` for byte-identical files today, so the README claim "changed ones as .new" is false today.
+- **Stale doc counts.** ADAPTATION says "dix fichiers de garde" (`:558`; the code has 14) and "23 autorisations" (`:596`; the code has 26).
+- **The stamp is lost if it lives inside a kit file.** It needs its own file, written every run.
 
 ## Open questions
-1. Config file location and format (spec open question 1): `.claude/project.conf` (KEY=value, sourced by shell, parsed by Python) or JSON read by `jq` + Python? Note: hooks already need `jq`; sourcing a file from shell executes it — a KEY=value file must be parsed, not `source`d.
-2. How `/kit:init` and `/kit:recipe` write in an installed project while a feature pass cannot (spec open question 2): a marker only those commands set, or they print the change for the user to apply? Given the trap above (init writes hooks today), is the target that init writes only the config file + rules/docs, and recipe prints its guide/citation for the user?
-3. Installed detection on an existing install where the stamp never lands (re-install writes `.new`): should `install.sh` write the stamp into its own file (e.g. a new `.claude/.kit-installed`, written like `INSTALL_PROFILE` on every run, denied/guarded), and the kit repo be recognised positively instead (e.g. `install.sh` + `addons/` present *and* no stamp)?
-4. Upgrade of an existing project: since active hooks are never rewritten, should `install.sh` overwrite guard hooks on upgrade (they become value-free) and migrate the old filled values from the active hooks into the config file, or keep writing `.new` and let `/kit:doctor` report the migration?
-5. Scope of the value move: the spec lists 11 values; `CWK_TDD_LAYERS` and the fastapi `MODULE_ROOT` are hook-held adaptation values too — in or out of this pass?
-6. Codegen redirect denies: does the deny apply to `.py` too (a new verdict, see Traps), and are the frozen X32.07/X32.08/X42.05 ask cases amended to deny?
-7. The git kit-path deny: which routes are in this pass (spec: apply, am, checkout/restore, stash pop, merge, switch); cherry-pick/revert added? For `merge`/`switch`, deny when the incoming tree differs on a kit path (needs a diff against the target ref) or ask?
-8. Rules floor: CLAUDE.md "change both together" lines will change wording; keep net ≤ +4 lines, or raise `CORE_CEILING`?
+1. **The stamp.** Reuse `.claude/INSTALL_PROFILE` (already written every run, untracked in the kit, read by kit-doctor)? Or add a dedicated `.claude/KIT_INSTALLED`? The spec's open question asks for "a file under `.claude/`, written every run".
+2. **What is denied.** Kit code alone, per the spec list, or also `.claude/project.snapshot.json` (guarded today, written by `migrate`) and `.claude/INSTALL_PROFILE`/the stamp? `settings*.json`, `.tdd-unfrozen` and `.size-exempt` stay ask (not in the spec list).
+3. **Where the kit-code list lives.** A second array in `hook-guarded.sh` next to `CWK_GUARDED`, or a tag on the existing entries? The duplicates at `prevent-destructive-commands.sh:889`, `install.sh:264` and `test-workflow-contracts.sh:440` either derive from it or are pinned against it.
+4. **The shell symlink rule.** Is following in-project symlinks done for every shell target (a behaviour change for all guarded paths, kit repo included), or only for the installed kit-code tier?
+5. **P1 after the overwrite.** P1 (`defaultMode` plus the narrow git allows) becomes unconditional on every run. Confirm that `P1_ALLOWS`/`PROMPT_ALLOWS`/`RETIRED_ALLOWS` stay as constants and only the held-back branch goes.
+6. **The backup.** What form: `.claude/kit-backup/<timestamp>/` holding only the files that differ, or `<file>.bak`? Where is it kept, and is it pruned?
+7. **`git apply`/`am`.** Do they parse the patch in the hook (a python reader, handling `-p<n>`/`--directory`/`-C`), or ask whenever the patch is unreadable or reaches a kit path? The spec requires git and unified patches, and asking on stdin.
+8. **Kit-bringing calls.** `merge`/`pull`/`rebase`/`cherry-pick`/`revert`/`reset --hard`/`switch`/`checkout <branch>` must compute the paths they bring:
+   - switch: `git diff --name-only HEAD <target>`;
+   - merge: `git diff --name-only HEAD...<target>`;
+   - pull: unknown before the fetch, so it always asks in an installed project?
+   - cherry-pick/revert: `git diff-tree <commit>`.
+
+   Does the call ask only when a kit path is in the set, and pass otherwise?
+9. **`/kit:init`'s apply command.** What script is it (e.g. `.claude/scripts/kit-apply.sh <proposal>`), and is its denial keyed on the resolved script path in `prevent-destructive-commands.sh`? The script is itself kit code, so it is installed by `install.sh`.

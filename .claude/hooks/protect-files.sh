@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 3
+# cwk-guard-api: 4
 #
 # Hook: protect-files
 # Event: PreToolUse (Write|Edit), PreToolUse (Read), PreToolUse (Grep|Glob)
@@ -203,13 +203,34 @@ done
 # The list and the resolver live in hook-guarded.sh (sourced by hook-lib.sh).
 # A relative file_path resolves against the session's cwd from the input, never
 # against this process's directory. Outside the project: nothing to guard.
-if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why cwk_real_file cwk_app_roots >/dev/null 2>&1; then
+if ! declare -F cwk_guard_rel cwk_is_guarded cwk_is_guard_denied cwk_guard_denied_why cwk_real_file cwk_app_roots \
+        cwk_installed cwk_is_kit_code cwk_real_rel >/dev/null 2>&1; then
     deny "BLOCKED: the guarded-path functions are not loaded (hook-lib.sh and protect-files.sh are out of step, or hook-guarded.sh is broken), so this guard refuses rather than passes.\n\nThe user restores the kit from a terminal: git checkout -- .claude/hooks/ (or re-copy .claude/hooks/ from the kit)."
 fi
-REL=$(cwk_guard_rel "$FILE_PATH" "$CWD") || exit 0
+if ! REL=$(cwk_guard_rel "$FILE_PATH" "$CWD"); then
+    # Outside the project by name: a link there can still open kit code of an installed project.
+    if cwk_installed; then
+        REAL_REL=$(cwk_real_rel "$FILE_PATH" "$CWD" 2>/dev/null) || REAL_REL=""
+        if [[ -n "$REAL_REL" ]] && cwk_is_kit_code "$REAL_REL"; then
+            deny "kit code: $REAL_REL — $CWK_KIT_DENY"
+        fi
+    fi
+    exit 0
+fi
 
 if cwk_is_guard_denied "$REL"; then
     deny "BLOCKED: $REL is never written by hand.\n\n$(cwk_guard_denied_why "$REL")"
+fi
+
+# Kit code in an installed project: denied by its name or by the file it opens (a
+# symlink alias, dangling or not). The kit repo keeps the guarded ask below.
+if cwk_installed; then
+    REAL_REL=$(cwk_real_rel "$FILE_PATH" "$CWD" 2>/dev/null) || REAL_REL=""
+    if cwk_is_kit_code "$REL"; then
+        deny "kit code: $REL — $CWK_KIT_DENY"
+    elif [[ -n "$REAL_REL" ]] && cwk_is_kit_code "$REAL_REL"; then
+        deny "kit code: $REAL_REL — $CWK_KIT_DENY"
+    fi
 fi
 
 # A Write/Edit of .tdd-unfrozen that only deletes entries or comments them out

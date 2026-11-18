@@ -3717,9 +3717,663 @@ run_shell_guard_no_base_case() {
     rm -r "$tmp"
 }
 
+# kb_setup <dir> <variant>: a tmp project for the kit-boundary cases (kit-boundary plan,
+# step 1). `installed`: the stamp, the kit files a project holds; `installed-nostamp`:
+# the same, no stamp; `kitlike`: install.sh + addons/, no stamp; `kitlike-stamp`: both
+# markers and the stamp; `half-install`: install.sh, no addons/; `half-addons`: the reverse.
+kb_setup() {
+    local dir="$1" variant="$2"
+    seed_project "$dir"
+    mkdir -p "$dir/.claude/hooks" "$dir/.claude/scripts" "$dir/src"
+    printf 'x\n' >"$dir/.claude/hooks/x"
+    printf 'x\n' >"$dir/.claude/scripts/s.sh"
+    printf 'x\n' >"$dir/workflow.sh"
+    printf 'export const a = 1\n' >"$dir/src/a.ts"
+    case "$variant" in
+        installed) printf 'core\n' >"$dir/.claude/INSTALL_PROFILE" ;;
+        installed-nostamp) ;;
+        kitlike) printf 'x\n' >"$dir/install.sh"; mkdir -p "$dir/addons" ;;
+        kitlike-stamp)
+            printf 'x\n' >"$dir/install.sh"; mkdir -p "$dir/addons"
+            printf 'core\n' >"$dir/.claude/INSTALL_PROFILE" ;;
+        half-install) printf 'x\n' >"$dir/install.sh" ;;
+        half-addons) mkdir -p "$dir/addons" ;;
+    esac
+}
+
+# kb_expect <id> <want exit> <project or -unset- or a relative path> <function> [args…]:
+# one hook-guarded.sh function call with CLAUDE_PROJECT_DIR set (or unset) as given.
+kb_expect() {
+    local id="$1" want="$2" project="$3" out code; shift 3
+    CASES=$((CASES + 1))
+    set +e
+    if [[ "$project" == -unset- ]]; then
+        out="$(env -u CLAUDE_PROJECT_DIR bash -c 'source "$1" || exit 99; shift; "$@"' _ "$HOOKS_DIR/hook-guarded.sh" "$@" 2>&1)"
+    else
+        out="$(CLAUDE_PROJECT_DIR="$project" bash -c 'source "$1" || exit 99; shift; "$@"' _ "$HOOKS_DIR/hook-guarded.sh" "$@" 2>&1)"
+    fi
+    code=$?
+    set -e
+    [[ "$code" -eq "$want" ]] || fail hook-guarded.sh "$id $*" "expected exit $want, got $code"
+    [[ -z "$out" ]] || fail hook-guarded.sh "$id $*" "printed '$out'"
+}
+
+# KB1-KB9 (kit-boundary step 1): the installed check and the kit-code list.
+run_kit_boundary_step1_cases() {
+    local tmp v rel
+    tmp="$(mktemp -d)"
+    for v in installed installed-nostamp kitlike kitlike-stamp half-install half-addons; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+    done
+    kb_expect KB1 0 "$tmp/installed" cwk_installed
+    kb_expect KB2 1 "$tmp/kitlike" cwk_installed
+    kb_expect KB2 1 "$PROJECT_ROOT" cwk_installed
+    kb_expect KB3 0 "$tmp/installed-nostamp" cwk_installed
+    kb_expect KB4 0 "$tmp/half-install" cwk_installed
+    kb_expect KB4 0 "$tmp/half-addons" cwk_installed
+    kb_expect KB5 0 "$tmp/kitlike-stamp" cwk_installed
+    kb_expect KB6 0 -unset- cwk_installed
+    kb_expect KB6 0 "relative/dir" cwk_installed
+    for rel in .claude/hooks/x .claude/hooks/fixtures/a/b.json .claude/scripts/s.sh \
+               workflow.py workflow.sh codex-handoff.sh install.sh \
+               addons addons/fastapi/hooks/x.py \
+               .claude/project.json .claude/project.snapshot.json .claude/INSTALL_PROFILE; do
+        kb_expect KB7 0 "$PROJECT_ROOT" cwk_is_kit_code "$rel"
+    done
+    for rel in .claude/settings.json .claude/.tdd-unfrozen .claude/.size-exempt \
+               src/a.ts docs/install.sh.md .claude/hooksx \
+               . .claude .claude/kit-backup/t/.claude/hooks/x; do
+        kb_expect KB8 1 "$PROJECT_ROOT" cwk_is_kit_code "$rel"
+    done
+    kb_expect KB9 0 "$PROJECT_ROOT" cwk_is_kit_code .claude --reach
+    kb_expect KB9 1 "$PROJECT_ROOT" cwk_is_kit_code . --reach
+    kb_expect KB9 1 "$PROJECT_ROOT" cwk_is_kit_code src --reach
+    rm -r "$tmp"
+}
+
+# kb_verdict <id> <want verdict> <label> <probe output> [reason substring]: the first line
+# of a project_hook_probe output is the verdict, the rest the hook's JSON.
+kb_verdict() {
+    local id="$1" want="$2" label="$3" out="$4" needle="${5:-}" verdict
+    CASES=$((CASES + 1))
+    verdict="${out%%$'\n'*}"
+    [[ "$verdict" == "$want" ]] || fail kit-boundary "$id $label" "expected $want, got $verdict: ${out:0:300}"
+    [[ -z "$needle" || "$out" == *"$needle"* ]] || fail kit-boundary "$id $label" "reason lacks '$needle'"
+}
+
+# kb_pf <id> <want> <project> <tool> <rel> [reason substring]: a Write/Edit through protect-files.sh.
+kb_pf() {
+    kb_verdict "$1" "$2" "$4 $5 in ${3##*/}" "$(pf_probe "$3" "$4" "$5")" "${6:-}"
+}
+
+# KB10-KB15 (kit-boundary step 2): Write/Edit of kit code in an installed project.
+run_kit_boundary_step2_cases() {
+    local tmp v deny_text='kit code changes in the LoopKit repo, then `install.sh`'
+    tmp="$(mktemp -d)"
+    for v in installed installed-nostamp kitlike half-install; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+    done
+    kb_pf KB10 deny "$tmp/installed" Write .claude/hooks/x "$deny_text"
+    kb_pf KB11 deny "$tmp/installed" Edit .claude/project.json
+    kb_pf KB11 deny "$tmp/installed" Write .claude/scripts/s.sh
+    kb_pf KB11 deny "$tmp/installed" Write workflow.sh
+    kb_pf KB11 deny "$tmp/installed" Write codex-handoff.sh
+    kb_pf KB11 deny "$tmp/installed" Write install.sh
+    kb_pf KB11 deny "$tmp/installed" Write addons/fastapi/hooks/x.py
+    kb_pf KB11 deny "$tmp/installed" Write .claude/INSTALL_PROFILE
+    ln -s .claude/hooks/x "$tmp/installed/a"
+    ln -s install.sh "$tmp/installed/b"
+    kb_pf KB12 deny "$tmp/installed" Write a
+    kb_pf KB12 deny "$tmp/installed" Write b
+    mkdir -p "$tmp/installed/.claude"
+    printf '{}\n' >"$tmp/installed/.claude/settings.json"
+    kb_pf KB13 ask "$tmp/installed" Edit .claude/settings.json
+    kb_pf KB13 ask "$tmp/installed" Write .claude/.tdd-unfrozen
+    kb_pf KB13 pass "$tmp/installed" Write src/a.ts
+    kb_pf KB13 deny "$tmp/installed" Write .claude/project.snapshot.json
+    ln -s .claude/hooks/x "$tmp/kitlike/a"
+    kb_pf KB14 ask "$tmp/kitlike" Write .claude/hooks/x
+    kb_pf KB14 pass "$tmp/kitlike" Write .claude/INSTALL_PROFILE
+    kb_pf KB14 pass "$tmp/kitlike" Write a
+    for v in installed installed-nostamp half-install; do
+        kb_pf KB15 deny "$tmp/$v" Write .claude/worktrees/w/.claude/hooks/x
+    done
+    rm -r "$tmp"
+}
+
+# kb_pd <id> <want> <project> <command> [reason substring] [sub cwd]: a command through the shell guard.
+kb_pd() {
+    kb_verdict "$1" "$2" "'$4' in ${3##*/}" "$(pd_probe "$3" "$4" "${6:-}")" "${5:-}"
+}
+
+# KB16-KB21 (kit-boundary step 3): shell writes to kit code, and running the kit-apply script.
+run_kit_boundary_step3_cases() {
+    local tmp v c out deny_text='kit code changes in the LoopKit repo, then `install.sh`'
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+        printf '#!/usr/bin/env bash\n' >"$tmp/$v/.claude/scripts/kit-apply.sh"
+        ln -s .claude/scripts/kit-apply.sh "$tmp/$v/r"
+    done
+    for c in 'echo x > .claude/hooks/x' 'sed -i s/a/b/ .claude/scripts/s.sh' 'printf x | tee workflow.sh' \
+             'rm -r .claude/hooks' 'mv .claude/hooks/x /tmp/y' 'ln -s /tmp/x install.sh' 'mkdir addons' \
+             'cp /tmp/k/install.sh .' 'cp -r /tmp/k/addons .' 'cp -r /tmp/k/.claude .' \
+             'echo x > .claude/INSTALL_PROFILE' 'cp /tmp/a .claude/INSTALL_PROFILE'; do
+        kb_pd KB16 deny "$tmp/installed" "$c" "$deny_text"
+    done
+    ln -s .claude/hooks/x "$tmp/installed/a"
+    ln -s .claude/hooks "$tmp/installed/d"
+    ln -s install.sh "$tmp/installed/b"
+    kb_pd KB17 deny "$tmp/installed" 'echo x >> a' "$deny_text"
+    kb_pd KB17 deny "$tmp/installed" 'echo x > d/y' "$deny_text"
+    kb_pd KB17 deny "$tmp/installed" 'echo x > b' "$deny_text"
+    kb_pd KB18 ask "$tmp/installed" 'cp /tmp/notes.txt .'
+    kb_pd KB18 pass "$tmp/installed" 'echo x > docs/a.md'
+    for c in 'echo x > .claude/hooks/x' 'ln -s x install.sh'; do
+        out="$(pd_probe "$tmp/kitlike" "$c")"
+        kb_verdict KB19 ask "'$c' in kitlike" "$out" 'guarded path:'
+        CASES=$((CASES + 1))
+        [[ "$out" != *'kit code:'* ]] || fail kit-boundary "KB19 '$c' in kitlike" "reason holds 'kit code:'"
+    done
+    kb_pd KB19 pass "$tmp/kitlike" 'echo x > .claude/INSTALL_PROFILE'
+    kb_pd KB19 pass "$tmp/kitlike" 'cp /tmp/a .claude/INSTALL_PROFILE'
+    ln -s .claude/hooks/x "$tmp/kitlike/a"
+    kb_pd KB19 pass "$tmp/kitlike" 'echo x >> a'
+    for v in installed kitlike; do
+        for c in 'bash .claude/scripts/kit-apply.sh' './.claude/scripts/kit-apply.sh' \
+                 'sh .claude/scripts/kit-apply.sh x.json' "$tmp/$v/.claude/scripts/kit-apply.sh" \
+                 './r' 'source .claude/scripts/kit-apply.sh' "bash -c '.claude/scripts/kit-apply.sh'" \
+                 'env X=1 .claude/scripts/kit-apply.sh'; do
+            kb_pd KB20 deny "$tmp/$v" "$c"
+        done
+        kb_pd KB20 deny "$tmp/$v" './kit-apply.sh' '' .claude/scripts
+        kb_pd KB20 deny "$tmp/$v" 'cd .claude/scripts && ./kit-apply.sh'
+        kb_pd KB21 pass "$tmp/$v" 'cat .claude/scripts/kit-apply.sh'
+        kb_pd KB21 pass "$tmp/$v" 'grep x .claude/scripts/kit-apply.sh'
+    done
+    rm -r "$tmp"
+}
+
+# kb_repo <dir> <installed|kitlike>: main holds src/a.ts, .claude/hooks/x, workflow.sh and the
+# project.json over two commits; `k` changes the hook, `s` only src/a.ts; the tree sits on
+# feat/x. `installed` adds the untracked stamp, `kitlike` an untracked install.sh and addons/.
+kb_repo() {
+    local r="$1" variant="$2"
+    git init -q -b main "$r"
+    git -C "$r" config user.email fixture@loopkit.invalid
+    git -C "$r" config user.name Fixture
+    mkdir -p "$r/src" "$r/.claude/hooks" "$r/sub"
+    printf 'a\n' >"$r/src/a.ts"
+    printf 'x\n' >"$r/.claude/hooks/x"
+    printf 'x\n' >"$r/workflow.sh"
+    seed_project "$r"
+    git -C "$r" add src/a.ts .claude/hooks/x workflow.sh .claude/project.json
+    git -C "$r" commit -q -m seed
+    printf 'a2\n' >"$r/src/a.ts"
+    git -C "$r" commit -q -am two
+    git -C "$r" switch -q -c k
+    printf 'k\n' >"$r/.claude/hooks/x"
+    git -C "$r" commit -q -am k
+    git -C "$r" switch -q -c s main
+    printf 's\n' >"$r/src/a.ts"
+    git -C "$r" commit -q -am s
+    git -C "$r" switch -q -c feat/x main
+    git -C "$r" diff main k >"$r/p.patch"
+    cp "$r/p.patch" "$r/sub/s.patch"
+    printf -- '--- a/workflow.sh\n+++ b/workflow.sh\n@@ -1 +1 @@\n-x\n+y\n' >"$r/p.diff"
+    printf -- '--- .claude/hooks/x\n+++ .claude/hooks/x\n@@ -1 +1 @@\n-x\n+y\n' >"$r/q.patch"
+    printf -- 'diff --git a/hooks/x b/hooks/x\n--- a/hooks/x\n+++ b/hooks/x\n@@ -1 +1 @@\n-x\n+y\n' >"$r/r.patch"
+    printf 'not a patch\n@@ garbage\n' >"$r/c.patch"
+    git -C "$r" format-patch -q -1 k --stdout >"$r/m.mbox"
+    git -C "$r" format-patch -q -1 s --stdout >"$r/n.mbox"
+    printf 'b\n' >"$r/b"
+    printf 'o\n' >"$r/o"
+    case "$variant" in
+        installed) printf 'core\n' >"$r/.claude/INSTALL_PROFILE" ;;
+        kitlike) printf 'x\n' >"$r/install.sh"; mkdir -p "$r/addons"; printf 'x\n' >"$r/addons/a" ;;
+    esac
+}
+
+# kb_git <id> <want> <repo> <command> [reason substring]: the git hook on <command> in <repo>.
+kb_git() {
+    kb_verdict "$1" "$2" "'$4' in ${3##*/}" "$(git_hook_probe "$4" "$3" "$3")" "${5:-}"
+}
+
+# kb_git_nokit <id> <repo> <command>: today's verdict, whatever it is: no deny and no kit reason.
+kb_git_nokit() {
+    local out
+    out="$(git_hook_probe "$3" "$2" "$2")"
+    CASES=$((CASES + 1))
+    if [[ "${out%%$'\n'*}" == deny || "$out" == *'kit code'* || "$out" == *'brings kit changes'* \
+          || "$out" == *'kit changes before the fetch'* ]]; then
+        fail kit-boundary "$1 '$3' in ${2##*/}" "expected today's verdict, got: ${out:0:200}"
+    fi
+}
+
+# G19.001-G19.034 (kit-boundary step 4): git writers and kit-bringing calls.
+run_kit_boundary_step4_cases() {
+    local tmp r c v kit='kit code changes in the LoopKit repo' brings='brings kit changes: .claude/hooks/x'
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do kb_repo "$tmp/$v" "$v"; done
+    r="$tmp/installed"
+    kb_git G19.001 deny "$r" 'git apply p.patch' "$kit"
+    kb_git G19.002 deny "$r" 'git apply p.diff' "$kit"
+    kb_git G19.003 deny "$r" 'git apply -p0 q.patch' "$kit"
+    kb_git G19.003 pass "$r" 'git apply -p2 q.patch'
+    kb_git G19.004 deny "$r" 'git apply --directory=.claude r.patch' "$kit"
+    kb_git G19.005 deny "$r" 'git -C .claude apply ../p.patch' "$kit"
+    kb_git G19.005 pass "$r" 'git -C sub apply s.patch'
+    kb_git G19.006 deny "$r" 'git apply --cached p.patch' "$kit"
+    kb_git G19.006 deny "$r" 'git apply --index p.patch' "$kit"
+    kb_git G19.007 deny "$r" 'git am m.mbox' "$kit"
+    kb_git G19.007 pass "$r" 'git am n.mbox'
+    for c in 'git apply' 'git apply < p.patch' 'cat p.patch | git apply' 'git apply missing.patch'; do
+        kb_git G19.008 ask "$r" "$c"
+    done
+    for c in 'git checkout -- .claude/hooks/x' 'git checkout HEAD~1 -- .claude/hooks/x' \
+             'git restore .claude/hooks/x' 'git restore --source=HEAD~1 workflow.sh' \
+             'git restore --staged .claude/project.json'; do
+        kb_git G19.009 deny "$r" "$c" "$kit"
+    done
+    for c in 'git rm .claude/hooks/x' 'git rm -r .claude' 'git rm --cached workflow.sh' \
+             "git rm ':(glob)**/x'" 'git -C .claude rm -r hooks'; do
+        kb_git G19.011 deny "$r" "$c" "$kit"
+    done
+    kb_git_nokit G19.011 "$r" 'git rm src/a.ts'
+    for c in 'git mv .claude/hooks/x a' 'git mv src/a.ts .claude/hooks/y' 'git mv src/a.ts .claude/hooks' \
+             'git -C .claude mv hooks/x ../a'; do
+        kb_git G19.012 deny "$r" "$c" "$kit"
+    done
+    kb_git G19.012 pass "$r" 'git mv src/a.ts src/b.ts'
+    kb_git G19.014 deny "$r" 'git merge-file .claude/hooks/x b o' "$kit"
+    kb_git G19.014 pass "$r" 'git merge-file -p .claude/hooks/x b o'
+    kb_git G19.015 deny "$r" 'git checkout-index -a' "$kit"
+    kb_git G19.015 deny "$r" 'git checkout-index -- .claude/hooks/x' "$kit"
+    kb_git G19.015 ask "$r" 'git checkout-index --stdin'
+    kb_git G19.015 pass "$r" 'git checkout-index -- src/a.ts'
+    kb_git G19.016 deny "$r" 'git read-tree -u -m HEAD k' "$kit"
+    kb_git G19.016 deny "$r" 'git read-tree k' "$kit"
+    kb_git G19.016 pass "$r" 'git read-tree -u -m HEAD s'
+    kb_git G19.017 deny "$r" 'git reset --keep k' "$kit"
+    kb_git G19.017 deny "$r" 'git reset --merge k' "$kit"
+    kb_git G19.017 pass "$r" 'git reset --keep s'
+    kb_git G19.018 deny "$r" 'git reset -- .claude/hooks/x' "$kit"
+    kb_git G19.018 deny "$r" 'git update-index --chmod=+x .claude/hooks/x' "$kit"
+    kb_git G19.018 ask "$r" 'git update-index --stdin'
+    kb_git G19.018 pass "$r" 'git update-index --refresh'
+    kb_git G19.020 ask "$r" 'git switch k' "$brings"
+    kb_git G19.021 ask "$r" 'git checkout k' "$brings"
+    kb_git G19.021 pass "$r" 'git checkout s'
+    kb_git G19.022 ask "$r" 'git merge k' "$brings"
+    kb_git G19.023 ask "$r" 'git pull' 'cannot read the kit changes before the fetch'
+    kb_git G19.023 ask "$r" 'git pull origin main' 'cannot read the kit changes before the fetch'
+    kb_git G19.024 ask "$r" 'git rebase k' "$brings"
+    kb_git_nokit G19.024 "$r" 'git rebase s'
+    kb_git G19.024 ask "$r" 'git rebase'
+    kb_git G19.026 ask "$r" 'git reset k' "$brings"
+    kb_git G19.026 ask "$r" 'git reset --hard k' 'git reset --hard discards'
+    kb_git G19.026 ask "$r" 'git reset --hard k' "$brings"
+    for c in 'git bisect start' 'git sparse-checkout set src' 'git submodule update' 'git filter-branch --tree-filter true HEAD'; do
+        kb_git G19.027 ask "$r" "$c"
+        kb_git_nokit G19.027 "$tmp/kitlike" "$c"
+    done
+    for c in 'git add .claude/hooks/x' 'git commit -m x' 'git worktree add ../w'; do
+        kb_git_nokit G19.028 "$r" "$c"
+    done
+    kb_git G19.029 ask "$r" 'git -C "$x" apply p.patch'
+    kb_git G19.029 ask "$r" 'git apply c.patch'
+    for c in 'git apply p.patch' 'git checkout -- .claude/hooks/x' 'git rm .claude/hooks/x' 'git mv .claude/hooks/x a' \
+             'git merge-file .claude/hooks/x b o' 'git switch k' 'git checkout k' 'git merge k' 'git pull'; do
+        kb_git_nokit G19.030 "$tmp/kitlike" "$c"
+    done
+    for c in 'git checkout nosuch' 'git stash pop stash@{9}' 'git cherry-pick deadbeef'; do
+        kb_git_nokit G19.031 "$r" "$c"
+    done
+
+    # G19.025: cherry-pick/revert per commit, a range, a merge with -m, a root commit.
+    git -C "$r" switch -q -c c main
+    printf 'c\n' >"$r/workflow.sh"
+    git -C "$r" commit -q -am c
+    git -C "$r" switch -q -c d main
+    printf 'd\n' >"$r/src/a.ts"
+    git -C "$r" commit -q -am d
+    git -C "$r" switch -q -c mb main
+    git -C "$r" merge -q --no-ff -m m k
+    git -C "$r" switch -q --orphan rt
+    printf 'r\n' >"$r/workflow.sh"
+    git -C "$r" add workflow.sh
+    git -C "$r" commit -q -m root
+    git -C "$r" switch -q -f feat/x
+    kb_git G19.025 ask "$r" 'git cherry-pick c' 'workflow.sh'
+    kb_git G19.025 ask "$r" 'git revert c' 'workflow.sh'
+    kb_git G19.025 pass "$r" 'git cherry-pick d'
+    kb_git G19.025 ask "$r" 'git cherry-pick main..c' 'workflow.sh'
+    kb_git G19.025 ask "$r" 'git revert -m 1 mb' "$brings"
+    kb_git G19.025 ask "$r" 'git cherry-pick -m 1 mb' "$brings"
+    kb_git G19.025 ask "$r" 'git revert mb'
+    kb_git G19.025 ask "$r" 'git cherry-pick rt' 'workflow.sh'
+
+    # G19.022: only HEAD's side changed the hook since the base: the three-dot set is empty.
+    git -C "$r" switch -q -c h main
+    printf 'h\n' >"$r/src/a.ts"
+    git -C "$r" commit -q -am h
+    git -C "$r" switch -q -c feat/y main
+    printf 'y\n' >"$r/.claude/hooks/x"
+    git -C "$r" commit -q -am y
+    kb_git_nokit G19.022 "$r" 'git merge h'
+    git -C "$r" switch -q feat/x
+
+    # G19.010, G19.019, G19.034: the hook modified in the work tree.
+    printf 'mod\n' >"$r/.claude/hooks/x"
+    for c in 'git checkout -- .claude/hooks/x' 'git checkout -- .claude' 'git restore .' "git restore ':(glob).claude/**'"; do
+        kb_git G19.010 deny "$r" "$c" "$kit"
+    done
+    for c in 'git stash' 'git stash push' 'git stash save x' 'git stash push -- .claude'; do
+        kb_git G19.019 deny "$r" "$c" "$kit"
+    done
+    kb_git_nokit G19.030 "$tmp/kitlike" 'git stash'
+    for c in 'git checkout -f' 'git checkout -f feat/x' 'git checkout --force feat/x' 'git switch --discard-changes feat/x'; do
+        kb_git G19.034 deny "$r" "$c" "$kit"
+    done
+    git -C "$r" stash -q
+    kb_git G19.013 deny "$r" 'git stash pop' "$kit"
+    kb_git G19.013 deny "$r" 'git stash apply stash@{0}' "$kit"
+    kb_git G19.019 deny "$r" 'git stash branch b' "$kit"
+    git -C "$r" stash drop -q
+
+    # Only src/a.ts modified: today's verdicts.
+    printf 'mod\n' >"$r/src/a.ts"
+    kb_git G19.010 ask "$r" 'git restore .'
+    kb_git_nokit G19.019 "$r" 'git stash'
+    kb_git_nokit G19.028 "$r" 'git stash push'
+    for c in 'git checkout -f' 'git checkout -f feat/x' 'git switch --discard-changes feat/x'; do
+        kb_git G19.034 ask "$r" "$c" 'discards local changes'
+    done
+    git -C "$r" stash -q
+    kb_git G19.013 pass "$r" 'git stash pop'
+    git -C "$r" stash drop -q
+
+    # G19.013, G19.019: an untracked install.sh.
+    printf 'x\n' >"$r/install.sh"
+    kb_git G19.019 deny "$r" 'git stash -u' "$kit"
+    kb_git G19.019 deny "$r" 'git stash push -a' "$kit"
+    git -C "$r" stash -q -u
+    kb_git G19.013 deny "$r" 'git stash pop' "$kit"
+    kb_git G19.013 deny "$r" 'git -C src stash pop' "$kit"
+    git -C "$r" stash drop -q
+
+    # G19.032: an untrusted git dir runs nothing from its config.
+    git init -q -b main --separate-git-dir "$tmp/sep.git" "$tmp/work"
+    git -C "$tmp/work" config user.email fixture@loopkit.invalid
+    git -C "$tmp/work" config user.name Fixture
+    mkdir -p "$tmp/work/.claude/hooks"
+    printf 'x\n' >"$tmp/work/.claude/hooks/x"
+    git -C "$tmp/work" add .claude/hooks/x
+    git -C "$tmp/work" commit -q -m seed
+    git -C "$tmp/work" switch -q -c feat/x
+    printf 'core\n' >"$tmp/work/.claude/INSTALL_PROFILE"
+    printf 'mod\n' >"$tmp/work/.claude/hooks/x"
+    git -C "$tmp/work" config core.fsmonitor "touch $tmp/MARKER"
+    kb_git G19.032 ask "$tmp/work" 'git checkout -- .claude/hooks/x'
+    CASES=$((CASES + 1))
+    [[ ! -e "$tmp/MARKER" ]] || fail kit-boundary G19.032 "the repository's own config ran inside the hook"
+
+    # G19.033: a branch that exists only as a remote-tracking ref.
+    git clone -q "$tmp/kitlike" "$tmp/down" 2>/dev/null
+    git -C "$tmp/down" config user.email fixture@loopkit.invalid
+    git -C "$tmp/down" config user.name Fixture
+    git -C "$tmp/down" switch -q -c feat/z
+    printf 'core\n' >"$tmp/down/.claude/INSTALL_PROFILE"
+    kb_git G19.033 ask "$tmp/down" 'git checkout k' "$brings"
+    kb_git G19.033 ask "$tmp/down" 'git switch k' "$brings"
+    kb_git_nokit G19.033 "$tmp/down" 'git checkout nosuch'
+    git -C "$tmp/down" remote add up "$tmp/kitlike"
+    git -C "$tmp/down" fetch -q up 2>/dev/null
+    kb_git G19.033 ask "$tmp/down" 'git checkout k'
+
+    # G19.030: the kit repo keeps today's verdicts.
+    r="$tmp/kitlike"
+    for c in 'git apply p.patch' 'git restore .claude/hooks/x' "git rm -r .claude" 'git mv .claude/hooks/x a' \
+             'git merge-file .claude/hooks/x b o' 'git checkout k' 'git switch k' 'git merge k'; do
+        kb_git_nokit G19.030 "$r" "$c"
+    done
+    printf 'mod\n' >"$r/.claude/hooks/x"
+    git -C "$r" stash -q
+    kb_git_nokit G19.030 "$r" 'git stash pop'
+    rm -r "$tmp"
+}
+
+# kb_nokit_pd <id> <project> <command>: the shell guard's verdict holds no kit-code deny.
+kb_nokit_pd() {
+    local out
+    out="$(pd_probe "$2" "$3")"
+    CASES=$((CASES + 1))
+    if [[ "$out" == *'kit code:'* || "$out" == *'kit-apply.sh'* ]]; then
+        fail kit-boundary "$1 '$3' in ${2##*/}" "expected today's verdict, got: ${out:0:200}"
+    fi
+}
+
+# KB22-KB25, KB12 (review round 1): an unresolved spelling of the kit-apply run, a write through
+# a kit folder or a glob, a Write through a link outside the project.
+run_kit_boundary_review1_cases() {
+    local tmp v c out deny_text='kit code changes in the LoopKit repo, then `install.sh`'
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+        printf '#!/usr/bin/env bash\n' >"$tmp/$v/.claude/scripts/kit-apply.sh"
+    done
+    mkdir -p "$tmp/srck/.claude/hooks" "$tmp/benign/docs"
+    printf 'x\n' >"$tmp/srck/.claude/hooks/x"
+    printf 'x\n' >"$tmp/benign/docs/a.md"
+    for v in installed kitlike; do
+        for c in 'bash "$CLAUDE_PROJECT_DIR"/.claude/scripts/kit-apply.sh' 'bash "${CLAUDE_PROJECT_DIR}/.claude/scripts/kit-apply.sh"' \
+                 'bash $(pwd)/.claude/scripts/kit-apply.sh' 'bash $PWD/.claude/scripts/kit-apply.sh'; do
+            kb_pd KB22 deny "$tmp/$v" "$c" 'kit-apply.sh'
+        done
+        for c in 'bash .claude/scripts/kit-appl*' 'bash < .claude/scripts/kit-apply.sh'; do
+            kb_pd KB22 ask "$tmp/$v" "$c"
+        done
+        kb_pd KB22 deny "$tmp/$v" 'cat .claude/scripts/kit-apply.sh | bash' 'kit-apply.sh'
+        kb_pd KB22 pass "$tmp/$v" 'cat .claude/scripts/kit-appl*'
+    done
+    for c in 'sed -i s/a/b/ .claude/hooks/*.sh' 'perl -pi -e 1 .claude/scripts/*' 'cp -R /tmp/kb-missing/. .claude/hooks/' \
+             'rsync -a /tmp/kb-missing/ .claude/' 'find .claude/hooks -type f -exec sed -i s/a/b/ {} +' \
+             'cp -R /tmp/kb-missing/. .' "cp -R $tmp/srck/. ."; do
+        kb_pd KB23 deny "$tmp/installed" "$c" "$deny_text"
+        kb_nokit_pd KB23 "$tmp/kitlike" "$c"
+    done
+    kb_nokit_pd KB23 "$tmp/installed" "cp -R $tmp/benign/. ."
+    kb_nokit_pd KB23 "$tmp/installed" 'cp /tmp/notes.txt .claude/notes.txt'
+    ln -s "$tmp/installed/.claude/hooks/x" "$tmp/outlink"
+    ln -s "$tmp/kitlike/.claude/hooks/x" "$tmp/outlink-kit"
+    printf 'x\n' >"$tmp/plain.txt"
+    kb_pf KB24 deny "$tmp/installed" Write ../outlink "$deny_text"
+    kb_pf KB24 deny "$tmp/installed" Edit ../outlink "$deny_text"
+    kb_pf KB24 pass "$tmp/installed" Write ../plain.txt
+    kb_pf KB24 pass "$tmp/installed" Write ../outlink-kit
+    kb_pf KB24 pass "$tmp/kitlike" Write ../outlink-kit
+    rm -r "$tmp"
+}
+
+# G19.035-G19.038 (review round 1): an absolute operand under the root, a rebase branch or --onto
+# target, `-` as the previous branch, and the bash floor.
+run_kit_boundary_review1_git_cases() {
+    local tmp r c v kit='kit code changes in the LoopKit repo' brings='brings kit changes: .claude/hooks/x'
+    tmp="$(mktemp -d)"
+    for v in installed kitlike prev prev2; do kb_repo "$tmp/$v" "$([[ $v == kitlike ]] && echo kitlike || echo installed)"; done
+    git -C "$tmp/prev" switch -q k
+    git -C "$tmp/prev" switch -q feat/x
+    r="$tmp/installed"
+    for c in "git mv $r/.claude/hooks/x a" "git mv src/a.ts $r/.claude/hooks/y" "git merge-file $r/.claude/hooks/x b o" \
+             "git checkout-index -f -- $r/.claude/hooks/x" "git update-index --chmod=+x $r/.claude/hooks/x" \
+             "git reset -- $r/.claude/hooks/x"; do
+        kb_git G19.035 deny "$r" "$c" "$kit"
+        kb_git_nokit G19.035 "$tmp/kitlike" "${c//$r/$tmp/kitlike}"
+    done
+    kb_git G19.035 pass "$r" "git mv $r/src/a.ts $r/src/b.ts"
+    kb_git G19.036 ask "$r" 'git rebase main k' "$brings"
+    kb_git G19.036 ask "$r" 'git rebase --onto k main' "$brings"
+    kb_git G19.036 ask "$r" 'git rebase --onto=k main' "$brings"
+    kb_git_nokit G19.036 "$r" 'git rebase main s'
+    kb_git_nokit G19.036 "$r" 'git rebase --onto s main'
+    for c in 'git checkout -' 'git switch -' 'git merge -' 'git rebase -' 'git cherry-pick -'; do
+        kb_git G19.037 ask "$tmp/prev" "$c" "$brings"
+        kb_git_nokit G19.037 "$tmp/prev2" "$c"
+    done
+    mkdir -p "$tmp/fp/bin"
+    printf '#!/usr/bin/env bash\n[ "$1" = -I ] && [ "$#" -gt 3 ] && exit 1\nexec %s "$@"\n' "$(command -v python3)" >"$tmp/fp/bin/python3"
+    chmod +x "$tmp/fp/bin/python3"
+    out="$(PATH="$tmp/fp/bin:$PATH" git_hook_probe 'git restore .claude/hooks/x' "$r" "$r")"
+    kb_verdict G19.038 ask 'floor: git restore in installed' "$out" 'may write kit code'
+    out="$(PATH="$tmp/fp/bin:$PATH" git_hook_probe 'git restore .claude/hooks/x' "$tmp/kitlike" "$tmp/kitlike")"
+    CASES=$((CASES + 1))
+    [[ "$out" != *'may write kit code'* ]] || fail kit-boundary G19.038 "floor: the kit repo got a kit-code reason: ${out:0:200}"
+    rm -r "$tmp"
+}
+
+# KB25 (review round 2, R2-N1): a contents copy from a big folder is one folder row, not one row
+# per entry, so it neither collapses to an unknown ask nor hides the kit target.
+run_kit_boundary_review2_shell_cases() {
+    local tmp v i deny_text='kit code changes in the LoopKit repo, then `install.sh`'
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/big70"
+    for i in $(seq 70); do printf 'x\n' >"$tmp/big70/f$i"; done
+    for v in installed kitlike; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+        mkdir -p "$tmp/$v/dist"
+        kb_pd KB25 pass "$tmp/$v" "rsync -a $tmp/big70/ dist/"
+        kb_pd KB25 pass "$tmp/$v" "cp -R $tmp/big70/. dist/"
+    done
+    kb_pd KB25 deny "$tmp/installed" "cp -R $tmp/big70/. .claude/hooks/" 'kit code:'
+    kb_pd KB25 deny "$tmp/installed" "rsync -a $tmp/big70/ .claude/hooks/" "$deny_text"
+    kb_nokit_pd KB25 "$tmp/kitlike" "cp -R $tmp/big70/. .claude/hooks/"
+    rm -r "$tmp"
+}
+
+# G19.039-G19.048 (review round 2, R2-N2 and R2-N3): a rebase `<branch>` switch and an `--onto`
+# that drops commits both change kit code; a project nested in a bigger repo roots its kit paths
+# on the project, not on the repo's top.
+run_kit_boundary_review2_git_cases() {
+    local tmp r m a c brings='brings kit changes: .claude/hooks/x' kit='kit code changes in the LoopKit repo'
+    tmp="$(mktemp -d)"
+    r="$tmp/n2"
+    kb_repo "$r" installed
+    git -C "$r" switch -q -c h2 main
+    printf 'v2\n' >"$r/.claude/hooks/x"
+    git -C "$r" commit -q -am h2
+    git -C "$r" switch -q -c f3
+    printf 'f3\n' >"$r/src/a.ts"
+    git -C "$r" commit -q -am f3
+    git -C "$r" switch -q h2
+    kb_git G19.039 ask "$r" 'git rebase main s' "$brings"
+    git -C "$r" switch -q f3
+    kb_git G19.040 ask "$r" 'git rebase --onto main h2' "$brings"
+    git -C "$r" switch -q feat/x
+    kb_git_nokit G19.041 "$r" 'git rebase main s'
+    m="$tmp/mono"
+    a="$m/app"
+    git init -q -b main "$m"
+    git -C "$m" config user.email fixture@loopkit.invalid
+    git -C "$m" config user.name Fixture
+    mkdir -p "$a/src" "$a/.claude/hooks" "$m/other/.claude/hooks"
+    printf 'a\n' >"$a/src/a.ts"
+    printf 'x\n' >"$a/.claude/hooks/x"
+    printf 'x\n' >"$m/other/.claude/hooks/x"
+    seed_project "$a"
+    printf 'core\n' >"$a/.claude/INSTALL_PROFILE"
+    git -C "$m" add -A
+    git -C "$m" commit -q -m seed
+    for c in 'git restore .claude/hooks/x' 'git rm --cached .claude/hooks/x' 'git update-index --chmod=+x .claude/hooks/x'; do
+        kb_git G19.042 deny "$a" "$c" "$kit"
+    done
+    for c in "git restore $a/.claude/hooks/x" "git rm --cached $a/.claude/hooks/x" "git update-index --chmod=+x $a/.claude/hooks/x"; do
+        kb_git G19.043 deny "$a" "$c" "$kit"
+    done
+    kb_git G19.044 deny "$a" 'git checkout -- .claude/hooks/x' "$kit"
+    kb_git G19.045 deny "$a" 'git rm -r .claude' "$kit"
+    for c in 'git restore ../other/.claude/hooks/x' 'git rm --cached ../other/.claude/hooks/x' \
+             "git restore $m/other/.claude/hooks/x" "git update-index --chmod=+x $m/other/.claude/hooks/x"; do
+        kb_git_nokit G19.046 "$a" "$c"
+    done
+    kb_git_nokit G19.047 "$a" 'git restore src/a.ts'
+    rm -r "$tmp"
+}
+
+# G19.048-G19.050 (review round 3, R3-2): `git am` applies from the work tree's top, so a mbox read
+# from a subfolder (`-C src` or the cwd) is judged on the paths it writes from the top.
+run_kit_boundary_review3_git_cases() {
+    local tmp v out
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do
+        kb_repo "$tmp/$v" "$([[ $v == kitlike ]] && echo kitlike || echo installed)"
+        cp "$tmp/$v/m.mbox" "$tmp/$v/src/m.mbox"
+    done
+    kb_git G19.048 deny "$tmp/installed" 'git -C src am m.mbox' 'kit code: .claude/hooks/x'
+    out="$(PROBE_PROJECT="$tmp/installed" git_hook_probe 'git am m.mbox' "$tmp/installed/src" "$tmp/installed/src")"
+    kb_verdict G19.049 deny 'git am m.mbox with cwd src in installed' "$out" 'kit code: .claude/hooks/x'
+    kb_git_nokit G19.050 "$tmp/kitlike" 'git -C src am m.mbox'
+    rm -r "$tmp"
+}
+
+# KB26 (ship audit): a shell named by path, or `env` by path, running kit-apply.sh is the same run
+# as the bare shell; `-o <name>` takes a value; a shell running another script has no kit verdict.
+run_kit_boundary_ship_cases() {
+    local tmp v c
+    tmp="$(mktemp -d)"
+    for v in installed kitlike; do
+        mkdir -p "$tmp/$v"
+        kb_setup "$tmp/$v" "$v"
+        printf '#!/usr/bin/env bash\n' >"$tmp/$v/.claude/scripts/kit-apply.sh"
+    done
+    printf 'x\n' >"$tmp/installed/other.sh"
+    printf 'x\n' >"$tmp/installed/x.py"
+    for c in '/bin/bash .claude/scripts/kit-apply.sh' '/bin/sh .claude/scripts/kit-apply.sh' \
+             '/usr/bin/bash .claude/scripts/kit-apply.sh' '/usr/bin/env bash .claude/scripts/kit-apply.sh' \
+             "/bin/bash $tmp/installed/.claude/scripts/kit-apply.sh" \
+             'cd .claude/scripts && /bin/bash kit-apply.sh' \
+             'bash -o pipefail .claude/scripts/kit-apply.sh' '/bin/bash -o pipefail .claude/scripts/kit-apply.sh'; do
+        kb_pd KB26 deny "$tmp/installed" "$c" 'kit-apply.sh'
+    done
+    kb_pd KB26 ask "$tmp/installed" '/bin/bash < .claude/scripts/kit-apply.sh'
+    kb_pd KB26 deny "$tmp/kitlike" '/bin/bash .claude/scripts/kit-apply.sh' 'kit-apply.sh'
+    kb_nokit_pd KB26 "$tmp/installed" '/bin/bash other.sh'
+    kb_nokit_pd KB26 "$tmp/installed" '/usr/bin/env python3 x.py'
+    rm -r "$tmp"
+}
+
 set -e
-run_fixture_sweep
+[[ "${1:-}" == --kb-only ]] || run_fixture_sweep
+if [[ "${1:-}" == --kb-only ]]; then
+    run_kit_boundary_step1_cases
+    run_kit_boundary_step2_cases
+    run_kit_boundary_step3_cases
+    run_kit_boundary_step4_cases
+    run_kit_boundary_review1_cases
+    run_kit_boundary_review1_git_cases
+    run_kit_boundary_review2_shell_cases
+    run_kit_boundary_review2_git_cases
+    run_kit_boundary_review3_git_cases
+    run_kit_boundary_ship_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (kit-boundary only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" != --fixtures-only ]]; then
+    run_kit_boundary_step1_cases
+    run_kit_boundary_step2_cases
+    run_kit_boundary_step3_cases
+    run_kit_boundary_step4_cases
+    run_kit_boundary_review1_cases
+    run_kit_boundary_review1_git_cases
+    run_kit_boundary_review2_shell_cases
+    run_kit_boundary_review2_git_cases
+    run_kit_boundary_review3_git_cases
+    run_kit_boundary_ship_cases
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases

@@ -149,111 +149,6 @@ p1_rerun() {
     "$ROOT/install.sh" "$1" --no-ci 2>&1
 }
 
-# (a) a guard hook without the api line holds P1 back, and says which one.
-HB="$SCRATCH/hold-a"
-p1_fresh "$HB"
-sed -i '/^# cwk-guard-api:/d' "$HB/.claude/hooks/enforce-git-workflow.sh"
-p1_strip "$HB"
-HB_OUT="$(p1_rerun "$HB")"
-p1_absent "$HB"
-grep -Fq 'P1 held back: .claude/hooks/enforce-git-workflow.sh' <<<"$HB_OUT"
-# (a, A0) the held-back message names the .new copy to merge.
-grep -Fq 'merge .claude/hooks/enforce-git-workflow.sh.new' <<<"$HB_OUT"
-# (a, A0) the pnpm gate wildcards go too, the bare forms and pnpm audit * stay.
-gates_wild_none() {
-    jq -e '[.permissions.allow[]? | select(IN("Bash(pnpm build *)", "Bash(pnpm test:run *)",
-            "Bash(pnpm test:coverage *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck *)"))] | length == 0' \
-        "$1/.claude/settings.json" >/dev/null
-}
-gates_wild_none "$HB"
-jq -e '.permissions.allow | index("Bash(pnpm build)") and index("Bash(pnpm audit *)")' \
-    "$HB/.claude/settings.json" >/dev/null
-# (a, A0) the held-back settings still satisfy the doctor's gate allowlist.
-python3 "$HB/.claude/hooks/kit-doctor.py" | grep -q 'ok          gate-allowlist'
-# (b) its .new copies merged in, the re-run adds P1.
-while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HB" -name '*.new')
-HB_OUT="$(p1_rerun "$HB")"
-p1_present "$HB"
-gates_wild_none "$HB"
-if grep -Fq 'P1 held back' <<<"$HB_OUT"; then exit 1; fi
-
-# (A0) tdd-require-red.sh and auto-approve-config.sh are guard files: without
-# their api line P1 and the gate wildcards are held back, merged they come back.
-for guard in tdd-require-red.sh auto-approve-config.sh; do
-    HA0="$SCRATCH/hold-a0-$guard"
-    p1_fresh "$HA0"
-    sed -i '/^# cwk-guard-api:/d' "$HA0/.claude/hooks/$guard"
-    HA0_OUT="$(p1_rerun "$HA0")"
-    p1_absent "$HA0"
-    gates_wild_none "$HA0"
-    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA0_OUT"
-    while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$HA0" -name '*.new')
-    p1_rerun "$HA0" >/dev/null
-    p1_present "$HA0"
-    gates_wild_none "$HA0"
-done
-
-# (A2) enforce-git-workflow.sh left at its previous api, 1, is held back.
-HA2="$SCRATCH/hold-a2"
-p1_fresh "$HA2"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA2/.claude/hooks/enforce-git-workflow.sh"
-HA2_OUT="$(p1_rerun "$HA2")"
-p1_absent "$HA2"
-gates_wild_none "$HA2"
-grep -Fq 'P1 held back: .claude/hooks/enforce-git-workflow.sh' <<<"$HA2_OUT"
-
-# (A3) hook-guarded.sh left at its previous api, 1, is held back.
-HA3="$SCRATCH/hold-a3"
-p1_fresh "$HA3"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA3/.claude/hooks/hook-guarded.sh"
-HA3_OUT="$(p1_rerun "$HA3")"
-p1_absent "$HA3"
-gates_wild_none "$HA3"
-grep -Fq 'P1 held back: .claude/hooks/hook-guarded.sh' <<<"$HA3_OUT"
-
-# (A4) shell_targets.py, prevent-destructive-commands.sh and hook-lib.sh left at
-# their previous api, 1, are held back.
-for guard in shell_targets.py prevent-destructive-commands.sh hook-lib.sh; do
-    HA4="$SCRATCH/hold-a4-$guard"
-    p1_fresh "$HA4"
-    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA4/.claude/hooks/$guard"
-    HA4_OUT="$(p1_rerun "$HA4")"
-    p1_absent "$HA4"
-    gates_wild_none "$HA4"
-    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA4_OUT"
-done
-
-# (A8) shell_targets.py, prevent-destructive-commands.sh and enforce-git-workflow.sh
-# left at api 2, before the harness-prompts B0 fixes, are held back.
-for guard in shell_targets.py prevent-destructive-commands.sh enforce-git-workflow.sh; do
-    HA8="$SCRATCH/hold-a8-$guard"
-    p1_fresh "$HA8"
-    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HA8/.claude/hooks/$guard"
-    HA8_OUT="$(p1_rerun "$HA8")"
-    p1_absent "$HA8"
-    gates_wild_none "$HA8"
-    grep -Fq "P1 held back: .claude/hooks/$guard" <<<"$HA8_OUT"
-done
-
-# (A9) hook-guarded.sh left at api 2, before the root launchers and addons/ joined
-# CWK_GUARDED (harness-prompts ship-audit C2), is held back.
-HA9="$SCRATCH/hold-a9-guarded"
-p1_fresh "$HA9"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HA9/.claude/hooks/hook-guarded.sh"
-HA9_OUT="$(p1_rerun "$HA9")"
-p1_absent "$HA9"
-gates_wild_none "$HA9"
-grep -Fq 'P1 held back: .claude/hooks/hook-guarded.sh' <<<"$HA9_OUT"
-
-# (A7) protect-files.sh left at its previous api, 1, is held back.
-HA7="$SCRATCH/hold-a7"
-p1_fresh "$HA7"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$HA7/.claude/hooks/protect-files.sh"
-HA7_OUT="$(p1_rerun "$HA7")"
-p1_absent "$HA7"
-gates_wild_none "$HA7"
-grep -Fq 'P1 held back: .claude/hooks/protect-files.sh' <<<"$HA7_OUT"
-
 # (c) a fresh install carries P1 and keeps it on a re-run.
 HC="$SCRATCH/hold-c"
 p1_fresh "$HC"
@@ -273,17 +168,6 @@ if grep -Fq 'P1 held back' <<<"$HD_OUT"; then exit 1; fi
 jq -e '(.protected_dirs | index("docs")) and (.protected_branches | index("release"))' "$HD/.claude/project.json" >/dev/null
 PY_OUT="$("$ROOT/install.sh" "$PY_TARGET" --fastapi --no-ci 2>&1)"
 if grep -Fq 'P1 held back' <<<"$PY_OUT"; then exit 1; fi
-
-# (e) held back over a target's own mode and allows: both kept untouched.
-HE="$SCRATCH/hold-e"
-p1_fresh "$HE"
-sed -i '/^# cwk-guard-api:/d' "$HE/.claude/hooks/enforce-git-workflow.sh"
-jq '.permissions.defaultMode = "default" | .permissions.allow = (.permissions.allow - ["Bash(git add *)"] + ["Bash(make *)"])' \
-    "$HE/.claude/settings.json" >"$SCRATCH/own.json"
-cp "$SCRATCH/own.json" "$HE/.claude/settings.json"
-p1_rerun "$HE" >/dev/null
-jq -e '.permissions.defaultMode == "default" and (.permissions.allow | index("Bash(make *)"))
-       and (.permissions.allow | index("Bash(git add *)") | not)' "$HE/.claude/settings.json" >/dev/null
 
 # (DA1) a target's own permissions.deny keeps its entries, first, and gains the
 # kit's missing ones in the kit's order, so `Read(!.env.example)` still follows
@@ -306,20 +190,6 @@ jq -e --argjson kit "$KIT_DENY" \
 HG_DENY="$(jq -c '.permissions.deny' "$HG/.claude/settings.json")"
 p1_rerun "$HG" >/dev/null
 [[ "$(jq -c '.permissions.deny' "$HG/.claude/settings.json")" == "$HG_DENY" ]]
-HGH="$SCRATCH/deny-held"
-p1_fresh "$HGH"
-sed -i '/^# cwk-guard-api:/d' "$HGH/.claude/hooks/enforce-git-workflow.sh"
-grep -Fq 'P1 held back' <<<"$(p1_rerun "$HGH")"
-jq -e --argjson kit "$KIT_DENY" '.permissions.deny == $kit' "$HGH/.claude/settings.json" >/dev/null
-
-# (f) hook-lib.sh that no longer sources hook-guarded.sh holds P1 back.
-HF="$SCRATCH/hold-f"
-p1_fresh "$HF"
-sed -i 's/source \(.*\)hook-guarded\.sh/source \1hook-other.sh/' "$HF/.claude/hooks/hook-lib.sh"
-p1_strip "$HF"
-HF_OUT="$(p1_rerun "$HF")"
-p1_absent "$HF"
-grep -Fq 'P1 held back: .claude/hooks/hook-lib.sh' <<<"$HF_OUT"
 
 # (g) a deleted guard file is restored by the copy before the settings merge.
 HG="$SCRATCH/hold-g"
@@ -330,68 +200,6 @@ HG_OUT="$(p1_rerun "$HG")"
 [[ -f "$HG/.claude/hooks/shell_targets.py" ]]
 p1_present "$HG"
 if grep -Fq 'P1 held back' <<<"$HG_OUT"; then exit 1; fi
-
-# (h) an api number lower than the kit's holds P1 back.
-HH="$SCRATCH/hold-h"
-p1_fresh "$HH"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 0/' "$HH/.claude/hooks/protect-files.sh"
-p1_strip "$HH"
-HH_OUT="$(p1_rerun "$HH")"
-p1_absent "$HH"
-grep -Fq 'P1 held back: .claude/hooks/protect-files.sh' <<<"$HH_OUT"
-
-# I3 hold-back removes a P1 the target already holds: the five kit allows and an
-# acceptEdits mode go, everything else the target has stays.
-P1_KIT="$(sed -n "/^P1_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^P1_ALLOWS='//; s/'\$//")"
-jq -e 'length == 5' <<<"$P1_KIT" >/dev/null
-p1_none() {
-    jq -e --argjson p1 "$P1_KIT" \
-        '(.permissions.defaultMode != "acceptEdits") and ([.permissions.allow[]? | select(IN($p1[]))] | length == 0)' \
-        "$1/.claude/settings.json" >/dev/null
-}
-p1_all() {
-    jq -e --argjson p1 "$P1_KIT" \
-        '(.permissions.defaultMode == "acceptEdits") and ([.permissions.allow[]? | select(IN($p1[]))] | length == ($p1 | length))' \
-        "$1/.claude/settings.json" >/dev/null
-}
-p1_add_allow() {
-    jq --arg a "$2" '.permissions.allow += [$a]' "$1/.claude/settings.json" >"$SCRATCH/allow.json"
-    cp "$SCRATCH/allow.json" "$1/.claude/settings.json"
-}
-
-# (I3a) reproduction: P1 present from an earlier install, then a guard falls behind.
-H3A="$SCRATCH/hold-3a"
-p1_fresh "$H3A"
-p1_all "$H3A"
-p1_add_allow "$H3A" 'Bash(make *)'
-sed -i '/^# cwk-guard-api:/d' "$H3A/.claude/hooks/enforce-git-workflow.sh"
-H3A_OUT="$(p1_rerun "$H3A")"
-p1_none "$H3A"
-jq -e '.permissions.allow | index("Bash(make *)")' "$H3A/.claude/settings.json" >/dev/null
-grep -Fq 'P1 held back: .claude/hooks/enforce-git-workflow.sh' <<<"$H3A_OUT"
-
-# (I3b) a mode the user chose is not the kit's: kept, only the allows go.
-H3B="$SCRATCH/hold-3b"
-p1_fresh "$H3B"
-jq '.permissions.defaultMode = "plan"' "$H3B/.claude/settings.json" >"$SCRATCH/mode.json"
-cp "$SCRATCH/mode.json" "$H3B/.claude/settings.json"
-sed -i '/^# cwk-guard-api:/d' "$H3B/.claude/hooks/enforce-git-workflow.sh"
-p1_rerun "$H3B" >/dev/null
-jq -e '.permissions.defaultMode == "plan"' "$H3B/.claude/settings.json" >/dev/null
-p1_none "$H3B"
-
-# (I3c) the .new copies merged in, the re-run gives all of P1 back.
-while IFS= read -r new; do mv "$new" "${new%.new}"; done < <(find "$H3A" -name '*.new')
-p1_rerun "$H3A" >/dev/null
-p1_all "$H3A"
-
-# (I3d) no settings yet over held hooks: the fresh copy carries none of the five.
-H3D="$SCRATCH/hold-3d"
-p1_fresh "$H3D"
-rm "$H3D/.claude/settings.json"
-sed -i '/^# cwk-guard-api:/d' "$H3D/.claude/hooks/enforce-git-workflow.sh"
-p1_rerun "$H3D" >/dev/null
-p1_none "$H3D"
 
 # (I1b) a back-fill into an older block says how many lines it added, never
 # that the block was added.
@@ -461,28 +269,9 @@ hp_all() {
     jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w))' \
         "$1/.claude/settings.json" >/dev/null
 }
-hp_none() {
-    jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w) | not)' \
-        "$1/.claude/settings.json" >/dev/null
-}
 HPA="$SCRATCH/hp-current"
 p1_fresh "$HPA"
 hp_all "$HPA"
-HPB="$SCRATCH/hp-held"
-mkdir -p "$HPB"
-"$ROOT/install.sh" "$HPB" --no-ci >/dev/null 2>&1
-jq '.permissions.allow += ["Bash(make *)"]' "$HPB/.claude/settings.json" >"$SCRATCH/hp.json"
-cp "$SCRATCH/hp.json" "$HPB/.claude/settings.json"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HPB/.claude/hooks/shell_targets.py"
-grep -Fq 'P1 held back: .claude/hooks/shell_targets.py' <<<"$(p1_rerun "$HPB")"
-hp_none "$HPB"
-jq -e '.permissions.allow | index("Bash(make *)")' "$HPB/.claude/settings.json" >/dev/null
-HPC="$SCRATCH/hp-held-fresh"
-mkdir -p "$HPC/.claude/hooks"
-cp "$ROOT/.claude/hooks/enforce-git-workflow.sh" "$HPC/.claude/hooks/"
-sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 2/' "$HPC/.claude/hooks/enforce-git-workflow.sh"
-p1_rerun "$HPC" >/dev/null
-hp_none "$HPC"
 
 # HP-A review 5: the argument wildcards of the test, lint, build and typecheck
 # runners are retired. A current install drops the ones an earlier install left,
@@ -519,14 +308,6 @@ cp "$SCRATCH/hpd.json" "$HPD/.claude/settings.json"
 p1_rerun "$HPD" >/dev/null
 hp_kitdev_none "$HPD"
 p1_present "$HPD"
-
-# (A9) kit-attempts.py without its api line holds P1 and the prompt allows back.
-HA9="$SCRATCH/hold-a9"
-p1_fresh "$HA9"
-sed -i '/^# cwk-guard-api:/d' "$HA9/.claude/hooks/kit-attempts.py"
-grep -Fq 'P1 held back: .claude/hooks/kit-attempts.py' <<<"$(p1_rerun "$HA9")"
-p1_absent "$HA9"
-hp_none "$HA9"
 
 # The FastAPI addon allows the exact uv-run lint and type gates, never `uv run *`.
 for hp_uv in 'Bash(uv run ruff check .)' 'Bash(uv run ruff check app)' 'Bash(uv run ruff check app/)' \
@@ -576,14 +357,13 @@ lh_tty "$I6E" '' >/dev/null
 
 # IN1-IN3 (app-roots-codegen, amended by project-config): the kit's .claude/project.json
 # ships; a v1 file is upgraded in place, keeping its roots, never shadowed by a .new; and
-# project_config.py is a guard file.
+# project_config.py carries its api line.
 cmp -s "$ROOT/.claude/project.json" "$TARGET/.claude/project.json"
 printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' > "$TARGET/.claude/project.json"
 rm -f "$TARGET/.claude/project.json.new"
 "$ROOT/install.sh" "$TARGET" --no-ci >/dev/null 2>&1
 jq -e '.schema_version == 2 and .app_roots == ["frontend"]' "$TARGET/.claude/project.json" >/dev/null
 [ ! -e "$TARGET/.claude/project.json.new" ]
-grep -Fq 'project_config.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
 grep -q '^# cwk-guard-api: [0-9]' "$TARGET/.claude/hooks/project_config.py"
 
 # IN4-IN13 (project-config step 6): `project_config.py migrate` reads a target's active hooks.
@@ -722,73 +502,12 @@ cp "$SCRATCH/in15.json" "$IN15/.claude/project.json"
 cmp -s "$SCRATCH/in15.json" "$IN15/.claude/project.json"
 jq -e '.protected_branches == ["main","develop"]' "$IN15/.claude/project.json" >/dev/null
 
-# IN16 (review 1): while the target's active reader or loader is older than the kit's, a v1 file
-# stays v1, whatever the install would otherwise write, and the install says what to do.
-for in16_old in project_config.py hook-guarded.sh; do
-    IN16="$SCRATCH/in16-$in16_old"
-    mkdir -p "$IN16"
-    "$ROOT/install.sh" "$IN16" --no-ci >/dev/null 2>&1
-    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$IN16/.claude/hooks/$in16_old"
-    printf '{"schema_version":1,"app_roots":["frontend"],"codegen_commands":[]}\n' >"$IN16/.claude/project.json"
-    IN16_OUT="$("$ROOT/install.sh" "$IN16" --no-ci 2>&1)"
-    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
-    grep -Fq 'laissé en v1' <<<"$IN16_OUT"
-    grep -Fq "$in16_old.new" <<<"$IN16_OUT"
-    "$ROOT/install.sh" "$IN16" --no-ci --supabase >/dev/null 2>&1
-    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
-    "$ROOT/install.sh" "$IN16" --no-ci --fastapi >/dev/null 2>&1
-    jq -e '.schema_version == 1 and .app_roots == ["frontend"]' "$IN16/.claude/project.json" >/dev/null
-done
-
 # IN17 (review 1): wire_fastapi warns on an invalid project.json, as wire_supabase does.
 IN17="$SCRATCH/in17"
 mkdir -p "$IN17/.claude"
 printf '{"schema_version":2}\n' >"$IN17/.claude/project.json"
 IN17_OUT="$("$ROOT/install.sh" "$IN17" --fastapi --no-ci 2>&1)"
 grep -Fq 'fastapi non câblé' <<<"$IN17_OUT"
-
-# IN18 (review 2): an upgrade keeps the values of the still-old hooks whatever order the .new
-# are merged in. Run 1 saves them beside a v1 file; after every .new is merged, run 2 writes them.
-in_merge_all() {
-    local n
-    for n in "$1"/.claude/hooks/*.new; do
-        [[ -e "$n" ]] && mv "$n" "${n%.new}"
-    done
-    return 0
-}
-in_old_target() {
-    mkdir -p "$1"
-    "$ROOT/install.sh" "$1" --no-ci >/dev/null 2>&1
-    sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$1/.claude/hooks/project_config.py" "$1/.claude/hooks/hook-guarded.sh"
-    rm -f "$1/.claude/project.json"
-    printf 'PROTECTED_DIRS="frontend|src|infra|\\.claude"\n' >>"$1/.claude/hooks/prevent-destructive-commands.sh"
-    printf 'PROTECTED_BRANCHES="main|develop"\n' >>"$1/.claude/hooks/enforce-git-workflow.sh"
-    printf 'DATA_CLIENT_MODULE = "lib/api"\nDATA_CLIENT_OWN_PATH = "lib/api.ts"\n' >>"$1/.claude/hooks/enforce-architecture.py"
-}
-IN18="$SCRATCH/in18"
-in_old_target "$IN18"
-IN18_OUT="$("$ROOT/install.sh" "$IN18" --no-ci 2>&1)"
-[ ! -e "$IN18/.claude/project.json" ]
-grep -Fq 'project.snapshot.json' <<<"$IN18_OUT"
-jq -e '.values.protected_branches == ["main","develop"] and .values.data_client.module == "lib/api"' "$IN18/.claude/project.snapshot.json" >/dev/null
-in_merge_all "$IN18"
-"$ROOT/install.sh" "$IN18" --no-ci >/dev/null 2>&1
-jq -e '.schema_version == 2 and .protected_branches == ["main","develop"]
-    and .protected_dirs == ["frontend","src","infra",".claude"] and .data_client.module == "lib/api"' \
-    "$IN18/.claude/project.json" >/dev/null
-[ ! -e "$IN18/.claude/project.snapshot.json" ]
-
-# IN19 (review 2): a partial merge between two runs loses nothing; the saved values accumulate.
-IN19="$SCRATCH/in19"
-in_old_target "$IN19"
-"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
-mv "$IN19/.claude/hooks/enforce-git-workflow.sh.new" "$IN19/.claude/hooks/enforce-git-workflow.sh"
-"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
-[ ! -e "$IN19/.claude/project.json" ]
-in_merge_all "$IN19"
-"$ROOT/install.sh" "$IN19" --no-ci >/dev/null 2>&1
-jq -e '.protected_branches == ["main","develop"] and .protected_dirs == ["frontend","src","infra",".claude"]' \
-    "$IN19/.claude/project.json" >/dev/null
 
 # IN20 (review 2): an upgrade that finds no value anywhere writes the defaults and says so.
 IN20="$SCRATCH/in20"
@@ -797,7 +516,7 @@ mkdir -p "$IN20"
 rm -f "$IN20/.claude/project.json"
 IN20_OUT="$("$ROOT/install.sh" "$IN20" --no-ci 2>&1)"
 cmp -s <(python3 -I -B "$ROOT/.claude/hooks/project_config.py" defaults) "$IN20/.claude/project.json"
-grep -Fq 'no value found in the active hooks and no saved snapshot' <<<"$IN20_OUT"
+grep -Fq 'no value found in the active hooks' <<<"$IN20_OUT"
 mkdir -p "$SCRATCH/in20-fresh"
 if grep -Fq 'no value found' <<<"$("$ROOT/install.sh" "$SCRATCH/in20-fresh" --no-ci 2>&1)"; then
     echo 'IN20: a fresh install must stay silent' >&2; exit 1
@@ -833,25 +552,17 @@ if git -C "$ROOT" cat-file -e a8efa59:.claude/project.json 2>/dev/null; then
     sed -i 's/^PROTECTED_DIRS=.*/PROTECTED_DIRS="src|infra|\\.claude"/' "$IN23/.claude/hooks/prevent-destructive-commands.sh"
     sed -i 's/^DATA_CLIENT_MODULE = .*/DATA_CLIENT_MODULE = "lib\/api"/; s/^DATA_CLIENT_OWN_PATH = .*/DATA_CLIENT_OWN_PATH = "lib\/api.ts"/' \
         "$IN23/.claude/hooks/enforce-architecture.py"
-    "$ROOT/install.sh" "$IN23" --no-ci >/dev/null 2>&1
-    in_merge_all "$IN23"
+    cp "$IN23/.claude/hooks/enforce-git-workflow.sh" "$SCRATCH/in23-old-git.sh"
     "$ROOT/install.sh" "$IN23" --no-ci >/dev/null 2>&1
     jq -e '.schema_version == 2 and .protected_branches == ["main","trunk"]
         and .protected_dirs == ["src","infra",".claude"] and .data_client.module == "lib/api"' \
         "$IN23/.claude/project.json" >/dev/null
+    cmp -s "$IN23/.claude/hooks/enforce-git-workflow.sh" "$ROOT/.claude/hooks/enforce-git-workflow.sh"
+    IN23_BK=("$IN23"/.claude/kit-backup/*/.claude/hooks/enforce-git-workflow.sh)
+    [ "${#IN23_BK[@]}" -eq 1 ] && cmp -s "${IN23_BK[0]}" "$SCRATCH/in23-old-git.sh"
 else
     echo 'SKIP IN23: a8efa59 absent'
 fi
-
-# IN24 (review 2, FastAPI addon): the six addon hooks that share tdd_py_lib.py are held back with
-# P1 while the target's copies are older, and the message names their .new.
-IN24="$SCRATCH/in24"
-mkdir -p "$IN24"
-"$ROOT/install.sh" "$IN24" --fastapi --no-ci >/dev/null 2>&1
-sed -i '/^# cwk-guard-api:/d' "$IN24/.claude/hooks/tdd_py_lib.py"
-IN24_OUT="$("$ROOT/install.sh" "$IN24" --fastapi --no-ci 2>&1)"
-grep -Fq 'P1 held back: .claude/hooks/tdd_py_lib.py' <<<"$IN24_OUT"
-grep -Fq 'tdd_py_lib.py.new' <<<"$IN24_OUT"
 
 # IN25 (review 2): one unreadable alternative drops that item only; the readable ones and the
 # defaults stay, with one note per dropped item.
@@ -866,18 +577,150 @@ grep -Fq "migrate: protected_branches unreadable in enforce-git-workflow.sh, def
 grep -Fq "migrate: protected_dirs unreadable in prevent-destructive-commands.sh, default kept ('infra/.*' dropped)" <<<"$IN25_OUT"
 [ "$(grep -c 'dropped' <<<"$IN25_OUT")" -eq 2 ]
 
-# IN26 (review 3, G2): a snapshot key is adopted with one note each; a key the hooks cannot hold
-# (here codegen_commands) is ignored with a note and never reaches project.json.
-IN26="$SCRATCH/in26"
-mkdir -p "$IN26/.claude"
-printf '{"schema_version":1,"values":{"protected_branches":["main","develop"],"data_client":{"module":"lib/api","own_path":"lib/api.ts"},"codegen_commands":[["x","y"]]}}\n' \
-    >"$IN26/.claude/project.snapshot.json"
-IN26_OUT="$("${MIGRATE[@]}" "$IN26" 2>&1)"
-jq -e '.protected_branches == ["main","develop"] and .data_client.module == "lib/api" and .codegen_commands == []' \
-    "$IN26/.claude/project.json" >/dev/null
-grep -Fq 'migrate: protected_branches taken from project.snapshot.json' <<<"$IN26_OUT"
-grep -Fq 'migrate: data_client taken from project.snapshot.json' <<<"$IN26_OUT"
-grep -Fq 'migrate: codegen_commands in project.snapshot.json is not a value the hooks hold, ignored' <<<"$IN26_OUT"
-[ "$(grep -c 'taken from project.snapshot.json' <<<"$IN26_OUT")" -eq 2 ]
+# IN27-IN29, IN41 (kit-boundary step 5): kit-apply.sh applies a /kit:init proposal from the
+# user's terminal: validated, the old file backed up, the proposal moved over project.json.
+KA="$SCRATCH/ka"
+mkdir -p "$KA"
+"$ROOT/install.sh" "$KA" --no-ci >/dev/null 2>&1
+KA_APPLY="$KA/.claude/scripts/kit-apply.sh"
+[[ -x "$KA_APPLY" ]]
+cp "$KA/.claude/project.json" "$SCRATCH/ka-old.json"
+jq '.protected_branches = ["main", "trunk"]' "$KA/.claude/project.json" >"$KA/.claude/project.proposed.json"
+cp "$KA/.claude/project.proposed.json" "$SCRATCH/ka-proposal.json"
+# IN27 a valid proposal: exit 0, project.json is the proposal, the old file backed up, the proposal gone.
+bash "$KA_APPLY"
+cmp -s "$KA/.claude/project.json" "$SCRATCH/ka-proposal.json"
+KA_BACKUP=("$KA"/.claude/kit-backup/*/.claude/project.json)
+[ "${#KA_BACKUP[@]}" -eq 1 ] && cmp -s "${KA_BACKUP[0]}" "$SCRATCH/ka-old.json"
+[[ ! -e "$KA/.claude/project.proposed.json" ]]
+# IN28 an invalid proposal (an unknown key): exit 3, the key named, nothing changed, no backup folder.
+rm -r "$KA/.claude/kit-backup"
+cp "$KA/.claude/project.json" "$SCRATCH/ka-before.json"
+jq '.bogus_key = 1' "$KA/.claude/project.json" >"$KA/.claude/project.proposed.json"
+KA_CODE=0
+KA_OUT="$(bash "$KA_APPLY" 2>&1)" || KA_CODE=$?
+[ "$KA_CODE" -eq 3 ]
+grep -Fq bogus_key <<<"$KA_OUT"
+cmp -s "$KA/.claude/project.json" "$SCRATCH/ka-before.json"
+[[ -e "$KA/.claude/project.proposed.json" && ! -e "$KA/.claude/kit-backup" ]]
+# IN41 a proposal whose app root is a symlink in the project: valid in the tmp copy, refused on the
+# project itself: exit 3, project.json unchanged, the proposal kept, no backup folder left.
+mkdir -p "$KA/frontend"
+ln -s frontend "$KA/fe"
+jq '.app_roots = ["fe"]' "$SCRATCH/ka-before.json" >"$KA/.claude/project.proposed.json"
+KA_CODE=0
+bash "$KA_APPLY" >/dev/null 2>&1 || KA_CODE=$?
+[ "$KA_CODE" -eq 3 ]
+cmp -s "$KA/.claude/project.json" "$SCRATCH/ka-before.json"
+[[ -e "$KA/.claude/project.proposed.json" && ! -e "$KA/.claude/kit-backup" ]]
+# IN29 no proposal: exit 4, nothing written.
+rm "$KA/.claude/project.proposed.json"
+KA_CODE=0
+bash "$KA_APPLY" >/dev/null 2>&1 || KA_CODE=$?
+[ "$KA_CODE" -eq 4 ]
+cmp -s "$KA/.claude/project.json" "$SCRATCH/ka-before.json"
+[[ ! -e "$KA/.claude/kit-backup" ]]
+
+# IN30-IN40 (kit-boundary step 6): kit code is overwritten from the kit after a backup of the
+# files that differ; prompts, rules and docs keep their .new; settings.json still merges.
+KO="$SCRATCH/ko"
+mkdir -p "$KO"
+"$ROOT/install.sh" "$KO" --no-ci >/dev/null 2>&1
+# IN34 a fresh install writes the stamp.
+grep -Fxq core "$KO/.claude/INSTALL_PROFILE"
+# IN31 an up-to-date project: no backup folder, no .new under hooks/ or scripts/, said.
+KO_OUT="$("$ROOT/install.sh" "$KO" --no-ci 2>&1)"
+[[ ! -e "$KO/.claude/kit-backup" ]]
+[ -z "$(find "$KO/.claude/hooks" "$KO/.claude/scripts" -name '*.new')" ]
+grep -Fq 'kit code: up to date' <<<"$KO_OUT"
+grep -Fxq core "$KO/.claude/INSTALL_PROFILE"
+# IN30, IN32, IN33, IN35, IN39 in one re-install.
+printf '# local\n' >>"$KO/.claude/hooks/hook-lib.sh"
+for f in .claude/hooks/hook-lib.sh workflow.sh workflow.py codex-handoff.sh .claude/scripts/small-lib.sh; do
+    [[ "$f" == .claude/hooks/hook-lib.sh ]] || printf '# local\n' >>"$KO/$f"
+    mkdir -p "$SCRATCH/ko-old/$(dirname "$f")"
+    cp "$KO/$f" "$SCRATCH/ko-old/$f"
+done
+for f in CLAUDE.md .claude/rules/00-project.md .claude/commands/kit/init.md docs/ADAPTATION.md; do
+    printf 'local line\n' >>"$KO/$f"
+done
+rm "$KO/.claude/scripts/small-plan.sh"
+printf 'mine\n' >"$KO/.claude/hooks/my-hook.sh"
+KO_OUT="$("$ROOT/install.sh" "$KO" --no-ci 2>&1)"
+KO_BK=("$KO"/.claude/kit-backup/*)
+[ "${#KO_BK[@]}" -eq 1 ] && [[ -d "${KO_BK[0]}" ]]
+grep -Fq ".claude/kit-backup/${KO_BK[0]##*/}" <<<"$KO_OUT"
+for f in .claude/hooks/hook-lib.sh workflow.sh workflow.py codex-handoff.sh .claude/scripts/small-lib.sh; do
+    cmp -s "$KO/$f" "$ROOT/$f"
+    cmp -s "${KO_BK[0]}/$f" "$SCRATCH/ko-old/$f"
+    [[ ! -e "$KO/$f.new" ]]
+done
+for f in CLAUDE.md .claude/rules/00-project.md .claude/commands/kit/init.md docs/ADAPTATION.md; do
+    [[ -e "$KO/$f.new" ]]
+done
+grep -Fq 'Fusionne d'"'"'abord .claude/commands/kit/init.md.new' <<<"$KO_OUT"
+[[ ! -e "$KO/.claude/settings.json.new" ]]
+cmp -s "$KO/.claude/scripts/small-plan.sh" "$ROOT/.claude/scripts/small-plan.sh"
+[[ ! -e "${KO_BK[0]}/.claude/scripts/small-plan.sh" ]]
+grep -Fxq mine "$KO/.claude/hooks/my-hook.sh"
+[[ ! -e "${KO_BK[0]}/.claude/hooks/my-hook.sh" ]]
+# IN32 with --fastapi, the addon's tdd_py_lib.py too.
+KF="$SCRATCH/kf"
+mkdir -p "$KF"
+"$ROOT/install.sh" "$KF" --fastapi --no-ci >/dev/null 2>&1
+printf '# local\n' >>"$KF/.claude/hooks/tdd_py_lib.py"
+cp "$KF/.claude/hooks/tdd_py_lib.py" "$SCRATCH/kf-old.py"
+"$ROOT/install.sh" "$KF" --fastapi --no-ci >/dev/null 2>&1
+cmp -s "$KF/.claude/hooks/tdd_py_lib.py" "$ROOT/addons/fastapi/hooks/tdd_py_lib.py"
+KF_BK=("$KF"/.claude/kit-backup/*/.claude/hooks/tdd_py_lib.py)
+[ "${#KF_BK[@]}" -eq 1 ] && cmp -s "${KF_BK[0]}" "$SCRATCH/kf-old.py"
+# IN34 --react-ts writes its own stamp.
+KR="$SCRATCH/kr"
+mkdir -p "$KR"
+"$ROOT/install.sh" "$KR" --react-ts --no-ci >/dev/null 2>&1
+grep -Fxq react-ts "$KR/.claude/INSTALL_PROFILE"
+# IN36 the kit dir itself, or a link to it, is refused before anything is written.
+KC="$SCRATCH/kitcopy"
+mkdir -p "$KC"
+tar -C "$ROOT" --exclude=./.git --exclude=./node_modules -cf - . | tar -C "$KC" -xf -
+rm -f "$KC/.claude/INSTALL_PROFILE"
+ln -s "$KC" "$SCRATCH/kitlink"
+for KC_TARGET in "$KC" "$SCRATCH/kitlink"; do
+    KC_CODE=0
+    KC_OUT="$("$KC/install.sh" "$KC_TARGET" --no-ci 2>&1)" || KC_CODE=$?
+    [ "$KC_CODE" -eq 1 ]
+    grep -Fq "$KC" <<<"$KC_OUT"
+    [[ ! -e "$KC/.claude/INSTALL_PROFILE" ]]
+    [ -z "$(find "$KC" -name '*.new' -print -quit)" ]
+done
+# IN37 guard hooks with an older cwk-guard-api: P1 is applied all the same, never held back.
+KP="$SCRATCH/kp"
+mkdir -p "$KP"
+"$ROOT/install.sh" "$KP" --no-ci >/dev/null 2>&1
+sed -i 's/^# cwk-guard-api: .*/# cwk-guard-api: 1/' "$KP/.claude/hooks/enforce-git-workflow.sh" "$KP/.claude/hooks/hook-guarded.sh"
+KP_OUT="$("$ROOT/install.sh" "$KP" --no-ci 2>&1)"
+P1_EXPECTED='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
+              "Bash(git branch --show-current)", "Bash(git worktree list)"]'
+jq -e --argjson p1 "$P1_EXPECTED" '.permissions.defaultMode == "acceptEdits"
+    and ((.permissions.allow // []) as $a | $p1 | all(. as $x | $a | index($x)))' \
+    "$KP/.claude/settings.json" >/dev/null
+if grep -Fq 'P1 held back' <<<"$KP_OUT"; then exit 1; fi
+# IN38 a v1 project.json is upgraded on re-install and keeps its app root.
+mkdir -p "$KP/web"
+printf '{"schema_version":1,"app_roots":["web"],"codegen_commands":[]}\n' >"$KP/.claude/project.json"
+"$ROOT/install.sh" "$KP" --no-ci >/dev/null 2>&1
+jq -e '.schema_version == 2 and .app_roots == ["web"]' "$KP/.claude/project.json" >/dev/null
+# IN40 an upgrade from hooks that still hold the values, with no project.json: migrate reads
+# them before the overwrite.
+if git -C "$ROOT" cat-file -e ac3c9a4^:.claude/hooks/enforce-git-workflow.sh 2>/dev/null; then
+    KV="$SCRATCH/kv"
+    mkdir -p "$KV"
+    git -C "$ROOT" archive ac3c9a4^ .claude | tar -x -C "$KV"
+    rm -f "$KV/.claude/project.json"
+    sed -i 's/^PROTECTED_BRANCHES=.*/PROTECTED_BRANCHES="main|develop"/' "$KV/.claude/hooks/enforce-git-workflow.sh"
+    "$ROOT/install.sh" "$KV" --no-ci >/dev/null 2>&1
+    jq -e '.protected_branches == ["main","develop"]' "$KV/.claude/project.json" >/dev/null
+    cmp -s "$KV/.claude/hooks/enforce-git-workflow.sh" "$ROOT/.claude/hooks/enforce-git-workflow.sh"
+fi
 
 echo 'install fixtures: green.'

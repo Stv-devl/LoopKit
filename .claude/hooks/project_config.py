@@ -620,93 +620,24 @@ def _migrated(project_dir, notes):
     return out
 
 
-SNAPSHOT = "project.snapshot.json"
-MIGRATED_KEYS = frozenset({"protected_dirs", "protected_branches", "tdd_layers", "test_command", "formatter",
-                           "linter", "forbidden_icons", "env_template_suffixes", "data_client", "fastapi"})
-
-
-def _snapshot_path(project_dir):
-    return os.path.join(project_dir, ".claude", SNAPSHOT)
-
-
-def _read_snapshot(project_dir, notes):
-    """The values an earlier run saved from the then-active hooks; `{}` when there is none."""
-    path = _snapshot_path(project_dir)
-    if not os.path.lexists(path):
-        return {}
-    try:
-        values = json.loads(_read(path), object_pairs_hook=_pairs)["values"]
-        if not isinstance(values, dict):
-            raise ValueError("values")
-        return values
-    except (ConfigError, OSError, ValueError, KeyError, TypeError):
-        notes.append(f"migrate: {SNAPSHOT} unreadable, ignored")
-        return {}
-
-
-def _overlay(base, top):
-    out = {key: (dict(value) if isinstance(value, dict) else value) for key, value in base.items()}
-    for key, value in top.items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict):
-            out[key].update(value)
-        else:
-            out[key] = value
-    return out
-
-
-def _drop_snapshot(project_dir):
-    try:
-        os.unlink(_snapshot_path(project_dir))
-    except OSError:
-        pass
-
-
-def snapshot(project_dir, notes):
-    """Saves the values of the target's active hooks beside the project file, merged over an
-    earlier snapshot (the hooks win), so a later `migrate` still has them once the hooks are
-    replaced. Never writes `project.json`: a stale reader must not meet a schema it fails open on."""
-    values = _overlay(_read_snapshot(project_dir, notes), _migrated(project_dir, notes))
-    if not values:
-        return False
-    path = _snapshot_path(project_dir)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    descriptor, temp = tempfile.mkstemp(prefix=SNAPSHOT + ".", suffix=".tmp", dir=os.path.dirname(path))
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps({"schema_version": 1, "values": values}, indent=2) + "\n")
-        os.chmod(temp, 0o644)
-        os.replace(temp, path)
-    except BaseException:
-        if os.path.lexists(temp):
-            os.unlink(temp)
-        raise
-    return True
-
-
 def migrate(project_dir, notes, upgrade=False):
-    """Writes the target's v2 `project.json` from its active hooks and the snapshot an earlier run
-    saved. A v2 file is left alone; a v1 file keeps its roots and codegen; an absent one is created.
-    With `upgrade` (or a v1 file) and no value found anywhere, the defaults are written with a note.
-    Raises ConfigError when the existing file is invalid (left untouched)."""
+    """Writes the target's v2 `project.json` from its active hooks, which install.sh reads before
+    it overwrites them. A v2 file is left alone; a v1 file keeps its roots and codegen; an absent
+    one is created. With `upgrade` (or a v1 file) and no value found, the defaults are written with
+    a note. Raises ConfigError when the existing file is invalid (left untouched)."""
     path = os.path.join(project_dir, ".claude", "project.json")
     if os.path.lexists(path):
         config = load_strict(project_dir)
         if _version(project_dir) == SCHEMA_VERSION:
-            _drop_snapshot(project_dir)
             return False
         raw = document(config)
         upgrade = True
     else:
         raw = json.loads(serialise(DEFAULTS))
-    saved = _read_snapshot(project_dir, notes)
-    for key in [key for key in saved if key not in MIGRATED_KEYS]:
-        notes.append(f"migrate: {key} in {SNAPSHOT} is not a value the hooks hold, ignored")
-        del saved[key]
-    found = _migrated(project_dir, notes)
-    values = _overlay(saved, found)
+    values = _migrated(project_dir, notes)
     if upgrade and not values:
-        notes.append("migrate: no value found in the active hooks and no saved snapshot, the kit defaults "
-                     "are written; check .claude/project.json against what your hooks used to hold")
+        notes.append("migrate: no value found in the active hooks, the kit defaults are written; "
+                     "check .claude/project.json against what your hooks used to hold")
     for key, value in values.items():
         candidate = json.loads(serialise(raw))
         if isinstance(value, dict) and isinstance(candidate.get(key), dict):
@@ -719,25 +650,9 @@ def migrate(project_dir, notes, upgrade=False):
             notes.append(f"migrate: {key} not valid ({error}), default kept")
             continue
         raw = candidate
-        if key in saved and key not in found:
-            notes.append(f"migrate: {key} taken from {SNAPSHOT}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     write(project_dir, raw)
-    _drop_snapshot(project_dir)
     return True
-
-
-def _snapshot(project_dir):
-    notes = []
-    try:
-        saved = snapshot(project_dir, notes)
-    except OSError as error:
-        print(f"project-config: snapshot not written ({error})", file=sys.stderr)
-        return 1
-    sys.stdout.write("".join(f"{note}\n" for note in notes))
-    if saved:
-        sys.stdout.write(f"saved: .claude/{SNAPSHOT}\n")
-    return 0
 
 
 def _migrate(project_dir, upgrade=False):
@@ -784,8 +699,6 @@ def main(argv):
         return _wire(argv[2], argv[3])
     if len(argv) in (3, 4) and argv[1] == "migrate" and argv[3:] in ([], ["--existing"]):
         return _migrate(argv[2], bool(argv[3:]))
-    if len(argv) == 3 and argv[1] == "snapshot":
-        return _snapshot(argv[2])
     if argv[1:] == ["defaults"]:
         sys.stdout.write(serialise(DEFAULTS))
         return 0
@@ -793,7 +706,7 @@ def main(argv):
         sys.stdout.write(framed(records(_parse("/", "defaults", json.loads(serialise(DEFAULTS)))), "\n"))
         return 0
     if len(argv) != 3 or argv[1] not in ("roots", "check"):
-        print("usage: project_config.py roots|check|shell|migrate|snapshot <project dir> | wire <project dir> supabase|fastapi"
+        print("usage: project_config.py roots|check|shell|migrate <project dir> | wire <project dir> supabase|fastapi"
               " | defaults [--shell]", file=sys.stderr)
         return 2
     try:

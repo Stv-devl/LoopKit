@@ -16,8 +16,8 @@ CWK_DEGRADED_ASK=1
 
 # A hook-lib.sh older than this guard may not check cwk_app_roots: calling it would exit 127,
 # which a PreToolUse hook reads as "allow". Refuse instead.
-if ! declare -F cwk_app_roots cwk_config cwk_tdd_load >/dev/null 2>&1; then
-    echo "BLOCKED: hook-guarded.sh or hook-lib.sh lacks cwk_app_roots/cwk_config/cwk_tdd_load (a stale hook-lib.sh or hook-guarded.sh next to this guard), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+if ! declare -F cwk_app_roots cwk_config cwk_tdd_load cwk_installed cwk_is_kit_code cwk_real_rel >/dev/null 2>&1; then
+    echo "BLOCKED: hook-guarded.sh or hook-lib.sh lacks cwk_app_roots/cwk_config/cwk_tdd_load/cwk_installed/cwk_is_kit_code/cwk_real_rel (a stale hook-lib.sh or hook-guarded.sh next to this guard), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
     exit 2
 fi
 
@@ -557,6 +557,69 @@ if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
 fi
 GUARD_ROOT_WHY="It is the project root or a folder above it: deleting or emptying it loses the whole project."
 GUARD_TEST_WHY="A test-first module or a test file is written only with Write/Edit, where the TDD hooks see it (.claude/rules/05-testing.md)."
+GUARD_KIT_APPLY_WHY="kit-apply.sh applies a /kit:init proposal to .claude/project.json: the user runs it from their own terminal, never a tool call."
+
+# Running the /kit:init apply script, in every project: by the file a `run` row opens (a link
+# to it, a worktree copy) or by its name inside a `-c` program.
+guard_kit_apply_run() {
+    local target="$1" real dir pat
+    case "$target" in
+        '?inline:'*) [[ "$target" == *kit-apply.sh* ]] || return 1 ;;
+        '?unknown:'*)
+            # `$CLAUDE_PROJECT_DIR/…`, `$(pwd)/…`, `$PWD/…`: the prefix is unresolved, the name is not.
+            [[ "$target" == *kit-apply.sh && ( "$target" == *'/kit-apply.sh' || "$target" == '?unknown:kit-apply.sh' ) ]] || return 1
+            ;;
+        '?glob:'*)
+            # A glob that names the script in a folder that holds it asks; it never passes.
+            dir="${target#?glob:}"
+            pat=""
+            if [[ "$dir" == *$'\x1f'* ]]; then
+                pat="${dir#*$'\x1f'}"
+                dir="${dir%%$'\x1f'*}"
+            fi
+            # shellcheck disable=SC2053  # the pattern is a glob on purpose
+            if [[ -n "$pat" && "kit-apply.sh" == $pat && -e "$dir/kit-apply.sh" ]]; then
+                [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="run kit-apply.sh by a glob: $dir/${pat:0:50}"
+            fi
+            return 1
+            ;;
+        /*)
+            real="$(cwk_real_rel "$target" 2>/dev/null)" || return 1
+            [[ "$real" == .claude/scripts/kit-apply.sh || "$real" == .claude/worktrees/*/.claude/scripts/kit-apply.sh ]] || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    guard_note_deny "running .claude/scripts/kit-apply.sh" "$GUARD_KIT_APPLY_WHY"
+}
+
+# Kit code in an installed project, by the row's name or by the file it opens. A removal or move
+# acts on a link itself, so its link is not followed; its operand also reaches a folder above kit
+# code (`.claude`), and so does a copy into a folder (`cp -r /tmp/k/.claude .`).
+guard_kit_code() {
+    local verb="$1" target="$2" rel="$3" glob="${4:-0}" reach="" real="" shown
+    case "$verb" in
+        rm | rm-r | rmdir | unlink | mv | find-delete | into) reach=--reach ;;
+    esac
+    # A glob row names the folder its pattern expands in: a write onto it can land on kit code.
+    [[ "$glob" == 1 ]] && reach=--reach
+    if [[ "$verb" == into && "$rel" == . ]]; then
+        # `cp -R /tmp/k/. .`, the contents of a source that cannot be listed, into the project root.
+        guard_note_deny "kit code: the project root written by a contents copy" "$CWK_KIT_DENY"
+        return 0
+    fi
+    if [[ "$verb" != rm && "$verb" != rm-r && "$verb" != rmdir && "$verb" != unlink && "$verb" != mv ]] \
+        || [[ ! -L "$target" ]]; then
+        real="$(cwk_real_rel "$target" 2>/dev/null)" || real=""
+    fi
+    if cwk_is_kit_code "$rel" $reach; then
+        shown="$rel"
+    elif [[ -n "$real" ]] && cwk_is_kit_code "$real" $reach; then
+        shown="$real"
+    else
+        return 1
+    fi
+    guard_note_deny "kit code: $shown written by $verb" "$CWK_KIT_DENY"
+}
 GUARD_SOURCE_WRITERS=" sed perl cp tee install rsync ln patch truncate "
 
 guard_show() {
@@ -657,6 +720,15 @@ guard_classify() {
         verb='>'
         codegen=1
     fi
+    if [[ "$verb" == run ]]; then
+        guard_kit_apply_run "$target" || true
+        return 0
+    fi
+    [[ "$target" == '?inline:'* ]] && { guard_kit_apply_run "$target" || true; }
+    # `into` and `mkdir` rows feed only the kit-code check: an unresolved one adds no ask.
+    if [[ ( "$verb" == into || "$verb" == mkdir ) && "$target" != /* && "$target" != '?glob:'* ]]; then
+        return 0
+    fi
     case "$target" in
         '?inline:'* | '?unknown:'*)
             text="${target#*:}"
@@ -709,9 +781,13 @@ guard_classify() {
         return 0
     fi
     if ! rel="$(cwk_guard_rel "$target")"; then
-        guard_classify_outside "$verb" "$target"
+        [[ "$verb" == into || "$verb" == mkdir ]] || guard_classify_outside "$verb" "$target"
         return 0
     fi
+    if cwk_installed && guard_kit_code "$verb" "$target" "$rel" "$((1 - plain))"; then
+        return 0
+    fi
+    [[ "$verb" == into || "$verb" == mkdir ]] && return 0
     # A write onto a glob may expand to one source or test file the folder row hides: it asks
     # unless the last segment is plainly a non-source name (docs/*.md passes). A bracket or brace
     # class can spell any dot, extension or test name (a brace holding a slash leaves only its
@@ -809,6 +885,11 @@ if [[ "$GUARD_FAILED" == 0 ]]; then
             guard_classify "${GUARD_LINE%%$'\t'*}" "${GUARD_LINE#*$'\t'}"
         fi
     done
+    # A shell that reads kit-apply.sh from stdin (`bash < kit-apply.sh`) has no `run` row.
+    GUARD_SHELL_WORD_RE='(^|[^[:alnum:]_.-])(sudo[[:space:]]+)?([^[:space:]]*/)?(ba|z|da|k)?sh([[:space:]<|;&]|$)'
+    if [[ "$COMMAND" == *kit-apply* && "$GUARD_FD_BOUND" == *" 0 "* && "$COMMAND" =~ $GUARD_SHELL_WORD_RE ]]; then
+        [[ -n "$GUARD_ASK_U" ]] || GUARD_ASK_U="a shell reads kit-apply.sh from stdin"
+    fi
 fi
 
 if [[ -n "$GUARD_DENY" ]]; then

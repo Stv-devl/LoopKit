@@ -26,7 +26,11 @@ la review gate contre du vide.
 Toutes les valeurs de projet appliquées par les hooks vivent dans
 `.claude/project.json`, lu par un seul lecteur (`project_config.py`). **Aucun hook
 ne s'édite** : `install.sh` crée ou met à niveau ce fichier (il reprend les
-valeurs d'un ancien hook modifié à la main), `/kit:init` le remplit. Un fichier
+valeurs d'un ancien hook modifié à la main), `/kit:init` le remplit. Dans un projet
+installé, ce fichier est du code du kit, refusé à l'agent (§14) : `/kit:init` écrit
+`.claude/project.proposed.json`, et tu l'appliques toi-même, depuis ton terminal,
+avec `bash .claude/scripts/kit-apply.sh` (il valide, sauvegarde, puis remplace).
+Chaque « change … dans `.claude/project.json` » de ce document passe par là. Un fichier
 invalide ou absent fait tourner les hooks sur les défauts du kit, en mode
 dégradé : un refus reste un refus, mais un passage devient une demande, avec la
 réparation dans le message.
@@ -112,7 +116,8 @@ ni une relecture ni un test ne remplacent. Pas de `pnpm` ? Nomme l'équivalent
 
 La commande run-once que `tdd-prove-red.sh` lance sur un fichier de test est
 `test_command` dans `.claude/project.json` : si la tienne n'est pas `pnpm test:run`,
-change-la là aussi (de même `formatter` et `linter` pour les hooks d'après-save).
+change-la là aussi, par la proposition du §2 (de même `formatter` et `linter` pour
+les hooks d'après-save).
 Le hook le dit dans les deux cas — script absent, **ou binaire absent** (projet
 npm/yarn/bun) — mais il ne peut alors plus rien prouver, et `tdd-require-red.sh`
 refusera toute création de module, faute de rouge constaté. C'est voulu : mieux
@@ -349,8 +354,8 @@ corps, un titre ou un `--body-file` envoyé par `gh`), et `git push`, `gh pr`,
 `gh issue`, tout commentaire et tout merge dans une branche protégée repassent
 par ta validation, quels que soient les options globales, le `-C` ou l'alias de
 l'appel git. Si tes branches protégées ne s'appellent pas `main`/`master`,
-change `protected_branches` dans `.claude/project.json` (globs admis, ex.
-`release/*`).
+change `protected_branches` dans `.claude/project.json` par la proposition du §2
+(globs admis, ex. `release/*`).
 
 ## 8. `.claude/rules/03-conventions.md` → les deux langues
 
@@ -497,6 +502,20 @@ dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings 
 Dans ton projet, c'est la même chose pour `package.json` ou `vite.config.ts` :
 approuve si le changement est voulu.
 
+**Le code du kit, refusé dans un projet installé.** Un projet où `install.sh` a
+écrit `.claude/INSTALL_PROFILE` refuse, sans demander, toute écriture du code du
+kit : `.claude/hooks/*`, `.claude/scripts/*`, `workflow.py`, `workflow.sh`,
+`codex-handoff.sh`, `install.sh`, `addons/`, `.claude/project.json`,
+`.claude/project.snapshot.json` et le tampon lui-même. Le refus vaut pour `Write`/`Edit`
+(chemin lu tel quel ou après résolution des liens), pour le shell (écriture,
+suppression, déplacement, copie dans un dossier, y compris le dossier parent) et
+pour git (un `checkout`, `restore`, `reset`, `stash`, `apply`, `merge`, `pull`…
+qui changerait ces fichiers ; ce que git ne peut pas lire demande ton accord).
+Le message dit où le changer : `kit code changes in the LoopKit repo, then
+`install.sh``. Tes valeurs passent par `.claude/project.proposed.json` et
+`bash .claude/scripts/kit-apply.sh` (§2), que l'agent ne lance jamais. Dans le
+dépôt du kit, rien ne change : ces chemins demandent ton accord, comme ci-dessus.
+
 Si `hook-guarded.sh` disparaît, les cinq hooks de garde refusent tout (exit 2)
 plutôt que de laisser passer ; rétablis-le depuis un terminal :
 `git checkout -- .claude/hooks/hook-guarded.sh`.
@@ -504,7 +523,7 @@ plutôt que de laisser passer ; rétablis-le depuis un terminal :
 Les sept branchements des hooks de garde (`protect-files.sh` ×3, `prevent-destructive-commands.sh`, `enforce-git-workflow.sh`, `tdd-require-red.sh`, `tdd-freeze-tests.sh`) portent `"onFailure": "block"` : un hook qui dépasse son timeout ou plante bloque l'appel au lieu de le laisser passer.
 Mesuré sur Claude Code 2.1.316 ; une version plus ancienne est supposée ignorer la clé, ce n'est pas testé.
 
-## 15. Permissions étroites (P1) et leur retenue
+## 15. Permissions étroites (P1) et la mise à jour du code du kit
 
 `.claude/settings.json` livre `permissions.defaultMode: "acceptEdits"` et cinq
 autorisations exactes : `Bash(git add *)`, `Bash(git commit -m *)`,
@@ -541,8 +560,7 @@ cinq s'ajoutent) et garde ton `defaultMode` s'il en a un : ta clé gagne toujour
 `Read(*.pem)`, `Read(*.key)`, `Read(credentials.*)`, `Read(.credentials.*)`. L'ordre compte : une entrée `!` ne retire que des
 entrées écrites avant elle, dans le même fichier. `install.sh` en fait l'union
 dans l'ordre : tes entrées d'abord, puis celles du kit qui manquent, sans tri
-(un tri mettrait les `!` en tête, où ils ne retirent rien). La retenue P1 ne le
-retire jamais. Mesuré le 2026-11-01 sur Claude Code 2.1.316 : l'outil Read et
+(un tri mettrait les `!` en tête, où ils ne retirent rien). Mesuré le 2026-11-01 sur Claude Code 2.1.316 : l'outil Read et
 `cat` sont refusés sur `.env` et `.env.local`, `.env.example` reste lisible.
 Ce refus ne lie que les commandes que Claude Code reconnaît et les cibles de
 redirection : un interpréteur qui ouvre le fichier lui-même, ou un `grep -r`
@@ -554,54 +572,44 @@ les sous-processus, mais le kit ne l'active pas : `autoAllowBashIfSandboxed`
 vaut `true` par défaut et retire les invites des commandes Bash, et son effet
 sur un `ask` de hook n'est pas mesuré. Active-le toi-même si tu en as besoin.
 
-**La retenue.** P1 sans les hooks qui le surveillent serait un `acceptEdits`
-nu. Les dix fichiers de garde (`hook-lib.sh`, `hook-guarded.sh`,
-`shell_targets.py`, `project_config.py`, `protect-files.sh`, `prevent-destructive-commands.sh`,
-`enforce-git-workflow.sh`, `tdd-require-red.sh`, `auto-approve-config.sh`,
-`kit-attempts.py`)
-portent une ligne `# cwk-guard-api: N`. Si dans ton
-projet l'un d'eux manque, n'a pas cette ligne ou porte un numéro plus bas que
-celui du kit, ou si `hook-lib.sh` ne source plus `hook-guarded.sh`, `install.sh`
-n'ajoute ni le `defaultMode` ni les cinq autorisations ; s'ils sont déjà là
-(une installation précédente), ils sont retirés — le `defaultMode` seulement
-s'il vaut `acceptEdits`. Le kit ne livre plus aucun joker d'arguments pour ces
+**La mise à jour du code du kit.** P1 sans les hooks qui le surveillent serait un
+`acceptEdits` nu : c'est pourquoi `install.sh` remplace le code du kit
+(`.claude/hooks/`, `.claude/scripts/`, `workflow.py`, `workflow.sh`,
+`codex-handoff.sh`, et avec `--fastapi` les hooks de l'addon) par la version du kit,
+dans le même run qui écrit P1. Les hooks sont donc toujours à jour, et P1 est
+toujours appliqué. Chaque fichier qui diffère est d'abord sauvegardé, à son chemin,
+dans `.claude/kit-backup/<heure UTC>/` (un dossier par run, ignoré par git) ;
+l'installeur nomme ce dossier et les fichiers remplacés, ou dit
+`kit code: up to date`. Tes modifications d'un hook y restent : refais-les dans le
+dépôt du kit, puis relance `install.sh`. Supprime ces dossiers quand tu n'en as plus
+besoin. Tout le reste (`CLAUDE.md`, les règles, les commandes, les docs) part
+toujours en `.new` à fusionner. Les autorisations retirées sont retirées à chaque
+installation. Le kit ne livre plus aucun joker d'arguments pour ces
 runners : `Bash(pnpm build *)`, `Bash(pnpm test:run *)`,
 `Bash(pnpm test:coverage *)`, `Bash(pnpm lint *)`, `Bash(pnpm typecheck *)`,
 `Bash(pnpm vitest run *)`, `Bash(pnpm exec vitest run *)`,
 `Bash(pnpm exec tsc --noEmit *)` et `Bash(pnpm exec playwright test *)`.
-`install.sh` les retire de ton projet à chaque installation, retenue ou non,
+`install.sh` les retire de ton projet à chaque installation,
 même si tu les avais ajoutés toi-même : le hook ne peut pas savoir quel
 programme un nom de script lance (reporters à virgule, `-c` collé, globs,
 `tsc -b` positionnel : revue 5). Les formes nues (`pnpm build`, `pnpm test:run`…)
 et `Bash(pnpm audit *)` restent, donc les gates tournent sans invite ; un appel
 avec arguments (`pnpm test:run <chemin>`, `pnpm lint --max-warnings=0`,
-`pnpm exec playwright test …`) demande une confirmation. En cas de retenue, il
-affiche :
+`pnpm exec playwright test …`) demande une confirmation.
 
-```
-P1 held back: <fichiers> — merge <fichiers>.new, then re-run install.sh
-```
-
-Fusionne les `.new` de ces fichiers (avec `--fastapi`, ceux des hooks de l'addon
-compris), dans l'ordre que tu veux, puis relance `install.sh`. Tes réglages ne
-sont pas dans ces hooks : ils vivent dans `.claude/project.json`, que l'installeur
-ne remplace jamais (il le crée, ou le met à niveau en reprenant les valeurs d'un
-ancien hook modifié à la main, et nomme chaque valeur qu'il n'a pas pu lire ; un
-élément illisible d'`PROTECTED_DIRS` ou `PROTECTED_BRANCHES` est écarté seul, avec
-une note, et les valeurs par défaut s'ajoutent). Tant que ton lecteur actif est plus
-ancien que celui du kit, `project.json` n'est pas écrit (un ancien lecteur ignore en
-silence un schéma 2) : la première passe garde les valeurs de tes hooks encore
-anciens dans `.claude/project.snapshot.json`, que aucun hook ne lit, et la relance
-les reprend puis supprime ce fichier. Sans valeur trouvée ni sauvegarde, la
-migration écrit les valeurs par défaut et le dit. `PROMPT_ALLOWS` (les 23
-autorisations exactes des runners de test, des scripts du kit et de `git fetch`)
-est retenu avec P1 ; les suites de développement du kit `test-install` et `test-workflow-contracts`
-gardent leur autorisation dans le kit seul, jamais dans une cible : une autorisation identique ajoutée par toi est retirée avec
-lui. Seuls ces réglages du kit sont retirés ; tes autres autorisations et un `defaultMode` choisi par toi
-restent. Tes propres modifications de ces hooks ne déclenchent jamais la retenue
-tant que la ligne d'api est à jour. `install.sh` ne touche pas
-`.claude/settings.local.json` : une approbation « don't ask again » qui y est
-enregistrée survit à la retenue ; vide-la à la main si besoin.
+Tes réglages ne sont pas dans les hooks : ils vivent dans `.claude/project.json`,
+que l'installeur ne remplace jamais. Il le crée, ou le met à niveau, en lisant les
+valeurs de tes hooks **avant** de les remplacer (un ancien hook modifié à la main),
+et nomme chaque valeur qu'il n'a pas pu lire ; un élément illisible
+d'`PROTECTED_DIRS` ou `PROTECTED_BRANCHES` est écarté seul, avec une note, et les
+valeurs par défaut s'ajoutent. Sans valeur trouvée, la migration écrit les valeurs
+par défaut et le dit. Les suites de développement du kit `test-install` et
+`test-workflow-contracts` gardent leur autorisation dans le kit seul, jamais dans
+une cible : une autorisation identique ajoutée par toi est retirée. Seuls ces
+réglages du kit sont retirés ; tes autres autorisations et un `defaultMode` choisi
+par toi restent. `install.sh` ne touche pas `.claude/settings.local.json` : une
+approbation « don't ask again » qui y est enregistrée survit ; vide-la à la main si
+besoin.
 
 **Mesurer le gain.** Le temps mort des invites de permission sur une passe light
 se lit dans le transcript de session (`docs/measuring-the-loop.md`) : l'écart

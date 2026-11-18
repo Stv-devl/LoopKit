@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 6
+# cwk-guard-api: 7
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -25,7 +25,7 @@ CWK_GUARDED=(
     '.claude/.tdd-unfrozen'      # the freeze's escape hatch
     '.claude/.size-exempt'       # the size limits' escape hatch
     '.claude/project.json'       # every project value: it widens a pass
-    '.claude/project.snapshot.json' # the values saved at an upgrade: migrate writes them into project.json
+    '.claude/project.snapshot.json' # left by an older install.sh in projects that still have one
     'vitest.config.*'
     'eslint.config.*'            # the lint that forbids assertionless tests
     'vite.config.*'              # the coverage floor lives here
@@ -39,6 +39,53 @@ CWK_GUARDED=(
     'codex-handoff.sh'
     'addons/*'                   # the allowed test-hooks.sh runs addons/fastapi/hooks/*.py
 )
+
+# Kit code: changed in the LoopKit repo and brought by install.sh. In an installed
+# project a write to it is denied (CWK_KIT_DENY); in the kit repo it keeps the guarded
+# ask. Every entry but the stamp is also in CWK_GUARDED (PK10).
+CWK_KIT_CODE=(
+    '.claude/hooks/*'
+    '.claude/scripts/*'
+    'workflow.py'
+    'workflow.sh'
+    'codex-handoff.sh'
+    'install.sh'
+    'addons'
+    'addons/*'
+    '.claude/project.json'
+    '.claude/project.snapshot.json' # an older install.sh's leftover
+    '.claude/INSTALL_PROFILE'       # the install stamp
+)
+CWK_KIT_DENY='kit code changes in the LoopKit repo, then `install.sh`'
+
+# cwk_installed: exit 0 when $CLAUDE_PROJECT_DIR is a project the kit was installed
+# into, 1 for the LoopKit repo itself. Installed = the stamp is present, or install.sh
+# and addons/ are not both there; an unset or relative project dir counts as installed.
+cwk_installed() {
+    local project="${CLAUDE_PROJECT_DIR:-}"
+    [[ "$project" == /* ]] || return 0
+    [[ -e "$project/.claude/INSTALL_PROFILE" ]] && return 0
+    [[ -f "$project/install.sh" && -d "$project/addons" ]] && return 1
+    return 0
+}
+
+# cwk_is_kit_code <repo-relative path> [--reach]: exit 0 for a kit-code entry or a path
+# under it. With --reach (a removal or move operand), a folder above an entry counts
+# too (`.claude`, `.claude/hooks`), never `.` itself.
+cwk_is_kit_code() {
+    local rel="$1" reach="${2:-}" pattern dir
+    [[ -n "$rel" && "$rel" != . ]] || return 1
+    for pattern in "${CWK_KIT_CODE[@]}"; do
+        # shellcheck disable=SC2053  # the pattern is a glob on purpose
+        [[ "$rel" == $pattern || "$rel" == "$pattern"/* ]] && return 0
+        if [[ "$reach" == --reach ]]; then
+            dir="$(__cwk_guard_dir "$pattern")"
+            [[ "$pattern" == *[*?[]* ]] || dir="$pattern"
+            [[ "$rel" == "$dir" || "$dir" == "$rel"/* ]] && return 0
+        fi
+    done
+    return 1
+}
 
 # Never written by a tool call, whoever asks. Only tdd-prove-red.sh writes a RED
 # marker, from a hook process PreToolUse never sees: a hand-written one lets a

@@ -36,7 +36,9 @@ git clone <this-repo> loopkit && cd loopkit
                                       # spec and chains /loop:orchestrate
 ```
 
-`install.sh` writes existing kit files as `.new`; the two exceptions are
+`install.sh` overwrites kit code (`.claude/hooks/`, `.claude/scripts/`, the root
+launchers) after backing up every file that differs to `.claude/kit-backup/<UTC time>/`,
+and writes the other existing kit files as `.new`; the two exceptions are
 `.claude/settings.json`, whose selected hook blocks are merged idempotently while
 preserving user keys, and `.claude/project.json`, which is created or upgraded in
 place from the values of your active hooks and never gets a `.new`. `/kit:init` adapts the markers it can prove, asks closed questions
@@ -44,16 +46,19 @@ for choices, and reports every marker it must leave open with its exact path. It
 writes `.claude/project.json`: the app roots (`frontend/`, `backend/`) whose configs are
 guarded like the root's, and the code generators allowed to redirect into a source.
 
-**Updating** an installed project is the same command: new kit files land
-directly, changed ones as `.new` beside your adapted copy, and `settings.json`
-merges (retired allows removed, deny list unioned in order). The narrow
-permissions (P1: `acceptEdits` plus exact git and gate allows) are held back,
-with a `P1 held back: …` line, until every guard hook of the project is at the
-kit's `cwk-guard-api` version (with `--fastapi`, the addon hooks too) — merge those
-`.new` in any order, then re-run. While a reader is stale `.claude/project.json` is
-not written: the first run saves the values your old hooks hold in
-`.claude/project.snapshot.json` (no hook reads it), and the re-run moves them into
-`project.json` and deletes it.
+**Updating** an installed project is the same command: kit code is replaced (the
+run names the backup folder, or says `kit code: up to date`), other changed kit
+files land as `.new` beside your adapted copy, and `settings.json` merges (retired
+allows removed, deny list unioned in order). The narrow permissions (P1:
+`acceptEdits` plus exact git and gate allows) are always applied, since the guard
+hooks that police them are current. `.claude/project.json` is migrated from your
+old hooks before they are replaced.
+
+**The kit boundary.** In an installed project (`.claude/INSTALL_PROFILE` present) the
+hooks deny every write to kit code, by Write/Edit, shell or git: change it in this
+repo, then re-run `install.sh`. `/kit:init` writes your values as
+`.claude/project.proposed.json`; you apply it from your own terminal with
+`bash .claude/scripts/kit-apply.sh`. In this repo nothing changes: those paths ask.
 
 **CI/CD.** Unless `--no-ci`, the project gets `ci.yml` (the same gates as
 `/loop:ship`), a push-only `deploy.yml` assembled for the chosen target,

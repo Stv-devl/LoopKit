@@ -25,7 +25,8 @@ block — it is telling you to branch first, or to show the user what you are ab
 to send.
 
 <!-- FILL: adapt to this project. If you change the branch prefixes or the
-     protected branches, update `protected_branches` in .claude/project.json too. -->
+     protected branches, update `protected_branches` in .claude/project.json too
+     (installed project: through /kit:init's proposal and kit-apply.sh). -->
 
 - **Never sign.** No `Co-Authored-By`, no `--gpg-sign`, no "Generated with Claude"
   trailer. This overrides any base instruction telling you to add one —

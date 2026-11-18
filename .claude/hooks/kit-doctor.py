@@ -828,6 +828,7 @@ RUNTIME_PATHS = {
     ".claude/.token-delegate", ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
+    ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
 }
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
@@ -876,7 +877,29 @@ ADDON_COMMAND_PREFIXES = ("backend:",)
 
 
 def is_kit_source() -> bool:
+    """The kit repo: its markers and no install stamp, the same rule as `cwk_installed`."""
+    if (ROOT / ".claude/INSTALL_PROFILE").exists():
+        return False
     return (ROOT / "install.sh").is_file() and (ROOT / "addons").is_dir()
+
+
+def check_install_stamp() -> list[Finding]:
+    """An installed project carries `.claude/INSTALL_PROFILE`, written by install.sh; the
+    guard hooks read it to tell kit code from project code."""
+    if is_kit_source() or (ROOT / ".claude/INSTALL_PROFILE").exists():
+        return []
+    return [Finding("stamp", DIVERGENCE, "no .claude/INSTALL_PROFILE in an installed project",
+                    ["re-run install.sh from the kit: it writes the stamp"])]
+
+
+def check_kit_backup() -> list[Finding]:
+    """The latest folder install.sh saved replaced kit code into; informational only."""
+    backups = ROOT / ".claude/kit-backup"
+    folders = sorted(p.name for p in backups.iterdir() if p.is_dir()) if backups.is_dir() else []
+    if not folders:
+        return []
+    return [Finding("kit-backup", INFO, f"{len(folders)} backup folder(s), latest .claude/kit-backup/{folders[-1]}",
+                    ["kit code install.sh replaced; delete the folders once you no longer need them"])]
 
 
 def scanned_docs() -> list[Path]:
@@ -884,7 +907,9 @@ def scanned_docs() -> list[Path]:
     if is_kit_source():
         docs.append(ROOT / "README.md")
     worktrees = ROOT / ".claude" / "worktrees"
-    docs += sorted(p for p in (ROOT / ".claude").rglob("*.md") if worktrees not in p.parents)
+    backups = ROOT / ".claude" / "kit-backup"
+    docs += sorted(p for p in (ROOT / ".claude").rglob("*.md")
+                   if worktrees not in p.parents and backups not in p.parents)
     return [d for d in docs if d.is_file()]
 
 
@@ -988,7 +1013,7 @@ def check_shipped_paths() -> list[Finding]:
         for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for raw in re.findall(r"\.claude/[A-Za-z0-9._/*-]+", line):
                 path = raw.rstrip("./`,;:)")
-                if path in RUNTIME_PATHS or path.startswith(".claude/worktrees/"):
+                if path in RUNTIME_PATHS or path.startswith((".claude/worktrees/", ".claude/kit-backup/")):
                     continue
                 # A glob is a legitimate way to name a family of files
                 # (`patterns/edge-function*.md`): one match is enough.
@@ -1387,7 +1412,8 @@ CHECKS = [
                check_ignored_loop_paths, check_project_config,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
-    ("wiring", [check_hook_prerequisites, check_hook_wiring, check_github_protection]),
+    ("wiring", [check_install_stamp, check_kit_backup, check_hook_prerequisites, check_hook_wiring,
+                check_github_protection]),
     ("links", [check_shipped_paths, check_command_references,
                check_command_references_plain, check_agent_references]),
     ("placeholders", [check_fill_markers]),

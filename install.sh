@@ -22,9 +22,11 @@
 #           Omis dans un terminal, la question est posee, non par defaut ;
 #           sans terminal, rien n'est installe.
 #
-# Ne remplace jamais un fichier existant : il écrit `<fichier>.new` à côté.
-# Exception volontaire : settings.json fusionne les hooks sélectionnés dans le
-# fichier actif, faute de quoi une mise à jour installe des guardrails muets.
+# Le code du kit (hooks, scripts, lanceurs) est remplacé par la version du kit, après une
+# sauvegarde de chaque fichier qui diffère dans .claude/kit-backup/<heure UTC>/. Tout autre
+# fichier existant n'est jamais remplacé : il écrit `<fichier>.new` à côté. Exception
+# volontaire : settings.json fusionne les hooks sélectionnés dans le fichier actif, faute
+# de quoi une mise à jour installe des guardrails muets.
 
 set -euo pipefail
 
@@ -79,9 +81,18 @@ if [[ ! -d "$TARGET" ]]; then
     echo "erreur: '$TARGET' n'est pas un dossier." >&2
     exit 1
 fi
+# Le kit ne s'installe jamais dans lui-même (ni par un lien) : son code y écraserait sa
+# propre source, et le tampon d'installation en ferait un projet installé.
+if [[ "$(cd "$TARGET" && pwd -P)" == "$(cd "$KIT_DIR" && pwd -P)" ]]; then
+    echo "erreur: '$TARGET' est le kit lui-même ($KIT_DIR) : install.sh installe le kit dans un autre projet." >&2
+    exit 1
+fi
 
 SKIPPED=()
 INSTALLED=()
+# Code du kit écrasé par ce run (chemins relatifs), et son dossier de sauvegarde.
+KIT_OVERWRITTEN=()
+KIT_BACKUP=""
 
 # copy_file <source> <destination>
 copy_file() {
@@ -94,6 +105,27 @@ copy_file() {
         cp "$src" "$dst"
         INSTALLED+=("$dst")
     fi
+}
+
+# copy_kit <source> <destination>
+# Le code du kit (hooks, scripts, lanceurs) appartient au kit : il est écrasé, jamais
+# laissé en .new. Un fichier qui diffère est d'abord sauvegardé, à son chemin relatif,
+# sous .claude/kit-backup/<heure UTC>/ (un dossier par run, créé seulement si besoin).
+copy_kit() {
+    local src="$1" dst="$2" rel
+    mkdir -p "$(dirname "$dst")"
+    if [[ ! -e "$dst" ]]; then
+        cp "$src" "$dst"
+        INSTALLED+=("$dst")
+        return
+    fi
+    cmp -s "$src" "$dst" && return 0
+    rel="${dst#"$TARGET"/}"
+    [[ -n "$KIT_BACKUP" ]] || KIT_BACKUP=".claude/kit-backup/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$TARGET/$KIT_BACKUP/$(dirname "$rel")"
+    cp -p "$dst" "$TARGET/$KIT_BACKUP/$rel"
+    cp "$src" "$dst"
+    KIT_OVERWRITTEN+=("$rel")
 }
 
 # copy_override <source> <destination>
@@ -202,54 +234,27 @@ copy_tree() {
     local src="$1" dst="$2" rel
     while IFS= read -r -d '' f; do
         rel="${f#"$src"/}"
-        copy_file "$f" "$dst/$rel"
+        case "$dst/$rel" in
+            "$TARGET/.claude/hooks/"* | "$TARGET/.claude/scripts/"*) copy_kit "$f" "$dst/$rel" ;;
+            *) copy_file "$f" "$dst/$rel" ;;
+        esac
     done < <(find "$src" \
-        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' \) -prune -o \
+        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' -o -name 'kit-backup' \) -prune -o \
         -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
                  ! -path "$src/project.json" \
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
 }
 
-# reader_stale <target>
-# Vrai (et dit pourquoi) tant que le project_config.py ou le hook-guarded.sh ACTIF de
-# la cible est plus ancien que celui du kit : l'ancien lecteur refuse un schéma 2, donc
-# écrire un project.json v2 maintenant ferait tomber les racines d'appli sans garde.
-# Le fichier reste en v1 ; l'utilisateur fusionne les .new, puis relance install.sh. Les
-# valeurs des hooks encore actifs sont gardées à part (migrate_config), l'ordre de fusion
-# n'a donc pas d'importance.
-reader_stale() {
-    local target="$1" f have want stale=()
-    for f in project_config.py hook-guarded.sh; do
-        want="$(guard_api_number "$KIT_DIR/.claude/hooks/$f")"
-        have="$(guard_api_number "$target/.claude/hooks/$f")"
-        if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
-            stale+=(".claude/hooks/$f.new")
-        fi
-    done
-    [[ "${#stale[@]}" -gt 0 ]] || return 1
-    echo "  ! .claude/project.json laissé en v1 (non migré, non câblé) : le lecteur actif de la cible est plus ancien que celui du kit." >&2
-    echo "    Fusionne ${stale[*]} (au minimum) et les autres .new de la ligne « P1 held back », dans l'ordre que tu veux, puis relance install.sh." >&2
-    echo "    Les valeurs de tes hooks actuels sont gardées dans .claude/project.snapshot.json ; la relance les reprend dans project.json." >&2
-    return 0
-}
-
 # migrate_config <target>
-# `.claude/project.json` n'est jamais copié : `project_config.py migrate` l'écrit à
-# partir des hooks actifs de la cible (créé s'il manque, v1 mis à niveau, v2 laissé
-# tel quel). Un fichier invalide reste intact : l'install le signale et continue.
-# Tant que le lecteur actif de la cible est plus ancien, le fichier n'est pas touché :
-# `snapshot` garde les valeurs des hooks encore anciens dans .claude/project.snapshot.json
-# (jamais lu par un hook), que la prochaine passe `migrate` reprend puis supprime.
+# `.claude/project.json` n'est jamais copié : `project_config.py migrate` (celui du kit)
+# l'écrit à partir des hooks de la cible, lus AVANT que copy_kit ne les écrase (créé s'il
+# manque, v1 mis à niveau, v2 laissé tel quel). Un fichier invalide reste intact :
+# l'install le signale et continue.
 # KIT_WAS_HERE : la cible avait déjà un kit, donc une migration sans valeur trouvée le dit.
 migrate_config() {
     local out rc=0 mode=()
     if ! command -v python3 &> /dev/null; then
         echo "  ! python3 absent : .claude/project.json non migré (installe python3, puis relance install.sh)." >&2
-        return 0
-    fi
-    if reader_stale "$1"; then
-        out="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" snapshot "$1" 2>&1)" || true
-        [[ -z "$out" ]] || printf '  %s\n' "$out"
         return 0
     fi
     ! ${KIT_WAS_HERE:-false} || mode=(--existing)
@@ -261,15 +266,9 @@ migrate_config() {
     return 0
 }
 
-GUARD_FILES=(hook-lib.sh hook-guarded.sh shell_targets.py protect-files.sh
-             prevent-destructive-commands.sh enforce-git-workflow.sh
-             tdd-require-red.sh auto-approve-config.sh kit-attempts.py project_config.py
-             tdd-freeze-tests.sh no-forbidden-icons.sh enforce-architecture.py tdd-prove-red.sh)
-# The FastAPI addon hooks that share tdd_py_lib.py: a mixed pair (old hook with the new
-# library, or the reverse) fails on an import or an attribute, so they are held back like
-# the guard hooks. Only checked with --fastapi: the .new copies exist only then.
-ADDON_GUARD_FILES=(tdd_py_lib.py tdd-require-red-py.py tdd-freeze-tests-py.py tdd-prove-red-py.py
-                   enforce-backend-layers.py ruff-on-save.sh)
+# The P1 and prompt allow lists the kit's settings.json carries, kept here as the one written
+# copy the contract suites compare it with (test-workflow-contracts.sh, test-install.sh).
+# shellcheck disable=SC2034  # read by the suites, not by install.sh
 P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
             "Bash(git branch --show-current)", "Bash(git worktree list)"]'
 RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
@@ -279,6 +278,7 @@ RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:
                  "Bash(bash .claude/hooks/test-install.sh)", "Bash(bash .claude/hooks/test-install.sh *)",
                  "Bash(bash .claude/hooks/test-workflow-contracts.sh)",
                  "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
+# shellcheck disable=SC2034  # read by the suites, not by install.sh
 PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
@@ -293,59 +293,22 @@ PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(bash .claude/hooks/test-rules-floor.sh)", "Bash(bash .claude/hooks/test-rules-floor.sh *)",
   "Bash(bash .claude/hooks/test-small-lane.sh)", "Bash(bash .claude/hooks/test-small-lane.sh *)"]'
 
-# guard_api_number <file>
-# The file's `# cwk-guard-api: N` number, empty when the file or the line is absent.
-guard_api_number() {
-    [[ -f "$1" ]] || return 0
-    sed -n 's/^# cwk-guard-api: \([0-9][0-9]*\)$/\1/p' "$1" | head -n 1
-}
-
-# guard_api_missing <target dir>
-# The guard hooks of the target that do not police P1 yet: absent, without the
-# api line, or below the kit's number; plus hook-lib.sh when it no longer sources
-# hook-guarded.sh. Space-separated, empty when every guard is current.
-guard_api_missing() {
-    local target="$1" f have want missing=()
-    for f in "${GUARD_FILES[@]}"; do
-        want="$(guard_api_number "$KIT_DIR/.claude/hooks/$f")"
-        have="$(guard_api_number "$target/.claude/hooks/$f")"
-        if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
-            missing+=(".claude/hooks/$f")
-        fi
-    done
-    if $WITH_FASTAPI; then
-        for f in "${ADDON_GUARD_FILES[@]}"; do
-            [[ -f "$target/.claude/hooks/$f" ]] || continue
-            want="$(guard_api_number "$KIT_DIR/addons/fastapi/hooks/$f")"
-            have="$(guard_api_number "$target/.claude/hooks/$f")"
-            if [[ -z "$have" || "$have" -lt "${want:-0}" ]]; then
-                missing+=(".claude/hooks/$f")
-            fi
-        done
-    fi
-    if ! grep -q 'source .*hook-guarded\.sh' "$target/.claude/hooks/hook-lib.sh" 2>/dev/null \
-        && [[ " ${missing[*]:-} " != *" .claude/hooks/hook-lib.sh "* ]]; then
-        missing+=(".claude/hooks/hook-lib.sh")
-    fi
-    echo "${missing[*]:-}"
-}
-
 # install_settings <target settings> <react true|false>
 # settings.json is the one kit file that must merge on every update: a .new here
 # means newly added hooks stay mute. User keys win; selected hook groups merge by
 # event + matcher and commands remain unique. Re-running is byte-stable.
 # permissions.deny is a union in order, never `unique`: the target's entries
 # first, then the kit's missing ones, so `Read(!.env.example)` stays after
-# `Read(.env.*)` (sorting would put the `!` first and carve nothing). Never held back.
-# P1 (defaultMode + the narrow git allows) is held back while a guard hook of the
-# target is not current: the kit side loses it, and a P1 an earlier install left
-# in the target goes too (the five allows, an acceptEdits mode). The nine retired
+# `Read(.env.*)` (sorting would put the `!` first and carve nothing).
+# P1 (defaultMode + the narrow git allows) is always applied: the guard hooks that
+# police it are overwritten from the kit by this same run (copy_kit), so they are
+# current. The nine retired
 # argument wildcards of the test/lint/build/typecheck runners go from every target,
-# held back or not, with the two kit-development suite allows (test-install,
+# with the two kit-development suite allows (test-install,
 # test-workflow-contracts) that stay in the kit's own settings; the bare gate forms
 # and everything else stay.
 install_settings() {
-    local target="$1" react="$2" selected tmp held
+    local target="$1" react="$2" selected tmp
     selected="$(mktemp)"
     tmp="$(mktemp)"
 
@@ -371,21 +334,6 @@ install_settings() {
     mv "$tmp" "$selected"
     tmp="$(mktemp)"
 
-    held="$(guard_api_missing "$TARGET")"
-    if [[ -n "$held" ]]; then
-        jq --argjson p1 "$P1_ALLOWS" --argjson retired "$RETIRED_ALLOWS" --argjson prompts "$PROMPT_ALLOWS" \
-            'del(.permissions.defaultMode) | .permissions.allow = ((.permissions.allow // []) - $p1 - $retired - $prompts)' \
-            "$selected" > "$tmp"
-        mv "$tmp" "$selected"
-        tmp="$(mktemp)"
-        local merge="" f
-        for f in $held; do merge+="${merge:+, }$f.new"; done
-        echo "P1 held back: $held — merge $merge, then re-run install.sh"
-        if [[ -e "$(dirname "$target")/project.snapshot.json" ]]; then
-            echo "  (the values of your current hooks are saved in .claude/project.snapshot.json: the re-run moves them into project.json, whatever the merge order)"
-        fi
-    fi
-
     mkdir -p "$(dirname "$target")"
     if [[ ! -e "$target" ]]; then
         cp "$selected" "$target"
@@ -394,8 +342,7 @@ install_settings() {
         return
     fi
 
-    jq -s --argjson p1 "$P1_ALLOWS" --argjson retired "$RETIRED_ALLOWS" --argjson prompts "$PROMPT_ALLOWS" \
-        --arg held "$held" '
+    jq -s --argjson retired "$RETIRED_ALLOWS" '
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
@@ -408,10 +355,6 @@ install_settings() {
       | .permissions.deny = ($own + [($new.permissions.deny // [])[] | . as $x | select($own | any(. == $x) | not)])
       | if .permissions.deny == [] then del(.permissions.deny) else . end
       | .permissions.allow -= $retired
-      | if $held == "" then . else
-          .permissions.allow -= ($p1 + $prompts)
-          | if .permissions.defaultMode == "acceptEdits" then del(.permissions.defaultMode) else . end
-        end
       | .hooks =(reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
           .[$event] = merged_groups((($old.hooks[$event] // []) + ($new.hooks[$event] // [])))))
     ' "$target" "$selected" > "$tmp"
@@ -497,8 +440,6 @@ wire_fastapi() {
     local wired=""
     if ! command -v python3 &> /dev/null; then
         echo "  ! python3 absent : fastapi non câblé dans .claude/project.json." >&2
-    elif reader_stale "$t"; then
-        echo "  ! fastapi non câblé dans .claude/project.json (voir ci-dessus)." >&2
     elif wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" fastapi)"; then
         if [[ "$wired" == *protected_dirs=changed* ]]; then
             echo "  câblé : app et alembic dans .claude/project.json (protected_dirs)"
@@ -540,8 +481,6 @@ wire_supabase() {
     local wired=""
     if ! command -v python3 &> /dev/null; then
         echo "  ! python3 absent : supabase non câblé dans .claude/project.json." >&2
-    elif reader_stale "$t"; then
-        echo "  ! supabase non câblé dans .claude/project.json (voir ci-dessus)." >&2
     else
         wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" supabase)" \
             || echo "  ! .claude/project.json illisible : supabase non câblé (lance /kit:doctor)." >&2
@@ -601,7 +540,7 @@ ensure_gitignore() {
         local line
         for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
             .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
-            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md'; do
+            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
@@ -630,6 +569,8 @@ __pycache__/
 .claude/.codex-ready
 .claude/.quota-warning
 .claude/.tdd-red/
+# Les sauvegardes du code du kit qu'install.sh a remplacé : à toi de les supprimer.
+.claude/kit-backup/
 # Le handoff d'une session interrompue : local, périmé dès qu'on reprend.
 # handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
 docs/work/*/handoff.md
@@ -740,8 +681,8 @@ KIT_WAS_HERE=false
 if [[ -e "$TARGET/.claude/hooks/hook-lib.sh" ]]; then
     KIT_WAS_HERE=true
 fi
-copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
 migrate_config "$TARGET"
+copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
 install_settings "$TARGET/.claude/settings.json" "$WITH_REACT_TS"
 if $WITH_REACT_TS; then
     printf '%s\n' 'react-ts' > "$TARGET/.claude/INSTALL_PROFILE"
@@ -750,9 +691,9 @@ else
 fi
 copy_file "$KIT_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
 copy_file "$KIT_DIR/AGENTS.md" "$TARGET/AGENTS.md"
-copy_file "$KIT_DIR/codex-handoff.sh" "$TARGET/codex-handoff.sh"
-copy_file "$KIT_DIR/workflow.py" "$TARGET/workflow.py"
-copy_file "$KIT_DIR/workflow.sh" "$TARGET/workflow.sh"
+copy_kit "$KIT_DIR/codex-handoff.sh" "$TARGET/codex-handoff.sh"
+copy_kit "$KIT_DIR/workflow.py" "$TARGET/workflow.py"
+copy_kit "$KIT_DIR/workflow.sh" "$TARGET/workflow.sh"
 copy_file "$KIT_DIR/docs/Claude_Workflows.md" "$TARGET/docs/Claude_Workflows.md"
 # La checklist d'adaptation part avec le kit : c'est elle que le message de fin
 # et le README désignent, et sans elle le projet cible n'a aucune trace de ce
@@ -831,7 +772,7 @@ if $WITH_FASTAPI; then
         [[ -f "$f" ]] || continue
         # Les tests des hooks de l'addon tournent dans le kit, pas dans le projet.
         [[ "$(basename "$f")" == test_* ]] && continue
-        copy_file "$f" "$TARGET/.claude/hooks/$(basename "$f")"
+        copy_kit "$f" "$TARGET/.claude/hooks/$(basename "$f")"
     done
     copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/FASTAPI-ADDON.md"
     wire_fastapi "$TARGET"
@@ -853,9 +794,21 @@ GITIGNORE_FILLED=0
 ensure_gitignore "$TARGET"
 
 echo
+if [[ ${#KIT_OVERWRITTEN[@]} -gt 0 ]]; then
+    echo "kit code: ${#KIT_OVERWRITTEN[@]} fichier(s) remplacé(s) par la version du kit ; l'ancienne version est dans $KIT_BACKUP/ :"
+    printf '  %s\n' "${KIT_OVERWRITTEN[@]}"
+    echo
+else
+    echo "kit code: up to date (aucun fichier du kit à remplacer)."
+    echo
+fi
 if [[ ${#SKIPPED[@]} -gt 0 ]]; then
     echo "Déjà présents — écrits en .new, à fusionner à la main :"
     printf '  %s\n' "${SKIPPED[@]}"
+    if [[ " ${SKIPPED[*]} " == *" $TARGET/.claude/commands/kit/init.md "* ]]; then
+        echo "  ! Fusionne d'abord .claude/commands/kit/init.md.new : dans un projet installé, /kit:init écrit"
+        echo "    .claude/project.proposed.json, que tu appliques avec bash .claude/scripts/kit-apply.sh."
+    fi
     echo
 fi
 
@@ -876,7 +829,8 @@ couvrir : une machine qui n'est pas la tienne.
 
 Le jour où tu pousses sur un dépôt distant :
   ./install.sh <ce projet> --deploy=<cible>
-Il écrira les workflows sans toucher au reste (tout le reste part en .new).
+Il écrira les workflows sans toucher au reste (le code du kit est remplacé après
+sauvegarde dans .claude/kit-backup/, tout le reste part en .new).
 
 EOF
 else

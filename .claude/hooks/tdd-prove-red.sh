@@ -188,13 +188,16 @@ emit() {
 # command is a guess about this repo, and a marker written on a guess is a TDD that
 # believes it is on.
 cwk_config || true
+# In an installed project .claude/project.json is kit code, denied to Write/Edit: the route is the
+# /kit:init proposal, applied by the user.
+KIT_ROUTE="In an installed project .claude/project.json is kit code and Write/Edit are denied there: run /kit:init, then the user runs bash .claude/scripts/kit-apply.sh from a terminal."
 if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
     emit "TDD hook: the RED phase was NOT proved for $FILE_PATH and no marker was recorded: $CWK_CFG_REASON"
 fi
 RUN_TESTS=(${CWK_CFG_TEST_COMMAND[@]+"${CWK_CFG_TEST_COMMAND[@]}"})
-[[ "${#RUN_TESTS[@]}" -gt 0 ]] || emit "TDD hook: .claude/project.json test_command is empty, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded. Set it to this repo's run-once test command (.claude/rules/00-project.md)."
+[[ "${#RUN_TESTS[@]}" -gt 0 ]] || emit "TDD hook: .claude/project.json test_command is empty, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded. Set it to this repo's run-once test command (.claude/rules/00-project.md). $KIT_ROUTE"
 RUNNER_BIN="${RUN_TESTS[0]}"
-command -v "$RUNNER_BIN" &> /dev/null || emit "TDD hook: '$RUNNER_BIN' is not on PATH, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded — tdd-require-red.sh will refuse to create the implementation module. Point test_command in .claude/project.json at this repo's run-once test script (.claude/rules/00-project.md)."
+command -v "$RUNNER_BIN" &> /dev/null || emit "TDD hook: '$RUNNER_BIN' is not on PATH, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded — tdd-require-red.sh will refuse to create the implementation module. Point test_command in .claude/project.json at this repo's run-once test script (.claude/rules/00-project.md). $KIT_ROUTE"
 
 # ---------------------------------------------------------------- implementation
 
@@ -258,7 +261,7 @@ fi
 # Say so — a hook that fails silently is worse than one that is noisy, because
 # it looks like a passing gate.
 if echo "$TEST_OUTPUT" | grep -qiE "ERR_PNPM_|Missing script|Command \"[^\"]*\" not found|No test files found"; then
-    emit "TDD hook: could not run the test runner on $FILE_PATH — the RED phase was NOT proved. Set test_command in .claude/project.json to the run-once script (see 00-project.md).\\n\\n$TAIL"
+    emit "TDD hook: could not run the test runner on $FILE_PATH — the RED phase was NOT proved. Set test_command in .claude/project.json to the run-once script (see 00-project.md). $KIT_ROUTE\\n\\n$TAIL"
 fi
 
 # Vitest exits non-zero when a test fails. The exit code is the signal — parsing

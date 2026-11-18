@@ -254,4 +254,18 @@ KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 if grep -q 'kd10-absent' <<<"$KD_OUT"; then echo 'KD10: a worktree doc was scanned' >&2; exit 1; fi
 rm -r "$SCRATCH/.claude/worktrees"
 
+# KD11 A tmp project with the stamp and no markers: mode "installed", no `stamp` divergence.
+printf 'core\n' > "$SCRATCH/.claude/INSTALL_PROFILE"
+KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'mode: installed project' <<<"$KD_OUT"
+if grep -q 'DIVERGENCE  stamp' <<<"$KD_OUT"; then echo 'KD11: a stamped project reported' >&2; exit 1; fi
+# KD12 A tmp project without the stamp and without the markers: `DIVERGENCE stamp`, naming install.sh.
+rm "$SCRATCH/.claude/INSTALL_PROFILE"
+KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  stamp' <<<"$KD_OUT"
+grep -A1 'DIVERGENCE  stamp' <<<"$KD_OUT" | grep -q 'install.sh'
+# KD13 The kit repo with no stamp: mode "kit source", and no `stamp` row.
+grep -q 'mode: kit source' <<<"$SOURCE_OUTPUT"
+if grep -qE '^  [A-Za-z]+ +stamp ' <<<"$SOURCE_OUTPUT"; then echo 'KD13: the kit repo has a stamp row' >&2; exit 1; fi
+
 echo 'kit-doctor version fixtures: green.'

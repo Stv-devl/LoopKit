@@ -1,0 +1,11 @@
+{
+  "mode": "plan",
+  "pass": 3,
+  "findings": [
+    {"id": "F1", "severity": "Major", "claim": "Under Q10's proposed reading a Write/Edit through a symlink alias to kit code passes in the kit repo (protect-files.sh asks on the lexical rel only); step 2 adds the physical check only when installed, so 'KB14 unchanged (Write/Edit already ask)' is false", "p1_class": "b", "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "closure": "Under the proposed reading: step 2 gains a kit-repo branch (cwk_is_kit_code on cwk_real_rel, lexical rel not guarded -> ask 'kit code: ...') and KB14 gains 'kitlike: Write/Edit to a -> .claude/hooks/x asks'; under the other reading Q10 drops 'for every F7 surface' and the 'Write/Edit already ask' claim", "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F2", "severity": "Minor", "claim": "Step 4 (a)'s rationale is false: fixture repos commit .claude/project.json; seven kept rows get a kit ask and stay green only through the append rule", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F3", "severity": "Minor", "claim": "Q8 fall-through wording covers the ambiguous remote case that step 4 (b) and G19.033 make ask", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F4", "severity": "Minor", "claim": "Step 3's kit-repo bullet sits under 'when installed:'; Contracts has no shell kit-repo reason string", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F5", "severity": "Minor", "claim": "Step 5 post-mv check-and-restore consumes the proposal and creates a backup folder, contradicting 'exit 3 invalid' as stated by IN28", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}

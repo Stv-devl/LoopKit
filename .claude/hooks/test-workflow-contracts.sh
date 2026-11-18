@@ -438,7 +438,8 @@ ADAPTATION="$ROOT/docs/ADAPTATION.md"
 [[ "$(grep -c 'this write will ask the user' "$TDD_FREEZE_HOOK")" -eq 2 ]]
 grep -Fq '## 14. Chemins gardés' "$ADAPTATION"
 for needle in 'hook-guarded.sh' '.claude/.tdd-red/' 'vite.config.*' 'package.json' \
-              "dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord"; do
+              "dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord" \
+              '**Le code du kit, refusé dans un projet installé.**'; do
     section "$ADAPTATION" '## 14. Chemins gardés' '## Vérifier que le câblage tient' | grep -Fq -- "$needle"
 done
 
@@ -484,7 +485,7 @@ GIT_HOOK="$ROOT/.claude/hooks/enforce-git-workflow.sh"
 grep -Fq 'git switch -c feat/<scope>' "$GIT_HOOK"
 if grep -Fq 'git checkout -b' "$GIT_HOOK"; then exit 1; fi
 # K1 docs: the hold-back and the measure method; the prompts a light pass keeps.
-for needle in 'P1 held back' 'tool_use' 'tool_result'; do
+for needle in 'tool_use' 'tool_result'; do
     grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
 done
 for needle in 'git push' 'gh pr' '--amend' '--discard-changes' 'chemins gardés'; do
@@ -502,7 +503,7 @@ for needle in 'retirés' 'settings.local.json'; do
     grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
 done
 # K1 harness-hooks A0: the hold-back message and list in the doc match install.sh.
-for needle in 'merge <fichiers>.new, then re-run install.sh' 'Bash(pnpm build *)' \
+for needle in 'Bash(pnpm build *)' \
               'tdd-require-red.sh' 'auto-approve-config.sh'; do
     grep -Fq -- "$needle" "$ROOT/docs/ADAPTATION.md"
 done
@@ -711,7 +712,7 @@ hp_flow="$(section "$ROOT/docs/Claude_Workflows.md" '## Hors boucle' '## ')"
 grep -Fq 'bash .claude/hooks/test-hooks.sh' <<<"$hp_flow"
 grep -Fq '$(…)' <<<"$hp_flow"
 # HP-B2 harness-prompts: the prompt allows, exactly, in settings.json and in
-# install.sh's held-back list; no wide form; every star only trailing.
+# install.sh's prompt allow list; no wide form; every star only trailing.
 HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
@@ -762,7 +763,6 @@ for hp_uv in '"Bash(uv run ruff check .)"' '"Bash(uv run ruff check app)"' '"Bas
              '"Bash(uv run mypy app)"' '"Bash(uv run pyright)"'; do
     grep -Fq -- "$hp_uv" <<<"$hp_py"
 done
-grep -Fq 'kit-attempts.py' <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
 # K3a harness-kit-ci: ci.md, shipped to every target, names the repository
 # settings that make the gates binding.
 K3_CI_MD="$ROOT/.claude/skills/templates/ci.md"
@@ -980,7 +980,6 @@ fi
 
 # PK4: the four hooks that read project values are guard files, each stamped.
 for pk_hook in tdd-freeze-tests.sh no-forbidden-icons.sh enforce-architecture.py tdd-prove-red.sh; do
-    grep -Fq "$pk_hook" <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")"
     grep -q '^# cwk-guard-api: [0-9]' "$ROOT/.claude/hooks/$pk_hook"
 done
 
@@ -1002,14 +1001,10 @@ if grep -nE 'return +[2-9]' <<<"$PK6_BODY"; then
 fi
 
 # PK7 (review 1): a hook whose reading of the project values changed carries a new stamp, so
-# an old copy is held back: protect-files 2 → 3, auto-approve-config 1 → 2.
+# the line is inert since kit-boundary: protect-files 2 → 3, auto-approve-config 1 → 2.
 pk7_stamp() { sed -n 's/^# cwk-guard-api: \([0-9][0-9]*\)$/\1/p' "$ROOT/.claude/hooks/$1" | head -n 1; }
 [[ "$(pk7_stamp protect-files.sh)" -ge 3 ]] || { echo 'PK7: protect-files.sh stamp is below 3' >&2; exit 1; }
 [[ "$(pk7_stamp auto-approve-config.sh)" -ge 2 ]] || { echo 'PK7: auto-approve-config.sh stamp is below 2' >&2; exit 1; }
-for pk_hook in protect-files.sh auto-approve-config.sh; do
-    grep -Fq "$pk_hook" <<<"$(sed -n '/^GUARD_FILES=(/,/)/p' "$ROOT/install.sh")" \
-        || { echo "PK7: $pk_hook is not a guard file" >&2; exit 1; }
-done
 
 # PK8: the never-matching pattern stays under BSD's repetition limit (RE_DUP_MAX 255).
 pk8_count="$(sed -n "s/^CWK_NEVER_RE=.*{\([0-9][0-9]*\)}'.*/\1/p" "$ROOT/.claude/hooks/hook-guarded.sh")"
@@ -1084,5 +1079,47 @@ rc_has T12 "$rc_step6" 'workflow-routing.yml' 'execute-red' 'always `claude`'
 # findings' Closure, and only orchestrate Phase 5 increments the round.
 rc_3bis="$(section "$REVIEW" '3bis. **Route the survivors' '4. Report the refuted')"
 rc_has T13 "$rc_3bis" 'status: not-fixed' 'main thread' 'a fresh `/loop:review` is round 1'
+
+# PK10 (kit-boundary): every kit-code entry but the stamp is guarded, the stamp is not, and
+# CWK_KIT_CODE names every entry of the spec's kit-code list.
+PK10_OUT="$(CLAUDE_PROJECT_DIR="$ROOT" bash -c '
+    source "$1" || exit 99
+    for e in "${CWK_KIT_CODE[@]}"; do
+        [[ "$e" == .claude/INSTALL_PROFILE ]] && continue
+        cwk_is_guarded "${e//\*/x}" || echo "unguarded: $e"
+    done
+    cwk_is_guarded .claude/INSTALL_PROFILE && echo "guarded stamp"
+    for e in .claude/hooks/x .claude/scripts/x addons/fastapi/hooks/x workflow.py workflow.sh \
+             codex-handoff.sh install.sh .claude/project.json .claude/INSTALL_PROFILE; do
+        cwk_is_kit_code "$e" || echo "not kit code: $e"
+    done' _ "$ROOT/.claude/hooks/hook-guarded.sh" 2>&1)" || { echo "PK10: $PK10_OUT" >&2; exit 1; }
+[[ -z "$PK10_OUT" ]] || { echo "PK10: $PK10_OUT" >&2; exit 1; }
+# PK11 the hold-back is gone from install.sh, and project_config.py has no snapshot subcommand.
+for pk_dead in guard_api_missing reader_stale 'P1 held back'; do
+    if grep -Fq "$pk_dead" "$ROOT/install.sh"; then echo "PK11: install.sh still holds $pk_dead" >&2; exit 1; fi
+done
+if grep -qw held "$ROOT/install.sh"; then echo 'PK11: install.sh still holds held' >&2; exit 1; fi
+if grep -Eq 'argv\[1\] == "snapshot"|^def snapshot' "$ROOT/.claude/hooks/project_config.py"; then
+    echo 'PK11: project_config.py still has a snapshot subcommand' >&2; exit 1
+fi
+# PK12 /kit:init writes a proposal the user applies; ADAPTATION §15 names the backup, not the hold-back.
+for pk_needle in '.claude/project.proposed.json' 'bash .claude/scripts/kit-apply.sh'; do
+    grep -Fq "$pk_needle" "$ROOT/.claude/commands/kit/init.md" || { echo "PK12: init.md lacks $pk_needle" >&2; exit 1; }
+done
+PK12_S15="$(section "$ADAPTATION" '## 15. ' '## Vérifier que le câblage tient')"
+grep -Fq '.claude/kit-backup/' <<<"$PK12_S15" || { echo 'PK12: §15 does not name .claude/kit-backup/' >&2; exit 1; }
+if grep -Fq 'P1 held back' <<<"$PK12_S15"; then echo 'PK12: §15 still names P1 held back' >&2; exit 1; fi
+# PK13 the three guard hooks carry the deny text through CWK_KIT_DENY, never a literal copy.
+for pk_hook in protect-files.sh prevent-destructive-commands.sh enforce-git-workflow.sh; do
+    grep -Fq 'CWK_KIT_DENY' "$ROOT/.claude/hooks/$pk_hook" || { echo "PK13: $pk_hook ignores CWK_KIT_DENY" >&2; exit 1; }
+    if grep -Fq 'kit code changes in the LoopKit repo' "$ROOT/.claude/hooks/$pk_hook"; then
+        echo "PK13: $pk_hook copies the deny text" >&2; exit 1
+    fi
+done
+# PK14 (review round 1): the TDD messages that send the agent to .claude/project.json name the route
+# that works in an installed project, where that file is kit code.
+for pk_needle in '/kit:init' 'bash .claude/scripts/kit-apply.sh'; do
+    grep -Fq "$pk_needle" "$ROOT/.claude/hooks/tdd-prove-red.sh" || { echo "PK14: tdd-prove-red.sh lacks $pk_needle" >&2; exit 1; }
+done
 
 echo 'workflow contract fixtures: green.'

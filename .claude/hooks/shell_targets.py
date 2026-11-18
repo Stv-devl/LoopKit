@@ -34,6 +34,7 @@ except ImportError:
     project_config = None
 
 MAX_ROWS = 64
+CONTENTS_ROWS = 24
 GLOB_NAME_SEP = "\x1f"
 MAX_DIRS = 8
 CONFIG = []
@@ -745,6 +746,9 @@ class Walker:
                     where = State(resolve_physical(chdir, directory))
                 verb = os.path.basename(unhide(words[0]))
                 rows.extend(self.verb_rows(verb, words[1:], seg, where, implicit))
+                script = run_target(words)
+                if script is not None:
+                    rows.append(("run", target(script, where.dir)))
         self.note_kit(seg, words, chdir)
         unique = []
         for row in rows:
@@ -827,6 +831,9 @@ class Walker:
             rows.extend(sed_rows(args, state, implicit, text))
         elif verb in WRITERS:
             rows.extend(writer_rows(verb, args, state, implicit, text))
+            rows.extend(into_rows(verb, args, state))
+        elif verb == "mkdir":
+            rows.extend(("mkdir", target(op, state.dir)) for op in mkdir_operands(args))
         for _, tgt in list(rows):
             if tgt.startswith("?inline:"):
                 rows.extend(("inline-path", p) for p in inline_paths(tgt[len("?inline:"):], state.dir))
@@ -1665,6 +1672,94 @@ def output_rows(verb, args, state):
         if value is not None and value != "-":
             rows.append((verb, target(value, state.dir)))
     return rows
+
+
+def run_target(words):
+    """The script a segment runs, for the `run` row: its command word when that is a path, or the
+    first operand of a shell or of `source`/`.`; None for a `-c` program or a bare command name."""
+    if not words:
+        return None
+    command = unhide(words[0])
+    verb = os.path.basename(command)
+    if verb == "env" and "/" in command:
+        rest = words[1:]
+        while rest and (rest[0].startswith("-") or ASSIGNMENT.match(rest[0])):
+            rest = rest[1:]
+        if rest and os.path.basename(unhide(rest[0])) in SHELLS:
+            return run_target(rest)
+        return words[0]
+    if "/" in command and verb not in SHELLS:
+        return words[0]
+    if verb not in SHELLS and verb not in ("source", "."):
+        return None
+    args = words[1:]
+    options = [w for w in args if w.startswith("-")]
+    if verb in SHELLS and any(o == "-c" or (not o.startswith("--") and "c" in o) for o in options):
+        return None
+    skip = False
+    for w in args:
+        if skip:
+            skip = False
+        elif verb in SHELLS and w in ("-o", "+o", "-O", "+O"):
+            skip = True
+        elif not w.startswith("-"):
+            return w
+    return None
+
+
+def into_rows(verb, args, state):
+    """`into` rows for a copy or move into an existing folder: `<folder>/<source name>` per source,
+    the file the write creates (`cp /tmp/k/install.sh .`). Only the kit-code check reads them."""
+    if verb not in LAST_OPERAND and verb != "mv":
+        return []
+    operands = operands_of(verb, args)
+    explicit = target_dir_option(verb, args)
+    if explicit is not None:
+        folder, sources = explicit, operands
+    elif len(operands) >= 2:
+        folder, sources = operands[-1], operands[:-1]
+    else:
+        return []
+    resolved = resolve_in(folder, state.dir)
+    if resolved is None or not os.path.isdir(resolved):
+        return []
+    rows = []
+    for source in sources:
+        clean = unhide(source)
+        name = os.path.basename(clean.rstrip("/"))
+        if name == "." or (verb == "rsync" and clean.endswith("/")):
+            rows.extend(contents_rows(clean, folder, state))
+        elif name and name != "..":
+            rows.append(("into", target(os.path.join(folder, name), state.dir)))
+    return rows
+
+
+def contents_rows(source, folder, state):
+    """`into` rows of a contents copy (`cp -R /tmp/k/. dir`, `rsync -a /tmp/k/ dir`): one per entry
+    of the source folder, or the folder itself when the source cannot be listed (a clone made by
+    the same command). A source past CONTENTS_ROWS entries is the folder row too: one row per
+    entry would pass MAX_ROWS and turn the whole command into an unknown ask."""
+    listed = resolve_in(source, state.dir)
+    try:
+        names = sorted(os.listdir(listed)) if listed is not None and os.path.isdir(listed) else None
+    except OSError:
+        names = None
+    if names is None or len(names) > CONTENTS_ROWS:
+        return [("into", target(folder, state.dir))]
+    return [("into", target(os.path.join(folder, n), state.dir)) for n in names]
+
+
+def mkdir_operands(args):
+    """The folders a `mkdir` creates: its operands, `-m <mode>`'s value skipped."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in ("-m", "--mode"):
+            skip = True
+        elif not a.startswith("-"):
+            out.append(a)
+    return out
 
 
 def writer_rows(verb, args, state, implicit, text):

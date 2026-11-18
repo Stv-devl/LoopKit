@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 4
+# cwk-guard-api: 5
 #
 # Hook: enforce-git-workflow
 # Event: PreToolUse (Bash)
@@ -80,10 +80,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
 # shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
 CWK_DEGRADED_ASK=1
-if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason >/dev/null 2>&1; then
-    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason cwk_installed >/dev/null 2>&1 || [[ -z "${CWK_KIT_DENY:-}" ]]; then
+    echo "BLOCKED: hook-lib.sh or hook-guarded.sh is older than this hook (no cwk_config/cwk_tdd_load/cwk_installed or kit-code list), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
     exit 2
 fi
+# Kit code (hook-guarded.sh): its writers are denied, and a call that brings it asks, only in a
+# project the kit was installed into; the LoopKit repo keeps today's verdicts.
+if cwk_installed; then KIT_INSTALLED=1; else KIT_INSTALLED=0; fi
+KIT_PATTERNS="$(printf '%s\n' "${CWK_KIT_CODE[@]}")"
 
 INPUT=$(cat)
 
@@ -197,7 +201,9 @@ dir_protected() {
 # A command shlex cannot read prints UNPARSABLE. When it cannot read a call, a
 # fallback scan of the raw text adds `?fb-add` / `?fb-flags` rows.
 parse_segments() {
-    python3 -I - "$1" "$2" "$CWK_TDD_SHELL_TARGET_RE" "$CWK_TDD_SHELL_FROZEN_TEST_RE" "$CWK_CFG_ENV_SUFFIX_ERE" <<'PY'
+    python3 -I - "$1" "$2" "$CWK_TDD_SHELL_TARGET_RE" "$CWK_TDD_SHELL_FROZEN_TEST_RE" "$CWK_CFG_ENV_SUFFIX_ERE" \
+        "$KIT_INSTALLED" "$KIT_PATTERNS" "$CWK_KIT_DENY" <<'PY'
+import fnmatch
 import os
 import re
 import shlex
@@ -1056,6 +1062,487 @@ def worktree_rule(sub, args, directory, ctx):
     return "-"
 
 
+KIT_INSTALLED = len(sys.argv) > 6 and sys.argv[6] == "1"
+KIT_PATTERNS = [p for p in (sys.argv[7] if len(sys.argv) > 7 else "").split("\n") if p]
+KIT_DENY = sys.argv[8] if len(sys.argv) > 8 else ""
+KIT_SUBS = {"apply", "am", "checkout", "switch", "restore", "rm", "mv", "stash", "merge-file",
+            "checkout-index", "read-tree", "reset", "update-index", "merge", "rebase",
+            "cherry-pick", "revert", "pull", "bisect", "sparse-checkout", "submodule",
+            "filter-branch"}
+
+
+class KitUnread(Exception):
+    """A read-only git call for a kit set failed: the call asks, never passes."""
+
+
+KIT_ROOT = None
+
+
+def kit_set_root(directory):
+    """Roots the paths git gives (from the work tree's top) on the physical project dir: a project
+    nested in a bigger repo, or a repo nested in the project. The project itself and its linked
+    worktrees keep the top; an unset or relative project dir keeps it too."""
+    global KIT_ROOT
+    KIT_ROOT = None
+    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    tops = kit_lines(directory, ["rev-parse", "--show-toplevel"]) if os.path.isabs(project) else []
+    if not tops:
+        return
+    top, project = os.path.realpath(tops[0]), os.path.realpath(project)
+    if top != project and not top.startswith(os.path.join(project, ".claude", "worktrees") + os.sep):
+        KIT_ROOT = (top, project)
+
+
+def is_kit(rel):
+    if KIT_ROOT and rel:
+        rel = os.path.relpath(os.path.join(KIT_ROOT[0], rel), KIT_ROOT[1])
+        if rel == ".." or rel.startswith("../"):
+            return False
+    rel = os.path.normpath(rel).lstrip("/") if rel else ""
+    if not rel or rel == "." or rel.startswith("../"):
+        return False
+    return any(fnmatch.fnmatchcase(rel, p) or rel.startswith(p + "/") for p in KIT_PATTERNS)
+
+
+def kit_git(directory, args):
+    """The NUL-split stdout of a read-only git call; KitUnread on a failure."""
+    code, out = deadline_git(directory, args, capture=True)
+    if code != 0:
+        raise KitUnread(" ".join(args[:2]))
+    return [p for p in out.decode(errors="replace").split("\0") if p]
+
+
+def kit_lines(directory, args):
+    code, out = deadline_git(directory, args, capture=True)
+    if code != 0:
+        raise KitUnread(" ".join(args[:2]))
+    return [p for p in out.decode(errors="replace").splitlines() if p]
+
+
+def kit_resolves(directory, rev):
+    code, _ = deadline_git(directory, ["rev-parse", "--verify", "-q", "--end-of-options",
+                                       rev + "^{commit}"])
+    return code == 0
+
+
+def kit_rel(directory, operand):
+    """An operand of a call in <directory>, as a path from the work tree's root."""
+    if os.path.isabs(operand):
+        tops = kit_lines(directory, ["rev-parse", "--show-toplevel"])
+        path = os.path.normpath(operand)
+        if tops:
+            # The folder is resolved, the last name is not: an operand that is a link names the link.
+            real = os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+            for root in dict.fromkeys((tops[0], os.path.realpath(tops[0]))):
+                for form in (path, real):
+                    if form == root or form.startswith(root.rstrip("/") + "/"):
+                        return os.path.normpath(os.path.relpath(form, root))
+        return path
+    prefix = kit_lines(directory, ["rev-parse", "--show-prefix"])
+    return os.path.normpath(os.path.join(prefix[0] if prefix else "", operand))
+
+
+def kit_prev(args):
+    """`-` before `--` is git's previous branch, `@{-1}`."""
+    out, dashdash = [], False
+    for arg in args:
+        dashdash = dashdash or arg == "--"
+        out.append("@{-1}" if arg == "-" and not dashdash else arg)
+    return out
+
+
+def kit_deny(paths):
+    shown = ", ".join(sorted(paths)[:3]) + (", …" if len(paths) > 3 else "")
+    return deny(f"kit code: {shown} — {KIT_DENY}")
+
+
+def kit_bring(paths):
+    shown = ", ".join(sorted(paths)[:3]) + (", …" if len(paths) > 3 else "")
+    return ask(f"brings kit changes: {shown}. In an installed project kit code comes from "
+               "install.sh; this call would replace it with another version.")
+
+
+def kit_split(args, value_opts):
+    """(options, operands, operands after --, the values of value options by name)."""
+    opts, operands, after, values, i, dashdash = [], [], [], {}, 0, False
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if dashdash:
+            after.append(arg)
+        elif arg == "--":
+            dashdash = True
+        elif arg.startswith("-") and arg != "-":
+            name = arg.partition("=")[0]
+            if name in value_opts and "=" not in arg and i < len(args):
+                values[name] = args[i]
+                i += 1
+            elif "=" in arg:
+                values[name] = arg.partition("=")[2]
+            opts.append(arg)
+        else:
+            operands.append(arg)
+    return opts, operands, after, values
+
+
+def kit_has(opts, longs, shorts=""):
+    for o in opts:
+        if o.startswith("--") and o.partition("=")[0] in longs:
+            return True
+        if shorts and o.startswith("-") and not o.startswith("--") and set(o[1:]) & set(shorts):
+            return True
+    return False
+
+
+def kit_numstat(directory, args, sub):
+    """The paths a patch touches, read by git apply --numstat itself, or an ask."""
+    passed, files = [], []
+    for arg in args:
+        name = arg.partition("=")[0]
+        if arg.startswith("-p") or name in ("--directory", "--include", "--exclude"):
+            passed.append(arg)
+        elif not arg.startswith("-"):
+            files.append(arg)
+    if sub == "apply" and kit_has(args, {"--check", "--stat", "--numstat", "--summary"}) \
+            and not kit_has(args, {"--apply"}):
+        return set()
+    if not files:
+        raise KitUnread("stdin")
+    where = directory
+    if sub == "am":
+        tops = kit_lines(directory, ["rev-parse", "--show-toplevel"])
+        if not tops:
+            raise KitUnread("toplevel")
+        where = tops[0]
+        files = [os.path.normpath(os.path.join(directory, f)) for f in files]
+    tokens = kit_git(where, ["apply", "--numstat", "-z", *passed, *files])
+    paths, k = set(), 0
+    while k < len(tokens):
+        fields = tokens[k].split("\t", 2)
+        k += 1
+        if len(fields) == 3 and fields[2]:
+            paths.add(fields[2])
+        elif len(fields) == 3:
+            paths.update(tokens[k:k + 2])
+            k += 2
+    return paths
+
+
+def kit_bring_set(directory, rev, guess):
+    """The whole-tree set a switch to <rev> writes, or None when <rev> resolves nowhere."""
+    if not kit_resolves(directory, rev):
+        if not guess:
+            return None
+        refs = kit_lines(directory, ["for-each-ref", "--format=%(refname)", f"refs/remotes/*/{rev}"])
+        if len(refs) > 1:
+            raise KitUnread("ambiguous")
+        if not refs:
+            return None
+        rev = refs[0]
+    return set(kit_git(directory, ["diff", "--name-only", "-z", "HEAD", rev]))
+
+
+def kit_checkout(sub, args, directory):
+    values = {"checkout": {"-b", "-B", "--orphan", "--conflict"},
+              "switch": {"-c", "-C", "--orphan", "--conflict"},
+              "restore": {"-s", "--source", "--conflict"}}[sub]
+    opts, operands, after, vals = kit_split(args, values)
+    if kit_has(opts, {"--pathspec-from-file"}):
+        raise KitUnread("pathspec file")
+    paths, src = None, None
+    if sub == "restore":
+        paths, src = operands + after, vals.get("-s") or vals.get("--source")
+    elif sub == "checkout" and after:
+        paths, src = after, operands[0] if operands else None
+    elif sub == "checkout" and len(operands) > 1 and not kit_has(opts, {"-b", "-B", "--orphan"}, "bB"):
+        paths, src = operands[1:], operands[0]
+    elif sub == "checkout" and len(operands) == 1 and not kit_resolves(directory, operands[0]) \
+            and (has_glob_or_magic(operands[0]) or os.path.exists(os.path.join(directory, operands[0]))):
+        paths = operands
+    if paths is not None:
+        literal = {kit_rel(directory, p) for p in paths if not has_glob_or_magic(p)}
+        hit = {p for p in literal if is_kit(p)}
+        if hit:
+            return kit_deny(hit)
+        staged = kit_has(opts, {"--staged"}, "S")
+        worktree = kit_has(opts, {"--worktree"}, "W") or not staged
+        names = set()
+        if sub == "restore" and staged:
+            names |= set(kit_git(directory, ["diff", "--cached", "--name-only", "-z", src or "HEAD", "--", *paths]))
+        if sub != "restore" or worktree:
+            names |= set(kit_git(directory, ["diff", "--name-only", "-z", *([src] if src else []), "--", *paths]))
+        if sub == "checkout" and src:
+            names |= set(kit_git(directory, ["diff", "--cached", "--name-only", "-z", src, "--", *paths]))
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if kit_has(opts, {"--force", "--discard-changes"}, "f"):
+        local = set(kit_git(directory, ["diff", "--name-only", "-z", "HEAD"]))
+        local |= set(kit_git(directory, ["diff", "--cached", "--name-only", "-z"]))
+        hit = {p for p in local if is_kit(p)}
+        if hit:
+            return kit_deny(hit)
+    start = operands[-1] if operands else None
+    if any(v in vals for v in ("-b", "-B", "-c", "-C")) and len(operands) < 1:
+        start = None
+    if start is None:
+        return "-"
+    names = kit_bring_set(directory, start, guess=True)
+    hit = {p for p in names or () if is_kit(p)}
+    return kit_bring(hit) if hit else "-"
+
+
+def kit_stash(args, directory):
+    action = args[0] if args and not args[0].startswith("-") else "push"
+    rest = args[1:] if args and not args[0].startswith("-") else args
+    if action in ("pop", "apply", "branch"):
+        _, operands, _, _ = kit_split(rest, set())
+        stash = (operands[1] if len(operands) > 1 else "stash@{0}") if action == "branch" \
+            else (operands[0] if operands else "stash@{0}")
+        if not kit_resolves(directory, stash):
+            return "-"
+        names = set(kit_git(directory, ["diff", "--name-only", "-z", stash + "^1", stash]))
+        parents = kit_lines(directory, ["rev-list", "--parents", "-n", "1", stash])
+        hashes = parents[0].split()[1:] if parents else []
+        if len(hashes) >= 3:
+            names |= set(kit_git(directory, ["ls-tree", "-r", "-z", "--full-tree", "--name-only",
+                                             hashes[2]]))
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if action not in ("push", "save"):
+        return "-"
+    opts, operands, after, _ = kit_split(rest, {"-m", "--message", "--pathspec-from-file"})
+    if kit_has(opts, {"--pathspec-from-file"}):
+        raise KitUnread("pathspec file")
+    spec = after + (operands if action == "push" else [])
+    names = set(kit_git(directory, ["diff", "--name-only", "-z", "HEAD", "--", *spec]))
+    if kit_has(opts, {"--include-untracked"}, "u"):
+        names |= set(kit_git(directory, ["ls-files", "-z", "--others", "--exclude-standard",
+                                         "--full-name", "--", *spec]))
+    if kit_has(opts, {"--all"}, "a"):
+        names |= set(kit_git(directory, ["ls-files", "-z", "--others", "--full-name", "--", *spec]))
+    hit = {p for p in names if is_kit(p)}
+    return kit_deny(hit) if hit else "-"
+
+
+def kit_commits(directory, operands):
+    """Each commit an operand names; a range `A..B` gives every commit in it."""
+    out = []
+    for op in operands:
+        if ".." in op:
+            out.extend(kit_lines(directory, ["rev-list", op]))
+        elif kit_resolves(directory, op):
+            out.append(op)
+    return out
+
+
+def kit_pick(args, directory):
+    opts, operands, _, vals = kit_split(args, {"-m", "--mainline", "-X", "--strategy-option",
+                                               "--strategy", "-S", "--gpg-sign"})
+    if kit_has(opts, {"--continue", "--abort", "--skip", "--quit"}):
+        return "-"
+    mainline = vals.get("-m") or vals.get("--mainline")
+    names = set()
+    for c in kit_commits(directory, operands):
+        parents = kit_lines(directory, ["rev-list", "--parents", "-n", "1", c])
+        count = len(parents[0].split()) - 1 if parents else 0
+        if count == 0:
+            names |= set(kit_git(directory, ["diff-tree", "--root", "--no-commit-id", "--name-only",
+                                             "-r", "-z", c]))
+        elif count == 1:
+            names |= set(kit_git(directory, ["diff", "--name-only", "-z", c + "^", c]))
+        elif mainline is None:
+            return ask(f"{c} is a merge commit and no -m names its mainline: the hook cannot read "
+                       "which kit files it brings.")
+        else:
+            names |= set(kit_git(directory, ["diff", "--name-only", "-z", f"{c}^{mainline}", c]))
+    hit = {p for p in names if is_kit(p)}
+    return kit_bring(hit) if hit else "-"
+
+
+def kit_reset(args, directory):
+    opts, operands, after, _ = kit_split(args, {"--pathspec-from-file"})
+    if kit_has(opts, {"--pathspec-from-file"}):
+        raise KitUnread("pathspec file")
+    rev = None
+    paths = list(after)
+    if operands and kit_resolves(directory, operands[0]):
+        rev, paths = operands[0], paths + operands[1:]
+    else:
+        paths += operands
+    if paths:
+        hit = {kit_rel(directory, p) for p in paths if not has_glob_or_magic(p)}
+        hit = {p for p in hit if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if kit_has(opts, {"--soft"}):
+        return "-"
+    if kit_has(opts, {"--keep", "--merge"}):
+        if rev is None:
+            return "-"
+        hit = {p for p in kit_git(directory, ["diff", "--name-only", "-z", "HEAD", rev]) if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if operands and rev is None:
+        return "-"
+    if kit_has(opts, {"--hard"}):
+        names = kit_git(directory, ["diff", "--name-only", "-z", rev or "HEAD"])
+    elif rev is not None:
+        names = kit_git(directory, ["diff", "--cached", "--name-only", "-z", rev])
+    else:
+        return "-"
+    hit = {p for p in names if is_kit(p)}
+    return kit_bring(hit) if hit else "-"
+
+
+def kit_rule(sub, args, directory):
+    """`-`, a kit deny or a kit ask for one git call in an installed project."""
+    if sub in ("checkout", "switch", "merge", "rebase", "cherry-pick", "revert"):
+        args = kit_prev(args)
+    if sub in ("apply", "am"):
+        hit = {p for p in kit_numstat(directory, args, sub) if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub in ("checkout", "switch", "restore"):
+        return kit_checkout(sub, args, directory)
+    if sub == "rm":
+        opts, operands, after, _ = kit_split(args, {"--pathspec-from-file"})
+        if kit_has(opts, {"--dry-run"}, "n"):
+            return "-"
+        if kit_has(opts, {"--pathspec-from-file"}):
+            raise KitUnread("pathspec file")
+        names = kit_git(directory, ["ls-files", "-z", "--full-name", "--", *operands, *after])
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub == "mv":
+        opts, operands, after, _ = kit_split(args, set())
+        operands += after
+        if kit_has(opts, {"--dry-run"}, "n") or len(operands) < 2:
+            return "-"
+        sources, dest = operands[:-1], operands[-1]
+        names = set(kit_git(directory, ["ls-files", "-z", "--full-name", "--", *sources]))
+        names.add(kit_rel(directory, dest))
+        names |= {kit_rel(directory, os.path.join(dest, os.path.basename(s.rstrip("/")))) for s in sources}
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub == "stash":
+        return kit_stash(args, directory)
+    if sub == "merge-file":
+        opts, operands, _, _ = kit_split(args, {"-L"})
+        if kit_has(opts, {"--stdout"}, "p") or not operands:
+            return "-"
+        rel = kit_rel(directory, operands[0])
+        return kit_deny({rel}) if is_kit(rel) else "-"
+    if sub == "checkout-index":
+        opts, operands, after, _ = kit_split(args, set())
+        if kit_has(opts, {"--stdin"}):
+            raise KitUnread("stdin")
+        if kit_has(opts, {"--prefix"}):
+            return "-"
+        if kit_has(opts, {"--all"}, "a"):
+            names = set(kit_git(directory, ["ls-files", "-z", "--full-name"]))
+        else:
+            names = {kit_rel(directory, p) for p in operands + after}
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub == "read-tree":
+        opts, operands, _, _ = kit_split(args, {"--prefix", "--index-output", "--exclude-per-directory"})
+        if kit_has(opts, {"--dry-run"}, "n") or kit_has(opts, {"--prefix", "--index-output"}):
+            return "-"
+        names = set()
+        if kit_has(opts, {"--empty"}):
+            names |= set(kit_git(directory, ["ls-files", "-z", "--full-name"]))
+        for tree in operands:
+            names |= set(kit_git(directory, ["diff", "--cached", "--name-only", "-z", tree]))
+        hit = {p for p in names if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub == "reset":
+        return kit_reset(args, directory)
+    if sub == "update-index":
+        opts, operands, after, _ = kit_split(args, set())
+        if kit_has(opts, {"--stdin", "--index-info"}):
+            raise KitUnread("stdin")
+        if not kit_has(opts, {"--add", "--remove", "--force-remove", "--chmod", "--cacheinfo"}):
+            return "-"
+        paths = [p.rsplit(",", 1)[-1] for p in operands + after]
+        hit = {kit_rel(directory, p) for p in paths}
+        hit = {p for p in hit if is_kit(p)}
+        return kit_deny(hit) if hit else "-"
+    if sub == "merge":
+        opts, operands, _, _ = kit_split(args, {"-m", "-s", "-X", "-F", "--strategy",
+                                                "--strategy-option", "--file", "--into-name"})
+        if kit_has(opts, {"--abort", "--continue", "--quit"}):
+            return "-"
+        names = set()
+        for c in operands:
+            if kit_resolves(directory, c):
+                names |= set(kit_git(directory, ["diff", "--name-only", "-z", f"HEAD...{c}"]))
+        hit = {p for p in names if is_kit(p)}
+        return kit_bring(hit) if hit else "-"
+    if sub == "rebase":
+        opts, operands, _, vals = kit_split(args, {"--onto", "-s", "-X", "--strategy",
+                                                   "--strategy-option", "-x", "--exec"})
+        if kit_has(opts, {"--continue", "--abort", "--skip", "--quit", "--edit-todo",
+                          "--show-current-patch"}):
+            return "-"
+        upstream = operands[0] if operands else "@{u}"
+        if not kit_resolves(directory, upstream):
+            if not operands:
+                return ask("This git rebase has no upstream configured: the hook cannot read which "
+                           "kit files it brings.")
+            return "-"
+        # The tree after a rebase: a <branch> is switched to first (HEAD to <branch>), --onto drops
+        # the commits between <upstream> and HEAD (<upstream> to <onto>), and the upstream's own
+        # commits come in (HEAD...<upstream>).
+        names = set(kit_git(directory, ["diff", "--name-only", "-z", f"HEAD...{upstream}"]))
+        branch = operands[1] if len(operands) > 1 else None
+        if branch and kit_resolves(directory, branch):
+            names |= set(kit_git(directory, ["diff", "--name-only", "-z", "HEAD", branch]))
+        onto = vals.get("--onto")
+        if onto and kit_resolves(directory, onto):
+            names |= set(kit_git(directory, ["diff", "--name-only", "-z", upstream, onto]))
+        hit = {p for p in names if is_kit(p)}
+        return kit_bring(hit) if hit else "-"
+    if sub in ("cherry-pick", "revert"):
+        return kit_pick(args, directory)
+    if sub == "pull":
+        return ask("This git pull cannot read the kit changes before the fetch: in an installed "
+                   "project kit code comes from install.sh. Fetch, then merge with the branch named.")
+    if sub in ("bisect", "sparse-checkout", "filter-branch") or \
+            (sub == "submodule" and "update" in args):
+        return ask(f"This git {sub} rewrites the work tree with files the hook cannot list in "
+                   "advance, kit code included: in an installed project kit code comes from install.sh.")
+    return "-"
+
+
+def kit_verdict(sub, args, directory, ctx):
+    """`-`, `ask:` or `deny:` for kit code; the LoopKit repo itself always gets `-`."""
+    if not KIT_INSTALLED or ctx["moved"]:
+        return "-"
+    unsafe = ask(f"This git {sub} may write kit code, and the hook cannot read this repository "
+                 "safely to check which files it writes.")
+    if ctx["dir_unread"] and sub in KIT_SUBS:
+        return unsafe
+    if not os.path.isdir(directory):
+        return "-"
+    runs, args, _, problem = expand_alias(sub, args, directory)
+    if problem or runs not in KIT_SUBS:
+        return "-"
+    if ctx["git_env"] or not readable_git_dir(directory):
+        return unsafe
+    try:
+        kit_set_root(directory)
+        return kit_rule(runs, args, directory)
+    except KitUnread as exc:
+        return ask(f"This git {runs} may write kit code, and the hook could not read which files "
+                   f"it writes ({exc}: stdin, an unreadable patch or a failed git call).")
+
+
+def kit_combine(destr, kit):
+    """deny > ask > `-`: a kit deny upgrades an ask; a kit ask is appended to an existing one."""
+    if kit == "-" or destr.startswith("deny:"):
+        return destr
+    if kit.startswith("deny:") or destr == "-":
+        return kit
+    return destr + " " + kit[len("ask:"):]
+
+
 DESTRUCTIVE_RULES = {"clean": clean_rule, "reset": reset_rule, "stash": stash_rule,
                      "branch": branch_rule, "update-ref": update_ref_rule,
                      "checkout": checkout_rule, "restore": checkout_rule,
@@ -1150,6 +1637,9 @@ def parse_git(seg, start, base, assigns):
             "dir_unread": dir_unread, "moved": state["cd"] or state["prior"]})
     if sub != HIDDEN and sub not in ADD_SUBS and destr == "-":
         destr = foreign_verdict(sub, directory, state["cd"])
+    if sub != HIDDEN:
+        destr = kit_combine(destr, kit_verdict(sub, args, directory, {
+            "dir_unread": dir_unread, "git_env": git_env, "moved": state["cd"]}))
     destr = destr.replace("\t", " ").replace("\n", " ")
     rows.append(f"{sub}\t{clean}\t{alias_cfg}\t{force}\t{flags_column(args)}"
                 f"\t{addv.replace(chr(10), ' ')}\t{destr}")
@@ -1535,6 +2025,11 @@ if [[ "$PARSE_TRUSTED" -eq 0 ]]; then
     done
     for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
         [[ "$FLOOR_SUB" == commit ]] && on_protected_branch && deny "$(commit_reason "$BRANCH")"
+    done
+    for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
+        if [[ "$KIT_INSTALLED" == 1 && "$FLOOR_SUB" =~ ^(apply|am|restore|rm|mv|stash|merge-file|checkout-index|read-tree|reset|update-index|merge|rebase|cherry-pick|revert|pull|bisect|sparse-checkout|submodule|filter-branch)$ ]]; then
+            ask "The hook could not run its parser (python3 missing or failed); this git $FLOOR_SUB may write kit code and is not checked. Show the exact call, then let the user decide."
+        fi
     done
     for FLOOR_SUB in "${FLOOR_SUBS[@]}"; do
         if [[ "$FLOOR_SUB" =~ ^(commit|switch|checkout)$ ]]; then
