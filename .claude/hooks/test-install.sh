@@ -928,4 +928,53 @@ IN55_BAD="$(grep -oE '[A-Za-z0-9./_-]*(agents|commands|skills|guides)/[A-Za-z0-9
     | grep -vE '^\.claude/overlays/' | grep -vE '^\.claude/skills/patterns/[A-Z]+-ADDON\.md$' || true)"
 [[ -z "$IN55_BAD" ]] || fail_in "IN55: prompt paths outside .claude/overlays/: $IN55_BAD"
 
+# IN59 (loop-to-pr) core and react installs keep the three loop-record.py handlers and the three
+# loop allows; install.sh's PROMPT_ALLOWS lists the allows too.
+IN59_ALLOWS=('Bash(python3 .claude/hooks/loop-record.py --clear)' 'Bash(.claude/scripts/loop-pr-state.sh *)'
+    'Bash(.claude/scripts/case-hash.sh *)')
+for in59 in "$TARGET" "$REACT_TARGET"; do
+    for pair in 'PreToolUse AskUserQuestion' 'PostToolUse AskUserQuestion' 'PostToolUse Bash'; do
+        jq -e --arg e "${pair% *}" --arg m "${pair#* }" \
+            '[.hooks[$e][]? | select(.matcher == $m) | .hooks[].command] | any(contains("loop-record.py"))' \
+            "$in59/.claude/settings.json" >/dev/null || fail_in "IN59: $in59 lacks the loop-record.py $pair handler"
+    done
+    for allow in "${IN59_ALLOWS[@]}"; do
+        jq -e --arg a "$allow" '.permissions.allow | index($a)' "$in59/.claude/settings.json" >/dev/null \
+            || fail_in "IN59: $in59 lacks the allow $allow"
+    done
+done
+IN59_PROMPT="$(sed -n "/^PROMPT_ALLOWS='/,/'\$/p" "$ROOT/install.sh" | sed "1s/^PROMPT_ALLOWS='//; \$s/'\$//")"
+for allow in "${IN59_ALLOWS[@]}"; do
+    jq -e --arg a "$allow" 'index($a)' <<<"$IN59_PROMPT" >/dev/null || fail_in "IN59: PROMPT_ALLOWS lacks $allow"
+done
+
+# IN60 an installed project denies a Write to loop-record.py: kit code.
+IN60_OUT="$(jq -cn --arg f "$TARGET/.claude/hooks/loop-record.py" --arg c "$TARGET" \
+    '{tool_name:"Write", cwd:$c, tool_input:{file_path:$f, content:"x = 1\n"}}' \
+    | CLAUDE_PROJECT_DIR="$TARGET" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$TARGET/.claude/hooks/protect-files.sh" 2>/dev/null || true)"
+jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$IN60_OUT" >/dev/null 2>&1 \
+    || fail_in "IN60: a Write to loop-record.py is not denied: ${IN60_OUT:0:200}"
+grep -Fq 'kit code' <<<"$IN60_OUT" || fail_in 'IN60: the deny is not the kit-code one'
+
+# IN61 a loop record in the kit tree never reaches the target, whose .gitignore ignores it.
+IN61_KIT="$SCRATCH/in61-kit"
+mkdir -p "$IN61_KIT"
+tar -C "$ROOT" --exclude=./.git --exclude=./node_modules --exclude=./.claude/worktrees -cf - . | tar -x -C "$IN61_KIT"
+printf '{"version":1}\n' >"$IN61_KIT/.claude/.loop-record.json"
+IN61="$SCRATCH/in61"
+mkdir -p "$IN61"
+"$IN61_KIT/install.sh" "$IN61" --no-ci >/dev/null 2>&1
+[[ ! -e "$IN61/.claude/.loop-record.json" ]] || fail_in 'IN61: the kit record was copied'
+grep -qxF '.claude/.loop-record.json' "$IN61/.gitignore" || fail_in 'IN61: .gitignore lacks the record'
+
+# IN62 a project installed before the record existed (its .gitignore already carries the kit block)
+# gets the record line appended on the next install, once.
+IN62="$SCRATCH/in62"
+mkdir -p "$IN62"
+printf '# === LoopKit — état de session ===\n.claude/worktrees/\n' >"$IN62/.gitignore"
+"$ROOT/install.sh" "$IN62" --no-ci >/dev/null 2>&1
+grep -qxF '.claude/.loop-record.json' "$IN62/.gitignore" || fail_in 'IN62: an existing kit block lacks the record line'
+"$ROOT/install.sh" "$IN62" --no-ci >/dev/null 2>&1
+[[ "$(grep -cxF '.claude/.loop-record.json' "$IN62/.gitignore")" -eq 1 ]] || fail_in 'IN62: the record line is not written exactly once'
+
 echo 'install fixtures: green.'

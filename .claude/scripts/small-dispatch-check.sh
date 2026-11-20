@@ -33,7 +33,7 @@ cd "$main_tree"
 
 in_loop_slugs() {
     [[ -f docs/product/backlog.md ]] || return 0
-    python3 -I -B - "$SMALL_DIR/../hooks/next-feature-on-clear.py" docs/product/backlog.md <<'PY'
+    python3 -I -B - "$SMALL_DIR/../hooks/next-feature-on-clear.py" docs/product/backlog.md "$branch" <<'PY'
 import importlib.util
 import sys
 from pathlib import Path
@@ -44,8 +44,21 @@ spec.loader.exec_module(board)
 for row in board.board_rows(Path(sys.argv[2])):
     entry = row.get("Entry artifact", "")
     if row.get("State") == "IN LOOP" and entry not in ("", "—"):
-        print(board.loop_slug(entry))
+        slug = board.loop_slug(entry)
+        handoff = board.handoff_of(Path.cwd(), entry)
+        if handoff and board.awaits_merge(Path.cwd(), handoff) and sys.argv[3] != f"feat/{slug}":
+            continue
+        print(slug)
 PY
+}
+
+# merged_on_github <branch>: with a remote, the branch's PR reads MERGED (a squash or rebase leaves
+# the branch no ancestor of its base, so ancestry alone never sees it).
+merged_on_github() {
+    local state
+    git remote get-url origin >/dev/null 2>&1 || return 1
+    state="$("$SMALL_DIR/loop-pr-state.sh" "$1" 2>/dev/null)" || return 1
+    [[ "$state" == closable || "$state" == stacked:* ]]
 }
 
 plan_files() {
@@ -115,6 +128,9 @@ for dir in .claude/worktrees/*/; do
         target="refs/heads/$base"
         git show-ref --verify --quiet "$target" || target="refs/heads/$branch"
         if [[ -n "$base" ]] && git merge-base --is-ancestor "$ref" "$target" 2>/dev/null; then
+            continue
+        fi
+        if merged_on_github "feat/small-$ticket"; then
             continue
         fi
         flight_names+=("$track")

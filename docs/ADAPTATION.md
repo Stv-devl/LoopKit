@@ -496,7 +496,9 @@ hook qui en a besoin appelle `cwk_is_guarded` au lieu de la recopier :
 Un `Write` ou un `Edit` sur l'un d'eux **demande ton accord**, depuis l'arbre
 principal comme depuis `.claude/worktrees/<x>/`. `.claude/.tdd-red/` est
 **refusé** : seul `tdd-prove-red.sh` y écrit, et un marqueur écrit à la main
-ferait passer un module sans RED observé.
+ferait passer un module sans RED observé. `.claude/.loop-record.json` l'est aussi :
+seul `loop-record.py` l'écrit, sur ton go au gate du plan, et il ouvre le push et la
+PR de la passe sans invite (`docs/specs/loop-to-pr.md`).
 
 Il en va de même pour le shell : une écriture sur un chemin gardé, quel que soit
 le moyen (redirection, `cp`, `sed -i`, `find -exec`, un programme inline passé à un

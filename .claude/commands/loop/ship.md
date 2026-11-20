@@ -127,10 +127,10 @@ Walk the entry artifact's criteria one by one. For each: checked, and **how it w
 observed**. A criterion nobody can observe is not met.
 
 **Frozen cases amended during the pass.** Every `amended` line of `plan.md`'s
-`## Gate` (a frozen test corrected in EXECUTE, `orchestrate.md` Phase 4) is the
-user's to confirm, once, in the merge presentation (step 4bis, which every pass
-reaches). A refused amendment goes back to EXECUTE before the merge, then
-`/loop:review` and this command from step 1.
+`## Gate` (a plan-gate row, or an EXECUTE batch, `orchestrate.md` Phase 4) goes
+into the PR body (`Frozen cases`), each with its test hunk, on `4bis-PR`, and is
+the user's to confirm in the merge presentation only on `4bis-local`. A refused
+amendment goes back to EXECUTE, then `/loop:review` and this command from step 1.
 
 ### 3. Deploy (only if the diff requires it, and only on request)
 
@@ -148,11 +148,11 @@ or comment them out: that Edit narrows the freeze and does not ask). Then
 hand the `github` agent the subject only — never body bullets; a body belongs
 to the PR. Delegate to the **`github` agent**: it stages, writes the Conventional Commit
 message, commits locally, and never signs. It commits **on a branch, never on
-`main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>` if it has one, a fresh
-one otherwise. Anything remote (push, PR) waits for the user's explicit
-go-ahead — that gate belongs to the agent, don't bypass it. A push or PR asked
-for before 4bis shows first, in its preview, every `amended` line of `## Gate`
-with its test hunk: nothing leaves the machine before the user has seen them.
+`main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>`; on the base
+branch, `git switch -c feat/<slug>` first. The pass's own push and PR follow
+`4bis-PR` with no chat confirmation; any other remote action keeps the user's
+go-ahead — that gate belongs to the agent, don't bypass it. Nothing leaves the
+machine without its `amended` lines: the PR body carries each with its test hunk.
 
 Also hand the agent the `Screenshots run:` dir from `## Gate` (or `none`) and
 `<base>`. The order, when a PR is opened: (a) the agent commits; (b) on a PR with
@@ -164,11 +164,34 @@ agent is called again to run `gh pr create ... --body-file`.
 ### 4bis. Integrate
 
 Every loop pass ends on a branch, worktree or not — so this step always applies.
-Of the three sub-steps below, only the **third** (the clean-up) differs when the
-track ran in a worktree.
+`git remote get-url origin` picks the subsection: a remote → `4bis-PR`, none →
+`4bis-local`. **One integration at a time** — never two merges in flight.
 
-**One integration at a time** — never two merges in flight. Then, via the
-`github` agent:
+#### 4bis-PR (a remote exists)
+
+Nothing is replayed or merged locally and nothing is force-pushed: the server
+merges. Via the `github` agent, in this order:
+
+1. `git push -u origin <branch>` — the pass's `feat/<slug>`.
+2. The main thread writes `docs/work/<slug>/pr-body.md` with Write, on `github.md`'s
+   PR template: `Frozen cases` (every `amended` line with its test hunk), `Open
+   questions` (answers taken), `Review` (surviving findings), `Gates`, and
+   `Screenshots` when a run is recorded (step 4's order).
+3. `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`.
+
+With the tree's valid loop record (the user's plan-gate go) and the server barrier,
+1 and 3 run without a prompt and **without a chat confirmation**; otherwise each asks
+once, through the hook. Report the PR URL, and for a stacked pass the merge order
+(its base's PR first). Write the handoff with `phase: awaiting-merge` and
+`pr: <url>`; the main tree stays on `feat/<slug>` (the board line and story status
+committed with the pass stay visible). Closing belongs to the **closing check**
+(`orchestrate.md` Phase 0 step 0, `tracks.md`): `.claude/scripts/loop-pr-state.sh --chain feat/<slug>`
+reads the PR's `MERGED` state and `baseRefName`; `closable` runs step 5, then
+`4bis-local` item 3's clean-up.
+
+#### 4bis-local (no remote)
+
+Via the `github` agent:
 
 1. Rebase `feat/<slug>` on the current base branch. If the rebase moved anything,
    **re-run the gates** — the code that merges is not the code you tested.
@@ -182,14 +205,17 @@ track ran in a worktree.
    `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
    Otherwise, **mind who is standing where**:
-   - the session is **inside** the worktree → `ExitWorktree` (`remove`). Git
-     cannot delete the tree you are standing in, and the `github` agent has no
-     such tool: this one is the main thread's job.
+   - the session is **inside** the worktree → `ExitWorktree` with `keep`, then
+     `git worktree remove .claude/worktrees/<slug>`, then `git branch -d feat/<slug>`
+     (a `remove` exit would delete the tree around a record that stays valid in it).
+     Git cannot delete the tree you are standing in, and the `github` agent has no
+     such tool: leaving it is the main thread's job.
    - the worktree belongs to **another** track → `git worktree remove
      .claude/worktrees/<slug>` then `git branch -d feat/<slug>`.
 
    Never `--force`, never `rm -rf` (the Bash hook denies or asks on both). A refusal means
-   uncommitted work: report it, don't override it.
+   uncommitted work: report it, don't override it. Then
+   `python3 .claude/hooks/loop-record.py --clear`: the record authorised this pass only.
 
 A red gate or a failed review means the track stays in its worktree and loops on
 the fix. It does not merge. **Not fixing it today → give the line back**: board
@@ -199,6 +225,10 @@ line → `BLOCKED` with its reason, from the main tree, story `Status` →
 ### 5. Advance the state
 
 In the main tree, after 4bis — the product files never change in a worktree.
+`4bis-local` runs this step right after the merge. On `4bis-PR` the story stays
+`InProgress` and the board line `IN LOOP` until the closing check prints
+`closable`; then it runs (a `closed` PR → board `BLOCKED` "PR closed unmerged",
+story `Approved`).
 
 - Full pipeline: story `Status` → `Done`, fill the Change Log.
 - `docs/product/backlog.md`: the line moves to `SHIPPED` and its `Shipped`
@@ -245,7 +275,10 @@ is the line staying `READY` below, or `BLOCKED` with its reason.
 ## Small-ticket integration
 
 For `Pipeline: small`, step 4 runs `small-scope.sh <name>` before the commit; a
-refusal ejects. In 4bis.1, rebase onto the spec's `Base:` branch. In 4bis.2,
+refusal ejects. With a remote, push `feat/small-<name>` and open its PR on the
+spec's `Base:` with `gh pr create --repo <owner/repo> --base <Base> --head feat/small-<name> --title "<title>" --body-file docs/work/small-<name>/pr-body.md`;
+both ask once (a small pass has no loop record), then print the PR URL.
+With no remote: in 4bis.1, rebase onto the spec's `Base:` branch. In 4bis.2,
 confirm `git -C <main-tree> branch --show-current` equals that Base and that no
 main-tree loop is active; otherwise print `main tree on <x>, not <base>: merge later`.
 Then merge with `git -C <main-tree> merge --ff-only feat/small-<name>`. The
@@ -268,8 +301,9 @@ then `/loop:small --status` to run in the main session, then `close this termina
 - Deploy: <done / pending your validation / n/a>
 - Commit: <hash> <subject>   (remote: <pushed / awaiting validation / not asked>)
 - Branch: feat/<slug> <in main tree | in .claude/worktrees/<slug>> — <merged | awaiting your validation | still open>
+- PR: <url> — awaiting merge   (4bis-PR; "none — no remote" on 4bis-local)
 - Follow-ups: <n> in docs/work/<slug>/follow-ups.md   (or "none")
-- Board: <feature> → SHIPPED
+- Board: <feature> → SHIPPED   (4bis-PR: "<feature> stays IN LOOP until the PR merges")
 - Next: <feature> — <command>
 ```
 
@@ -284,8 +318,9 @@ features rereads every previous one at each turn; `/clear` is the user's command
 
 - Report faithfully: a skipped gate is announced, not implied.
 - Never the watch-mode script. Always the run-once one.
-- Never push or open a PR without an explicit go-ahead.
-- Same for a merge back into the base branch, and never two at once
+- The pass's own push and PR follow `4bis-PR`; any other push or PR needs an
+  explicit go-ahead.
+- So does a local merge back into the base branch, and never two at once
   (`.claude/guides/10-worktrees.md`).
 
 ## Task: $ARGUMENTS

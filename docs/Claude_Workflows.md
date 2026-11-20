@@ -143,13 +143,16 @@ alors `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`.
 
 | Passe light | Avant | Maintenant |
 | --- | --- | --- |
-| Avec écran | go de la spec, interface, plan, merge | interface (+ contrat), plan, merge |
-| Sans écran | go de la spec, plan, merge | plan (+ contrat), merge |
+| Avec écran | go de la spec, interface, plan, merge | interface (+ contrat), plan ; la PR se merge sur GitHub (merge local seulement sans remote) |
+| Sans écran | go de la spec, plan, merge | plan (+ contrat) ; idem |
 
 Entre ces arrêts, la passe ne demande pas d'accord pour les éditions,
 `git add <chemins>`, `git commit -m "<une ligne>"` ni les gates : ces
 formes strictes, seules dans leur appel, sont les seules à passer sans invite.
-Les invites qui restent : `git push`, `gh pr`, un commit avec `--amend` (ou
+Les invites qui restent : `git push`, `gh pr` — sauf le premier push de la branche
+de la passe et sa PR, sous leur forme exacte, quand ton go au gate du plan a écrit
+le record de boucle et que la branche par défaut a sa barrière serveur
+(`/loop:ship` `4bis-PR`) —, un commit avec `--amend` (ou
 `--no-verify`, `--all`, `--include`, `--only`, `--patch`, un pathspec), tout
 autre appel qui nomme `git` et `add`, `stage`, `commit` ou `switch`, un
 `switch`/`checkout` avec
@@ -174,8 +177,10 @@ sont pas à jour garde toutes ses invites, et perd le P1 qu'une installation
 précédente lui avait donné (§ 15).
 
 Un contrat amendé relance la phase qu'il invalide et tout ce qui suit (trois tours
-au plus). Un test gelé corrigé en EXECUTE n'arrête rien : il est consigné dans le
-`## Gate` du plan et tu le confirmes au merge.
+au plus). Un cas gelé que le plan corrige est une ligne `Frozen cases to amend:` du
+gate : son déblocage s'écrit sans seconde question. Une correction découverte en
+EXECUTE est mise en file (`unfreeze-queue.md`) et t'arrive en un seul lot, un seul
+arrêt. Chaque cas amendé figure dans le corps de la PR (`Frozen cases`).
 
 ## Entrée complexe
 
@@ -694,9 +699,13 @@ worktree embarque ses hooks et ses règles. Le point de départ des branches, lu
 est un réglage : `worktree.baseRef` dans `settings.json` — le kit livre `head`
 (dépôt local sans origin), à passer en `fresh` sur un repo d'équipe.
 
-L'intégration est une **barrière, une track à la fois** : rebase → gates re-passés
-si le rebase a bougé quelque chose → ton feu vert → merge → suppression du
-worktree. Un merge est aussi gaté qu'un push, et l'agent `github` l'exécute.
+L'intégration passe par une **PR** quand le dépôt a un remote : la branche
+`feat/<slug>` est poussée, la PR ouverte sur sa base, et c'est GitHub qui merge ;
+le board passe `SHIPPED` quand la vérification de clôture
+(`loop-pr-state.sh --chain`) voit la PR mergée. Sans remote, c'est une **barrière
+locale, une track à la fois** : rebase → gates re-passés si le rebase a bougé
+quelque chose → ton feu vert → merge → suppression du worktree. Ce merge local est
+aussi gaté qu'un push, et l'agent `github` l'exécute.
 
 Deux coûts à annoncer avant de forker : le worktree est vide de `node_modules`,
 et le `.env` **ne peut pas être copié par un agent** (`protect-files`) — c'est à
@@ -738,6 +747,7 @@ Règle complète : `.claude/guides/10-worktrees.md`.
 - Dans un gate ou un agent : le script de test **run-once**, jamais le mode watch
   (il ne rend jamais la main).
 - Travaux séparés = worktrees séparés ; fondations partagées d'abord, dans
-  l'arbre principal ; merge une track à la fois, avec ton accord.
+  l'arbre principal ; une PR par track (sans remote : merge local, une track à la
+  fois, avec ton accord).
 
 Détails : `.claude/rules/` · patterns : `.claude/skills/patterns|templates/`.

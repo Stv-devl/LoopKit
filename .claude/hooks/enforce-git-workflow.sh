@@ -2058,6 +2058,58 @@ done <<< "$PARSED"
 # so a gh ask never hides a commit on a protected branch.
 # -----------------------------------------------------------------------------
 
+# The pass's own first push of its branch and its PR, in the exact forms the github agent
+# writes, run without a prompt when the tree's loop record (written by loop-record.py from the
+# user's plan-gate go) is valid and the default branch has a server barrier. Anything else
+# falls through to the asks below (docs/specs/loop-to-pr.md, V5).
+record_allow() {
+    local LC_ALL=C text="$COMMAND" tree rec head fields version branch base repo barrier base_ok slug
+    local b="" ba="" r="" rslug cap rc
+    local push_form='^git push -u origin ([A-Za-z0-9._/][A-Za-z0-9._/-]*)$'
+    local pr_form='^gh pr create --repo ([A-Za-z0-9._-]+/[A-Za-z0-9._-]+) --base ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --head ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --title "[^"$`\\]*" --body-file docs/work/([a-z0-9][a-z0-9.-]*)/pr-body\.md$'
+    text="${text#"${text%%[! $'\t']*}"}"
+    text="${text%"${text##*[! $'\t']}"}"
+    [[ "$text" =~ [[:cntrl:]] ]] && return 0
+    if [[ "$text" =~ $push_form ]]; then
+        b="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ $pr_form ]]; then
+        r="${BASH_REMATCH[1]}" ba="${BASH_REMATCH[2]}" b="${BASH_REMATCH[3]}" slug="${BASH_REMATCH[4]}"
+    else
+        return 0
+    fi
+    tree="$(git -C "$BASE_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
+    rec="$tree/.claude/.loop-record.json"
+    [[ -f "$rec" && ! -L "$rec" ]] || return 0
+    fields="$(jq -r 'select(.version == 1
+            and ([.slug, .branch, .base, .base_sha, .repo] | all(type == "string"))
+            and ([.barrier, .base_ok] | all(type == "boolean")))
+        | [.version, .slug, .branch, .base, .base_sha, .repo, .barrier, .base_ok] | @tsv' "$rec" 2>/dev/null)" || return 0
+    IFS=$'\t' read -r version rslug branch base _ repo barrier base_ok <<< "$fields"
+    [[ "$version" == 1 && "$barrier" == true && -n "$branch" ]] || return 0
+    head="$(git -C "$tree" symbolic-ref -q --short HEAD 2>/dev/null)" || return 0
+    [[ "$head" == "$branch" && "$b" == "$branch" ]] || return 0
+    if [[ -n "$r" ]]; then
+        [[ "$r" == "$repo" && "$ba" == "$base" && "$base_ok" == true && "$slug" == "$rslug" ]] || return 0
+        [[ -f "$tree/docs/work/$slug/pr-body.md" && ! -L "$tree/docs/work/$slug/pr-body.md" ]] || return 0
+        decide allow "the pass's own PR, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
+    fi
+    git -C "$tree" show-ref --verify --quiet "refs/heads/$b" || return 0
+    ! git -C "$tree" show-ref --verify --quiet "refs/tags/$b" || return 0
+    compgen -e | grep -qE '^(GIT_DIR|GIT_WORK_TREE|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG.*)$' && return 0
+    rc=0
+    git -C "$tree" config --get-regexp \
+        '^(remote\.origin\.(push|pushurl|mirror|receivepack|uploadpack)|url\..*\.pushinsteadof|push\.(followtags|pushoption|recursesubmodules)|core\.sshcommand)$' \
+        >/dev/null 2>&1 || rc=$?
+    [[ "$rc" -eq 1 ]] || return 0
+    cap="$(command -v timeout || command -v gtimeout)" || return 0
+    rc=0
+    GIT_TERMINAL_PROMPT=0 "$cap" -k 1 3 git -C "$tree" ls-remote --exit-code origin "refs/heads/$b" \
+        </dev/null >/dev/null 2>&1 || rc=$?
+    [[ "$rc" -eq 2 ]] || return 0
+    decide allow "the pass's own first push of its branch, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
+}
+record_allow
+
 if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*pr\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*(create|merge|edit|close|reopen|ready|review)\b'; then
     ask "This acts on a pull request. Show the title, body and target branch first, then let the user decide."
 fi

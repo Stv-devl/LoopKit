@@ -66,10 +66,14 @@ Read by a `reviewer` assigned `tests` (`.claude/agents/reviewer.md`). On a diff 
       a test with no id (written before ids) matches by case sentence. A case
       dropped, weakened or renamed:
       - with a `## Gate` amendment for its id (`amended <date> U2: <old> → <new>`)
-        → one line, flagged for the merge, where the user confirms it — but only
+        → one line, listed in the PR body (`Frozen cases`) — but only
         once you have read the test's diff: the title and assertions now match
         `<new>`, and no assertion removed beyond what `<new>` says. The record is
         written by the agent it excuses; any divergence from it stays **Major**;
+      - an unfrozen case whose diff does not match its recorded new title (a
+        plan-gate row of `.claude/.loop-record.json`, or the `amended` line), or
+        removes an assertion beyond it → **Critical**;
+      - a changed frozen case with no row and no `amended` line → **Critical**;
       - without one → it stays **Major**, cited in `.claude/.tdd-unfrozen` or not;
       - edited with no `.tdd-unfrozen` entry at all → **Critical**.
 - [ ] A **snapshot** (`toMatchSnapshot` / `toMatchInlineSnapshot`) inside one of

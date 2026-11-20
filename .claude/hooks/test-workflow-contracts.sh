@@ -220,7 +220,7 @@ for phase in research interface plan execute review ship; do
 done
 grep -q 'handoff-codex.md`, its name before 0.2' "$ROOT/.claude/commands/loop/orchestrate.md"
 TEMPLATE_PHASES="$(sed -nE 's/^phase: [a-z-]+ +# (.*)$/\1/p' "$ROOT/.claude/commands/handoff/codex.md")"
-[[ "$TEMPLATE_PHASES" == "research | interface | plan | execute | review | ship" ]]
+[[ "$TEMPLATE_PHASES" == "research | interface | plan | execute | review | ship | awaiting-merge" ]]
 
 # After /clear, the SessionStart hook names the next feature: an interrupted one
 # first (IN LOOP with a handoff), else the topmost READY line. Only on `clear`.
@@ -719,13 +719,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
   "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
-  "Bash(python3 .claude/hooks/kit-audit-surface.py *)"]'
+  "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 29' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 32' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1319,5 +1320,127 @@ gs_bad="$(grep -E -- 'reset --hard|pull --rebase' "$GITHUB_AGENT" | grep -vF "$g
 # GS7 diverged means commits on both sides; a branch only ahead has its own Local: form.
 grep -Fq 'commits on both sides' <<<"$gs_sec" || { echo "GS7: sync section does not define diverged as commits on both sides" >&2; exit 1; }
 grep -Fq 'ahead:' <<<"$gs_local" || { echo "GS7: Output format - Local: line lacks the ahead: form" >&2; exit 1; }
+
+# PK25-PK39 (loop-to-pr): the pass ends on a PR when a remote exists. Every failing id is reported.
+GITHUB_AGENT="$ROOT/.claude/agents/github.md"
+ORCH="$ROOT/.claude/commands/loop/orchestrate.md"
+TRACKS="$ROOT/.claude/commands/loop/tracks.md"
+SMALL_CMD="$ROOT/.claude/commands/loop/small.md"
+PK_FAIL=0
+pk() { local id="$1"; shift; "$@" || { echo "$id: failed" >&2; PK_FAIL=1; }; }
+has() { grep -Fq -- "$2" "$1"; }
+lacks() { ! grep -Fq -- "$2" "$1"; }
+has_in() { grep -Fq -- "$2" <<<"$1"; }
+lacks_in() { ! grep -Fq -- "$2" <<<"$1"; }
+in_order() { local text="$1" pos=0 rest; shift; for n in "$@"; do rest="${text#*"$n"}"; [[ "$rest" != "$text" ]] || return 1; text="$rest"; done; }
+pk_pr="$(section "$SHIP" '#### 4bis-PR' '#### 4bis-local' || true)"
+pk_local="$(section "$SHIP" '#### 4bis-local' '### 5.' || true)"
+pk_outside="$(awk '/^#### 4bis-local/{skip=1; next} /^### 5\./{skip=0} !skip' "$SHIP")"
+pk_push='git push -u origin <branch>'
+pk_create='gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md'
+
+pk PK25 lacks "$GITHUB_AGENT" 'ALWAYS asks for validation before anything'
+for n in '`gh pr merge`' 'force-push' '`gh issue`' 'comment' 'explicit go-ahead'; do pk "PK25 $n" has "$GITHUB_AGENT" "$n"; done
+pk PK26 test -n "$pk_pr"
+for n in 'rebase' 'merge --ff-only' 'je pousse' '--force'; do pk "PK26 no $n" lacks_in "$pk_pr" "$n"; done
+for n in 'loop-pr-state.sh --chain' 'MERGED' 'baseRefName'; do pk "PK26 $n" has_in "$pk_pr" "$n"; done
+pk_gate="$(section "$PLAN" '7. **' '8. **' || true)"
+for n in 'AskUserQuestion' 'every pipeline' 'header `Plan gate`' 'Plan go — docs/work/<slug>/plan.md' 'Frozen cases to amend:'; do
+    pk "PK27 $n" has_in "$pk_gate" "$n"
+done
+pk PK28 has "$ORCH" 'unfreeze-queue.md'
+pk PK28.2 has "$ORCH" 'stops once for the whole batch'
+pk PK28.3 lacks "$ORCH" 'confirms it at the merge'
+pk PK28.4 grep -Eq 'EnterWorktree[^.]*`path`' "$ORCH"
+pk PK29 has "$TESTS_GUIDE" 'does not match its recorded new title'
+pk PK29.2 has "$TESTS_GUIDE" 'no row and no `amended` line'
+pk PK30 has "$ROOT/docs/Claude_Workflows.md" 'git push'
+pk PK30.2 has "$ROOT/docs/Claude_Workflows.md" 'gh pr'
+pk PK31 test -n "$pk_local"
+for n in 'Rebase' 'go-ahead' 'python3 .claude/hooks/loop-record.py --clear'; do pk "PK31 $n" has_in "$pk_local" "$n"; done
+pk PK32 in_order "$(cat "$GITHUB_AGENT")" '**Screenshots**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
+pk PK32.2 has "$GITHUB_AGENT" '--body-file'
+for f in "$TRACKS" "$SMALL_CMD" "$ORCH"; do pk "PK33 $(basename "$f")" grep -Eq -- '-b feat/[^ `]+ <base>' "$f"; done
+pk PK33.2 lacks "$ROOT/.claude/agents/implementer.md" 'confirms it at the merge'
+pk PK34 lacks_in "$pk_outside" "waits for the user's explicit"
+pk PK34.2 lacks_in "$pk_outside" 'in the merge presentation (step 4bis, which every pass'
+pk PK34.3 has_in "$(section "$SHIP" '### 2. Acceptance' '### 3.' || true)" 'PR body (`Frozen cases`)'
+for f in "$ORCH" "$TRACKS"; do
+    pk "PK35 $(basename "$f")" has "$f" 'loop-pr-state.sh --chain'
+    pk "PK35.2 $(basename "$f")" has "$f" 'phase: awaiting-merge'
+done
+pk PK35.3 has_in "$(section "$SHIP" '### 5. Advance' '### 6.' || true)" '`closable`'
+for f in "$GITHUB_AGENT"; do pk PK36 has "$f" "$pk_push"; pk PK36.2 has "$f" "$pk_create"; done
+pk PK36.3 has_in "$pk_pr" "$pk_push"
+pk PK36.4 has_in "$pk_pr" "$pk_create"
+pk PK36.5 bash -c '! grep "gh pr create" "$1" | grep -vq -- "--repo"' _ "$GITHUB_AGENT"
+pk_small="$(section "$SHIP" '## Small-ticket integration' '## Output' || true)"
+pk_gsmall="$(section "$GITHUB_AGENT" 'Asked to integrate' '###' || true)"
+for t in "$pk_small" "$pk_gsmall"; do
+    pk PK37 has_in "$t" 'gh pr create'
+    pk PK37.2 has_in "$t" 'no remote'
+    pk PK37.3 has_in "$t" 'merge --ff-only'
+done
+for n in 'Never push or open a PR without an explicit go-ahead' 'Show the title + body first'; do
+    pk "PK38 ship $n" lacks_in "$pk_outside" "$n"
+    pk "PK38 github $n" lacks "$GITHUB_AGENT" "$n"
+done
+pk PK38.2 lacks "$GITHUB_AGENT" 'If push/PR was requested: draft the message, **show it, ask, then run**'
+pk PK38.3 has "$GITHUB_AGENT" 'show it, ask, then run'
+pk PK39 grep -Eq 'ship \| awaiting-merge' "$ROOT/.claude/commands/handoff/codex.md"
+pk PK39.2 has "$ORCH" '`awaiting-merge` →'
+pk PK39.3 grep -Eq 'closing check.*SHIPPED|SHIPPED.*closing check' "$ROOT/.claude/commands/loop/product.md"
+# LP49 (loop-to-pr) after /clear, an IN LOOP line whose handoff awaits its PR's merge is not an
+# interrupted feature: the topmost READY line is proposed and the other named as awaiting merge.
+LP49="$WS/lp49"
+rm -rf -- "$LP49"; mkdir -p "$LP49/docs/product" "$LP49/docs/work/cart-1.1"
+printf '| Feature / story | Entry artifact | Pipeline | State | Shipped |\n| --- | --- | --- | --- | --- |\n| cart 1.1 | docs/stories/cart/1.1.md | full | IN LOOP | — |\n| billing | docs/specs/billing.md | light | READY | — |\n' \
+    > "$LP49/docs/product/backlog.md"
+printf -- '---\nphase: awaiting-merge\npr: https://github.com/o/r/pull/7\n---\n' > "$LP49/docs/work/cart-1.1/handoff.md"
+lp49_ctx() { printf '{"hook_event_name":"SessionStart","source":"clear"}' | CLAUDE_PROJECT_DIR="$LP49" python3 "$ROOT/.claude/hooks/next-feature-on-clear.py"; }
+pk LP49 has_in "$(lp49_ctx)" '/loop:orchestrate docs/specs/billing.md'
+pk LP49.2 has_in "$(lp49_ctx)" 'awaiting PR merge: cart 1.1'
+pk LP49.3 lacks_in "$(lp49_ctx)" 'docs/work/cart-1.1/handoff.md'
+printf -- '---\nphase: execute\n---\n' > "$LP49/docs/work/cart-1.1/handoff.md"
+pk LP49.4 has_in "$(lp49_ctx)" '/loop:orchestrate docs/work/cart-1.1/handoff.md'
+# PK40-PK42 (loop-to-pr review round 1): the closing check never switches an open pass away
+# (the new pass stacks), closes a merged main-tree pass from the default branch after the
+# fast-forward sync, and the local clean-up leaves a worktree with `keep` then `git worktree remove`.
+pk_close="$(section "$ORCH" '0. **Closing check**' '1. **Small pipeline**' || true)"
+pk PK40.0 test -n "$pk_close"
+pk PK40 lacks_in "$pk_close" 'git switch <base>'
+pk PK40.2 has_in "$pk_close" 'will stack on that branch'
+pk PK40.3 has_in "$pk_close" 'switch nothing'
+pk PK41 in_order "$pk_close" '`closable`' 'git switch <default branch>' 'git fetch origin' \
+    'git merge --ff-only origin/<default branch>' '`/loop:ship` step 5' 'git branch -d'
+pk PK41.2 in_order "$(grep -F -A6 'closes the pass' "$TRACKS")" 'git switch <default branch>' \
+    'git fetch origin' 'git merge --ff-only origin/<default branch>' '`/loop:ship` step 5' 'git branch -d'
+pk PK42 has_in "$pk_local" 'ExitWorktree` with `keep`'
+pk PK42.2 lacks_in "$pk_local" 'ExitWorktree` (`remove`)'
+pk PK42.3 in_order "$pk_local" 'ExitWorktree` with `keep`' 'git worktree remove .claude/worktrees/<slug>' 'git branch -d feat/<slug>'
+pk_status="$(section "$SMALL_CMD" '## Status (`--status`)' '## Template' || true)"
+pk PK43 has_in "$pk_status" 'loop-pr-state.sh feat/small-<name>'
+pk PK43.2 has_in "$pk_status" 'its PR `MERGED`'
+# PK44 (loop-to-pr review round 2, N3): the switch and the sync apply to the main tree's handoff only
+# (git refuses a branch checked out in the main tree, so a worktree's switch never lands); a worktree
+# handoff goes straight to step 5 and the clean-up; the default branch comes from `gh repo view`.
+pk PK44 has_in "$pk_close" "the **main tree's** handoff"
+pk PK44.2 has_in "$pk_close" 'a worktree handoff skips the switch and the sync'
+pk PK44.3 has_in "$pk_close" 'gh repo view --json defaultBranchRef'
+pk_tracks_close="$(section "$TRACKS" '**Closing check first**' 'Stories: the directory passed' || true)"
+pk PK44.4 test -n "$pk_tracks_close"
+pk PK44.5 has_in "$pk_tracks_close" "the **main tree's** handoff"
+pk PK44.6 has_in "$pk_tracks_close" 'a worktree handoff skips the switch and the sync'
+pk PK44.7 has_in "$pk_tracks_close" 'gh repo view --json defaultBranchRef'
+# PK45-PK45.4 (loop-to-pr review round 3, M2): a worktree handoff's step 5 runs in the main tree, which
+# must stand on the synced default branch (else report and stop); the record clear and `phase: shipped`
+# come before the worktree removal, in both files.
+pk PK45 has_in "$pk_close" "a worktree handoff's \`/loop:ship\` step 5 runs in the main tree, which must be on the synced default branch"
+pk PK45.2 has_in "$pk_close" 'else report and stop'
+pk PK45.3 in_order "$pk_close" '`/loop:ship` step 5' 'loop-record.py --clear' 'phase: shipped' 'worktree removal'
+pk PK45.4 has_in "$pk_tracks_close" "a worktree handoff's \`/loop:ship\` step 5 runs in the main tree, which must be on the synced default branch"
+pk PK45.5 has_in "$pk_tracks_close" 'else report and stop'
+pk PK45.6 in_order "$pk_tracks_close" '`/loop:ship` step 5' 'loop-record.py --clear' 'phase: shipped' 'worktree removal'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK25-PK44: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

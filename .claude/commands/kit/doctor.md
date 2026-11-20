@@ -131,9 +131,11 @@ executable. The standalone scripts (`hook-lib.sh` and `tdd_py_lib.py`, the two
 shared libraries; `hook-guarded.sh`; `shell_targets.py`;
 `hook-timings-report.sh`; `kit-doctor.py`) are known and not reported. A shell
 hook without `+x` **fails open**: the guardrail does not run and the write goes
-through. `github-protection` prints `INFO` when `gh` is authenticated and `main`
-has neither a ruleset nor classic protection (or the latter is unreadable, HTTP
-403): informational, never a divergence, silent offline or without `gh`. The fix
+through. `github-protection` prints `INFO` when `gh` is authenticated and the
+default branch `gh repo view` names has neither a ruleset nor classic protection
+(or the latter is unreadable, HTTP 403), or has a ruleset lacking one of
+`pull_request`, `non_fast_forward`, `deletion` (named; the loop record's server
+barrier needs all three): informational, never a divergence, silent offline or without `gh`. The fix
 is `.claude/skills/templates/ci.md`, "Repository settings". `stamp` is a
 divergence when an installed project has no `.claude/INSTALL_PROFILE` (the guard
 hooks read it to deny kit code): re-run `install.sh`. `kit-backup` is `INFO` naming

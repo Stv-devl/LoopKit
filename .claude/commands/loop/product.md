@@ -291,9 +291,9 @@ is a second authority, and the board is the one artifact every track shares.
 | --- | --- | --- |
 | `DRAFT` | noticed and wanted, framed by nothing — no spec, no reviewed slice | `/loop:product`, and it alone |
 | `READY` | a contract or a reviewed slice exists behind the line | `/loop:spec` (light), `/stories:review` (full), and `/loop:orchestrate` Phase 0 step 3 for the **one** case of an entry artifact that is on disk and on no line — it read it in full, which is what the state asserts |
-| `IN LOOP` | a session holds it **right now** | `/loop:orchestrate` Phase 0 step 4, `/bmad:dev` step 2 |
-| `BLOCKED` | it was taken and given back — abandoned, deprioritised, or waiting on a product answer | whoever stops the loop |
-| `SHIPPED` | merged, or already live before the board existed | `/loop:ship` step 5, `/loop:product` step 4 |
+| `IN LOOP` | a session holds it **right now**, or its PR awaits merge (handoff `phase: awaiting-merge`) | `/loop:orchestrate` Phase 0 step 4, `/bmad:dev` step 2 |
+| `BLOCKED` | it was taken and given back — abandoned, deprioritised, waiting on a product answer, or its PR closed unmerged | whoever stops the loop; the closing check (`/loop:orchestrate` Phase 0 step 0, `/loop:tracks`) on a closed PR |
+| `SHIPPED` | merged, or already live before the board existed | `/loop:ship` step 5, `/loop:product` step 4, the closing check on a merged PR |
 | `DROPPED` | the unit was killed at a gate or by a product decision. Terminal, like `SHIPPED`: the id stays on the board so nobody re-proposes it, and so the history says it was decided rather than forgotten | `/stories:review` step 4 (the gate); `/loop:product` step 4 and `/loop:ship` step 6 (a decision the **user** just took, in front of them) |
 
 `DRAFT → READY → IN LOOP → SHIPPED` is the nominal path. Two transitions exist

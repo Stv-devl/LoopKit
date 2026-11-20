@@ -280,8 +280,104 @@ for line in file_lines(result):
 sys.exit(0)
 ' "$abs" <<<"$INPUT"
 }
+# A Write/Edit of .tdd-unfrozen whose every added line `<test path>  # <ids>: <reason>` names
+# only (path, id) rows of the tree's valid loop record (the frozen cases the user's plan-gate go
+# amended) passes with no prompt; removals may share the edit. An absent file counts as empty for
+# a Write. A non-test path, a path that is no existing file of the tree (the freeze hook matches a
+# row on the repo-relative path; a suffix of it would fall back to the whole-file exemption), an
+# unbacked id, a missing or stale record keeps the guarded ask below
+# (docs/specs/loop-to-pr.md, step 4).
+unfrozen_record_rows() {
+    local abs="$FILE_PATH" tree
+    [[ "$abs" == /* ]] || abs="${CWD:-$PWD}/$abs"
+    command -v python3 >/dev/null 2>&1 || return 1
+    tree="$(git -C "$(dirname "$abs")" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    [[ "$INPUT" != *.py* ]] || cwk_config >/dev/null 2>&1 || true
+    python3 -I -c '
+import json, os, re, subprocess, sys
+path, tree, tests_root = sys.argv[1], sys.argv[2], sys.argv[3] or "tests"
+data = json.load(sys.stdin)
+ti = data.get("tool_input") or {}
+tool = data.get("tool_name")
+try:
+    with open(path, encoding="utf-8") as fh:
+        current = fh.read()
+except FileNotFoundError:
+    if tool != "Write" or os.path.lexists(path):
+        sys.exit(1)
+    current = ""
+except OSError:
+    sys.exit(1)
+if tool == "Write":
+    result = ti.get("content")
+    if not isinstance(result, str):
+        sys.exit(1)
+else:
+    old, new = ti.get("old_string"), ti.get("new_string")
+    if not isinstance(old, str) or not isinstance(new, str) or not old or old not in current:
+        sys.exit(1)
+    result = current.replace(old, new) if ti.get("replace_all") is True else current.replace(old, new, 1)
+def git(*args):
+    try:
+        done = subprocess.run(["git", "-C", tree, *args], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+rec_path = os.path.join(tree, ".claude", ".loop-record.json")
+if os.path.islink(rec_path) or not os.path.isfile(rec_path):
+    sys.exit(1)
+try:
+    with open(rec_path, encoding="utf-8") as fh:
+        rec = json.load(fh)
+except (OSError, ValueError):
+    sys.exit(1)
+if not isinstance(rec, dict) or rec.get("version") != 1 or not isinstance(rec.get("rows"), list):
+    sys.exit(1)
+head = git("symbolic-ref", "-q", "--short", "HEAD")
+if not head:
+    sys.exit(1)
+if head != rec.get("branch"):
+    sha = rec.get("base_sha")
+    if head != rec.get("base") or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        sys.exit(1)
+    if git("merge-base", "--is-ancestor", sha, "HEAD") is None:
+        sys.exit(1)
+rows = {(r.get("path"), r.get("id")) for r in rec["rows"] if isinstance(r, dict)}
+line_re = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+(?:[ \t]*,[ \t]*[UMRB][0-9]+)*)[ \t]*:[ \t]*\S.*")
+test_re = re.compile(r"(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+\.test\.tsx?|"
+                     + re.escape(tests_root) + r"/(?:[A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_]*\.py")
+def file_lines(text):
+    return [part[:-1] if part.endswith("\r") else part for part in text.split("\n")]
+pool = file_lines(current)
+used = [False] * len(pool)
+for line in file_lines(result):
+    if not line.strip():
+        continue
+    body = line.lstrip()
+    forms = [line]
+    if body.startswith("#"):
+        forms += [body[1:], body[1:][1:] if body[1:].startswith(" ") else body[1:]]
+    for k, cur in enumerate(pool):
+        if not used[k] and cur in forms:
+            used[k] = True
+            break
+    else:
+        match = line_re.fullmatch(line.strip())
+        if not match:
+            sys.exit(1)
+        target = match.group(1)
+        if not test_re.fullmatch(target) or any(p in ("", ".", "..") for p in target.split("/")):
+            sys.exit(1)
+        if not os.path.isfile(os.path.join(tree, target)):
+            sys.exit(1)
+        for case_id in re.split(r"[ \t]*,[ \t]*", match.group(2)):
+            if (target, case_id) not in rows:
+                sys.exit(1)
+sys.exit(0)
+' "$abs" "$tree" "${CWK_CFG_TESTS_ROOT:-tests}" <<<"$INPUT"
+}
 if [[ "$REL" == .claude/.tdd-unfrozen && ( "$TOOL_NAME" == Write || "$TOOL_NAME" == Edit ) ]] \
-    && unfrozen_removal_only; then
+    && { unfrozen_removal_only || unfrozen_record_rows; }; then
     exit 0
 fi
 if cwk_is_guarded "$REL"; then

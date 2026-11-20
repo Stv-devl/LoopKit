@@ -35,7 +35,7 @@ Shared with `docs/specs/fewer-asks.md` (*Evidence*). Owned here: push/PR asked 3
   - Executed test or script code acting with the user's credentials (the server-side barrier is the answer).
 
 ## Open questions (to settle before it is scheduled)
-- **User to confirm**: V10's record-backed allow is a narrow guarded-path grant, which `project-grants-parked-real-feature-trial` parked until stops were measured; part C (11/33) is that measure. Lift the parking for `.tdd-unfrozen` only?
+- **Answered by the user (2026-11-18)**: V10's record-backed allow is a narrow guarded-path grant, which `project-grants-parked-real-feature-trial` parked until stops were measured; part C (11/33) is that measure. The parking is lifted for `.tdd-unfrozen` only; general grants stay parked.
 - Answered by the review: subagent calls are distinguishable in the hook input (`agent_type`, already read by `tdd-freeze-tests.sh:84-85`).
 
 ## Data model

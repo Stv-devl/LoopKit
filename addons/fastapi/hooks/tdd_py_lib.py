@@ -11,6 +11,7 @@
 # and the runner resolution are three hooks that drift apart in silence.
 
 import atexit
+import hashlib
 import json
 import os
 import posixpath
@@ -406,6 +407,46 @@ def marker_is_fresh(test_path: str) -> bool:
 # --------------------------------------------------------------- the exception
 
 
+def _project_listing() -> str:
+    return os.path.join(project_dir(), ".claude", ".tdd-unfrozen")
+
+
+def _rows_listing(path: str) -> str:
+    """`.tdd-unfrozen` read by rows mode (entry and listed ids): the list of the tree holding the file
+    when that tree is the project dir or a `.claude/worktrees/<name>` tree of it (a worktree pass keeps
+    its record and its no-ask line there); the project dir's otherwise, so a nested repository's list
+    unfreezes nothing."""
+    tree = _git(os.path.dirname(abs_path(path)), "rev-parse", "--show-toplevel")
+    project = os.path.realpath(project_dir())
+    if tree and os.path.isdir(os.path.join(tree, ".claude")) and (
+        tree == project or os.path.dirname(tree) == os.path.join(project, ".claude", "worktrees")
+    ):
+        return os.path.join(tree, ".claude", ".tdd-unfrozen")
+    return _project_listing()
+
+
+def _names_path(listing: str, path: str) -> bool:
+    """True when a path line of `listing` names `path`: one field with a `/`, a fragment of the path."""
+    target = abs_path(path)
+    try:
+        with open(listing) as fh:
+            lines = fh.readlines()
+    except OSError:
+        return False
+    for line in lines:
+        entry = line.split("#", 1)[0].strip().split()
+        if entry and "/" in entry[0] and entry[0] in target:
+            return True
+    return False
+
+
+def rows_entry(path: str) -> bool:
+    """True when the list of the file's own worktree tree, not the project dir's, names the file: the
+    way into rows mode of a worktree pass, which never exempts the file whole."""
+    listing = _rows_listing(path)
+    return listing != _project_listing() and _names_path(listing, path)
+
+
 def is_unfrozen(path: str) -> bool:
     """`.claude/.tdd-unfrozen`, shared with the TypeScript cycle.
 
@@ -420,28 +461,142 @@ def is_unfrozen(path: str) -> bool:
     silently. Semantically identical to the bash parser in
     `.claude/hooks/tdd-freeze-tests.sh` — change the three together.
     """
-    listing = os.path.join(project_dir(), ".claude", ".tdd-unfrozen")
-    if not os.path.isfile(listing):
-        return False
-    target = abs_path(path)
-    try:
-        with open(listing) as fh:
-            lines = fh.readlines()
-    except OSError:
-        return False
-    for line in lines:
-        entry = line.split("#", 1)[0].strip().split()
-        if not entry:
-            continue
-        entry = entry[0]
-        if "/" not in entry:
-            continue
-        if entry in target:
-            return True
-    return False
+    return _names_path(_project_listing(), path)
 
 
 # ------------------------------------------------------------------ the runner
+
+
+def _git(tree: str, *args: str):
+    """Stripped stdout of `git -C <tree> <args>`, or None when it fails."""
+    try:
+        done = subprocess.run(["git", "-C", tree, *args], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def loop_rows(path: str) -> dict:
+    """{case id: sha256} rows of the tree's valid loop record for this test, {} when none.
+
+    The tree is the git toplevel of the directory holding the file; the record is valid when
+    HEAD is its branch, or HEAD is its base and holds its base commit. Same rule as
+    `tdd-freeze-tests.sh` and `protect-files.sh` (docs/specs/loop-to-pr.md, step 5).
+    """
+    target = abs_path(path)
+    tree = _git(os.path.dirname(target), "rev-parse", "--show-toplevel")
+    if not tree:
+        return {}
+    record = os.path.join(tree, ".claude", ".loop-record.json")
+    try:
+        if os.path.islink(record):
+            return {}
+        with open(record, encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(rec, dict) or rec.get("version") != 1 or not isinstance(rec.get("rows"), list):
+        return {}
+    head = _git(tree, "symbolic-ref", "-q", "--short", "HEAD")
+    if not head:
+        return {}
+    if head != rec.get("branch"):
+        sha = rec.get("base_sha")
+        if head != rec.get("base") or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            return {}
+        if _git(tree, "merge-base", "--is-ancestor", sha, "HEAD") is None:
+            return {}
+    rel = os.path.relpath(os.path.realpath(target), os.path.realpath(tree))
+    return {r.get("id"): r.get("sha256") for r in rec["rows"] if isinstance(r, dict) and r.get("path") == rel}
+
+
+def unfrozen_ids(path: str) -> set:
+    """Case ids listed on `.claude/.tdd-unfrozen` lines (`<path>  # <ids>: <reason>`) for this test."""
+    listing = _rows_listing(path)
+    target = abs_path(path)
+    ids = set()
+    try:
+        with open(listing, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return ids
+    for line in lines:
+        match = re.fullmatch(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+!?(?:[ \t]*,[ \t]*[UMRB][0-9]+!?)*)[ \t]*:.*", line.strip())
+        if match and "/" in match.group(1) and match.group(1) in target:
+            ids.update(tok.rstrip("!") for tok in re.split(r"[ \t]*,[ \t]*", match.group(2)))
+    return ids
+
+
+def _py_cases(text: str) -> list:
+    """Each `def test_…` as {start, end, id, title}: the def line to the first non-blank line at or
+    below its column. The id is `test_<letter><digits>_…` upper-cased, the title the def name."""
+    found, pos, open_case = [], 0, None
+    for line in text.split("\n"):
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if open_case is not None and indent <= open_case["indent"]:
+                open_case["end"] = pos
+                open_case = None
+            match = re.match(r"\s*(?:async\s+)?def\s+(test_[A-Za-z0-9_]*)\s*\(", line)
+            if match:
+                ident = re.match(r"test_([A-Za-z])([0-9]+)(?:_|$)", match.group(1))
+                open_case = {"start": pos, "end": len(text), "indent": indent, "title": match.group(1),
+                             "id": (ident.group(1).upper() + ident.group(2)) if ident else None}
+                found.append(open_case)
+        pos += len(line) + 1
+    return found
+
+
+def _touched(text: str, cases: list, lo: int, hi: int):
+    """The cases meeting [lo, hi), or None when a non-blank character there lies outside them."""
+    hit = [c for c in cases if c["start"] < hi and lo < c["end"]]
+    for offset in range(lo, hi):
+        if not any(c["start"] <= offset < c["end"] for c in hit) and not text[offset].isspace():
+            return None
+    return hit
+
+
+def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_name: str) -> str:
+    """Why rows mode refuses this write, or "" when every case it touches is a row whose new name
+    hashes to it, or an id listed for this path on `.tdd-unfrozen`."""
+    if tool_name != "Edit":
+        return "a Write replaces the whole frozen file; edit the amended cases one by one with Edit"
+    old, new = tool_input.get("old_string"), tool_input.get("new_string")
+    if not isinstance(old, str) or not isinstance(new, str) or not old or tool_input.get("replace_all") is True:
+        return "rows mode takes one Edit with a non-empty old_string, never replace_all"
+    start = current.find(old)
+    if start < 0:
+        return "the old_string does not appear in the file as it stands"
+    result = current[:start] + new + current[start + len(old):]
+    before = _touched(current, _py_cases(current), start, start + len(old))
+    if before is None:
+        return "the edit changes text outside every case; rows mode edits amended cases only"
+    if not before:
+        return "the edit touches no case; rows mode edits amended cases only"
+    ids = set()
+    for case in before:
+        if not case["id"]:
+            return "the edit touches `%s`, whose name carries no case id" % case["title"]
+        ids.add(case["id"])
+    after_cases = _py_cases(result)
+    written = _touched(result, after_cases, start, start + len(new))
+    if written is None:
+        return "the edit writes text outside every case; rows mode edits amended cases only"
+    for case in written:
+        if case["id"] not in ids:
+            return "the edit writes case %s, which is not among the cases it replaces" % (case["id"] or case["title"])
+    listed = unfrozen_ids(path)
+    for cid in sorted(ids):
+        if cid in rows:
+            after = [c for c in after_cases if c["id"] == cid]
+            if len(after) != 1:
+                return "case %s is a plan-gate row and must stay exactly one case in the file" % cid
+            actual = hashlib.sha256(after[0]["title"].encode("utf-8")).hexdigest()
+            if actual != rows[cid]:
+                return "case %s: its new name hashes to %s, the plan-gate row holds %s" % (cid, actual, rows[cid])
+        elif cid not in listed:
+            return "case %s is neither a plan-gate row nor listed on a .tdd-unfrozen line for this path" % cid
+    return ""
 
 
 def module_root_dir(path: str) -> str:

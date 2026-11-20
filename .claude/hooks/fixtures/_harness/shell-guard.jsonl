@@ -894,3 +894,12 @@
 {"id":"X42.07","verdict":"pass","command":"ls > /tmp/claude-x/out.txt"}
 {"id":"X28.81","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat m*/x"}
 {"id":"X28.82","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"grep -n \"foo\\|bar\" -A14 m*/x | head -60"}
+{"id":"LP2.01","verdict":"deny","command":"echo x > .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP2.02","verdict":"deny","command":"cp /tmp/a .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP2.03","verdict":"deny","command":"rm .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP3.01","verdict":"deny","command":"python3 .claude/hooks/loop-record.py < /tmp/x.json","reason":"only Claude Code runs loop-record.py"}
+{"id":"LP3.02","verdict":"deny","command":"bash -c 'python3 .claude/hooks/loop-record.py'","reason":"only Claude Code runs loop-record.py"}
+{"id":"LP3.03","verdict":"pass","command":"python3 .claude/hooks/loop-record.py --clear"}
+{"id":"LP4.01","verdict":"deny","command":"echo x > .claude/.loop-record.json $'a\\'b'","reason":"could not parse"}
+{"id":"G21.043","verdict":"pass","command":"git push -u origin feat/s1"}
+{"id":"G21.043.2","verdict":"pass","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md"}

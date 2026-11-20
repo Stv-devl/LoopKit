@@ -64,6 +64,9 @@ credentials.*
 # inside the directory; this line is the belt to that pair of braces.
 .claude/.tdd-red/
 
+# Written by loop-record.py from the user's plan-gate go: local to one tree and one pass.
+.claude/.loop-record.json
+
 # .claude/.tdd-unfrozen is deliberately NOT ignored: the whole point of the
 # exception list is that it is visible in review (.claude/rules/05-testing.md).
 

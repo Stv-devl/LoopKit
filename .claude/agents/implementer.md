@@ -43,8 +43,8 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 - **Never change an existing test case.** `tdd-freeze-tests.sh` refuses it on the
   test-first files; the only write allowed there is a pure new case. A case that
   looks wrong → stop and return `Blocked on: <case id> — <why>`; the main thread
-  records the correction and the user confirms it at the merge
-  (`orchestrate.md` Phase 4).
+  queues the correction in `docs/work/<slug>/unfreeze-queue.md` and stops once for
+  the whole batch (`orchestrate.md` Phase 4); the amended cases go in the PR body.
 - Stay inside the batch's files. Something outside it needs to change → say so,
   do not do it.
 - Follow `.claude/rules/` and the template or pattern the plan names; read

@@ -13,8 +13,11 @@ copy — and apply these instead of the vitest-specific rows:
       no id → by case sentence): a case dropped, weakened or renamed against
       `plan.md`'s test plan is a **Major** — unless it carries a
       `## Gate` amendment for its id and the test's diff matches its `<new>` line with
-      no assertion removed beyond it, then one line flagged for the merge
-      (`tests.md`, "Frozen cases against the plan"); a frozen file edited
+      no assertion removed beyond it, then one line listed in the PR body
+      (`tests.md`, "Frozen cases against the plan"); an unfrozen case whose new
+      `def` name does not hash to its plan-gate row, or whose diff removes an
+      assertion beyond its recorded line, is a **Critical**, and so is a changed
+      frozen case with no row and no `amended` line; a frozen file edited
       without an entry in `.claude/.tdd-unfrozen` is a **Critical**; a marker missing from `.claude/.tdd-red/` means the RED was
       never observed — say whether the hooks are wired in this tree before
       calling it a finding on the diff.

@@ -70,6 +70,28 @@ Shell discipline for the whole pass:
 - kit scripts run from the project root by relative path, never behind `cd x;` (`cd <absolute root> && …` at most);
 - work artifacts are written with Write/Edit, never from the shell (`plan.md`, `handoff.md`, `design.md`; appending `## Gate` is an Edit).
 
+0. **Closing check**, before anything else. For each `docs/work/*/handoff.md` with
+   `phase: awaiting-merge` (main tree and every `.claude/worktrees/*`), run
+   `.claude/scripts/loop-pr-state.sh --chain <its branch>`:
+   - `closable` → first, only for the **main tree's** handoff whose HEAD is the pass's own branch
+     `feat/<slug>` (a main-tree pass is still standing on its merged branch), switch it to the
+     default branch (`gh repo view --json defaultBranchRef`, as `loop-pr-state.sh` reads it) and
+     sync it as the `github` agent's "Keeping local in sync" does: `git switch <default branch>`,
+     `git fetch origin`, `git merge --ff-only origin/<default branch>`; blocked or diverged →
+     report it and stop on this pass; a worktree handoff skips the switch and the sync (git
+     refuses a branch checked out in the main tree) and goes straight to the next sentence. Then
+     `/loop:ship` step 5 (story `Done`, board `SHIPPED`, brief) on the default branch;
+     a worktree handoff's `/loop:ship` step 5 runs in the main tree, which must be on the synced default branch
+     (else report and stop: never write the board or the story into a pass branch's checkout).
+     Then `python3 .claude/hooks/loop-record.py --clear` in the pass's tree and the
+     handoff → `phase: shipped`, and only then `4bis-local` item 3's clean-up (the worktree removal,
+     then `git branch -d feat/<slug>`), so neither targets a removed tree. Say so.
+   - `closed` → board `BLOCKED` "PR closed unmerged", story `Approved`.
+   - `orphaned:<b>` → say the commits never reached the default branch, and stop on it.
+   - `open`, `stacked:<b>`, `unknown`, `none` → one line each, nothing moved.
+   Then, if HEAD is the branch of a pass still `open` or `stacked`, say in one line that the
+   new pass will stack on that branch (its PR targets it): stay on it, switch nothing.
+
 1. **Small pipeline**, picked before anything else, so before the resume
    branching of step 2. Select it when the entry is under `docs/specs/small/`, the
    plan header says `Pipeline: small`, or a resumed handoff body has `Entry:`
@@ -120,7 +142,9 @@ Shell discipline for the whole pass:
    from the layer `## In progress` names (`execute_status: done` → Phase 5);
    `review` → Phase 5 (`review_status: fixes-handed-to-codex` → re-run only the
    dimensions those fixes came from, on the fix diff, never a fresh judgment pass);
-   `ship` → Phase 6. Nothing completed is redone. A `plan.md` with no sibling handoff
+   `ship` → Phase 6; `awaiting-merge` → print this pass's closing-check result
+   (step 0 already ran it) and **stop**: no phase runs, `closable` already closed
+   it. Nothing completed is redone. A `plan.md` with no sibling handoff
    jumps to Phase 4; with one, the handoff decides.
 3. **FEATURE READY check**, if `docs/product/backlog.md` exists. Not listed → add
    the line as `READY` **at the end** of the table (`Entry artifact` = the path,
@@ -150,9 +174,10 @@ foundations are not a reason to fork finer: they are done first in the main
 tree, committed, and the tracks fork from that commit.
 
 `<slug>` is this pass's loop slug (`docs/stories/inbox/1.2.md` → `inbox-1.2`,
-never `inbox`). This session drives it → `EnterWorktree` with `name: "<slug>"`;
-another session will → `git worktree add .claude/worktrees/<slug> -b feat/<slug>`
-and hand over the path. Then every phase runs inside it, said in the opening
+never `inbox`). The fork always names its start point, the main tree's current
+branch, so git records `Created from <base>` for the loop record:
+`git worktree add .claude/worktrees/<slug> -b feat/<slug> <base>`. This session
+drives it → `EnterWorktree` with that worktree's `path`; another session will → hand over the path. Then every phase runs inside it, said in the opening
 line. **A loop pass is never an `isolation: "worktree"` subagent**: the loop has
 human gates and a subagent cannot hold them. One session drives one worktree; N
 tracks means N sessions. Announce the empty
@@ -259,17 +284,21 @@ came after the code or never failed; never work around it. One benign case: the
 means the denial was right. Once green, adding a case to a frozen file is a pure
 insertion (say what it covers) with the next free id of its letter; whoever wrote
 it, you append its plan line — an `implementer` reproduction case included, from
-the id it reports. Correcting one is the one step of EXECUTE that waits for the user:
-the `.tdd-unfrozen` write asks the user (a guarded path), and a headless run
-cannot answer, so it stops there. The agent that hits the freeze stops and
-reports; you print the case id, the old and new case line and the reason, write
-`.claude/.tdd-unfrozen` citing the id (`<path>  # U2: <reason>`, several as
-`# U2, U5: …`) once the user approves the prompt — all the entries a gate needs go in one Edit,
+the id it reports. A case the plan gate recorded as a row (`Frozen cases to
+amend:`) is not a correction: its `.tdd-unfrozen` line is written with no prompt and
+the freeze hook checks each edited case against its row. Any other correction is
+the one step of EXECUTE that waits for the user:
+the `.tdd-unfrozen` write asks the user (a guarded path), and a headless run cannot answer. The agent that hits the
+freeze stops and reports; you **queue** it in `docs/work/<slug>/unfreeze-queue.md`
+(case id, old and new case line, reason, hunk) and keep working on what does not
+depend on it; the main thread stops once for the whole batch: print the queue,
+then write `.claude/.tdd-unfrozen` citing the ids (`<path>  # U2: <reason>`,
+several as `# U2, U5: …`) once the user approves the prompt — all the entries a gate needs go in one Edit,
 and the chat never asks again what the hook's ask asks — make the edit yourself —
 never through `implementer` or `test-writer`, whose contracts forbid rewriting a
-frozen case — then rewrite the plan line with the same id and append
-`amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The user
-confirms it at the merge (`/loop:ship`). (Small: no correction, the ticket ejects.) On a Python service layer the `-py` hooks
+frozen case — then rewrite each plan line with the same id and append
+`amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The amended
+cases are listed in the PR body (`Frozen cases`, `/loop:ship`). (Small: no correction, the ticket ejects.) On a Python service layer the `-py` hooks
 play the same roles (`.claude/rules/07-backend.md`); hand the `test-writer` the
 `.py` path.
 

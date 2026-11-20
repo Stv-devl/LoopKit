@@ -113,7 +113,8 @@ PY
 
 run_case() {
     local hook="$1" fixture="$2" expected="$3"
-    local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT"
+    local tmp input stdout_file stderr_file code verdict fixture_name extra_marker="" project_dir="$PROJECT_ROOT" lp_variant
+    local -a hook_unset=()
     local hook_path="$PATH" real_git hook_home="$HOME" hook_tmp="${TMPDIR:-/tmp}" hook_pwd="$PWD"
     tmp="$(mktemp -d)"
     fixture_name="$(basename "$fixture")"
@@ -530,6 +531,16 @@ run_case() {
                         ln -s "$(dirname "$fixture")/outside-trailer.md" "$tmp/.feat/docs/pr-out.md"
                         mkfifo "$tmp/.feat/docs/pr-fifo"
                     fi
+                    # `-lp<variant>-`: a loop-to-pr record case (G21), built by lp_git_setup. The
+                    # record allow refuses any GIT_CONFIG* in its environment, so the suite's own
+                    # two are unset for the hook; its HOME is an empty folder instead.
+                    if [[ "$fixture_name" == *-lp*-* ]]; then
+                        lp_variant="${fixture_name#*-}"
+                        lp_variant="${lp_variant%-*}"
+                        lp_git_setup "$tmp" "$lp_variant" || fail "$hook" "$fixture_name" "unknown setup '$lp_variant'"
+                        hook_home="$tmp/.home"
+                        hook_unset=(env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_NOSYSTEM)
+                    fi
                     ;;
             esac
             ;;
@@ -540,15 +551,18 @@ run_case() {
         seed_project "$project_dir"
     fi
 
+    local -a hook_cap=(${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"})
+    local cap_s="$CASE_SECONDS"
+    [[ "${lp_variant:-}" != lpslowb || "${#hook_cap[@]}" -eq 0 ]] || { hook_cap[3]=7; cap_s=7; }
     set +e
     ( cd "$hook_pwd" && printf '%s' "$input" | PATH="$hook_path" HOME="$hook_home" TMPDIR="$hook_tmp" CLAUDE_PROJECT_DIR="$project_dir" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
-        ${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"} "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file" )
+        ${hook_unset[@]+"${hook_unset[@]}"} ${hook_cap[@]+"${hook_cap[@]}"} "$HOOKS_DIR/$hook" >"$stdout_file" 2>"$stderr_file" )
     code=$?
     set -e
     verdict="$(semantic_verdict "$code" "$stdout_file")"
     CASES=$((CASES + 1))
     if [[ "$code" -eq 124 || "$code" -eq 137 ]]; then
-        fail "$hook" "$(basename "$fixture")" "the hook did not finish within ${CASE_SECONDS}s (killed, exit $code)"
+        fail "$hook" "$(basename "$fixture")" "the hook did not finish within ${cap_s}s (killed, exit $code)"
     fi
 
     if [[ "$verdict" != "$expected" ]]; then
@@ -1024,6 +1038,7 @@ run_git_guard_cases() {
             continue
         fi
         count=$((count + 1))
+        [[ -z "${CWK_CASE_PREFIX:-}" || "$id" == "$CWK_CASE_PREFIX"* ]] || continue
         jq -cn --arg command "$command" --arg cwd "$cwd" --arg reason "$reason" \
             '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}
              + (if $reason != "" then {_expect_reason: $reason} else {} end)' \
@@ -4459,7 +4474,1378 @@ run_kit_prompts_step4_cases() {
     rm -r "$tmp"
 }
 
+# lp_git_setup <fixture repo> <variant>: the G21 git-guard setup. The feat tree switches to
+# feat/s1; a bare origin holds main and audit/x; docs/work/s1/pr-body.md and plan.md exist;
+# the record is valid (repo o/r, base audit/x, barrier and base_ok true) unless the variant
+# says otherwise: lpnorec none, lpnobar barrier false, lpnobaseok base_ok false, lps2 branch
+# feat/s2, lpother HEAD stays feat/x, lptag a tag feat/s1, lpremote feat/s1 already on origin,
+# lpcfg* one push-redirecting config, lpbody a Co-Authored-By body, lpnobody no body, lpslow an
+# origin that never answers (lpslowb: the same, the hook held to 7 s), lpbadjson / lpv2 an unreadable record, lpbasemain plan `Base: main`.
+lp_git_setup() {
+    local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1
+    git init -q --bare -b main "$t/.origin.git"
+    git -C "$t" remote add origin "$t/.origin.git"
+    git -C "$t" branch audit/x
+    git -C "$t" push -q origin main audit/x 2>/dev/null
+    [[ "$v" == lpother ]] || git -C "$feat" switch -q -c feat/s1
+    mkdir -p "$feat/docs/work/s1" "$feat/.claude" "$t/.home"
+    printf 'Summary.\n' >"$feat/docs/work/s1/pr-body.md"
+    printf 'Base: audit/x\n' >"$feat/docs/work/s1/plan.md"
+    case "$v" in
+        lp | lpnorec | lpbadjson | lpother) ;;
+        lpv2) version=2 ;;
+        lpnobar) barrier=false ;;
+        lpnobaseok) base_ok=false ;;
+        lps2) branch=feat/s2 ;;
+        lptag) git -C "$t" tag feat/s1 ;;
+        lpremote) git -C "$feat" push -q origin feat/s1 2>/dev/null ;;
+        lpcfgpush) git -C "$t" config remote.origin.push 'refs/heads/*:refs/heads/x/*' ;;
+        lpcfginsteadof) git -C "$t" config url.x.pushInsteadOf "$t/.origin.git" ;;
+        lpcfgfollow) git -C "$t" config push.followTags true ;;
+        lpcfgssh) git -C "$t" config core.sshCommand ssh ;;
+        lpcfginclude)
+            printf '[remote "origin"]\n\tpushurl = %s\n' "$t/.other.git" >"$t/.inc"
+            git -C "$t" config include.path "$t/.inc" ;;
+        lpcfgmirror) git -C "$t" config remote.origin.mirror true ;;
+        lpcfgrecv) git -C "$t" config remote.origin.receivepack git-receive-pack ;;
+        lpcfgopt) git -C "$t" config push.pushOption ci.skip ;;
+        lpbody) printf 'Summary.\nCo-Authored-By: x\n' >"$feat/docs/work/s1/pr-body.md" ;;
+        lpnobody) rm "$feat/docs/work/s1/pr-body.md" ;;
+        lpslow | lpslowb)
+            git -C "$t" config protocol.ext.allow always
+            git -C "$t" remote set-url origin 'ext::sleep 30' ;;
+        lpbasemain) printf 'Base: main\n' >"$feat/docs/work/s1/plan.md" ;;
+        *) return 1 ;;
+    esac
+    case "$v" in
+        lpnorec) ;;
+        lpbadjson) printf '{"version":1,' >"$feat/.claude/.loop-record.json" ;;
+        *)
+            jq -n --arg branch "$branch" --arg sha "$(git -C "$t" rev-parse main)" --argjson barrier "$barrier" \
+                --argjson ok "$base_ok" --argjson v "$version" \
+                '{version: $v, slug: "s1", plan: "docs/work/s1/plan.md", branch: $branch, base: "audit/x",
+                  base_sha: $sha, repo: "o/r", default_branch: "main", barrier: $barrier, base_ok: $ok,
+                  rows: [], at: "2026-11-19T00:00:00Z", tool_use_id: "toolu_lp"}' \
+                >"$feat/.claude/.loop-record.json" ;;
+    esac
+}
+
+# ---- loop-to-pr step 2 (LP5-LP19): loop-record.py, the record written from the plan-gate go.
+LP_HOOK="$HOOKS_DIR/loop-record.py"
+LP_RULES_ALL='[{"type":"pull_request"},{"type":"non_fast_forward"},{"type":"deletion"}]'
+
+# lp_shim <dir>: a fake gh answering from files under <dir>/gh: repo.json, rules-<branch>.json
+# (`/` → `_`), rules-<branch>.exit (a failing call), sleep (seconds before any answer).
+lp_shim() {
+    mkdir -p "$1/bin" "$1/gh"
+    cat >"$1/bin/gh" <<'SH'
+#!/usr/bin/env bash
+d="${LP_SHIM:?}"
+[[ ! -f "$d/sleep" ]] || sleep "$(cat "$d/sleep")"
+if [[ "${1:-}" == repo && "${2:-}" == view ]]; then cat "$d/repo.json"; exit 0; fi
+if [[ "${1:-}" == api ]]; then
+    for a in "$@"; do [[ "$a" == *"/rules/branches/"* ]] && b="${a#*/rules/branches/}"; done
+    b="${b:-}"; b="${b//%2F/_}"; b="${b//%2f/_}"; b="${b//\//_}"
+    if [[ -f "$d/rules-$b.exit" ]]; then printf 'gh: HTTP 403\n' >&2; exit "$(cat "$d/rules-$b.exit")"; fi
+    if [[ -f "$d/rules-$b.json" ]]; then cat "$d/rules-$b.json"; else printf '[]\n'; fi
+    exit 0
+fi
+exit 1
+SH
+    chmod +x "$1/bin/gh"
+    printf '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"}}\n' >"$1/gh/repo.json"
+    printf '%s\n' "$LP_RULES_ALL" >"$1/gh/rules-main.json"
+}
+
+# lp_repo <dir>: a repo on `audit/x` (one commit past `main`), both pushed to a bare
+# `<dir>.origin.git`, with the plans docs/work/s1/plan.md and docs/work/s2/plan.md.
+lp_repo() {
+    local r="$1"
+    git init -q --bare -b main "$r.origin.git"
+    git init -q -b main "$r"
+    git -C "$r" config user.email fixture@loopkit.invalid
+    git -C "$r" config user.name Fixture
+    mkdir -p "$r/docs/work/s1" "$r/docs/work/s2"
+    printf 'p\n' >"$r/docs/work/s1/plan.md"
+    printf 'p\n' >"$r/docs/work/s2/plan.md"
+    git -C "$r" add docs
+    git -C "$r" commit -q -m seed
+    git -C "$r" remote add origin "$r.origin.git"
+    git -C "$r" switch -q -c audit/x
+    printf 'x\n' >"$r/x"
+    git -C "$r" add x
+    git -C "$r" commit -q -m x
+    git -C "$r" push -q origin main audit/x 2>/dev/null
+}
+
+# lp_ask <cwd> <header> <question text> <answer> [event]: an AskUserQuestion hook input shaped
+# like the 2026-11-18 spike (answers in tool_input and tool_response). PreToolUse: the answer
+# `-` leaves `answers` out and there is no tool_response.
+lp_ask() {
+    jq -cn --arg cwd "$1" --arg h "$2" --arg q "$3" --arg a "$4" --arg ev "${5:-PostToolUse}" '
+        {questions: [{question: $q, header: $h, multiSelect: false,
+            options: [{label: "go", description: "run EXECUTE"},
+                      {label: "amend", description: "change the plan"}]}]} as $in
+        | {session_id: "s", hook_event_name: $ev, tool_name: "AskUserQuestion", cwd: $cwd,
+           tool_use_id: "toolu_lp", permission_mode: "auto"}
+        + (if $ev == "PreToolUse" then
+               {tool_input: (if $a == "-" then $in else $in + {answers: {($q): $a}} end)}
+           else
+               {tool_input: ($in + {answers: {($q): $a}}),
+                tool_response: ($in + {answers: {($q): $a}, annotations: {}})}
+           end)'
+}
+
+# lp_bash <cwd> <command> <stdout>: a PostToolUse Bash hook input.
+lp_bash() {
+    jq -cn --arg cwd "$1" --arg c "$2" --arg o "$3" '
+        {session_id: "s", hook_event_name: "PostToolUse", tool_name: "Bash", cwd: $cwd,
+         tool_use_id: "toolu_b", tool_input: {command: $c, description: "open the PR"},
+         tool_response: {stdout: $o, stderr: "", interrupted: false, isImage: false}}'
+}
+
+# lp_run <stdin> <shim dir> [VAR=value…]: runs the hook from the shim's PATH; sets LP_OUT, LP_CODE.
+lp_run() {
+    local input="$1" shim="$2"
+    shift 2
+    set +e
+    LP_OUT="$(printf '%s' "$input" | env PATH="$shim/bin:$PATH" LP_SHIM="$shim/gh" CWK_HOOK_TIMING=0 \
+        CWK_HEALTH_LOG=0 "$@" ${CASE_TIMEOUT[@]+"${CASE_TIMEOUT[@]}"} "$LP_HOOK" 2>/dev/null)"
+    LP_CODE=$?
+    set -e
+}
+
+# lp_rec <id> <label> <record> <jq filter> <want>: the hook exited 0 and the record's
+# <jq filter> prints exactly <want>.
+lp_rec() {
+    local got
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 ]] || { fail loop-record.py "$1 $2" "exit $LP_CODE: ${LP_OUT:0:200}"; return 0; }
+    [[ -f "$3" ]] || { fail loop-record.py "$1 $2" "no record at $3"; return 0; }
+    got="$(jq -c "$4" "$3" 2>&1)" || true
+    [[ "$got" == "$5" ]] || fail loop-record.py "$1 $2" "$4: expected $5, got $got"
+}
+
+# lp_none <id> <label> <record>: the hook exited 0 and no record exists.
+lp_none() {
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 ]] || { fail loop-record.py "$1 $2" "exit $LP_CODE: ${LP_OUT:0:200}"; return 0; }
+    [[ ! -e "$3" ]] || fail loop-record.py "$1 $2" "a record was written: $(head -c 300 "$3")"
+}
+
+# lp_same <id> <label> <record> <sha256 before>: the hook exited 0 and the record is unchanged.
+lp_same() {
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 ]] || { fail loop-record.py "$1 $2" "exit $LP_CODE: ${LP_OUT:0:200}"; return 0; }
+    [[ -f "$3" && "$(sha256sum <"$3")" == "$4" ]] || fail loop-record.py "$1 $2" "the record changed or went"
+}
+
+# lp_verdict <id> <label> <want> [reason substring]: the hook's PreToolUse verdict.
+lp_verdict() {
+    local got
+    CASES=$((CASES + 1))
+    got="$(semantic_verdict "$LP_CODE" <(printf '%s' "$LP_OUT"))"
+    [[ "$got" == "$3" ]] || { fail loop-record.py "$1 $2" "expected $3, got $got: ${LP_OUT:0:200}"; return 0; }
+    [[ -z "${4:-}" || "$LP_OUT" == *"$4"* ]] || fail loop-record.py "$1 $2" "reason lacks '$4'"
+}
+
+run_loop_to_pr_step2_cases() {
+    local tmp r rec q q6 sha want before h u row
+    tmp="$(mktemp -d)"
+    q=$'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nnone'
+    q6=$'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nsrc/a/x.utils.test.ts | U2 | 9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+    lp_shim "$tmp/sh"
+
+    # LP5 the core record.
+    r="$tmp/r5"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    sha="$(git -C "$r" rev-parse audit/x)"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    want="$(jq -cn --arg sha "$sha" '{version: 1, slug: "s1", plan: "docs/work/s1/plan.md",
+        branch: "feat/s1", base: "audit/x", base_sha: $sha, repo: "o/r", default_branch: "main",
+        barrier: true, base_ok: true, rows: [], tool_use_id: "toolu_lp"}')"
+    lp_rec LP5 'plan go, no rows' "$rec" \
+        '{version, slug, plan, branch, base, base_sha, repo, default_branch, barrier, base_ok, rows, tool_use_id}' "$want"
+    lp_rec LP5 'plan go, at' "$rec" '.at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")' true
+
+    # LP6 one row, stored verbatim.
+    rm -f "$rec"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q6" go)" "$tmp/sh"
+    lp_rec LP6 'one row' "$rec" '.rows' \
+        '[{"path":"src/a/x.utils.test.ts","id":"U2","sha256":"9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5"}]'
+
+    # LP7 a subagent's call records nothing.
+    rm -f "$rec"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go | jq -c '. + {agent_id: "a1"}')" "$tmp/sh"
+    lp_none LP7 'agent_id' "$rec"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go | jq -c '. + {agent_type: "implementer"}')" "$tmp/sh"
+    lp_none LP7 'agent_type' "$rec"
+
+    # LP8 only exactly `go` opens the record.
+    for u in amend 'go ' Go 'ship it please'; do
+        lp_run "$(lp_ask "$r" 'Plan gate' "$q" "$u")" "$tmp/sh"
+        lp_none LP8 "answer '$u'" "$rec"
+    done
+
+    # LP9 another header, or a plan that does not exist.
+    lp_run "$(lp_ask "$r" 'Plan' "$q" go)" "$tmp/sh"
+    lp_none LP9 'header Plan' "$rec"
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s9/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
+    lp_none LP9 'missing plan' "$rec"
+
+    # LP10 a second go replaces the first.
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q6" go)" "$tmp/sh"
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s2/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
+    lp_rec LP10 'second go' "$rec" '{slug, branch, rows}' '{"slug":"s2","branch":"feat/s2","rows":[]}'
+
+    # LP11 a worktree branch made as the kit makes it.
+    r="$tmp/r11"; lp_repo "$r"
+    git -C "$r" worktree add -q "$tmp/wt11" -b feat/s1 audit/x 2>/dev/null
+    sha="$(git -C "$r" merge-base feat/s1 audit/x)"
+    lp_run "$(lp_ask "$tmp/wt11" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_rec LP11 'worktree from audit/x' "$tmp/wt11/.claude/.loop-record.json" '{branch, base, base_sha}' \
+        "$(jq -cn --arg sha "$sha" '{branch: "feat/s1", base: "audit/x", base_sha: $sha}')"
+    CASES=$((CASES + 1))
+    [[ ! -e "$r/.claude/.loop-record.json" ]] || fail loop-record.py 'LP11 worktree' "record written in the main tree"
+
+    # LP12 a base the reflog cannot name records nothing.
+    r="$tmp/r12a"; lp_repo "$r"
+    git -C "$r" worktree add -q "$tmp/wt12" -b feat/s1 2>/dev/null
+    lp_run "$(lp_ask "$tmp/wt12" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_none LP12 'created from HEAD' "$tmp/wt12/.claude/.loop-record.json"
+    r="$tmp/r12b"; lp_repo "$r"
+    git -C "$r" switch -q -c feat/s1 "$(git -C "$r" rev-parse HEAD)"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_none LP12 'created from a sha' "$r/.claude/.loop-record.json"
+    r="$tmp/r12c"; lp_repo "$r"
+    git -C "$r" switch -q --detach
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_none LP12 'detached HEAD' "$r/.claude/.loop-record.json"
+
+    # LP13 a malformed row records nothing and leaves an existing record as it was.
+    r="$tmp/r13"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    h='9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+    for row in 'src/a/x.utils.test.ts | U2' "src/a/x.utils.test.ts | U2 | ${h:1}" \
+               "src/a/x.utils.test.ts | U2-U4 | $h" "src/a/x.utils.test.ts | X2 | $h"; do
+        rm -f "$rec"
+        lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\n'"$row" go)" "$tmp/sh"
+        lp_none LP13 "row '$row'" "$rec"
+    done
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    before="$( { sha256sum <"$rec"; } 2>/dev/null || true)"
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s2/plan.md\nFrozen cases to amend:\nsrc/a/x.utils.test.ts | X2 | '"$h" go)" "$tmp/sh"
+    lp_same LP13 'malformed second go' "$rec" "$before"
+
+    # LP14 the gate is never pre-filled.
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go PreToolUse)" "$tmp/sh"
+    lp_verdict LP14 'pre-filled gate' deny 'never pre-filled'
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" - PreToolUse)" "$tmp/sh"
+    lp_verdict LP14 'gate asked' pass
+    lp_run "$(lp_ask "$r" 'Framework' 'Which framework?' React PreToolUse)" "$tmp/sh"
+    lp_verdict LP14 'other question pre-filled' pass
+    lp_run '{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","header":"Plan gate"' "$tmp/sh"
+    lp_verdict LP14 'unparsable with Plan gate' deny
+    lp_run '{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"' "$tmp/sh"
+    lp_verdict LP14 'unparsable without' pass
+
+    # LP15 the PR URL closes the record; anything else keeps it.
+    r="$tmp/r15"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    u='gh pr create --repo o/r --base audit/x --head feat/s1 --title "Loop to PR" --body-file docs/work/s1/pr-body.md'
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_run "$(lp_bash "$r" "$u" $'Creating pull request\nhttps://github.com/o/r/pull/7\n')" "$tmp/sh"
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 && ! -e "$rec" ]] || fail loop-record.py 'LP15 PR opened' "record kept (exit $LP_CODE)"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    before="$( { sha256sum <"$rec"; } 2>/dev/null || true)"
+    lp_run "$(lp_bash "$r" "$u" 'no url here')" "$tmp/sh"
+    lp_same LP15 'no PR URL' "$rec" "$before"
+    lp_run "$(lp_bash "$r" "$u" 'https://github.com/o/z/pull/7')" "$tmp/sh"
+    lp_same LP15 'another repo' "$rec" "$before"
+    lp_run "$(lp_bash "$r" 'git status' 'https://github.com/o/r/pull/7')" "$tmp/sh"
+    lp_same LP15 'another command' "$rec" "$before"
+
+    # LP16 the barrier, read once at the go.
+    r="$tmp/r16"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    lp_shim "$tmp/sh16a"; printf '[{"type":"pull_request"},{"type":"non_fast_forward"}]\n' >"$tmp/sh16a/gh/rules-main.json"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh16a"
+    lp_rec LP16 'no deletion rule' "$rec" '.barrier' false
+    rm -f "$rec"
+    lp_shim "$tmp/sh16b"; printf '1\n' >"$tmp/sh16b/gh/rules-main.exit"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh16b"
+    lp_rec LP16 'gh 403' "$rec" '.barrier' false
+    rm -f "$rec"
+    mkdir -p "$tmp/nogh"
+    ln -sf "$(python3 -I -c 'import sys; print(sys.executable)')" "$tmp/nogh/python3"
+    ln -sf "$(command -v git)" "$tmp/nogh/git"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh" PATH="$tmp/nogh"
+    lp_rec LP16 'gh absent' "$rec" '.barrier' false
+    rm -f "$rec"
+    lp_shim "$tmp/sh16c"; printf '3\n' >"$tmp/sh16c/gh/sleep"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh16c" CWK_LOOP_RECORD_GH_BUDGET=1
+    lp_rec LP16 'past the budget' "$rec" '.barrier' false
+
+    # LP17 base_ok.
+    r="$tmp/r17a"; lp_repo "$r"; git -C "$r" switch -q main
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_rec LP17 'base is the default' "$r/.claude/.loop-record.json" '{base, base_ok}' '{"base":"main","base_ok":true}'
+    r="$tmp/r17b"; lp_repo "$r"
+    lp_shim "$tmp/sh17"; printf '[{"type":"pull_request"}]\n' >"$tmp/sh17/gh/rules-audit_x.json"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh17"
+    lp_rec LP17 'base has a rule' "$r/.claude/.loop-record.json" '.base_ok' false
+    r="$tmp/r17c"; lp_repo "$r"; git -C "$r" switch -q -c audit/y
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    lp_rec LP17 'base not on the remote' "$r/.claude/.loop-record.json" '{base, base_ok}' '{"base":"audit/y","base_ok":false}'
+
+    # LP18 --clear.
+    r="$tmp/r5"; rec="$r/.claude/.loop-record.json"
+    lp_run "$(lp_ask "$r" 'Plan gate' "$q" go)" "$tmp/sh"
+    set +e
+    (cd "$r" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1); LP_CODE=$?
+    set -e
+    lp_none LP18 'clear' "$rec"
+    set +e
+    (cd "$r" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1); LP_CODE=$?
+    set -e
+    lp_none LP18 'clear with none' "$rec"
+
+    # LP19 garbage on the Post paths: exit 0, nothing written, nothing printed.
+    for u in 'garbage {' '' '[1]' '"PostToolUse"'; do
+        lp_run "$u" "$tmp/sh"
+        lp_none LP19 "stdin '$u'" "$rec"
+        CASES=$((CASES + 1))
+        [[ -z "$LP_OUT" ]] || fail loop-record.py "LP19 stdin '$u'" "printed '${LP_OUT:0:200}'"
+    done
+    rm -rf "$tmp"
+}
+
+# lp_unfrozen_repo <dir> <record branch|-> <rows json>: a git project on feat/s1 (one commit on
+# audit/x before it), with a valid-shaped record for <record branch> holding <rows>, or none for `-`.
+# Each row's path is created as an empty file, as the plan gate holds frozen files that exist,
+# unless a 4th argument asks for the bare rows.
+lp_unfrozen_repo() {
+    local r="$1" rowpath
+    git init -q -b audit/x "$r"
+    git -C "$r" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --allow-empty -m seed
+    git -C "$r" switch -q -c feat/s1
+    mkdir -p "$r/.claude"
+    [[ "$2" == - ]] && return 0
+    if [[ -z "${4:-}" ]]; then
+        while IFS= read -r rowpath; do
+            mkdir -p "$r/$(dirname "$rowpath")"
+            : >"$r/$rowpath"
+        done < <(jq -r '.[].path' <<<"$3")
+    fi
+    jq -n --arg branch "$2" --arg sha "$(git -C "$r" rev-parse audit/x)" --argjson rows "$3" \
+        '{version: 1, slug: "s1", plan: "docs/work/s1/plan.md", branch: $branch, base: "audit/x",
+          base_sha: $sha, repo: "o/r", default_branch: "main", barrier: true, base_ok: true,
+          rows: $rows, at: "2026-11-19T00:00:00Z", tool_use_id: "toolu_lp"}' >"$r/.claude/.loop-record.json"
+}
+
+# LP21-LP32 (loop-to-pr step 4): a `.tdd-unfrozen` line backed by a row of the tree's valid record
+# is written with no prompt; anything else keeps the guarded ask.
+run_loop_to_pr_step4_cases() {
+    local tmp h old='src/b/old.test.ts  # U9: kept' x='src/a/x.utils.test.ts' r
+    local -a hrow
+    tmp="$(mktemp -d)"
+    h='9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+    hrow=("$(jq -cn --arg p "$x" --arg h "$h" '[{path: $p, id: "U2", sha256: $h}]')")
+
+    r="$tmp/one"; lp_unfrozen_repo "$r" feat/s1 "${hrow[0]}"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP21 pass Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2: reason" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/two"
+    lp_unfrozen_repo "$r" feat/s1 "$(jq -cn --arg p "$x" --arg h "$h" \
+        '[{path: $p, id: "U2", sha256: $h}, {path: "src/b/y.mapper.test.ts", id: "M3", sha256: $h}]')"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP22 pass Edit "$(jq -cn --arg o "$old" \
+        --arg n "$old"$'\n'"$x  # U2: reason"$'\n''src/b/y.mapper.test.ts  # M3: other reason' \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/absent"; lp_unfrozen_repo "$r" feat/s1 "${hrow[0]}"
+    unfrozen_case LP23 pass Write "$(jq -cn --arg c "$x  # U2: reason"$'\n' '{content:$c}')" "$r"
+
+    r="$tmp/one"
+    unfrozen_case LP24 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n''src/a/z.utils.test.ts  # U2: r' \
+        '{old_string:$o, new_string:$n}')" "$r"
+    unfrozen_case LP25 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U7: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+    r="$tmp/impl"
+    lp_unfrozen_repo "$r" feat/s1 "$(jq -cn --arg h "$h" '[{path: "src/a/x.utils.ts", id: "U2", sha256: $h}]')"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP26 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n''src/a/x.utils.ts  # U2: r' \
+        '{old_string:$o, new_string:$n}')" "$r"
+    r="$tmp/norec"; lp_unfrozen_repo "$r" - '[]'
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP27 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+    r="$tmp/one"
+    unfrozen_case LP28 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # no id here" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    unfrozen_case LP29 pass Edit "$(jq -cn --arg o "$old" --arg n "$x  # U2: reason" \
+        '{old_string:$o, new_string:$n}')" "$r"
+    unfrozen_case LP29 ask Edit "$(jq -cn --arg o "$old" --arg n "$x  # U7: reason" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/other"; lp_unfrozen_repo "$r" feat/s9 "${hrow[0]}"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP30 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+    r="$tmp/onbase"; lp_unfrozen_repo "$r" feat/s1 "${hrow[0]}"
+    git -C "$r" switch -q audit/x
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP30.2 pass Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/stale"; lp_unfrozen_repo "$r" feat/s1 "${hrow[0]}"
+    git -C "$r" switch -q audit/x
+    git -C "$r" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --amend --allow-empty -m rewritten
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP30.3 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/suffix"
+    lp_unfrozen_repo "$r" feat/s1 "$(jq -cn --arg h "$h" '[{path: "a/x.utils.test.ts", id: "U2", sha256: $h}]')" bare
+    mkdir -p "$r/src/a"
+    printf 't\n' >"$r/src/a/x.utils.test.ts"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP24.2 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n''a/x.utils.test.ts  # U2: r' \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    r="$tmp/pair"
+    lp_unfrozen_repo "$r" feat/s1 "$(jq -cn --arg p "$x" --arg h "$h" \
+        '[{path: $p, id: "U2", sha256: $h}, {path: $p, id: "U5", sha256: $h}]')"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP32 pass Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2, U5: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+    unfrozen_case LP32 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n'"$x  # U2, U6: r" \
+        '{old_string:$o, new_string:$n}')" "$r"
+
+    # LP24.3: z.utils.test.ts exists, but only x.utils.test.ts holds the row U2: the pair (path, id) is
+    # no row, so the line asks (a membership on the id alone would let it through).
+    r="$tmp/pathblind"; lp_unfrozen_repo "$r" feat/s1 "${hrow[0]}"
+    printf 't\n' >"$r/src/a/z.utils.test.ts"
+    printf '%s\n' "$old" >"$r/.claude/.tdd-unfrozen"
+    unfrozen_case LP24.3 ask Edit "$(jq -cn --arg o "$old" --arg n "$old"$'\n''src/a/z.utils.test.ts  # U2: r' \
+        '{old_string:$o, new_string:$n}')" "$r"
+    rm -rf "$tmp"
+}
+
+# lp_freeze_project <dir> <record branch|-> <rows json> <unfrozen lines>: lp_unfrozen_repo plus the
+# default project config and the frozen file src/a/x.utils.test.ts (cases U1, U2, U3).
+lp_freeze_project() {
+    lp_unfrozen_repo "$1" "$2" "$3"
+    pv_project "$1"
+    mkdir -p "$1/src/a"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 returns one', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => {" '    expect(f(0)).toBe(0)' '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$1/src/a/x.utils.test.ts"
+    [[ -z "$4" ]] || printf '%s\n' "$4" >"$1/.claude/.tdd-unfrozen"
+}
+
+# lp_freeze <id> <verdict> <project> <tool> <input json> [needle] [absent]: tdd-freeze-tests.sh on
+# src/a/x.utils.test.ts of <project>.
+lp_freeze() {
+    local out
+    out="$(project_hook_probe tdd-freeze-tests.sh "$3" "$(jq -cn --arg t "$4" --arg f "$3/src/a/x.utils.test.ts" \
+        --arg c "$3" --argjson i "$5" '{tool_name:$t, cwd:$c, tool_input:($i + {file_path:$f})}')")"
+    pv_expect "$1" "$2" "$out" "${6:-}" "${7:-}"
+}
+
+# lp_c3b <id> <verdict> <dir> <row id> <row title> <U2 line> <U3 line> <U4 block|-> <old> <new> [needle]:
+# a frozen x.utils.test.ts whose U2 and U3 bodies hold the given lines (an optional U4 block after
+# them), the plan-gate row <row id> on <row title>, and one Edit replacing <old> with <new>.
+lp_c3b() {
+    local x='src/a/x.utils.test.ts' d="$3"
+    lp_freeze_project "$d" feat/s1 "$(jq -cn --arg p "$x" --arg i "$4" --arg h "$(printf '%s' "$5" | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: $i, sha256: $h}]')" "$x  # $4: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 returns one', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => {" "    $6" '  })' '' \
+        "  it('U3 keeps three', () => {" "    $7" '  })' >"$d/$x"
+    [[ "$8" == - ]] || printf '%s\n' '' "$8" >>"$d/$x"
+    printf '%s\n' '})' >>"$d/$x"
+    lp_freeze "$1" "$2" "$d" Edit "$(jq -cn --arg o "$9" --arg n "${10}" '{old_string:$o, new_string:$n}')" "${11:-}"
+}
+
+# lp_py_project <dir>: lp_unfrozen_repo on feat/s1 holding the row B2 of tests/services/test_b.py (cases B1,
+# B2), the addon config, and the `.tdd-unfrozen` line for it.
+lp_py_project() {
+    lp_unfrozen_repo "$1" feat/s1 "$(jq -cn \
+        '[{path: "tests/services/test_b.py", id: "B2", sha256: "e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b"}]')"
+    pv_addon_project "$1"
+    mkdir -p "$1/tests/services"
+    printf '%s\n' 'from app.services.b import g' '' '' 'def test_b1_returns_ok():' '    assert g(1) == 1' '' '' \
+        'def test_b2_returns_err():' '    assert g(0) == 0' >"$1/tests/services/test_b.py"
+    printf '%s\n' 'tests/services/test_b.py  # B2: empty input is an error' >"$1/.claude/.tdd-unfrozen"
+}
+
+# lp_worktree <main dir>: commits the tree of <main> (on feat/s1), moves <main> back to audit/x, adds
+# <main>/.claude/worktrees/s1 on feat/s1 and moves the record and the `.tdd-unfrozen` list into it: the
+# tree a pass entered by path works in, with <main> as the project dir and no list of its own.
+lp_worktree() {
+    local m="$1" w="$1/.claude/worktrees/s1"
+    git -C "$m" add -A -- src 2>/dev/null || true
+    git -C "$m" add -A -- tests 2>/dev/null || true
+    git -C "$m" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --allow-empty -m frozen
+    git -C "$m" switch -q audit/x
+    git -C "$m" worktree add -q "$w" feat/s1
+    mkdir -p "$w/.claude"
+    mv "$m/.claude/.loop-record.json" "$w/.claude/.loop-record.json"
+    [[ ! -f "$m/.claude/.tdd-unfrozen" ]] || mv "$m/.claude/.tdd-unfrozen" "$w/.claude/.tdd-unfrozen"
+}
+
+# LP33-LP44, LP50 (loop-to-pr step 5): a path with rows in the tree's valid record is not exempted
+# whole; each case an edit touches must be a row whose new title hashes to it, or an id listed on a
+# `.tdd-unfrozen` line for the path.
+run_loop_to_pr_step5_cases() {
+    local tmp p x='src/a/x.utils.test.ts' h rows u2 u2new u3 u3new py addon out body
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    h='9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+    rows="$(jq -cn --arg p "$x" --arg h "$h" '[{path: $p, id: "U2", sha256: $h}]')"
+    u2="  it('U2 returns err', () => {"$'\n''    expect(f(0)).toBe(0)'$'\n''  })'
+    u2new="  it('U2 returns err on empty input', () => {"$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    u3="  it('U3 keeps three', () => {"$'\n''    expect(f(3)).toBe(3)'$'\n''  })'
+    u3new="  it('U3 keeps three', () => {"$'\n''    expect(f(3)).toBe(4)'$'\n''  })'
+
+    p="$tmp/rows"; lp_freeze_project "$p" feat/s1 "$rows" "$x  # U2: empty input is an error"
+    lp_freeze LP33 pass "$p" Edit "$(jq -cn --arg o "$u2" --arg n "$u2new" '{old_string:$o, new_string:$n}')"
+    lp_freeze LP34 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "${u2new/ input/}" \
+        '{old_string:$o, new_string:$n}')" "$h"
+    lp_freeze LP34.2 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "${u2new/ input/}" \
+        '{old_string:$o, new_string:$n}')" "U2"
+    lp_freeze LP35 deny "$p" Edit "$(jq -cn --arg o "$u2"$'\n\n'"$u3" --arg n "$u2new"$'\n\n'"$u3new" \
+        '{old_string:$o, new_string:$n}')" "U3"
+    lp_freeze LP36 deny "$p" Edit "$(jq -cn --arg o $'    expect(f(1)).toBe(1)\n  })\n\n  it(\'U2 returns err\'' \
+        --arg n $'    expect(f(1)).toBe(2)\n  })\n\n  it(\'U2 returns err on empty input\'' \
+        '{old_string:$o, new_string:$n}')" "U1"
+    lp_freeze LP37 deny "$p" Write "$(jq -cn --arg c "$(sed "s/U2 returns err'/U2 returns err on empty input'/" \
+        "$p/$x")"$'\n' '{content:$c}')" "Edit"
+    lp_freeze LP38 pass "$p" Write "$(jq -cn --rawfile c "$p/$x" '{content:$c}')"
+    lp_freeze LP39 pass "$p" Edit "$(jq -cn --arg o $'  })\n})' \
+        --arg n $'  })\n\n  it(\'U9 adds nine\', () => {\n    expect(f(9)).toBe(9)\n  })\n})' \
+        '{old_string:$o, new_string:$n}')"
+    body=$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    lp_freeze LP50 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "  it(\`U2 returns err on empty input\`, () => {$body" \
+        '{old_string:$o, new_string:$n}')" "U2"
+    lp_freeze LP50.2 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "  it('U2 returns err on empty \\'input\\'', () => {$body" \
+        '{old_string:$o, new_string:$n}')" "U2"
+    lp_freeze LP50.3 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "  it(\"U2 it's empty\", () => {$body" \
+        '{old_string:$o, new_string:$n}')" "U2"
+
+    # LP50.4-LP50.5: the row's digest is the raw title as written, so only the refusal of an escape
+    # or a quote inside the title (not a hash mismatch) denies; the needle names that refusal.
+    local raw2="U2 returns err on empty \\'input\\'" raw3="U2 it's empty"
+    p="$tmp/esc"; lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$(printf '%s' "$raw2" | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')" "$x  # U2: reason"
+    lp_freeze LP50.4 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "  it('$raw2', () => {$body" \
+        '{old_string:$o, new_string:$n}')" "not a plain-quoted literal"
+    p="$tmp/quote"; lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$(printf '%s' "$raw3" | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')" "$x  # U2: reason"
+    lp_freeze LP50.5 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "  it(\"$raw3\", () => {$body" \
+        '{old_string:$o, new_string:$n}')" "not a plain-quoted literal"
+
+    # LP50.6-LP50.8: an apostrophe in a comment or a regex literal of the U2 body must not stretch its
+    # span over U3; the comment is skipped, and a span that never closes is refused.
+    local u2c u2cnew head3 rowsnow
+    rowsnow="$(jq -cn --arg p "$x" --arg h "$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')"
+    u2c="  it('U2 returns err', () => {"$'\n''    /* don'"'"'t retry */'$'\n''    expect(f(0)).toBe(0)'$'\n''  })'
+    u2cnew="  it('U2 returns err on empty input', () => {"$'\n''    /* don'"'"'t retry */'$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    head3=$'  it(\'U1 returns one\', () => {\n    expect(f(1)).toBe(1)\n  })\n\n'
+    p="$tmp/cmt"; lp_freeze_project "$p" feat/s1 "$rowsnow" "$x  # U2: empty input is an error"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "${head3%$'\n\n'}" '' "$u2c" '' "$u3" '})' >"$p/$x"
+    lp_freeze LP50.6 deny "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')" "U3"
+    p="$tmp/cmt2"; lp_freeze_project "$p" feat/s1 "$rows" "$x  # U2: empty input is an error"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "${head3%$'\n\n'}" '' "$u2c" '' "$u3" '})' >"$p/$x"
+    lp_freeze LP50.8 pass "$p" Edit "$(jq -cn --arg o "$u2c" --arg n "$u2cnew" '{old_string:$o, new_string:$n}')"
+    p="$tmp/rgx"; lp_freeze_project "$p" feat/s1 "$rowsnow" "$x  # U2: empty input is an error"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "${head3%$'\n\n'}" '' \
+        "  it('U2 returns err', () => {" "    const re = /it's/" '    expect(f(0)).toBe(0)' '  })' '' "$u3" '})' >"$p/$x"
+    lp_freeze LP50.7 deny "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')" "never closes"
+
+    # LP51-LP51.2 (N1): a nested repository's own `.tdd-unfrozen` line unfreezes nothing; only the project
+    # dir's list (and a worktree of it, LP33.2) does.
+    p="$tmp/nest"; lp_freeze_project "$p" - '[]' ''
+    local nest="$p/libs/core"
+    mkdir -p "$nest/.claude" "$nest/src/a"
+    git init -q "$nest"
+    cp "$p/$x" "$nest/$x"
+    printf '%s\n' "$x  # U2: r" >"$nest/.claude/.tdd-unfrozen"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$nest/$x" --arg c "$nest" --arg o "$u3" --arg n "$u3new" \
+        '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP51 deny "$out" "unfreeze-queue.md"
+
+    # LP52-LP52.4 (C3b, N2): a `/` that could open a regex literal makes its case ambiguous; an ambiguous
+    # case before or inside the edit refuses rows mode, one wholly after the edit does not.
+    lp_c3b LP52 deny "$tmp/c3a" U2 'U2 returns err' "expect(f(0)).toThrow(/can't/)" "expect(f(3)).toThrow(/won't/)" - \
+        "    expect(f(3)).toThrow(/won't/)" "    expect(f(3)).toThrow(/will not/)" "ambiguous"
+    lp_c3b LP52.2 deny "$tmp/c3e" U2 'U2 returns err' "expect(f(0)).toThrow(/can't/)" 'expect(f(3)).toBe(3)' \
+        "  it('U4 notes', () => {
+    // the parser won't see this
+    expect(f(4)).toBe(4)
+  })" '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' "ambiguous"
+    lp_c3b LP52.3 deny "$tmp/c3g" U2 'U2 returns err' 'expect(f(0)).toMatch(/^https:\/\//)' 'expect(f(3)).toBe(3)' - \
+        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' "unfreeze-queue.md"
+    lp_c3b LP52.4 pass "$tmp/c3n" U1 'U1 returns one' 'expect(f(0)).toBe(0)' "expect(f(3)).toThrow(/can't/)" - \
+        '    expect(f(1)).toBe(1)' '    expect(f(1)).toBe(2)'
+
+    p="$tmp/batch"; lp_freeze_project "$p" feat/s1 "$rows" "$x  # U2: empty input is an error"$'\n'"$x  # U5: batch"
+    printf '%s\n' "  it('U5 keeps five', () => {" '    expect(f(5)).toBe(5)' '  })' '})' >>"$p/$x.tail"
+    python3 -I -c 'import sys; p = sys.argv[1]; t = open(p).read(); open(p, "w").write(t[:t.rindex("})")] + open(p + ".tail").read())' "$p/$x"
+    rm -f "$p/$x.tail"
+    lp_freeze LP40 pass "$p" Edit "$(jq -cn --arg o $'    expect(f(5)).toBe(5)' --arg n $'    expect(f(5)).toBe(6)' \
+        '{old_string:$o, new_string:$n}')"
+    lp_freeze LP40.2 deny "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')" "U3"
+
+    p="$tmp/norow"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg h "$h" '[{path: "src/b/y.utils.test.ts", id: "U2", sha256: $h}]')" \
+        "$x  # U2: r"
+    lp_freeze LP42 pass "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')"
+    p="$tmp/norec"; lp_freeze_project "$p" - '[]' "$x  # U2: r"
+    lp_freeze LP42.2 pass "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')"
+
+    p="$tmp/nohash"; lp_freeze_project "$p" - '[]' "$x reason without a hash sign"
+    lp_freeze LP43 pass "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')"
+    printf '%s\n' 'src/a/y.utils.ts  # U1: rename' 'src/a/z.utils.ts reason without a hash sign' >"$p/.claude/.tdd-unfrozen"
+    for py in y z; do
+        out="$(project_hook_probe tdd-require-red.sh "$p" "$(jq -cn --arg f "$p/src/a/$py.utils.ts" \
+            '{tool_name:"Write", tool_input:{file_path:$f, content:"export const y = 1\n"}}')")"
+        pv_expect "LP43 require-red $py" pass "$out"
+    done
+
+    p="$tmp/plain"; lp_freeze_project "$p" - '[]' ''
+    lp_freeze LP44 deny "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')" \
+        "unfreeze-queue.md" "confirms it at the merge"
+    lp_freeze LP44.2 deny "$p" Edit "$(jq -cn --arg o $'  })\n})' --arg n $'  })\n  return\n})' \
+        '{old_string:$o, new_string:$n}')" "unfreeze-queue.md" "confirms it at the merge"
+
+    # LP33.2: a pass entered by path works in a worktree whose record and `.tdd-unfrozen` line are its
+    # own; the project dir is the main tree, which holds neither.
+    p="$tmp/wtmain"; lp_freeze_project "$p" feat/s1 "$rows" "$x  # U2: empty input is an error"
+    lp_worktree "$p"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$p/.claude/worktrees/s1/$x" --arg c "$p/.claude/worktrees/s1" \
+        --arg o "$u2" --arg n "$u2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP33.2 pass "$out"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$p/.claude/worktrees/s1/$x" --arg c "$p/.claude/worktrees/s1" \
+        --arg o "$u3" --arg n "$u3new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP33.3 deny "$out" "U3"
+
+    # LP30.4-LP30.5: on the base branch the record holds only while its base commit is an ancestor of
+    # HEAD. Valid: rows mode denies the U3 edit. The base rewritten: no record, the whole-file line applies.
+    p="$tmp/basevalid"; lp_freeze_project "$p" feat/s1 "$rows" "$x  # U2: empty input is an error"
+    git -C "$p" switch -q audit/x
+    lp_freeze LP30.4 deny "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')" "U3"
+    git -C "$p" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --amend --allow-empty -m rewritten
+    lp_freeze LP30.5 pass "$p" Edit "$(jq -cn --arg o "$u3" --arg n "$u3new" '{old_string:$o, new_string:$n}')"
+
+    p="$tmp/py"
+    lp_unfrozen_repo "$p" feat/s1 "$(jq -cn \
+        '[{path: "tests/services/test_b.py", id: "B2", sha256: "e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b"}]')"
+    pv_addon_project "$p"
+    mkdir -p "$p/tests/services"
+    printf '%s\n' 'from app.services.b import g' '' '' 'def test_b1_returns_ok():' '    assert g(1) == 1' '' '' \
+        'def test_b2_returns_err():' '    assert g(0) == 0' >"$p/tests/services/test_b.py"
+    printf '%s\n' 'tests/services/test_b.py  # B2: empty input is an error' >"$p/.claude/.tdd-unfrozen"
+    py() {
+        rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
+            --arg o "$1" --arg n "$2" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')"
+    }
+    pv_expect LP41 pass "$(py $'def test_b2_returns_err():\n    assert g(0) == 0' \
+        $'def test_b2_returns_err_on_empty():\n    assert g(0) == -1')"
+    pv_expect LP41.2 deny "$(py $'def test_b2_returns_err():\n    assert g(0) == 0' \
+        $'def test_b2_returns_err_on_empt():\n    assert g(0) == -1')" "B2"
+    pv_expect LP41.3 deny "$(py $'    assert g(1) == 1\n\n\ndef test_b2_returns_err():' \
+        $'    assert g(1) == 2\n\n\ndef test_b2_returns_err_on_empty():')" "B1"
+    out="$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
+        '{tool_name:"Write", cwd:$c, tool_input:{file_path:$f, content:"def test_b2_returns_err_on_empty():\n    assert 1\n"}}')")"
+    pv_expect LP41.4 deny "$out" "Edit"
+    printf '%s\n' 'tests/services/test_b.py reason without a hash sign' >"$p/.claude/.tdd-unfrozen"
+    rm -f "$p/.claude/.loop-record.json"
+    pv_expect LP43.py pass "$(py $'    assert g(1) == 1' $'    assert g(1) == 2')"
+    rm -f "$p/.claude/.tdd-unfrozen"
+    pv_expect LP44.py deny "$(py $'    assert g(1) == 1' $'    assert g(1) == 2')" \
+        "unfreeze-queue.md" "confirms it at the merge"
+    unset -f py
+
+    pyw() {
+        rv2_pair "$addon" tdd-freeze-tests-py.py "$1" "$(jq -cn --arg f "$2" --arg c "$1" --arg o "$3" --arg n "$4" \
+            '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')"
+    }
+    local b2 b2new b1 b1new
+    b2=$'def test_b2_returns_err():\n    assert g(0) == 0'
+    b2new=$'def test_b2_returns_err_on_empty():\n    assert g(0) == -1'
+    b1=$'    assert g(1) == 1'
+    b1new=$'    assert g(1) == 2'
+    p="$tmp/pywt"; lp_py_project "$p"
+    lp_worktree "$p"
+    pv_expect LP41.5 pass "$(pyw "$p" "$p/.claude/worktrees/s1/tests/services/test_b.py" "$b2" "$b2new")"
+    pv_expect LP41.6 deny "$(pyw "$p" "$p/.claude/worktrees/s1/tests/services/test_b.py" "$b1" "$b1new")" "B1"
+    p="$tmp/pybase"; lp_py_project "$p"
+    git -C "$p" switch -q audit/x
+    pv_expect LP30.6 deny "$(pyw "$p" "$p/tests/services/test_b.py" "$b1" "$b1new")" "B1"
+    git -C "$p" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --amend --allow-empty -m rewritten
+    pv_expect LP30.7 pass "$(pyw "$p" "$p/tests/services/test_b.py" "$b1" "$b1new")"
+    p="$tmp/pynest"; lp_py_project "$p"
+    rm -f "$p/.claude/.tdd-unfrozen" "$p/.claude/.loop-record.json"
+    local pn="$p/libs/core"
+    mkdir -p "$pn/.claude" "$pn/tests/services"
+    git init -q "$pn"
+    cp "$p/tests/services/test_b.py" "$pn/tests/services/test_b.py"
+    printf '%s\n' 'tests/services/test_b.py  # B2: r' >"$pn/.claude/.tdd-unfrozen"
+    pv_expect LP51.2 deny "$(pyw "$p" "$pn/tests/services/test_b.py" "$b1" "$b1new")" "unfreeze-queue.md"
+    unset -f pyw
+    rm -rf "$tmp"
+}
+
+# lp_pr_shim <dir>: a gh whose `pr view <branch>` prints <dir>/gh/pr-<branch, / as _>.json, or exits
+# with <dir>/gh/pr-<b>.exit and its .err on stderr; with no file, "no pull requests found" and exit 1.
+lp_pr_shim() {
+    mkdir -p "$1/bin" "$1/gh"
+    cat >"$1/bin/gh" <<'SH'
+#!/usr/bin/env bash
+d="${LP_SHIM:?}"
+[[ ! -f "$d/fail" ]] || { printf 'gh: HTTP 502\n' >&2; exit 1; }
+if [[ "${1:-}" == repo && "${2:-}" == view ]]; then cat "$d/repo.json"; exit 0; fi
+if [[ "${1:-}" == pr && "${2:-}" == view ]]; then
+    b="${3:-}"; b="${b//\//_}"
+    if [[ -f "$d/pr-$b.exit" ]]; then cat "$d/pr-$b.err" >&2 2>/dev/null; exit "$(cat "$d/pr-$b.exit")"; fi
+    if [[ -f "$d/pr-$b.json" ]]; then cat "$d/pr-$b.json"; exit 0; fi
+    printf 'no pull requests found for branch "%s"\n' "$3" >&2
+    exit 1
+fi
+exit 1
+SH
+    chmod +x "$1/bin/gh"
+    printf '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"}}\n' >"$1/gh/repo.json"
+}
+
+# lp_pr <shim> <branch> <state> <base> [mergedAt]: one PR fixture.
+lp_pr() {
+    jq -cn --arg s "$3" --arg b "$4" --arg m "${5:-}" \
+        '{state: $s, baseRefName: $b, mergedAt: (if $m == "" then null else $m end), number: 7}' \
+        >"$1/gh/pr-${2//\//_}.json"
+}
+
+# lp_state <id> <shim> <want> <args…>: loop-pr-state.sh prints exactly <want> and exits 0.
+lp_state() {
+    local id="$1" shim="$2" want="$3" out code
+    shift 3
+    CASES=$((CASES + 1))
+    set +e
+    out="$(LP_SHIM="$shim/gh" PATH="$shim/bin:$PATH" "$PROJECT_ROOT/.claude/scripts/loop-pr-state.sh" "$@" 2>/dev/null)"
+    code=$?
+    set -e
+    [[ "$code" -eq 0 && "$out" == "$want" ]] || fail loop-pr-state.sh "$id" "expected '$want' exit 0, got '$out' exit $code"
+}
+
+# LP45-LP47 (loop-to-pr step 6): the closing rule, one word per PR state.
+run_loop_to_pr_step6_cases() {
+    local tmp s m
+    tmp="$(mktemp -d)"
+    for m in merge squash rebase; do
+        s="$tmp/$m"; lp_pr_shim "$s"; lp_pr "$s" feat/s1 MERGED main 2026-11-19T10:00:00Z
+        lp_state "LP45 $m" "$s" closable feat/s1
+    done
+
+    s="$tmp/stack"; lp_pr_shim "$s"; lp_pr "$s" feat/s1 MERGED feat/a 2026-11-19T10:00:00Z
+    lp_state LP46 "$s" stacked:feat/a feat/s1
+    lp_pr "$s" feat/a MERGED main 2026-11-19T11:00:00Z
+    lp_state LP46.2 "$s" closable --chain feat/s1
+    lp_pr "$s" feat/a OPEN main
+    lp_state LP46.3 "$s" open --chain feat/s1
+    lp_pr "$s" feat/a MERGED main 2026-11-19T09:00:00Z
+    lp_state LP46.4 "$s" orphaned:feat/a --chain feat/s1
+    lp_pr "$s" feat/a MERGED feat/b 2026-11-19T11:00:00Z
+    lp_pr "$s" feat/b MERGED main 2026-11-19T12:00:00Z
+    lp_state LP46.5 "$s" closable --chain feat/s1
+    lp_pr "$s" feat/b MERGED main 2026-11-19T10:30:00Z
+    lp_state LP46.6 "$s" orphaned:feat/b --chain feat/s1
+
+    s="$tmp/other"; lp_pr_shim "$s"
+    lp_pr "$s" feat/s1 OPEN main
+    lp_state LP47 "$s" open feat/s1
+    lp_pr "$s" feat/s1 CLOSED main
+    lp_state LP47.2 "$s" closed feat/s1
+    lp_state LP47.3 "$s" none feat/s9
+    : >"$s/gh/fail"
+    lp_state LP47.4 "$s" unknown feat/s1
+    rm -f "$s/gh/fail"
+    printf '4\n' >"$s/gh/pr-feat_s1.exit"; printf 'gh: To get started with GitHub CLI, please run:  gh auth login\n' >"$s/gh/pr-feat_s1.err"
+    lp_state LP47.5 "$s" unknown feat/s1
+    mkdir -p "$tmp/nogh"
+    for m in jq git bash env cat; do ln -sf "$(command -v "$m")" "$tmp/nogh/$m"; done
+    CASES=$((CASES + 1))
+    s="$(PATH="$tmp/nogh" "$PROJECT_ROOT/.claude/scripts/loop-pr-state.sh" feat/s1 2>/dev/null)" || true
+    [[ "$s" == unknown ]] || fail loop-pr-state.sh LP47.6 "gh absent: expected 'unknown', got '$s'"
+    rm -rf "$tmp"
+}
+
+# LP48 (loop-to-pr hash producer): case-hash.sh prints the sha256 of its one argument, nothing
+# else; any other arity exits 2 with an empty stdout; it writes no file.
+run_loop_to_pr_hash_cases() {
+    local tmp out code n
+    tmp="$(mktemp -d)"
+    CASES=$((CASES + 1))
+    out="$(cd "$tmp" && "$PROJECT_ROOT/.claude/scripts/case-hash.sh" 'U2 returns err on empty input' </dev/null 2>/dev/null)" || true
+    [[ "$out" == 9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5 ]] \
+        || fail case-hash.sh LP48 "expected the row digest, got '$out'"
+    CASES=$((CASES + 1))
+    out="$(cd "$tmp" && "$PROJECT_ROOT/.claude/scripts/case-hash.sh" 'U7 keeps $HOME `x` \n' </dev/null 2>/dev/null)" || true
+    [[ "$out" == "$(printf '%s' 'U7 keeps $HOME `x` \n' | sha256sum | cut -c1-64)" ]] \
+        || fail case-hash.sh LP48.2 "a title with \$, backtick and backslash is hashed as written, got '$out'"
+    for n in 0 2; do
+        CASES=$((CASES + 1))
+        set +e
+        if [[ "$n" == 0 ]]; then
+            out="$(cd "$tmp" && "$PROJECT_ROOT/.claude/scripts/case-hash.sh" </dev/null 2>/dev/null)"
+        else
+            out="$(cd "$tmp" && "$PROJECT_ROOT/.claude/scripts/case-hash.sh" a b </dev/null 2>/dev/null)"
+        fi
+        code=$?
+        set -e
+        [[ "$code" -eq 2 && -z "$out" ]] || fail case-hash.sh "LP48.$((n + 3))" "$n arguments: expected exit 2 and no stdout, got exit $code '$out'"
+    done
+    CASES=$((CASES + 1))
+    [[ -z "$(ls -A "$tmp")" ]] || fail case-hash.sh LP48.6 "it wrote '$(ls -A "$tmp")'"
+    rm -rf "$tmp"
+}
+
+# LP53-LP58 (loop-to-pr review round 3): M1 (division, JSX and `=>` no longer ambiguous; a marker line
+# `<path>  # <id>!: <reason>` lifts an ambiguous case, and still asks), S2 (a quote crossing a newline in a
+# .tsx), TM1 (a nested repo's own record and list; a worktree list naming a file with no rows), S3 (a
+# cleared record leaves no row-backed whole-file exemption).
+run_loop_to_pr_review3_cases() {
+    local tmp p x='src/a/x.utils.test.ts' xt='src/a/x.utils.test.tsx' out h3 row3 nest pn b1 b1new
+    local addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    tmp="$(mktemp -d)"
+    h3="$(printf '%s' 'U3 keeps three' | sha256sum | cut -c1-64)"
+    row3="$(jq -cn --arg p "$x" --arg h "$h3" '[{path: $p, id: "U3", sha256: $h}]')"
+
+    # LP53-LP53.2: a division, a self-closing JSX tag and a closing tag open no regex literal.
+    lp_c3b LP53 pass "$tmp/m1a" U3 'U3 keeps three' 'expect(f(4) / 2).toBe(2)' 'render(<F />)' - \
+        '    render(<F />)' '    render(<G />)'
+    lp_c3b LP53.2 pass "$tmp/m1b" U3 'U3 keeps three' 'render(<p>hi</p>)' 'render(<F />)' - \
+        '    render(<F />)' '    render(<G />)'
+    # LP53.3-LP53.4: a `/` after `=>` or `return` still can, so those cases stay ambiguous.
+    lp_c3b LP53.3 deny "$tmp/m1c" U3 'U3 keeps three' 'const g = () => /ab/' 'expect(f(3)).toBe(3)' - \
+        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)' "ambiguous"
+    lp_c3b LP53.4 deny "$tmp/m1d" U3 'U3 keeps three' 'const g = () => { return /ab/ }' 'expect(f(3)).toBe(3)' - \
+        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)' "ambiguous"
+
+    # LP54-LP54.4 (LP54, LP54.2 amended round 6, U2 U3: the lift is removed): the deny names --clear; a
+    # `U2!` line lifts nothing (a regex holding quotes); that line asks; a case that does not close stays refused.
+    lp_c3b LP54 deny "$tmp/lift" U3 'U3 keeps three' "expect(f(0)).toThrow(/'x'/)" 'expect(f(3)).toBe(3)' - \
+        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)' 'loop-record.py --clear'
+    p="$tmp/lift2"
+    lp_freeze_project "$p" feat/s1 "$row3" "$x  # U3: r"$'\n'"$x  # U2!: the quotes of its regex are balanced"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 returns one', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/'x'/)" '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    lp_freeze LP54.2 deny "$p" Edit "$(jq -cn --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(4)' \
+        '{old_string:$o, new_string:$n}')" 'loop-record.py --clear'
+    p="$tmp/liftask"
+    lp_unfrozen_repo "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$h3" '[{path: $p, id: "U2", sha256: $h}]')"
+    printf '%s\n' "$x  # U2: r" >"$p/.claude/.tdd-unfrozen"
+    unfrozen_case LP54.3 ask Edit "$(jq -cn --arg o "$x  # U2: r" --arg n "$x  # U2: r"$'\n'"$x  # U2!: r" \
+        '{old_string:$o, new_string:$n}')" "$p"
+    p="$tmp/liftopen"
+    lp_freeze_project "$p" feat/s1 "$row3" "$x  # U3: r"$'\n'"$x  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const re = /it's/" '    expect(f(0)).toBe(0)' '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    lp_freeze LP54.4 deny "$p" Edit "$(jq -cn --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(4)' \
+        '{old_string:$o, new_string:$n}')" "never closes"
+
+    # LP55 (S2): in a .tsx, an apostrophe in JSX text opens a string that runs to the apostrophe of a later
+    # comment; a string crossing a newline makes its case ambiguous, so the edit of U3 is refused.
+    p="$tmp/tsx"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$xt" --arg h "$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    render(<p>L'adresse</p>)" '  })' '' \
+        "  it('U3 keeps three', () => {" "    // the user's input" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$xt"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$p/$xt" --arg c "$p" \
+        --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(99)' \
+        '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP55 deny "$out" "ambiguous"
+
+    # LP56 (TM1, kills the tree-test mutants): a nested repository holding its own valid record, its rows and
+    # a listed extra id unfreezes nothing; the project dir's list is the only one read.
+    p="$tmp/nest3"; lp_freeze_project "$p" - '[]' ''
+    nest="$p/libs/core"
+    lp_unfrozen_repo "$nest" feat/s1 "$(jq -cn --arg p "$x" --arg h "$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')"
+    cp "$p/$x" "$nest/$x"
+    printf '%s\n' "$x  # U2: r" "$x  # U3: the extra id" >"$nest/.claude/.tdd-unfrozen"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$nest/$x" --arg c "$nest" \
+        --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(99)' \
+        '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP56 deny "$out" unfreeze-queue.md 'rows mode'
+
+    # LP57 (TM1, kills the worktree-exemption mutants): a worktree's own list naming a file the record holds
+    # no row for is rows-mode entry only, never a whole-file exemption.
+    p="$tmp/wtnorow"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg h "$h3" '[{path: "src/b/y.utils.test.ts", id: "U2", sha256: $h}]')" \
+        "$x  # U2: r"
+    lp_worktree "$p"
+    out="$(project_hook_probe tdd-freeze-tests.sh "$p" "$(jq -cn --arg f "$p/.claude/worktrees/s1/$x" \
+        --arg c "$p/.claude/worktrees/s1" --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(99)' \
+        '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    pv_expect LP57 deny "$out" unfreeze-queue.md 'rows mode'
+
+    # LP58 (S3): `--clear` drops the record, and the row-backed line goes with it instead of turning into a
+    # whole-file exemption; a line that is no row stays.
+    p="$tmp/cleared"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U2", sha256: $h}]')" "$x  # U2: r"$'\n''src/z/other.test.ts  # a plain line'
+    set +e
+    (cd "$p" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1)
+    set -e
+    lp_freeze LP58 deny "$p" Edit "$(jq -cn --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(99)' \
+        '{old_string:$o, new_string:$n}')" unfreeze-queue.md 'rows mode'
+    CASES=$((CASES + 1))
+    [[ "$(<"$p/.claude/.tdd-unfrozen")" == "# $x  # U2: r"$'\n''src/z/other.test.ts  # a plain line' ]] \
+        || fail loop-record.py LP58.3 "after --clear the row-backed line is commented out and the plain line kept, got '$(<"$p/.claude/.tdd-unfrozen")'"
+
+    b1=$'    assert g(1) == 1'
+    b1new=$'    assert g(1) == 2'
+    lp3_pyw() {
+        rv2_pair "$addon" tdd-freeze-tests-py.py "$1" "$(jq -cn --arg f "$2" --arg c "$1" --arg o "$b1" --arg n "$b1new" \
+            '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')"
+    }
+    # LP56.2, LP57.2, LP58.2: the same three, python freeze.
+    p="$tmp/pynest3"; lp_py_project "$p"
+    rm -f "$p/.claude/.tdd-unfrozen" "$p/.claude/.loop-record.json"
+    pn="$p/libs/core"
+    lp_unfrozen_repo "$pn" feat/s1 "$(jq -cn \
+        '[{path: "tests/services/test_b.py", id: "B2", sha256: "e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b"}]')"
+    cp "$p/tests/services/test_b.py" "$pn/tests/services/test_b.py"
+    printf '%s\n' 'tests/services/test_b.py  # B2: r' 'tests/services/test_b.py  # B1: the extra id' >"$pn/.claude/.tdd-unfrozen"
+    pv_expect LP56.2 deny "$(lp3_pyw "$p" "$pn/tests/services/test_b.py")" unfreeze-queue.md 'rows mode'
+
+    p="$tmp/pywtnorow"
+    lp_unfrozen_repo "$p" feat/s1 "$(jq -cn \
+        '[{path: "tests/services/test_c.py", id: "B2", sha256: "e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b"}]')"
+    pv_addon_project "$p"
+    mkdir -p "$p/tests/services"
+    printf '%s\n' 'from app.services.b import g' '' '' 'def test_b1_returns_ok():' '    assert g(1) == 1' '' '' \
+        'def test_b2_returns_err():' '    assert g(0) == 0' >"$p/tests/services/test_b.py"
+    printf '%s\n' 'tests/services/test_b.py  # B2: r' >"$p/.claude/.tdd-unfrozen"
+    lp_worktree "$p"
+    pv_expect LP57.2 deny "$(lp3_pyw "$p" "$p/.claude/worktrees/s1/tests/services/test_b.py")" unfreeze-queue.md 'rows mode'
+
+    p="$tmp/pycleared"; lp_py_project "$p"
+    set +e
+    (cd "$p" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1)
+    set -e
+    pv_expect LP58.2 deny "$(lp3_pyw "$p" "$p/tests/services/test_b.py")" unfreeze-queue.md 'rows mode'
+    unset -f lp3_pyw
+    rm -rf "$tmp"
+}
+
+# LP58.4-LP61.10 (loop-to-pr review round 4): N1/S4 (a case whose raw span holds another `it(`, or whose
+# brackets do not nest, is ambiguous and no `U2!` marker lifts it), N2 (the `!` marker line goes with the
+# record), T8 (the PR-url drop comments the row-backed line out), T5 (the regex-start tokens and the
+# quote-newline rule, each pinned by a case).
+run_loop_to_pr_review4_cases() {
+    local tmp p x='src/a/x.utils.test.ts' xt='src/a/x.utils.test.tsx' out h2 row2 rowt bt='`' want rec sh
+    local o3='    expect(f(3)).toBe(3)' n3='    expect(f(3)).toBe(99)'
+    local addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    tmp="$(mktemp -d)"
+    h2="$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)"
+    row2="$(jq -cn --arg p "$x" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    rowt="$(jq -cn --arg p "$xt" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    # lp4_edit <id> <verdict> <dir> <path> <old> <new> [needle]: tdd-freeze-tests.sh on <dir>/<path>.
+    lp4_edit() {
+        out="$(project_hook_probe tdd-freeze-tests.sh "$3" "$(jq -cn --arg f "$3/$4" --arg c "$3" --arg o "$5" --arg n "$6" \
+            '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+        pv_expect "$1" "$2" "$out" "${7:-}"
+    }
+
+    # LP59 (N1, liftA1): a regex holding an apostrophe in a lifted U2 swallows the next case; the marker
+    # lifts nothing there, so the edit of U3 is refused.
+    p="$tmp/a1"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/it's/)" '  })' '' \
+        "  it('U3 keeps three', () => {" "    // the user's input" "$o3" '  })' '})' >"$p/$x"
+    lp4_edit LP59 deny "$p" "$x" "$o3" "$n3" ambiguous
+    # LP59.2 (N1, liftB): U2 last in its describe, rewritten into a regex with an unbalanced `\(` and a
+    # `beforeEach` after it: the brackets do not nest, so the lift is refused.
+    p="$tmp/b"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" '    expect(f(0)).toBe(0)' '  })' '})' >"$p/$x"
+    lp4_edit LP59.2 deny "$p" "$x" $'    expect(f(0)).toBe(0)\n  })' \
+        $'    expect(f(0)).toThrow(/\\(/)\n  })\n\n  beforeEach(() => {\n    reset()\n  })' ambiguous
+    # LP59.3 (FP, round-5 amendment): a string of U2 holding `it(` no longer makes it ambiguous;
+    # the Edit of non-listed U3 is still denied, as not listed.
+    p="$tmp/rawit"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const t = \"it('inner', () => {})\"" '    expect(f(0)).toBe(0)' '  })' '' \
+        "  it('U3 keeps three', () => {" "$o3" '  })' '})' >"$p/$x"
+    lp4_edit LP59.3 deny "$p" "$x" "$o3" "$n3" "neither a plan-gate row nor listed"
+
+    # LP60 (S4): an unbalanced `(` in JSX text of a row case of a .tsx; the marker lifts nothing.
+    p="$tmp/jsx"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"$'\n'"$xt  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" '    render(<p>Prix (HT</p>)' '  })' '' \
+        "  it('U3 keeps three', () => {" "$o3" '  })' '})' >"$p/$xt"
+    lp4_edit LP60 deny "$p" "$xt" "$o3" "$n3" ambiguous
+    # LP60.2: the same case last in its describe, an Edit adding a describe-level beforeEach after it.
+    p="$tmp/jsx2"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"$'\n'"$xt  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" '    render(<p>Prix (HT</p>)' '  })' '})' >"$p/$xt"
+    lp4_edit LP60.2 deny "$p" "$xt" $'    render(<p>Prix (HT</p>)\n  })' \
+        $'    render(<p>Prix (HT</p>)\n  })\n\n  beforeEach(() => {\n    reset()\n  })' ambiguous
+
+    # LP61-LP61.4 (T5): a regex holding a backtick after `=`, at a line start, after `,` and after `:`, with
+    # a backtick in the next case too: the case is ambiguous, the edit of U3 is refused.
+    lp_c3b LP61 deny "$tmp/eq" U2 'U2 returns err' "const re = /$bt/" \
+        "expect(f(3)).toBe(3)"$'\n'"    expect(s).toMatch(/$bt/)" - "$o3" "$n3" ambiguous
+    lp_c3b LP61.2 deny "$tmp/nl" U2 'U2 returns err' "/$bt/.test(s)" \
+        "expect(f(3)).toBe(3)"$'\n'"    expect(s).toMatch(/$bt/)" - "$o3" "$n3" ambiguous
+    lp_c3b LP61.3 deny "$tmp/comma" U2 'U2 returns err' "expect(f(0, /$bt/)).toBe(0)" \
+        "expect(f(3)).toBe(3)"$'\n'"    expect(s).toMatch(/$bt/)" - "$o3" "$n3" ambiguous
+    lp_c3b LP61.4 deny "$tmp/colon" U2 'U2 returns err' "const o = { re: /$bt/ }" \
+        "expect(f(3)).toBe(3)"$'\n'"    expect(s).toMatch(/$bt/)" - "$o3" "$n3" ambiguous
+    # LP61.5: a double-quoted string crossing a line (backslash continuation) in a row case, quote-newline rule.
+    lp_c3b LP61.5 deny "$tmp/dqnl" U2 'U2 returns err' $'const s = "a\\\n    b"' 'expect(f(3)).toBe(3)' - \
+        "$o3" "$n3" ambiguous
+    # LP61.6: a `"` in JSX text of a row case of a .tsx and another in a later comment.
+    p="$tmp/dq"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" '    render(<p>5" screen</p>)' '  })' '' \
+        "  it('U3 keeps three', () => {" '    // a 5" mark' "$o3" '  })' '})' >"$p/$xt"
+    lp4_edit LP61.6 deny "$p" "$xt" "$o3" "$n3" ambiguous
+    # LP61.7-LP61.10: the same four tokens with a plain regex, nothing else in the case that could mark it.
+    lp_c3b LP61.7 deny "$tmp/eqp" U2 'U2 returns err' 'const re = /ab/' 'expect(f(3)).toBe(3)' - "$o3" "$n3" ambiguous
+    lp_c3b LP61.8 deny "$tmp/nlp" U2 'U2 returns err' '/ab/.test(s)' 'expect(f(3)).toBe(3)' - "$o3" "$n3" ambiguous
+    lp_c3b LP61.9 deny "$tmp/commap" U2 'U2 returns err' 'expect(f(0, /ab/)).toBe(0)' 'expect(f(3)).toBe(3)' - \
+        "$o3" "$n3" ambiguous
+    lp_c3b LP61.10 deny "$tmp/colonp" U2 'U2 returns err' 'const o = { re: /ab/ }' 'expect(f(3)).toBe(3)' - \
+        "$o3" "$n3" ambiguous
+    unset -f lp4_edit
+
+    # LP58.4 (N2): `--clear` comments the row-backed `!` marker line out as well as the plain one.
+    p="$tmp/clr"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U2!: r"
+    set +e
+    (cd "$p" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1)
+    set -e
+    CASES=$((CASES + 1))
+    [[ "$(<"$p/.claude/.tdd-unfrozen")" == "# $x  # U2: r"$'\n'"# $x  # U2!: r" ]] \
+        || fail loop-record.py LP58.4 "after --clear both lines are commented out, got '$(<"$p/.claude/.tdd-unfrozen")'"
+    lp_freeze LP58.4 deny "$p" Edit "$(jq -cn --arg o "$o3" --arg n "$n3" '{old_string:$o, new_string:$n}')" \
+        unfreeze-queue.md 'rows mode'
+    # LP58.5: the same, python freeze.
+    p="$tmp/pyclr"; lp_py_project "$p"
+    printf '%s\n' 'tests/services/test_b.py  # B2: r' 'tests/services/test_b.py  # B2!: r' >"$p/.claude/.tdd-unfrozen"
+    set +e
+    (cd "$p" && "$LP_HOOK" --clear </dev/null >/dev/null 2>&1)
+    set -e
+    pv_expect LP58.5 deny "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" \
+        --arg c "$p" --arg o $'    assert g(1) == 1' --arg n $'    assert g(1) == 2' \
+        '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")" unfreeze-queue.md 'rows mode'
+
+    # LP58.6-LP58.7 (T8): the PR url drops the record, the row-backed line is commented out and the plain
+    # line stays; an edit of the non-row U3 is then denied.
+    p="$tmp/prurl"; sh="$tmp/sh"; lp_shim "$sh"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n''src/z/other.test.ts  # a plain line'
+    rec="$p/.claude/.loop-record.json"
+    lp_run "$(lp_bash "$p" 'gh pr create --repo o/r --base audit/x --head feat/s1 --title "Loop to PR" --body-file docs/work/s1/pr-body.md' \
+        $'Creating pull request\nhttps://github.com/o/r/pull/7\n')" "$sh"
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 && ! -e "$rec" ]] || fail loop-record.py LP58.6 "record kept (exit $LP_CODE)"
+    CASES=$((CASES + 1))
+    [[ "$(<"$p/.claude/.tdd-unfrozen")" == "# $x  # U2: r"$'\n''src/z/other.test.ts  # a plain line' ]] \
+        || fail loop-record.py LP58.6 "after the PR url the row-backed line is commented out, got '$(<"$p/.claude/.tdd-unfrozen")'"
+    lp_freeze LP58.7 deny "$p" Edit "$(jq -cn --arg o "$o3" --arg n "$n3" '{old_string:$o, new_string:$n}')" \
+        unfreeze-queue.md 'rows mode'
+    rm -rf "$tmp"
+}
+
+# LP62-LP65.2 (loop-to-pr review round 5): FP (the raw it(/test( check is gone, benign shapes pass again),
+# SC1 (a case whose character span runs past its indentation span is never lifted), N1p (the call-start
+# pattern takes any member chain and a tagged table), TQ1 (the never-liftable deny text is pinned).
+run_loop_to_pr_review5_cases() {
+    local tmp p x='src/a/x.utils.test.ts' xt='src/a/x.utils.test.tsx' out h2 row2 rowt bt='`' old new
+    local o0='    expect(f(0)).toBe(0)' n0='    expect(f(0)).toBe(1)'
+    local lift_x lift_xt
+    tmp="$(mktemp -d)"
+    h2="$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)"
+    row2="$(jq -cn --arg p "$x" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    rowt="$(jq -cn --arg p "$xt" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    lift_x="$x  # U2: r"$'\n'"$x  # U2!: r"
+    lift_xt="$xt  # U2: r"$'\n'"$xt  # U2!: r"
+    # lp5_edit <id> <verdict> <dir> <path> <old> <new> [needle] [absent]: tdd-freeze-tests.sh on <dir>/<path>.
+    lp5_edit() {
+        out="$(project_hook_probe tdd-freeze-tests.sh "$3" "$(jq -cn --arg f "$3/$4" --arg c "$3" --arg o "$5" --arg n "$6" \
+            '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+        pv_expect "$1" "$2" "$out" "${7:-}" "${8:-}"
+    }
+    # lp5_fp <id> <path> <rows> <unfrozen> <U1 title> <U1 body>: U1 then the row case U2; Edit of U2 toBe(0)->toBe(1).
+    lp5_fp() {
+        local d="$tmp/${1//./_}"
+        lp_freeze_project "$d" feat/s1 "$3" "$4"
+        printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+            "  it('$5', () => {" "$6" '  })' '' \
+            "  it('U2 returns err', () => {" "$o0" '  })' '})' >"$d/$2"
+        lp5_edit "$1" pass "$d" "$2" "$o0" "$n0"
+    }
+
+    # LP62-LP62.8 (FP): a `(` in a title, a string or a comment above the row case, a JSX `[` or `1)`, no longer
+    # refuses an edit of U2 (base verdict: pass); `U1!, U2!` listed passes as well.
+    lp5_fp LP62 "$x" "$row2" "$x  # U2: r" 'U1 runs the test (twice)' '    expect(f(1)).toBe(1)'
+    lp5_fp LP62.2 "$x" "$row2" "$x  # U2: r" 'U1 does it (once)' '    expect(f(1)).toBe(1)'
+    lp5_fp LP62.3 "$x" "$row2" "$x  # U2: r" 'U1 ok' "    expect(g('do it (now)')).toBe(1)"
+    lp5_fp LP62.4 "$x" "$row2" "$x  # U2: r" 'U1 ok' $'    // the test (slow) path\n    expect(f(1)).toBe(1)'
+    lp5_fp LP62.5 "$x" "$row2" "$x  # U1, U2: r"$'\n'"$x  # U1!, U2!: r" 'U1 ok' $'    // the test (slow) path\n    expect(f(1)).toBe(1)'
+    p="$tmp/fp7"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 ok', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => {" "$o0" "    expect(g('the test (x)')).toBe(0)" '  })' '})' >"$p/$x"
+    lp5_edit LP62.6 pass "$p" "$x" "$o0" "$n0"
+    lp5_fp LP62.7 "$xt" "$rowt" "$xt  # U2: r" 'U1 ok' '    render(<p>[beta</p>)'
+    # LP62.8 (amended round 6, U4): a JSX `1)` in U1 ends its char span before its indentation span;
+    # the two-direction rule refuses it (accepted false positive, exit --clear).
+    d="$tmp/LP62_8"
+    lp_freeze_project "$d" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 ok', () => {" '    render(<li>1) Adresse</li>)' '  })' '' \
+        "  it('U2 returns err', () => {" "$o0" '  })' '})' >"$d/$xt"
+    lp5_edit LP62.8 deny "$d" "$xt" "$o0" "$n0" 'loop-record.py --clear'
+
+    # LP63-LP63.3 (SC1): a stray quote or backtick opens a string that a later apostrophe closes; the character
+    # span of the case runs past its indentation span, so no marker lifts it and the edit is refused.
+    # LP63 (A): lifted U2 with `L'adresse`, Edit of the trailing beforeEach.
+    p="$tmp/scA"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$lift_xt"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const el = <p>L'adresse</p>" '    expect(f(el)).toBe(0)' '  })' '' \
+        '  beforeEach(() => {' "    reset() // the user's input" '  })' '})' >"$p/$xt"
+    lp5_edit LP63 deny "$p" "$xt" '    reset() // the user' '    reset(99) // the user' 'loop-record.py --clear' 'lifts it with'
+    # LP63.2 (W_mid): lifted U2, the Edit appends a regex holding `'` plus a beforeEach.
+    p="$tmp/scW"
+    lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "$o0" '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    old="$o0"$'\n  })'
+    new="    const re = /l'a/"$'\n'"$o0"$'\n  })\n\n  beforeEach(() => {\n'"    vi.spyOn(mod, 'f').mockReturnValue(1) // the user's stub"$'\n  })'
+    lp5_edit LP63.2 deny "$p" "$x" "$old" "$new" 'loop-record.py --clear' 'lifts it with'
+    # LP63.3 (CW): .tsx, `# U2: r` only, the Edit adds <kbd>`</kbd> to U2 and a beforeEach holding a lone backtick.
+    p="$tmp/scCW"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "$o0" '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$xt"
+    new="    const k = <kbd>$bt</kbd>"$'\n'"$o0"$'\n  })\n\n  beforeEach(() => {\n'"    vi.spyOn(mod, 'f').mockReturnValue(3) // the $bt key"$'\n  })'
+    lp5_edit LP63.3 deny "$p" "$xt" "$old" "$new" 'loop-record.py --clear' 'lifts it with'
+
+    # LP64-LP64.5 (N1p): a member chain and a tagged table are call starts. LP64 (E): lifted U2 holding /it's/,
+    # U3 an it.concurrent.each with an apostrophe comment; LP64.2: .tsx backtick U2 and the same U3, no lift;
+    # LP64.3: lifted U2 and an it.each`table` U3. The edit of U3 is refused in each.
+    p="$tmp/e"
+    lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const re = /it's/" "$o0" '  })' '' \
+        "  it.concurrent.each([3])('U3 keeps %i', (v) => {" "    // the user's input" '    expect(f(v)).toBe(3)' '  })' '})' >"$p/$x"
+    lp5_edit LP64 deny "$p" "$x" '    expect(f(v)).toBe(3)' '    expect(f(v)).toBe(99)' ambiguous
+    p="$tmp/etsx"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const k = <kbd>$bt</kbd>" "$o0" '  })' '' \
+        "  it.concurrent.each([3])('U3 keeps %i', (v) => {" "    // the $bt key" '    expect(f(v)).toBe(3)' '  })' '})' >"$p/$xt"
+    lp5_edit LP64.2 deny "$p" "$xt" '    expect(f(v)).toBe(3)' '    expect(f(v)).toBe(99)' ambiguous
+    p="$tmp/etag"
+    lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    const re = /it's/" "$o0" '  })' '' \
+        "  it.each${bt}" '    v' '    ${3}' "  ${bt}('U3 keeps \$v', ({ v }) => {" "    // the user's input" '    expect(f(v)).toBe(3)' \
+        '  })' '})' >"$p/$x"
+    lp5_edit LP64.3 deny "$p" "$x" '    expect(f(v)).toBe(3)' '    expect(f(v)).toBe(99)' ambiguous
+    # LP64.4/LP64.5: a benign member-chain table and a benign tagged table, U3 listed, are cases: the edit passes.
+    p="$tmp/eok"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U3: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "$o0" '  })' '' \
+        "  it.concurrent.each([3])('U3 keeps %i', (v) => {" '    expect(f(v)).toBe(3)' '  })' '})' >"$p/$x"
+    lp5_edit LP64.4 pass "$p" "$x" '    expect(f(v)).toBe(3)' '    expect(f(v)).toBe(99)'
+    p="$tmp/etagok"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U3: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "$o0" '  })' '' \
+        "  it.each${bt}" '    v' '    ${3}' "  ${bt}('U3 keeps \$v', ({ v }) => {" '    expect(f(v)).toBe(3)' '  })' '})' >"$p/$x"
+    lp5_edit LP64.5 pass "$p" "$x" '    expect(f(v)).toBe(3)' '    expect(f(v)).toBe(99)'
+
+    # LP65/LP65.2 (TQ1): the liftA1 and liftB shapes of LP59/LP59.2 again, pinning the never-liftable text:
+    # it holds 'no marker lifts it' and not the liftable text's 'lifts it with'.
+    p="$tmp/a1"
+    lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/it's/)" '  })' '' \
+        "  it('U3 keeps three', () => {" "    // the user's input" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    lp5_edit LP65 deny "$p" "$x" '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' 'loop-record.py --clear' 'lifts it with'
+    p="$tmp/b"
+    lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U2 returns err', () => {" "$o0" '  })' '})' >"$p/$x"
+    lp5_edit LP65.2 deny "$p" "$x" "$o0"$'\n  })' \
+        $'    expect(f(0)).toThrow(/\\(/)\n  })\n\n  beforeEach(() => {\n    reset()\n  })' 'loop-record.py --clear' 'lifts it with'
+    unset -f lp5_edit lp5_fp
+    rm -rf "$tmp"
+}
+
+# LP66-LP71 (loop-to-pr review round 6): NC (the character span must end on the last non-blank line of the
+# indentation span: a de-indented or tab-indented call line is refused), NA (a .each case whose first call
+# holds another it/test call is ambiguous), TQE (NL/NL10 pin the end-line conditions, no lift), NB (a template
+# literal at or below the call indent is an accepted false positive, pinned as a deny), and the lift is gone:
+# `U2!` lifts nothing, every ambiguity names `loop-record.py --clear` and no marker.
+run_loop_to_pr_review6_cases() {
+    local tmp p x='src/a/x.utils.test.ts' xt='src/a/x.utils.test.tsx' out h2 row2 rowt bt='`' old new
+    local o0='    expect(f(0)).toBe(0)' n0='    expect(f(0)).toBe(1)' clr='loop-record.py --clear' nol='lifts it with'
+    tmp="$(mktemp -d)"
+    h2="$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)"
+    row2="$(jq -cn --arg p "$x" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    rowt="$(jq -cn --arg p "$xt" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
+    # lp6_edit <id> <verdict> <dir> <path> <old> <new> [needle] [absent]: tdd-freeze-tests.sh on <dir>/<path>.
+    lp6_edit() {
+        out="$(project_hook_probe tdd-freeze-tests.sh "$3" "$(jq -cn --arg f "$3/$4" --arg c "$3" --arg o "$5" --arg n "$6" \
+            '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+        pv_expect "$1" "$2" "$out" "${7:-}" "${8:-}"
+    }
+    # lp6_u1 <id> <verdict> <path> <rows> <unfrozen> <U1 text> [needle]: U1 text (own newline) then the row case U2;
+    # Edit of U2 toBe(0)->toBe(1).
+    lp6_u1() {
+        local d="$tmp/${1//./_}"
+        lp_freeze_project "$d" feat/s1 "$4" "$5"
+        printf '%s' "import { f } from './x.utils'"$'\n\n'"describe('x', () => {"$'\n'"$6"$'\n'"  it('U2 returns err', () => {"$'\n'"$o0"$'\n  })\n})\n' >"$d/$3"
+        lp6_edit "$1" "$2" "$d" "$3" "$o0" "$n0" "${7:-}" "$nol"
+    }
+    local u2="  it('U2 returns err', () => {"$'\n'"$o0"$'\n  })'
+    local base_src
+    base_src="import { f } from './x.utils'"$'\n\n'"describe('x', () => {"$'\n'"$u2"$'\n\n  it(\x27U3 keeps three\x27, () => {\n    expect(f(3)).toBe(3)\n  })\n})\n'
+
+    # LP66/LP66.2 (NC): the Edit de-indents (or tab-indents) the call line of U2 and appends a beforeEach holding
+    # a lone backtick; the indentation span stretches to the describe close while the character span ends early.
+    p="$tmp/di"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s' "$base_src" >"$p/$xt"
+    new="  it('U2 returns err', () => {"$'\n'"    const k = <kbd>$bt</kbd>"$'\n'"$o0"$'\n  })\n\n  beforeEach(() => {\n'"    vi.spyOn(mod, 'f').mockReturnValue(3) // the $bt key"$'\n  })'
+    lp6_edit LP66 deny "$p" "$xt" "$u2" "${new#  }" "$clr" "$nol"
+    p="$tmp/tab"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s' "$base_src" >"$p/$xt"
+    lp6_edit LP66.2 deny "$p" "$xt" "$u2" $'\t'"${new#  }" "$clr" "$nol"
+    # LP66.3-LP66.6: controls, the two spans agree: timeout number, call split over lines with an options object,
+    # a chained expect, a wrapped arrow. The Edit of U2 passes.
+    lp6_u1 LP66.3 pass "$x" "$row2" "$x  # U2: r" "  it('U1 slow', async () => {"$'\n    expect(f(1)).toBe(1)\n  }, 10_000)\n'
+    lp6_u1 LP66.4 pass "$x" "$row2" "$x  # U2: r" $'  it(\n    \x27U1 split\x27,\n    async () => {\n      expect(f(1)).toBe(1)\n    },\n    { retry: 2 },\n  )\n'
+    lp6_u1 LP66.5 pass "$x" "$row2" "$x  # U2: r" $'  it(\x27U1 chain\x27, async () => {\n    await expect(f(1))\n      .resolves.toBe(1)\n  })\n'
+    lp6_u1 LP66.6 pass "$x" "$row2" "$x  # U2: r" $'  it(\x27U1 wrap\x27, () =>\n    expect(f(1)).toBe(1))\n'
+
+    # LP67/LP67.2 (NA): a stray backtick in the first table of an it.each swallows describe-level code up to a later
+    # it.each row case; Edit of the beforeEach (LP67) and of the frozen unlisted U2 body (LP67.2) are refused.
+    p="$tmp/eb"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$xt" --arg h "$(printf '%s' 'U5 maps %s' | sha256sum | cut -c1-64)" '[{path: $p, id: "U5", sha256: $h}]')" "$xt  # U5: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('keys', () => {" \
+        "  it.each([[<kbd>$bt</kbd>, 1]])('U2 renders %s', (el, n) => {" '    expect(f(el)).toBe(n)' '  })' '' \
+        '  beforeEach(() => {' '    reset()' '  })' '' '  it.each([' "    // the backquote key: $bt" "    ['Backquote', 1]," \
+        "  ])('U5 maps %s', (code, n) => {" '    expect(f(code)).toBe(n)' '  })' '})' >"$p/$xt"
+    lp6_edit LP67 deny "$p" "$xt" $'    reset()\n' $'    reset(99)\n' "$clr" "$nol"
+    lp6_edit LP67.2 deny "$p" "$xt" '    expect(f(el)).toBe(n)' '    expect(f(el)).toBe(99)' "$clr" "$nol"
+    # LP67.3/LP67.4: a plain multi-line it.each table and a tagged table above the row case still pass.
+    lp6_u1 LP67.3 pass "$x" "$row2" "$x  # U2: r" $'  it.each([\n    [1, 1],\n    [2, 2],\n  ])(\x27U1 %i\x27, (a, b) => {\n    expect(f(a)).toBe(b)\n  })\n'
+    lp6_u1 LP67.4 pass "$x" "$row2" "$x  # U2: r" "  it.each${bt}"$'\n    a    | b\n    ${1} | ${1}\n'"  ${bt}(\x27U1 \$a\x27, ({ a, b }) => {"$'\n    expect(f(a)).toBe(b)\n  })\n'
+
+    # LP68/LP68.2 (TQE): .tsx, `# U2: r` only, a single-line U2 holding <kbd>`</kbd>; the next base-indent line
+    # (a beforeEach) must end the indentation span, and a closer-led line at the base indent must be a closer.
+    # LP68 red under the mutants that end the span on any line at the base (M04) or on any line at the base
+    # indent (M06); LP68.2 red under M04 and the mutant that accepts a lower-indent closer line (M09).
+    p="$tmp/nl"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "  it('U1 ok', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => expect(f(<kbd>$bt</kbd>)).toBe(0))" "  beforeEach(() => reset()) // the $bt key)))" '})' >"$p/$xt"
+    lp6_edit LP68 deny "$p" "$xt" 'reset()' 'reset(99)' "$clr" "$nol"
+    p="$tmp/nl10"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "  it('U1 ok', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => expect(f(<kbd>$bt</kbd>)).toBe(0))" '    beforeEach(() => {' '      reset()' '    })' "}) // $bt)))" >"$p/$xt"
+    lp6_edit LP68.2 deny "$p" "$xt" '      reset()' '      reset(99)' "$clr" "$nol"
+
+    # LP69 (NB, accepted false positive): a template literal with a column-0 line in U1 makes U1 ambiguous, so the
+    # Edit of the row case U2 below it is refused with the --clear text. Documented, not fixed: a string-aware
+    # scan cannot keep the backtick swallow of LP63.3 closed.
+    lp6_u1 LP69 deny "$x" "$row2" "$x  # U2: r" "  it('U1 parses', () => {"$'\n'"    const src = ${bt}# Title"$'\nbody line\n'"${bt}"$'\n    expect(f(src)).toBe(1)\n  })\n' "$clr"
+
+    # LP70/LP70.2 (lift removed): a `U2!` line is read as the id U2 and lifts nothing, whatever the ambiguity:
+    # a regex apostrophe (LP70, edit of the trailing U3 case) and a `.tsx` apostrophe in U2 (LP70.2).
+    p="$tmp/lift"
+    lp_freeze_project "$p" feat/s1 "$row2" "$x  # U2: r"$'\n'"$x  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/it's/)" '  })' '' \
+        "  it('U3 keeps three', () => {" "    // the user's input" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    lp6_edit LP70 deny "$p" "$x" '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' "$clr" "$nol"
+    p="$tmp/lifttsx"
+    lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"$'\n'"$xt  # U2!: r"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" "  it('U2 returns err', () => {" "    const el = <p>L'adresse</p>" '    expect(f(el)).toBe(0)' '  })' '' \
+        '  beforeEach(() => {' "    reset() // the user's input" '  })' '})' >"$p/$xt"
+    lp6_edit LP70.2 deny "$p" "$xt" '    reset() // the user' '    reset(99) // the user' "$clr" "$nol"
+    unset -f lp6_edit lp6_u1
+    rm -rf "$tmp"
+}
+
 set -e
+if [[ "${1:-}" == --lp6-only ]]; then
+    run_loop_to_pr_review6_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (loop-to-pr review 6 only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --lp5-only ]]; then
+    run_loop_to_pr_review5_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (loop-to-pr review 5 only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --lp4-only ]]; then
+    run_loop_to_pr_review4_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (loop-to-pr review 4 only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --lp3-only ]]; then
+    run_loop_to_pr_review3_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (loop-to-pr review 3 only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --lp-only ]]; then
+    run_loop_to_pr_hash_cases
+    run_loop_to_pr_review3_cases
+    run_loop_to_pr_review4_cases
+    run_loop_to_pr_review5_cases
+    run_loop_to_pr_review6_cases
+    run_loop_to_pr_step6_cases
+    run_loop_to_pr_step5_cases
+    run_loop_to_pr_step4_cases
+    run_unfrozen_removal_cases
+    run_loop_to_pr_step2_cases
+    run_git_guard_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (loop-to-pr only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 [[ "${1:-}" == --kb-only ]] || run_fixture_sweep
 if [[ "${1:-}" == --kb-only ]]; then
     run_kit_boundary_step1_cases
@@ -4493,6 +5879,15 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_kit_prompts_step1_cases
     run_kit_prompts_step23_cases
     run_kit_prompts_step4_cases
+    run_loop_to_pr_step2_cases
+    run_loop_to_pr_step4_cases
+    run_loop_to_pr_step5_cases
+    run_loop_to_pr_step6_cases
+    run_loop_to_pr_hash_cases
+    run_loop_to_pr_review3_cases
+    run_loop_to_pr_review4_cases
+    run_loop_to_pr_review5_cases
+    run_loop_to_pr_review6_cases
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases
