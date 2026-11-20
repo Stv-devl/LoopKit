@@ -1,5 +1,6 @@
 # Spec: Auto mode — the user validates the contract after research, agents take the gates, the PR shows what they decided
 Status: DRAFT — pass 4 of 4, split from `docs/specs/fewer-validations.md` on 2026-11-09 (V7, V8, as reviewed 2026-11-08). Depends on `fewer-asks.md`, `kit-boundary.md`, `loop-to-pr.md` shipped, and on one real feature run through `loop-to-pr`.
+Precondition waived by the user 2026-11-20: the pass starts before a real feature has run through `loop-to-pr` (shipped as PR #12, merged into `audit/slim`).
 Token profile: critical (agents take gates that are the user's today)
 
 ## Objective
