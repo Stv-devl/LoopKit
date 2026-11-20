@@ -174,14 +174,36 @@ def main() -> None:
     if not os.path.isfile(abs_test):
         sys.exit(0)
 
+    rows = {}
     if lib.is_unfrozen(file_path):
-        sys.exit(0)
+        rows = lib.loop_rows(file_path)
+        if not rows:
+            sys.exit(0)
+    elif lib.rows_entry(file_path):
+        rows = lib.loop_rows(file_path)
 
     try:
         with open(abs_test, encoding="utf-8") as fh:
             current = fh.read()
     except OSError:
         sys.exit(0)
+
+    def rows_verdict() -> None:
+        """Rows mode decides what the insertion rules would deny (docs/specs/loop-to-pr.md, step 5)."""
+        why = lib.rows_refusal(file_path, rows, current, tool_input, payload.get("tool_name") or "")
+        if not why:
+            lib.notice(
+                "TDD: amended case(s) of the frozen test %s edited as recorded at the plan gate "
+                "(loop record rows, .tdd-unfrozen ids). The amended cases go in the PR body "
+                "(Frozen cases)." % file_path
+            )
+        lib.deny(
+            "TDD: %s has amended cases recorded at the plan gate (rows mode), and this edit is "
+            "refused: %s.\n\nEdit only the amended cases, one Edit per case, giving each the exact "
+            "name the gate hashed. Any other correction is queued in "
+            "docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk); the main "
+            "thread stops once for the whole batch (orchestrate.md, Phase 4)." % (file_path, why)
+        )
 
     impl_rel = lib.impl_for_test(file_path)
     dotted = lib.dotted_module(impl_rel)
@@ -195,16 +217,22 @@ def main() -> None:
                 "changed. tdd-prove-red-py is re-running it; read its verdict "
                 "before writing any implementation." % file_path
             )
+        if rows:
+            rows_verdict()
         lib.deny(
             "TDD: %s is frozen — it was validated at the /loop:plan gate and proved red, "
             "and a wholesale overwrite rewrites assertions with nothing watching.\n\n"
             "Adding a case is allowed, as an Edit that inserts after the last line of "
             "the previous case and carries its own assertion. Correcting a case is a "
             "plan-level decision: a subagent stops and reports the case id and why; "
-            "the main thread adds one line to "
-            "`.claude/.tdd-unfrozen`:\n\n    %s  # <case id>: <one-line reason>\n\n"
-            "rewrites the plan line (same id), appends `amended` to plan.md's "
-            "`## Gate` (the user confirms it at the merge), then edits.\n\n"
+            "the main thread queues it in docs/work/<slug>/unfreeze-queue.md (case id, "
+            "old and new line, reason, hunk) and stops once for the whole batch, where "
+            "the main thread adds one line per path to `.claude/.tdd-unfrozen` (one "
+            "write, it asks the user):\n\n"
+            "    %s  # <case id>: <one-line reason>\n\n"
+            "each plan line rewritten (same id), `amended` appended to plan.md's "
+            "`## Gate`; the amended cases are listed in the PR body (Frozen cases). "
+            "Then edit.\n\n"
             "The implementation bends to the test — fix %s instead."
             % (file_path, file_path, impl_rel)
         )
@@ -298,6 +326,8 @@ def main() -> None:
                     "the code it would neutralise is even written" % (names, dotted)
                 )
 
+    if refused and rows:
+        rows_verdict()
     if refused:
         lib.deny(
             "TDD: %s is frozen and this edit is not a pure insertion — %s.\n\n"
@@ -309,10 +339,14 @@ def main() -> None:
             "under test.\n\n"
             "Denied: rewriting an assertion, renaming or deleting a case, anchoring on "
             "part of a line. That is a plan-level correction — a subagent stops and "
-            "reports the case id and why; the main thread adds one line to "
-            "`.claude/.tdd-unfrozen`:\n\n    %s  # <case id>: <one-line reason>\n\n"
-            "rewrites the plan line (same id), appends `amended` to plan.md's "
-            "`## Gate` (the user confirms it at the merge), then edits.\n\n"
+            "reports the case id and why; the main thread queues it in "
+            "docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk) "
+            "and stops once for the whole batch, where the main thread adds one line "
+            "per path to `.claude/.tdd-unfrozen` (one write, it asks the user):\n\n"
+            "    %s  # <case id>: <one-line reason>\n\n"
+            "each plan line rewritten (same id), `amended` appended to plan.md's "
+            "`## Gate`; the amended cases are listed in the PR body (Frozen cases). "
+            "Then edit.\n\n"
             "The implementation bends to the test: fix %s."
             % (file_path, refused, file_path, impl_rel)
         )

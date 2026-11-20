@@ -19,6 +19,19 @@ Callable alone at any time. `/bmad:flow` calls it before each story.
 
 ### 0. Inputs and state
 
+**Closing check first**, exactly as `/loop:orchestrate` Phase 0 step 0: for each
+`docs/work/*/handoff.md` with `phase: awaiting-merge` (main tree and worktrees), run
+`.claude/scripts/loop-pr-state.sh --chain <its branch>`; `closable` closes the pass: for the **main tree's** handoff whose HEAD
+is the pass's own branch, switch it to the default branch first
+(`gh repo view --json defaultBranchRef`) and sync it
+(`git switch <default branch>`, `git fetch origin`, `git merge --ff-only origin/<default branch>`;
+blocked or diverged → report, stop on this pass); a worktree handoff skips the switch and the sync
+(git refuses a branch checked out in the main tree). Then `/loop:ship` step 5: a worktree handoff's `/loop:ship` step 5 runs in the main tree, which must be on the synced default branch (else report and stop).
+`git branch -d feat/<slug>` comes last, after `python3 .claude/hooks/loop-record.py --clear` in the pass's tree, the handoff → `phase: shipped`, and the worktree removal;
+the count below is computed **after** it, since a
+merged prerequisite unblocks its dependants; `closed` → board `BLOCKED` "PR closed
+unmerged"; anything else, one line, nothing moved. A PR still open is not `Done`.
+
 Stories: the directory passed as argument, else the one named by
 `docs/product/backlog.md`. Read each story's **Status** and **Depends on** — those
 two fields, not the whole file.
@@ -128,7 +141,7 @@ missing, and say so.
 On go, per track:
 
 ```bash
-git worktree add .claude/worktrees/<track-slug> -b feat/<track-slug>
+git worktree add .claude/worktrees/<track-slug> -b feat/<track-slug> <base>
 ```
 
 **`<track-slug>` is not the slug in this command's argument.** Two different
@@ -142,8 +155,8 @@ ends up forking onto one branch:
 
 The derivation is `/loop:research`'s two-line rule (the only copy) and it is a pure
 function of the story's path, so you apply it here even though `/loop:research` has
-not run yet — it is what records the slug, not what invents it. The commit type
-prefixes the branch (`feat/`, `fix/`, `chore/`).
+not run yet — it is what records the slug, not what invents it. The branch is
+always `feat/<track-slug>`: the loop record and the closing check read that name.
 
 Forking under the feature slug is a **loud** failure and that is the good case:
 the second `git worktree add` refuses with "already exists". The bad case is

@@ -1,7 +1,7 @@
 # Spec: Small lane, small tickets in parallel, merged one at a time
 Token profile: standard (no automated path to the remote; tickets that need `critical` are refused, S2)
 Depends on: `light-fewer-gates` shipped (41cb73d) (case ids, B6). `docs/specs/light-permissions.md` is not required to work, only to remove the permission prompts inside a ticket's session (P1 allows, H7 for `kit-attempts.py`).
-Replaces: `docs/specs/fast-lane.md` as the next step (parked, its decision D4 taken: local first).
+Replaces: `docs/specs/fast-lane.md` as the next step (parked, its decision D4 taken: local first). With a remote, the integration now opens a PR on `Base:` (push and PR ask once): `docs/specs/loop-to-pr.md`, V5 and V10.
 
 ## Objective
 `/loop:small` takes a small, low-risk ticket from a short spec to a branch ready to merge, with one question before the work: the spec go. Up to 3 tickets run at once, each in its own worktree and session; each ends on the existing `/loop:ship`, which merges them locally, one at a time, on the user's go. Compared with the light loop it removes the interface step, the plan step (authoring, `plan-critic`, test plan gate) and the research fan-out, and runs a lighter review with its counter-review kept. TDD, hooks, gates and the merge gate are unchanged.

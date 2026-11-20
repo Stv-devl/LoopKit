@@ -845,6 +845,7 @@ RUNTIME_PATHS = {
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
     ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
+    ".claude/.loop-record.json",
 }
 PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # In .claude/hooks/ but invoked by a human or by another script, never by
@@ -973,9 +974,11 @@ def check_hook_wiring() -> list[Finding]:
 
 
 def check_github_protection() -> list[Finding]:
-    """`main` with neither a ruleset nor classic protection merges a red PR.
+    """A default branch with neither a ruleset nor classic protection merges a red PR.
 
-    Informational only, and silent whenever it cannot know: offline
+    The branch is the one `gh repo view` names. A ruleset lacking `pull_request`,
+    `non_fast_forward` or `deletion` is named too: the loop record's server barrier needs
+    all three (docs/specs/loop-to-pr.md). Informational only, and silent whenever it cannot know: offline
     (CWK_DOCTOR_OFFLINE=1), no `gh`, not authenticated, any error or timeout.
     A 403 on the classic-protection read means "not readable without admin",
     never "unprotected". Fix: ci.md, "Repository settings".
@@ -997,27 +1000,44 @@ def check_github_protection() -> list[Finding]:
     auth = gh("auth", "status")
     if auth is None or auth.returncode != 0:
         return []
-    rules = gh("api", "repos/{owner}/{repo}/rules/branches/main")
+    repo = gh("repo", "view", "--json", "defaultBranchRef")
+    if repo is None or repo.returncode != 0:
+        return []
+    try:
+        default = (json.loads(repo.stdout).get("defaultBranchRef") or {}).get("name")
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    if not isinstance(default, str) or not re.fullmatch(r"[A-Za-z0-9._/-]+", default):
+        return []
+    where = [".claude/skills/templates/ci.md — Repository settings"]
+    rules = gh("api", f"repos/{{owner}}/{{repo}}/rules/branches/{default}")
     if rules is None or rules.returncode != 0:
         return []
     try:
         active = json.loads(rules.stdout)
     except json.JSONDecodeError:
         return []
-    if not isinstance(active, list) or active:
+    if not isinstance(active, list):
         return []
-    prot = gh("api", "--include", "repos/{owner}/{repo}/branches/main/protection")
+    if active:
+        types = {rule.get("type") for rule in active if isinstance(rule, dict)}
+        missing = [t for t in ("pull_request", "non_fast_forward", "deletion") if t not in types]
+        if not missing:
+            return []
+        return [Finding("github-protection", INFO,
+                        f"{default} ruleset lacks {', '.join(missing)}: the loop record's server barrier "
+                        "stays off, so the pass's own push and PR keep asking", where)]
+    prot = gh("api", "--include", f"repos/{{owner}}/{{repo}}/branches/{default}/protection")
     if prot is None:
         return []
     status = next((m.group(1) for line in prot.stdout.splitlines()
                    if (m := re.match(r"^HTTP/\S+ (\d{3})", line))), None)
     if status == "404":
-        return [Finding("github-protection", INFO, "main has no ruleset and no classic protection",
-                        [".claude/skills/templates/ci.md — Repository settings"])]
+        return [Finding("github-protection", INFO, f"{default} has no ruleset and no classic protection", where)]
     if status == "403":
         return [Finding("github-protection", INFO,
-                        "main has no ruleset; classic protection not readable (HTTP 403, needs admin)",
-                        [".claude/skills/templates/ci.md — Repository settings"])]
+                        f"{default} has no ruleset; classic protection not readable (HTTP 403, needs admin)",
+                        where)]
     return []
 
 

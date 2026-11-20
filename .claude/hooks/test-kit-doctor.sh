@@ -98,6 +98,7 @@ cat > "$GH_WS/bin/gh" <<'SHIM'
 printf '%s\n' "$*" >> "$GH_SHIM_LOG"
 case "$1" in
     auth) exit "${GH_SHIM_AUTH:-0}" ;;
+    repo) printf '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"%s"}}\n' "${GH_SHIM_DEFAULT:-main}"; exit 0 ;;
     api)
         [ "${GH_SHIM_HANG:-0}" = 1 ] && exec sleep 30
         case "$*" in
@@ -121,7 +122,7 @@ kd_run() {
         python3 "$SCRATCH/.claude/hooks/kit-doctor.py"
 }
 # KD1 a ruleset applies to main → nothing.
-KD_OUT="$(kd_run GH_SHIM_RULES='[{"type":"deletion"}]' || true)"
+KD_OUT="$(kd_run GH_SHIM_RULES='[{"type":"pull_request"},{"type":"non_fast_forward"},{"type":"deletion"}]' || true)"
 if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
 grep -q 'rules/branches/main' "$GH_SHIM_LOG"
 # KD2 no ruleset, classic protection present (200) → nothing.
@@ -162,6 +163,26 @@ KD_OUT="$(PATH="$GH_WS/bin:$PATH" CWK_DOCTOR_OFFLINE=1 GH_SHIM_RULES='[]' GH_SHI
     python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 if grep -q 'github-protection' <<<"$KD_OUT"; then exit 1; fi
 [ ! -s "$GH_SHIM_LOG" ]
+# KD24 (loop-to-pr) the rules are read on the default branch gh names, not on `main`.
+KD_OUT="$(kd_run GH_SHIM_DEFAULT=trunk GH_SHIM_RULES='[]' GH_SHIM_PROT=404 || true)"
+grep -q 'rules/branches/trunk' "$GH_SHIM_LOG" || { echo 'KD24: rules not read on the default branch' >&2; exit 1; }
+if grep -q 'branches/main' "$GH_SHIM_LOG"; then echo 'KD24: main read anyway' >&2; exit 1; fi
+grep -q 'trunk has no ruleset and no classic protection' <<<"$KD_OUT" || { echo 'KD24: finding does not name trunk' >&2; exit 1; }
+# KD25 a ruleset missing a type the loop record's barrier needs → one INFO naming the missing ones.
+KD_OUT="$(kd_run GH_SHIM_RULES='[{"type":"deletion"}]' || true)"
+[ "$(grep -c 'INFO        github-protection' <<<"$KD_OUT")" -eq 1 ] || { echo 'KD25: no single INFO line' >&2; exit 1; }
+grep -q 'pull_request' <<<"$KD_OUT" && grep -q 'non_fast_forward' <<<"$KD_OUT" \
+    || { echo 'KD25: the missing types are not named' >&2; exit 1; }
+KD_OUT="$(kd_run GH_SHIM_RULES='[{"type":"pull_request"},{"type":"deletion"},{"type":"non_fast_forward"},{"type":"required_signatures"}]' || true)"
+if grep -q 'github-protection' <<<"$KD_OUT"; then echo 'KD25: all three types still reported' >&2; exit 1; fi
+# KD26 loop-record.py is wired (not mute) and its record is a known runtime path, on the kit source.
+if grep -q 'loop-record' <<<"$SOURCE_OUTPUT"; then echo 'KD26: the kit source reports loop-record' >&2; exit 1; fi
+KP="$SCRATCH/kp26"
+mkdir -p "$KP"
+"$(cd "$HOOKS_DIR/../.." && pwd)/install.sh" "$KP" --no-ci >/dev/null 2>&1
+printf 'The record lives in `.claude/.loop-record.json`.\n' >>"$KP/.claude/guides/orchestrate.md"
+KD_OUT="$(python3 "$KP/.claude/hooks/kit-doctor.py" || true)"
+if grep -q 'loop-record' <<<"$KD_OUT"; then echo 'KD26: an install reports loop-record' >&2; exit 1; fi
 # KD9 an unfilled CODEOWNERS owner is a placeholder, in the kit template and on a target.
 mkdir -p "$SCRATCH/.github"
 printf '%s\n' '# FILL: replace @OWNER' '/.claude/hooks/ @OWNER' > "$SCRATCH/templates/github/CODEOWNERS"

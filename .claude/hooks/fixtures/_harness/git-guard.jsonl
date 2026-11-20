@@ -544,3 +544,51 @@
 {"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}
 {"id":"G20.001","verdict":"ask","command":"git fetch origin main:main","reason":"local branch"}
 {"id":"G20.002","verdict":"pass","command":"git merge --ff-only origin/main"}
+{"id":"G21.001","verdict":"allow","setup":"lp","command":"git push -u origin feat/s1","reason":"loop record"}
+{"id":"G21.002","verdict":"allow","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"loop record"}
+{"id":"G21.003","verdict":"ask","setup":"lpnorec","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.004","verdict":"ask","setup":"lpnobar","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.005","verdict":"ask","setup":"lps2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.006","verdict":"ask","setup":"lpother","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.039","verdict":"ask","setup":"lpnobar","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.007","verdict":"ask","setup":"lp","command":"git push -u origin HEAD:main","reason":"pushes to a remote"}
+{"id":"G21.008","verdict":"ask","setup":"lp","command":"git push -u origin +feat/s1","reason":"pushes to a remote"}
+{"id":"G21.009","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1:main","reason":"pushes to a remote"}
+{"id":"G21.010","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1 --tags","reason":"pushes to a remote"}
+{"id":"G21.011","verdict":"ask","setup":"lp","command":"git push --mirror -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.012","verdict":"ask","setup":"lp","command":"git push -u origin --delete feat/s1","reason":"pushes to a remote"}
+{"id":"G21.013","verdict":"ask","setup":"lp","command":"git push --force-with-lease -u origin feat/s1","reason":"FORCE push"}
+{"id":"G21.014","verdict":"ask","setup":"lp","command":"git push --no-verify -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.015","verdict":"ask","setup":"lp","command":"git push origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.016","verdict":"ask","setup":"lp","command":"git -C . push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.017","verdict":"ask","setup":"lp","command":"GIT_SSH_COMMAND=x git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.018","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1 && echo","reason":"pushes to a remote"}
+{"id":"G21.019","verdict":"ask","setup":"lpcfgpush","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.020","verdict":"ask","setup":"lpcfginsteadof","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.021","verdict":"ask","setup":"lpcfgfollow","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.022","verdict":"ask","setup":"lpcfgssh","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.023","verdict":"ask","setup":"lpcfginclude","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.040","verdict":"ask","setup":"lpcfgmirror","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.041","verdict":"ask","setup":"lpcfgrecv","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.042","verdict":"ask","setup":"lpcfgopt","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.024","verdict":"ask","setup":"lptag","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.025","verdict":"ask","setup":"lpremote","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.026","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base main --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.027","verdict":"ask","setup":"lp","command":"gh pr create --repo other/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.028","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md --web","reason":"acts on a pull request"}
+{"id":"G21.029","verdict":"ask","setup":"lpnobaseok","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.030","verdict":"ask","setup":"lpnobody","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.031","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body \"x\"","reason":"acts on a pull request"}
+{"id":"G21.032","verdict":"ask","setup":"lp","command":"gh pr create --base audit/x --repo o/r --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.033","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t $x\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.034","verdict":"ask","setup":"lpbasemain","command":"gh pr create --repo o/r --base main --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.035","verdict":"ask","setup":"lp","command":"gh pr merge 1","reason":"acts on a pull request"}
+{"id":"G21.035.2","verdict":"ask","setup":"lp","command":"gh pr edit 1 --title x","reason":"acts on a pull request"}
+{"id":"G21.035.3","verdict":"ask","setup":"lp","command":"gh pr close 1","reason":"acts on a pull request"}
+{"id":"G21.035.4","verdict":"ask","setup":"lp","command":"git push --force -u origin feat/s1","reason":"FORCE push"}
+{"id":"G21.035.5","verdict":"ask","setup":"lp","command":"gh release create v1","reason":"writes to GitHub"}
+{"id":"G21.036","verdict":"deny","setup":"lpbody","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"attribution line in a gh body"}
+{"id":"G21.037","verdict":"ask","setup":"lpslow","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.037.2","verdict":"ask","setup":"lpslowb","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.038","verdict":"ask","setup":"lpbadjson","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.038.2","verdict":"ask","setup":"lpv2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}

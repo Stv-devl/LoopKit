@@ -495,7 +495,47 @@ group_dispatch() {
     check dispatch "D20 dispatch leaves no bytecode in the hooks folder" \
         "found: $(find "$SCRATCH/kit-d20/.claude/hooks" -name '*.pyc' | tr '\n' ' ')" \
         test -z "$(find "$SCRATCH/kit-d20/.claude/hooks" -name '*.pyc')"
+
+    # D21 (loop-to-pr review 1): with a remote a small ticket merges on GitHub, a squash leaving its
+    # branch no ancestor of the base. Its PR read MERGED frees its Files and its track; an open PR,
+    # or no remote, keeps it in flight.
+    gh_shim "$SCRATCH/gh-merged" MERGED
+    gh_shim "$SCRATCH/gh-open" OPEN
+    repo="$(make_fixture)"; cd "$repo" || return
+    git_q remote add origin "$repo/.origin-unused"
+    fork_small "$repo" a "${A[@]}"
+    PATH="$SCRATCH/gh-merged:$PATH" run "$SCRIPTS/small-dispatch-check.sh" b "${A[@]}"
+    expect dispatch "D21 squash-merged ticket not counted" "ok" 0
+    PATH="$SCRATCH/gh-open:$PATH" run "$SCRIPTS/small-dispatch-check.sh" b "${A[@]}"
+    expect dispatch "D21.2 open PR still in flight" "waits behind small-a: src/features/a/a.utils.ts" 1
+    fork_small "$repo" c "${C[@]}"
+    fork_small "$repo" d "${D[@]}"
+    PATH="$SCRATCH/gh-merged:$PATH" run "$SCRIPTS/small-dispatch-check.sh" b "${B[@]}"
+    expect dispatch "D21.3 merged ticket off the ceiling" "ok" 0
+    repo="$(make_fixture)"; cd "$repo" || return
+    fork_small "$repo" a "${A[@]}"
+    PATH="$SCRATCH/gh-merged:$PATH" run "$SCRIPTS/small-dispatch-check.sh" b "${A[@]}"
+    expect dispatch "D21.4 no remote, local ancestry only" "waits behind small-a: src/features/a/a.utils.ts" 1
+
+    # D22: an IN LOOP row whose handoff awaits its PR's merge no longer holds the main tree,
+    # unless HEAD is that pass's own branch.
+    repo="$(make_fixture)"; cd "$repo" || return
+    write_board "$repo" docs/specs/x.md "IN LOOP"
+    mkdir -p docs/work/x
+    printf -- '---\nphase: awaiting-merge\n---\n' >docs/work/x/handoff.md
+    dispatch b "${B[@]}"; expect dispatch "D22 awaiting merge, HEAD elsewhere" "ok" 0
+    git_q checkout -q -b feat/x
+    dispatch b "${B[@]}"; expect dispatch "D22.2 awaiting merge, HEAD on its branch" "waits behind main-tree loop x" 1
+    git_q checkout -q main
+    printf -- '---\nphase: execute\n---\n' >docs/work/x/handoff.md
+    dispatch b "${B[@]}"; expect dispatch "D22.3 handoff still executing" "waits behind main-tree loop x" 1
     cd "$KIT" || return
+}
+
+gh_shim() {
+    mkdir -p "$1"
+    printf '#!/usr/bin/env bash\nif [[ "${1:-}" == repo ]]; then echo "{\\"defaultBranchRef\\":{\\"name\\":\\"main\\"}}"; exit 0; fi\nif [[ "${1:-}" == pr && "${2:-}" == view ]]; then echo "{\\"state\\":\\"%s\\",\\"baseRefName\\":\\"main\\",\\"mergedAt\\":\\"2026-11-19T10:00:00Z\\",\\"number\\":7}"; exit 0; fi\nexit 1\n' "$2" >"$1/gh"
+    chmod +x "$1/gh"
 }
 
 scope() {

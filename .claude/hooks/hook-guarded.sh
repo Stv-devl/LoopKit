@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 8
+# cwk-guard-api: 9
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -158,10 +158,13 @@ cwk_is_kit_code() {
 
 # Never written by a tool call, whoever asks. Only tdd-prove-red.sh writes a RED
 # marker, from a hook process PreToolUse never sees: a hand-written one lets a
-# module in with no observed failing test. `.git` is git's own store: only git
-# commands change it, and a delete or overwrite loses the history.
+# module in with no observed failing test. Only loop-record.py writes the loop
+# record, from the user's plan-gate go: a hand-written one grants a push and a PR
+# nobody approved. `.git` is git's own store: only git commands change it, and a
+# delete or overwrite loses the history.
 CWK_GUARD_DENIED=(
     '.claude/.tdd-red/*'
+    '.claude/.loop-record.json'
     '.git/*'
 )
 
@@ -170,6 +173,9 @@ cwk_guard_denied_why() {
     case "$1" in
         .git | .git/*)
             printf '%s' ".git is git's own store: history, refs and config, changed only by git commands; deleting or overwriting it loses the history."
+            ;;
+        .claude/.loop-record.json)
+            printf '%s' ".claude/.loop-record.json is written only by loop-record.py, from the user's own plan-gate go: it is what lets this pass push its branch and open its PR without asking; a hand-written one grants that with no go."
             ;;
         *)
             printf '%s' ".claude/.tdd-red/ is written only by tdd-prove-red.sh: the marker proves a RED, a test that failed before its module existed; a hand-written one lets a module in with no observed failure (.claude/rules/05-testing.md)."
@@ -340,14 +346,15 @@ cwk_is_guarded() {
     return 1
 }
 
-# cwk_is_guard_denied <repo-relative path>: exit 0 for `.claude/.tdd-red`, `.git`
-# and everything under them. Their ancestors (`.claude`, `.`) are guarded, not denied.
+# cwk_is_guard_denied <repo-relative path>: exit 0 for `.claude/.tdd-red`, `.git`,
+# everything under them, and `.claude/.loop-record.json`. Their ancestors (`.claude`, `.`) are guarded, not denied.
 cwk_is_guard_denied() {
     local rel="$1" pattern
     [[ -n "$rel" ]] || return 1
     for pattern in "${CWK_GUARD_DENIED[@]}"; do
         # shellcheck disable=SC2053
-        [[ "$rel" == $pattern || "$rel" == "$(__cwk_guard_dir "$pattern")" ]] && return 0
+        [[ "$rel" == $pattern ]] && return 0
+        [[ "$pattern" == *[*?[]* && "$rel" == "$(__cwk_guard_dir "$pattern")" ]] && return 0
     done
     return 1
 }

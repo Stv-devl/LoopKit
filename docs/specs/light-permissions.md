@@ -1,4 +1,5 @@
 # Spec: Light loop without permission prompts
+> The pass's own push and PR run without a prompt since `docs/specs/loop-to-pr.md` (V5, loop record and server barrier; V10, plan-gate rows for frozen cases).
 > **Superseded 2026-10-28** (plan-critic BLOCKED 3x, `docs/work/light-permissions/handoff.md`). Split into three passes, in order: `docs/specs/guard-writes.md` → `docs/specs/guard-shell.md` → `docs/specs/light-permissions-git.md`. Kept as the trace; do not orchestrate this file.
 
 Token profile: critical (it widens what the agent may do without a prompt and hardens the hooks that compensate)

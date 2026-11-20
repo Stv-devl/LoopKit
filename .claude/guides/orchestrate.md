@@ -72,6 +72,22 @@ property; "does this case describe the business rule" only verifies against the
 user's intent. Every other gate judges code that exists; this one judges the
 target, and the go freezes those test files.
 
+## The plan-gate go opens the pass's own PR (V5)
+
+The user's `go` on the `Plan gate` question writes `.claude/.loop-record.json`
+(`loop-record.py`, on the user's own answer only). With it, and with a **server
+barrier** on the default branch (a ruleset holding `pull_request`,
+`non_fast_forward` and `deletion`), the pass's first push of its branch and its PR
+run without a prompt. Why that is safe: the agent's code runs with the user's
+credentials either way; what makes a PR harmless is that nothing reaches the
+default branch without a review the server enforces, not a local prompt the agent
+can be trained to wave through. No barrier → the same commands ask once. Known
+limits, stated and not checked: a ruleset bypass actor (an admin token merges
+anyway); a rule removed between the go and the push (the barrier is read once, at
+the go); agent code run through an allowed gate command can write any file, the
+record included — the same class as `.tdd-red` and `.tdd-unfrozen`, out of the
+spec's scope.
+
 ## Codex in EXECUTE and review fixes
 
 "Codex available" means `codex --version` succeeds, not `command -v codex`: with

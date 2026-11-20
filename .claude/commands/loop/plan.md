@@ -115,6 +115,26 @@ You **do not write code here**.
 7. **TEST PLAN GATE — stop and ask the user.** Print the `Test plan` section in
    full and wait for an explicit go.
 
+   **The go is asked through `AskUserQuestion`, in every pipeline** (`light`,
+   `full`, `BUG`): one question with header `Plan gate`, options `go` and `amend`,
+   never pre-filled (`answers` is the user's; the hook denies it). Its text opens with
+   exactly these lines, which `loop-record.py` parses on the user's `go` to write the
+   loop record the pass's own push and PR rely on (`/loop:ship` `4bis-PR`):
+
+   ```
+   Plan go — docs/work/<slug>/plan.md
+   Frozen cases to amend:
+   <test path> | <case id> | <sha256 of the new title>
+   ```
+
+   or `Frozen cases to amend:` then `none`. A row is a frozen case this plan
+   corrects; print first its old line, its new title and the reason, so the user
+   reads the title the hash stands for, then compute the digest with
+   `.claude/scripts/case-hash.sh '<new case title>'` (single quotes; a title holding
+   `'`, an escape or a template literal is refused by the freeze hook). On the go,
+   each row's `.tdd-unfrozen` line is written with no second ask, and an `amended`
+   line goes to `## Gate`.
+
    **First, clear research's `Open questions`.** That section holds what no probe
    could settle, and this gate is the last moment it is free to settle them: after
    the go, those cases are frozen. Print each open question with what would settle

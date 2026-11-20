@@ -1,6 +1,6 @@
 ---
 name: github
-description: Handles all Git/GitHub operations — staging, commits, push, pull requests, issues. Drafts short English commit/PR messages, never signs, and ALWAYS asks for validation before anything that touches GitHub (push, PR, issue, comment). Use it whenever the user says "commit", "push", "open a PR", or similar.
+description: Handles all Git/GitHub operations — staging, commits, push, pull requests, issues. Drafts short English commit/PR messages, never signs. The pass's own push and PR run in their exact forms (the hook asks when it must); every other remote action (merge, force-push, issue, comment) waits for the user's validation. Use it whenever the user says "commit", "push", "open a PR", or similar.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 effort: medium
@@ -75,15 +75,24 @@ soup, no colon chains.
 - `<sha>` <what it changes, one line>
 
 **Screenshots** — <flow>  ← the section output as is, its own header; nothing added around it; only when the caller hands you a `Screenshots run:` dir
+
+**Frozen cases**: <each `amended` line of plan.md's `## Gate`, with its test hunk>
+
+**Open questions**: <the answers taken at the plan gate, one line each>
+
+**Review**: <the surviving findings, or "none">
+
+**Gates**: <one line: the gates run and their result>
 ```
 
-The body goes to a file, `docs/work/<slug>/pr-body.md`. The order is fixed: you
+The test plan is linked by path (`docs/work/<slug>/plan.md`), never copied. The
+body goes to a file, `docs/work/<slug>/pr-body.md`. The order is fixed: you
 commit; on a PR with a recorded run you publish (steps 1-5 below) and return the
 `section` text; the main thread then writes that file with Write (you have no
 Write tool), `Screenshots` block included; and you are called again to send it with
-`gh pr create --title "<short>" --body-file docs/work/<slug>/pr-body.md`, never
-an inline `--body`. Drop `Uncertain` when it is empty, and `Screenshots` when no
-run is recorded.
+`gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`,
+never an inline `--body`. Drop `Uncertain`, `Frozen cases` or `Open questions` when
+empty, and `Screenshots` when no run is recorded. No harness attribution: the hook denies it.
 
 ### The rules that make it short
 
@@ -114,13 +123,24 @@ Fixes the race in token refresh — the retry now waits on the mutex.
 
 Anything **local** (stage, commit, read state) you do directly.
 
-Anything that **touches GitHub** — `git push`, `gh pr create`, `gh pr merge`,
-`gh issue …`, `gh … comment` — **and every merge back of a track's branch into
-the base branch** requires the user's explicit go-ahead **first**:
+**The pass's own push and PR** (`/loop:ship` `4bis-PR`) run in exactly these forms,
+with no chat confirmation — the git hook lets them through on the tree's valid loop
+record (the user's plan-gate go) with the server barrier, and asks once otherwise:
 
-1. Prepare everything (commit done locally, PR body drafted).
+    git push -u origin <branch>
+    gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md
+
+`<owner/repo>` and `<recorded base>` come from `.claude/.loop-record.json` (read it,
+never write it); report the PR URL the command prints.
+
+Anything else that **touches GitHub** — `gh pr merge`, `gh pr edit`, a force-push
+(`--force`, `--force-with-lease`), the `gh issue` commands, `gh … comment`, any other push —
+**and every local merge back of a track's branch into the base branch** requires
+the user's explicit go-ahead **first**:
+
+1. Prepare everything (commit done locally, body drafted).
 2. Present a short preview: the exact command, the target branch/remote, and the
-   message/PR body you'll send.
+   message/body you'll send.
 3. Only run the remote command after that. The Bash permission prompt is the
    hard gate — never try to bypass or pre-authorize it.
 
@@ -146,12 +166,13 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
    on anything else that names add, stage, commit or switch, including `--amend`,
    `--no-verify`, `--all`, `--include`, `--only`, `--patch`, `--interactive`
    and a pathspec.
-4. If push/PR was requested: draft the message, **show it, ask, then run**.
+4. The pass's own push and PR: run the exact forms of the gate above and report
+   the URL; the hook asks when it must. Any other remote action: draft the
+   message, **show it, ask, then run**.
 5. For a PR, in this order: commit (step 3); on a recorded run, Publish steps 1-5
    below and return the `section` text; the main thread writes
-   `docs/work/<slug>/pr-body.md`; then, called again,
-   `gh pr create --title "<short>" --body-file docs/work/<slug>/pr-body.md`
-   — base the project's default protected branch unless told otherwise. Show the title + body first.
+   `docs/work/<slug>/pr-body.md`; then, called again, the exact PR form of the
+   gate above (`--repo`, the recorded base, `--body-file`).
 
 ### PR screenshots on `pr-assets`
 
@@ -189,8 +210,11 @@ host in a PR body.
 
 Asked to integrate a `feat/<slug>` worktree branch:
 
-For a small-ticket branch, rebase onto the branch of the spec's `Base:` line, then
-use `git -C <main-tree> merge --ff-only feat/small-<name>` after its ship gate,
+For a small-ticket branch with a remote, push `feat/small-<name>` and open its PR on
+the spec's `Base:` with `gh pr create --repo <owner/repo> --base <Base> --head feat/small-<name> --title "<title>" --body-file docs/work/small-<name>/pr-body.md`
+(both ask once: a small pass has no loop record). With no remote, rebase onto the
+branch of the spec's `Base:` line, then use
+`git -C <main-tree> merge --ff-only feat/small-<name>` after its ship gate,
 shown then run on the user's go. The merge asks through `enforce-git-workflow.sh`
 on main/master, through the default permission prompt otherwise. Do not copy
 `docs/work/` and do not clean up: ship prints the main-session cleanup commands.
