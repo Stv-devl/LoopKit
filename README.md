@@ -95,10 +95,14 @@ them in the PR body (summary, `Where to look`, `Uncertain`, one line per commit,
 `pr-assets` only: they stay in its git history. Every push to `pr-assets` asks first.
 
 `/loop:small` dispatches a bounded, non-foundation change into a dedicated
-worktree after one spec approval; it then follows the normal plan, execute,
-review and ship path and merges one ticket at a time. Its `.claude/scripts/small-*`
-helpers check the dispatch, compute the allowed paths and refuse a diff that
-leaves them.
+worktree after **one** approval of its spec (go, edit, or route to `/loop:spec`). The ticket
+then runs plan, execute, a light review and ship with no further question. With a remote it
+pushes `feat/small-<name>` and opens a PR on the spec's `Base:`; both ask once, since a small
+pass has no loop record. Without a remote it fast-forwards locally on your go, one ticket at a
+time. Anything bigger ejects back to `/loop:spec` with its reason: a frozen case to correct, a
+file outside `Files`, a failed review, a gate failed 3 times. Its `.claude/scripts/small-*`
+helpers check the dispatch, compute the allowed paths and refuse a diff that leaves them;
+`/loop:small --status` lists the tickets in flight and what to clean up.
 
 **Push and PR without a prompt.** Your plan-gate go (in `auto`, your contract go) makes a hook
 write `.claude/.loop-record.json`, which no agent can write. With it, and a server-side rule on
