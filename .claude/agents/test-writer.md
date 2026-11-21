@@ -75,6 +75,10 @@ executes nothing is not a red, whatever it prints.
 | Prover hook | `tdd-prove-red.sh` | `tdd-prove-red-py.py` |
 | Fallback runner | `pnpm test:run <path>` | `python -m pytest <path>` — **`-m`, never the bare `pytest`**, which does not put the project root on `sys.path` |
 
+Type and lint checks go through the project scripts, `pnpm typecheck` and `pnpm lint`
+(`pnpm -C <package> …` in a sub-package), never `npx tsc -p <dir>` or a hand-built
+`npx eslint` line: a config option the shell guard cannot pin prompts, auto mode included.
+
 If the path you were handed is a `.py` and this repo has no `07-backend.md`, the
 Python cycle is not installed here: **stop and say so** rather than writing a
 pytest file no hook will ever prove.

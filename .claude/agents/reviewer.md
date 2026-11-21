@@ -35,6 +35,9 @@ research step — treat each one as a criterion you must explicitly clear.
 - the artifact you were handed — especially the **acceptance criteria**
 - `docs/work/<slug>/research.md` if it exists — the traps found before the build
 - the diff to review: `git diff` (and `git diff --staged`) via Bash
+- a kit script (`.claude/hooks/kit-*.py`, `.claude/scripts/*`) goes first in its own Bash
+  call, or right after a lone `cd <absolute project root> &&`, never after another command:
+  any other shape prompts, auto mode included
 
 ## Dimensions — read only your own checklists
 

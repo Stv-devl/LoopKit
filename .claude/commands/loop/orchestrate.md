@@ -21,6 +21,11 @@ entry artifact's path** by the rule in `/loop:research` — the only copy. Every
 phase reads it out of the path it was handed; Phase 0.5 applies the same rule
 itself, before research has run.
 
+**Kit scripts** (`.claude/hooks/kit-*.py`, `.claude/scripts/*`, `.claude/hooks/*.sh`),
+run by their relative path, go first in their own Bash call or right after a lone
+`cd <absolute project root> &&`: nothing else before them (no `grep`, no assignment,
+no other kit script). Split anything else into separate calls; it prompts, auto mode included.
+
 ## Token profile
 
 Select once in Phase 0 and persist `Token profile: <value>` in every
@@ -249,6 +254,8 @@ then the spec's Objective, Scope IN/OUT and Acceptance criteria verbatim under
 `Traps`, one line each. Answers: `as written` (→ `kit-attempts.py pass` on `contract`;
 the hook writes the auto record) or free text to amend (the "Contract amendment" rules
 below). Right after `as written`, on the base branch run `git switch -c feat/<slug> <base>`
+alone in its own Bash call (no `cd`, no `&&`, nothing before or after it: any other shape
+prompts, auto mode included; `kit-attempts.py pass` and the record check are separate calls)
 (the start point named: the record reads its base from it) before Phase 2 (main tree; a worktree pass already stands on it): auto mode holds only
 on the record's own branch, never on its base. Then check the record: without `barrier: true` (`.claude/.loop-record.json`,
 read-only) auto mode does not start — blocked stop before Phase 2.

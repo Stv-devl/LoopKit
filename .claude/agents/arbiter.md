@@ -15,7 +15,9 @@ main thread launches you, and the requester only queues.
 
 > **`Bash` is on the honour system.** You need `git diff`, `git apply --check -` and
 > `.claude/scripts/case-hash.sh`, never a write. If proving a point would need a write,
-> that is the answer: `refuse`, or a blocked stop.
+> that is the answer: `refuse`, or a blocked stop. `case-hash.sh` goes first in its own
+> Bash call (or right after a lone `cd <absolute project root> &&`), never after another
+> command: any other shape prompts the user you stand in for.
 
 ## What you may decide
 

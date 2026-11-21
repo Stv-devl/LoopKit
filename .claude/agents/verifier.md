@@ -36,6 +36,9 @@ verifiers. You get the finding texts, the entry artifact path, and the repo.
 - the diff: `git diff` / `git diff --staged` via Bash
 - in a re-review, also the `fix-base` tree sha and the fix diff
   (`python3 .claude/hooks/kit-gate-route.py diff docs/work/<slug>/plan.md fix`)
+- a kit script (`.claude/hooks/kit-*.py`, `.claude/scripts/*`) goes first in its own Bash
+  call, or right after a lone `cd <absolute project root> &&`, never after another command:
+  any other shape prompts, auto mode included
 
 ## Method
 

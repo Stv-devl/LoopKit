@@ -50,6 +50,7 @@ Kit code (hooks, scripts, launchers, `project.json`) is denied in an installed p
 `node -e`), auto-memory included: it goes around every `Write|Edit` guardrail. A guarded-path ask is
 the user's to answer, never by switching tools. Delete specific files, never whole folders.
 No `cd dir; …` (absolute paths, or Read/Grep/Glob); never end a turn on "je lance X ?" when X is the next local, reversible step asked.
+A kit script (`.claude/hooks/kit-*.py`, `.claude/scripts/*`) runs first in its own Bash call, or right after a lone `cd <absolute root> &&`.
 
 ## Non-negotiables
 
