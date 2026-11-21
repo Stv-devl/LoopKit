@@ -66,6 +66,7 @@ credentials.*
 
 # Written by loop-record.py from the user's plan-gate go: local to one tree and one pass.
 .claude/.loop-record.json
+.claude/.loop-record.lock
 
 # .claude/.tdd-unfrozen is deliberately NOT ignored: the whole point of the
 # exception list is that it is visible in review (.claude/rules/05-testing.md).

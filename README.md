@@ -1,6 +1,6 @@
 # LoopKit
 
-One loop from idea to commit for Claude Code — 31 commands, 13 subagents, 10
+One loop from idea to commit for Claude Code — 31 commands, 14 subagents, 10
 declarative rules and 15 hooks that mechanically refuse what the rules forbid.
 Built for React + TypeScript; the backend is a parameter.
 
@@ -23,6 +23,9 @@ THE LOOP (identical for both)           ▼
   /loop:research ─▶ /loop:interface ─▶ /loop:plan ─▶ EXECUTE ─▶ /loop:review ─▶ /loop:ship ─▶ next
        └───────────────── /loop:orchestrate runs the whole thing ─────────────────┘
 ```
+
+Validation `moi` (you take every gate) or `auto` (you validate the contract after research, an
+`arbiter` agent takes each later gate, the PR lists what it decided; you merge).
 
 ## Install
 
@@ -138,7 +141,7 @@ twice per feature at most.
 .claude/rules/      10 rules, loaded every session (and by every subagent)
 .claude/hooks/      15 wired hooks + the status line + fixture suites
 .claude/scripts/    the /loop:small helpers
-.claude/agents/     13 subagents
+.claude/agents/     14 subagents
 .claude/commands/   31 slash commands — loop/, bmad/, audit/, refactor/, kit/…
 .claude/skills/     patterns, templates, the e2e-playwright skill
 .claude/guides/     rationale + on-demand rules, never auto-loaded

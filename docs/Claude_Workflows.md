@@ -134,6 +134,11 @@ Il a **deux modes**, détectés automatiquement (`--new` / `--extract` pour forc
 /loop:spec ma feature    # interview → docs/specs/<slug>.md, puis enchaîne /loop:orchestrate
 ```
 
+**Validation : `moi` ou `auto`**, demandé une fois au cadrage. En `auto`, tu valides le
+contrat après la recherche (`Contract gate`), puis des agents `arbiter` tranchent chaque
+arrêt jusqu'à la PR ; tu ne fais que merger. Le tableau des arrêts par mode est dans
+`/loop:orchestrate`, « Validation mode ».
+
 `/loop:spec` pose 3-4 questions, écrit le contrat, puis **enchaîne la boucle** sans
 redemander. Tu valides le contrat (objectif, périmètre, critères d'acceptation) au
 premier arrêt de la passe, recherche en main : à l'interface s'il y a un écran,
@@ -730,6 +735,10 @@ Règle complète : `.claude/guides/10-worktrees.md`.
 | `verifier`     | Tente de **réfuter** un finding — ce qui survit est réel                        | non       |
 | `security-auditor` | Audit sécurité d'UNE surface, sur le dépôt entier — hors boucle            | non       |
 | `github`       | Commits locaux ; tout ce qui touche GitHub demande ton accord                   | oui       |
+| `doc-researcher` | Recherche UNE surface tierce au RESEARCH, budget réseau borné, réécrit son cache | son fichier de cache |
+| `plan-critic`  | Critique adversariale du plan contre son contrat, deux scores séparés          | non       |
+| `implementer`  | Code UN lot borné : une couche GREEN passé 70 %, ou un lot de corrections de review | le lot    |
+| `arbiter`      | Mode `auto` : tranche à ta place UNE décision d'après le contrat (plan de tests, question ouverte, correction de cas gelé, choix de review) ; un hook enregistre son verdict | non       |
 
 ---
 

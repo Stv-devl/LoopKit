@@ -476,8 +476,8 @@ def _git(tree: str, *args: str):
     return done.stdout.strip() if done.returncode == 0 else None
 
 
-def loop_rows(path: str) -> dict:
-    """{case id: sha256} rows of the tree's valid loop record for this test, {} when none.
+def _loop_record(path: str):
+    """(record, path relative to its tree) of the tree's valid loop record for this test, or None.
 
     The tree is the git toplevel of the directory holding the file; the record is valid when
     HEAD is its branch, or HEAD is its base and holds its base commit. Same rule as
@@ -486,28 +486,58 @@ def loop_rows(path: str) -> dict:
     target = abs_path(path)
     tree = _git(os.path.dirname(target), "rev-parse", "--show-toplevel")
     if not tree:
-        return {}
+        return None
     record = os.path.join(tree, ".claude", ".loop-record.json")
     try:
         if os.path.islink(record):
-            return {}
+            return None
         with open(record, encoding="utf-8") as fh:
             rec = json.load(fh)
     except (OSError, ValueError):
-        return {}
+        return None
     if not isinstance(rec, dict) or rec.get("version") != 1 or not isinstance(rec.get("rows"), list):
-        return {}
+        return None
     head = _git(tree, "symbolic-ref", "-q", "--short", "HEAD")
     if not head:
-        return {}
+        return None
     if head != rec.get("branch"):
         sha = rec.get("base_sha")
         if head != rec.get("base") or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-            return {}
+            return None
         if _git(tree, "merge-base", "--is-ancestor", sha, "HEAD") is None:
-            return {}
-    rel = os.path.relpath(os.path.realpath(target), os.path.realpath(tree))
+            return None
+    return rec, os.path.relpath(os.path.realpath(target), os.path.realpath(tree))
+
+
+def loop_rows(path: str) -> dict:
+    """{case id: sha256} rows of the tree's valid loop record for this test, {} when none."""
+    found = _loop_record(path)
+    if not found:
+        return {}
+    rec, rel = found
     return {r.get("id"): r.get("sha256") for r in rec["rows"] if isinstance(r, dict) and r.get("path") == rel}
+
+
+def loop_auto(path: str):
+    """(auto, granted, refused) for this test (docs/specs/auto-mode.md, step 4): whether the tree's valid
+    record is in auto mode (`mode: auto` and a contract go), the {case id: sha256} of its `unfreeze`
+    verdicts and the case ids of its `refuse` verdicts. Same rule as `tdd-freeze-tests.sh`."""
+    found = _loop_record(path)
+    if not found:
+        return False, {}, set()
+    rec, rel = found
+    if rec.get("mode") != "auto" or not isinstance(rec.get("contract_go"), dict):
+        return False, {}, set()
+    if _git(os.path.dirname(abs_path(path)), "symbolic-ref", "-q", "--short", "HEAD") != rec.get("branch"):
+        return False, {}, set()
+    granted, refused = {}, set()
+    for v in rec.get("verdicts") or []:
+        if isinstance(v, dict) and v.get("kind") == "frozen-case" and v.get("path") == rel:
+            if v.get("verdict") == "unfreeze":
+                granted.setdefault(v.get("id"), v.get("sha256"))
+            elif v.get("verdict") == "refuse":
+                refused.add(v.get("id"))
+    return True, granted, refused
 
 
 def unfrozen_ids(path: str) -> set:
@@ -556,7 +586,8 @@ def _touched(text: str, cases: list, lo: int, hi: int):
     return hit
 
 
-def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_name: str) -> str:
+def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_name: str,
+                 auto: bool = False, refused: frozenset = frozenset()) -> str:
     """Why rows mode refuses this write, or "" when every case it touches is a row whose new name
     hashes to it, or an id listed for this path on `.tdd-unfrozen`."""
     if tool_name != "Edit":
@@ -585,8 +616,10 @@ def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_nam
     for case in written:
         if case["id"] not in ids:
             return "the edit writes case %s, which is not among the cases it replaces" % (case["id"] or case["title"])
-    listed = unfrozen_ids(path)
+    listed = set() if auto else unfrozen_ids(path)
     for cid in sorted(ids):
+        if cid in refused:
+            return "case %s: the arbiter answered refuse on its correction (auto mode), so it stays frozen" % cid
         if cid in rows:
             after = [c for c in after_cases if c["id"] == cid]
             if len(after) != 1:
@@ -594,6 +627,9 @@ def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_nam
             actual = hashlib.sha256(after[0]["title"].encode("utf-8")).hexdigest()
             if actual != rows[cid]:
                 return "case %s: its new name hashes to %s, the plan-gate row holds %s" % (cid, actual, rows[cid])
+        elif auto:
+            return ("case %s has neither a plan-gate row nor an unfreeze verdict in the loop record "
+                    "(auto mode: a .tdd-unfrozen line alone unfreezes nothing)" % cid)
         elif cid not in listed:
             return "case %s is neither a plan-gate row nor listed on a .tdd-unfrozen line for this path" % cid
     return ""

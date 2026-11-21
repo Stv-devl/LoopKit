@@ -67,6 +67,10 @@ soup, no colon chains.
 ```markdown
 <One line: what this does. No preamble, no framing, no "this PR".>
 
+**Decided without you**: <auto mode only: one line per arbiter verdict from the record's ledger — question → verdict>
+
+**Contract contradiction**: <auto mode only, when any: where the contract as written and the work disagreed, and what was built>
+
 **Where to look**: <1-3 lines: the file or decision a reviewer should open first>
 
 **Uncertain**: <only when something is: what you are not sure of, one line each>
@@ -76,7 +80,9 @@ soup, no colon chains.
 
 **Screenshots** — <flow>  ← the section output as is, its own header; nothing added around it; only when the caller hands you a `Screenshots run:` dir
 
-**Frozen cases**: <each `amended` line of plan.md's `## Gate`, with its test hunk>
+**Guarded files touched**: <auto mode only: the block `python3 .claude/hooks/loop-record.py --guarded-block` prints, verbatim — the git hook checks it byte for byte>
+
+**Frozen cases**: <each `amended` line of plan.md's `## Gate`, with its test hunk; an arbiter's amendment marked as such>
 
 **Open questions**: <the answers taken at the plan gate, one line each>
 
@@ -92,7 +98,9 @@ commit; on a PR with a recorded run you publish (steps 1-5 below) and return the
 Write tool), `Screenshots` block included; and you are called again to send it with
 `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`,
 never an inline `--body`. Drop `Uncertain`, `Frozen cases` or `Open questions` when
-empty, and `Screenshots` when no run is recorded. No harness attribution: the hook denies it.
+empty, and `Screenshots` when no run is recorded. `Decided without you`,
+`Contract contradiction` and `Guarded files touched` exist in auto mode only, the last
+always (its `- none` included). No harness attribution: the hook denies it.
 
 ### The rules that make it short
 

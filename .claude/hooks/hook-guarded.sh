@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cwk-guard-api: 9
+# cwk-guard-api: 10
 #
 # Library: hook-guarded (sourced, never executed)
 # Purpose: the ONE list of paths the kit's guardrails rely on — their own files,
@@ -33,6 +33,13 @@ CWK_GUARDED=(
     'package.json'               # the gate scripts
     'tsconfig*.json'
     '.github/workflows/*'        # CI repeats the gates
+    '.github/actions/*'          # the actions those workflows call
+    '.github/CODEOWNERS'         # who must review a change
+    'lefthook.yml'               # git hooks that run the gates locally
+    '.npmrc'                     # registry and lifecycle-script settings
+    'pnpm-workspace.yaml'        # which packages the gates cover
+    'vitest.setup.*'             # code that runs before every test
+    'vitest.workspace.*'
     'install.sh'                 # the kit-dev suites run these root files
     'workflow.py'
     'workflow.sh'
@@ -165,6 +172,8 @@ cwk_is_kit_code() {
 CWK_GUARD_DENIED=(
     '.claude/.tdd-red/*'
     '.claude/.loop-record.json'
+    '.claude/.loop-record.lock'
+    '.claude/.loop-record.lock/*'
     '.git/*'
 )
 
@@ -173,6 +182,9 @@ cwk_guard_denied_why() {
     case "$1" in
         .git | .git/*)
             printf '%s' ".git is git's own store: history, refs and config, changed only by git commands; deleting or overwriting it loses the history."
+            ;;
+        .claude/.loop-record.lock | .claude/.loop-record.lock/*)
+            printf '%s' ".claude/.loop-record.lock is loop-record.py's own lock on the loop record: a file, directory or link put there by hand keeps the record from being cleared or rewritten."
             ;;
         .claude/.loop-record.json)
             printf '%s' ".claude/.loop-record.json is written only by loop-record.py, from the user's own plan-gate go: it is what lets this pass push its branch and open its PR without asking; a hand-written one grants that with no go."
@@ -186,7 +198,22 @@ cwk_guard_denied_why() {
 # The root config patterns a declared app root (`.claude/project.json` `app_roots`)
 # guards under itself, like the repo root does above.
 CWK_APP_ROOT_PATTERNS=('vitest.config.*' 'eslint.config.*' 'vite.config.*' 'playwright.config.*'
-                       'package.json' 'tsconfig*.json')
+                       'package.json' 'tsconfig*.json' 'lefthook.yml' '.npmrc' 'pnpm-workspace.yaml'
+                       'vitest.setup.*' 'vitest.workspace.*' 'src/setupTests.*' 'src/test/setup.*')
+
+# Guarded files that live in a source folder: the file is guarded, its folders are not
+# (`src` stays writable; CWK_GUARDED's folder reach would guard it).
+CWK_GUARDED_FILES=('src/setupTests.*' 'src/test/setup.*')
+
+# Auto mode (docs/specs/auto-mode.md V8). `denied`: never written in auto mode, a pass that
+# needs one ends in a blocked stop. `ledgered`: written without an ask, each write recorded
+# in the loop record and listed in the PR. Both hold at the root and under each app root.
+CWK_AUTO_DENIED=('.claude/settings.json' '.claude/settings.local.json' '.github/workflows/*'
+                 '.github/actions/*' '.github/CODEOWNERS')
+CWK_AUTO_LEDGERED=('.claude/.tdd-unfrozen' '.claude/.size-exempt' 'vitest.config.*' 'eslint.config.*'
+                   'vite.config.*' 'playwright.config.*' 'package.json' 'tsconfig*.json' 'lefthook.yml'
+                   '.npmrc' 'pnpm-workspace.yaml' 'vitest.setup.*' 'vitest.workspace.*'
+                   'src/setupTests.*' 'src/test/setup.*')
 __CWK_GUARD_LIB_DIR="${BASH_SOURCE[0]%/*}"
 __CWK_APP_ROOTS=()
 __CWK_CFG_LOADED=0
@@ -334,6 +361,10 @@ cwk_is_guarded() {
         [[ "$rel" == $pattern ]] && return 0
         dir="$(__cwk_guard_dir "$pattern")"
         [[ "$rel" == "$dir" || "$dir" == "$rel"/* ]] && return 0
+    done
+    for pattern in "${CWK_GUARDED_FILES[@]}"; do
+        # shellcheck disable=SC2053
+        [[ "$rel" == $pattern ]] && return 0
     done
     cwk_app_roots
     for dir in ${__CWK_APP_ROOTS[@]+"${__CWK_APP_ROOTS[@]}"}; do
@@ -517,4 +548,55 @@ cwk_guard_rel() {
         .claude/worktrees/*) rel=. ;;
     esac
     printf '%s' "$rel"
+}
+
+# __cwk_auto_match <rel> <pattern…>: exit 0 when <rel> matches a pattern at the root or
+# under a declared app root.
+__cwk_auto_match() {
+    local rel="$1" pattern dir
+    shift
+    for pattern in "$@"; do
+        # shellcheck disable=SC2053
+        [[ "$rel" == $pattern ]] && return 0
+    done
+    cwk_app_roots
+    for dir in ${__CWK_APP_ROOTS[@]+"${__CWK_APP_ROOTS[@]}"}; do
+        for pattern in "$@"; do
+            # shellcheck disable=SC2053
+            [[ "$rel" == "$dir"/$pattern ]] && return 0
+        done
+    done
+    return 1
+}
+
+# cwk_auto_class <repo-relative path>: prints `denied`, `ledgered` or `none`, the path's class
+# in auto mode (CWK_AUTO_DENIED plus every kit-code path, CWK_AUTO_LEDGERED). Always exit 0.
+cwk_auto_class() {
+    local rel="$1"
+    if [[ -n "$rel" ]] && { __cwk_auto_match "$rel" "${CWK_AUTO_DENIED[@]}" || cwk_is_kit_code "$rel"; }; then
+        printf 'denied'
+    elif [[ -n "$rel" ]] && __cwk_auto_match "$rel" "${CWK_AUTO_LEDGERED[@]}"; then
+        printf 'ledgered'
+    else
+        printf 'none'
+    fi
+    return 0
+}
+
+# cwk_auto_mode <tree>: exit 0 when <tree>'s loop record puts the pass in auto mode: a regular
+# file (no symlink), version 1, mode "auto", a contract_go object, and HEAD on its branch (never
+# on its base: an abandoned auto pass must not put the next pass in auto). Anything else: 1.
+cwk_auto_mode() {
+    local tree="$1" rec fields branch base sha head
+    rec="$tree/.claude/.loop-record.json"
+    [[ -n "$tree" && -f "$rec" && ! -L "$rec" ]] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    fields="$(jq -r 'select(.version == 1 and .mode == "auto" and (.contract_go | type) == "object"
+                     and (.branch | type) == "string" and (.base | type) == "string"
+                     and (.base_sha | type) == "string")
+                     | [.branch, .base, .base_sha] | join("\n")' "$rec" 2>/dev/null)" || return 1
+    [[ -n "$fields" ]] || return 1
+    { IFS= read -r branch; IFS= read -r base; IFS= read -r sha; } <<<"$fields"
+    head="$(git -C "$tree" symbolic-ref -q --short HEAD 2>/dev/null)" || return 1
+    [[ -n "$branch" && "$head" == "$branch" ]]
 }

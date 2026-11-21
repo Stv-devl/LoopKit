@@ -1,0 +1,3 @@
+{"mode": "plan", "pass": 3, "findings": [
+  {"id": "Q12", "severity": "Major", "claim": "AM46's protected-dir input `rm src/a.ts` triggers no ask today, so its moi half can never pass and GUARD_ASK_M/P stay untested in auto.", "p1_class": "b", "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "closure": "AM46's protected-dir input replaced by `rm -r src/a` (GUARD_ASK_P) and `mv src/a.ts /tmp/b` (GUARD_ASK_M), plus `npx tsc --init` (tool-option ask): each a deny opening auto mode — blocked stop: in auto, an ask today in moi.", "hook": null, "leg": "claude", "test_path": null}
+]}

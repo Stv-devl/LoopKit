@@ -221,6 +221,14 @@ HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
 GUARD_BASE="$(jq -r '.cwd // empty' <<<"$INPUT")"
 [[ -n "$GUARD_BASE" ]] || GUARD_BASE="${CLAUDE_PROJECT_DIR:-}"
 [[ -n "$GUARD_BASE" ]] || GUARD_BASE="$PWD"
+# Auto mode (docs/specs/auto-mode.md V8), read once from the command's tree: a `denied` target is
+# denied, a `ledgered` one is written with no guarded ask and recorded, `.tdd-unfrozen` is never
+# written from the shell, and every other guard ask below becomes a blocked stop.
+GUARD_AUTO=0 GUARD_AUTO_DENY="" GUARD_AUTO_LEDGER=()
+if GUARD_AUTO_TREE="$(git -C "$GUARD_BASE" rev-parse --show-toplevel 2>/dev/null)" \
+    && [[ -f "$GUARD_AUTO_TREE/.claude/.loop-record.json" ]] && cwk_auto_mode "$GUARD_AUTO_TREE"; then
+    GUARD_AUTO=1
+fi
 SECRET_DENY="" SECRET_ASK=""
 # A resolver of another guard API (a partial merge of the .new files) is not trusted: its line 2
 # must be exactly this guard's API, else both calls are skipped and the failure paths below run.
@@ -632,6 +640,38 @@ guard_note_deny() {
     GUARD_DENY_WHY="$2"
 }
 
+# guard_guarded <rel> <verb>: a write to a guarded path. Outside auto mode, the guarded ask. In
+# auto mode: a `denied` path or `.tdd-unfrozen` is a blocked stop, a `ledgered` one is recorded
+# instead of asked (GUARD_AUTO_LEDGER), any other guarded path keeps the ask that becomes a
+# blocked stop below.
+guard_guarded() {
+    local rel="$1" verb="$2" class
+    if [[ "$GUARD_AUTO" == 1 ]]; then
+        class="$(cwk_auto_class "$rel")"
+        if [[ "$class" == denied ]]; then
+            [[ -n "$GUARD_AUTO_DENY" ]] || GUARD_AUTO_DENY="$rel (written by $verb) is not written in auto mode (docs/specs/auto-mode.md V8); a pass that needs it ends in a blocked stop."
+            return 0
+        fi
+        if [[ "$rel" == .claude/.tdd-unfrozen ]]; then
+            [[ -n "$GUARD_AUTO_DENY" ]] || GUARD_AUTO_DENY=".tdd-unfrozen is written only through Edit on an arbiter unfreeze verdict, never from the shell."
+            return 0
+        fi
+        if [[ "$class" == ledgered ]]; then
+            GUARD_AUTO_LEDGER+=("$rel")
+            return 0
+        fi
+    fi
+    [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
+}
+
+# ask_or_block <message>: the ask, or in auto mode a deny opening `auto mode — blocked stop:`.
+ask_or_block() {
+    if [[ "$GUARD_AUTO" == 1 ]]; then
+        deny "auto mode — blocked stop: $1"
+    fi
+    ask "$1"
+}
+
 # The project root or a folder above it, compared physically: an alias of the
 # project dir, `..`, `../..` or the absolute path all land here.
 guard_is_root_or_above() {
@@ -849,7 +889,7 @@ guard_classify() {
                 [[ -n "$GUARD_DENY_CG" ]] || GUARD_DENY_CG="$rel"
             fi
         elif cwk_is_guarded "$rel"; then
-            [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
+            guard_guarded "$rel" "$verb"
         fi
     elif [[ "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$rel" =~ \.(tsx?|py)$ ]]; then
         # An in-place or copy write of a source goes around every Write/Edit guardrail:
@@ -863,7 +903,7 @@ guard_classify() {
     elif [[ "$verb" == flag-r || "$verb" == flag-w || "$verb" == cfg ]]; then
         guard_classify_tool "$verb" "$target" "$rel"
     elif cwk_is_guarded "$rel"; then
-        [[ -n "$GUARD_ASK_G" ]] || GUARD_ASK_G="$(guard_show "$rel") written by $verb"
+        guard_guarded "$rel" "$verb"
     elif [[ "$verb" == mv &&"$rel" =~ $GUARD_PROTECTED_RE ]]; then
         [[ -n "$GUARD_ASK_M" ]] || GUARD_ASK_M="$rel"
     elif [[ ( "$verb" == rm-r || "$verb" == find-delete ) && "$rel" =~ $GUARD_PROTECTED_RE ]]; then
@@ -896,6 +936,9 @@ if [[ "$GUARD_FAILED" == 0 ]]; then
     fi
 fi
 
+if [[ -n "$GUARD_AUTO_DENY" ]]; then
+    deny "auto mode — blocked stop: $GUARD_AUTO_DENY"
+fi
 if [[ -n "$GUARD_DENY" ]]; then
     deny "BLOCKED: $GUARD_DENY.\\n\\n$GUARD_DENY_WHY"
 fi
@@ -915,13 +958,14 @@ if [[ "$GUARD_FAILED" == 1 && "$COMMAND" == *.claude/.loop-record* ]]; then
     deny "BLOCKED: shell guard unavailable and the command names .claude/.loop-record.json, which is written only by loop-record.py.\\n\\nshell_targets.py is missing, broken or python3 is absent, so this write cannot be resolved. Run /kit:doctor."
 fi
 # loop-record.py runs as a hook, on the user's own answer; run by hand it would write a record
-# from an input nobody answered. `--clear` only deletes the record, so it stays allowed.
+# from an input nobody answered. `--clear` only deletes the record, `--mode` and `--guarded-block`
+# only read it: those three exact forms stay allowed.
 LOOP_RECORD_RUN_RE='(^|[^[:alnum:]_./-])(env[[:space:]]+)?([^[:space:]]*/)?python3?(\.[0-9]+)?[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*([^[:space:]]*/)?loop-record\.py([^[:alnum:]_.-]|$)'
 LOOP_RECORD_HEAD_RE='(^|[;&|(])[[:space:]]*([^[:space:]]*/)?loop-record\.py([^[:alnum:]_.-]|$)'
-LOOP_RECORD_CLEAR_RE='^[[:space:]]*python3[[:space:]]+\.claude/hooks/loop-record\.py[[:space:]]+--clear[[:space:]]*$'
+LOOP_RECORD_CLEAR_RE='^[[:space:]]*python3[[:space:]]+\.claude/hooks/loop-record\.py[[:space:]]+(--clear|--mode|--guarded-block)[[:space:]]*$'
 if [[ ( "$COMMAND" =~ $LOOP_RECORD_RUN_RE || "$COMMAND" =~ $LOOP_RECORD_HEAD_RE ) \
     && ! "$COMMAND" =~ $LOOP_RECORD_CLEAR_RE ]]; then
-    deny "BLOCKED: only Claude Code runs loop-record.py, as a hook on the user's plan-gate answer.\\n\\nRun by hand, it would write .claude/.loop-record.json from an answer the user never gave. The one manual form is: python3 .claude/hooks/loop-record.py --clear"
+    deny "BLOCKED: only Claude Code runs loop-record.py, as a hook on the user's plan-gate answer.\\n\\nRun by hand, it would write .claude/.loop-record.json from an answer the user never gave. The manual forms are: python3 .claude/hooks/loop-record.py --clear, --mode, --guarded-block"
 fi
 if [[ -n "$GUARD_INLINE_TDD" ]]; then
     deny "BLOCKED: an inline program names a test-first module or a test file ($GUARD_INLINE_TDD).\\n\\n$GUARD_TEST_WHY Write it with Write/Edit; to only read it, use the Read tool or cat."
@@ -988,14 +1032,20 @@ fi
 if [[ "$GUARD_FAILED" == 1 ]] && guard_text_writes; then
     ask "shell guard unavailable: shell_targets.py is missing, broken or python3 is absent, so the write targets of this command cannot be resolved.\\n\\nApprove only if it writes nothing under the kit's guardrails (.claude/, package.json, tsconfig*, vite/vitest/eslint configs, .github/workflows/, the root launchers install.sh, workflow.py, workflow.sh, codex-handoff.sh, addons/). Run /kit:doctor."
 fi
+for GUARD_AUTO_REL in ${GUARD_AUTO_LEDGER[@]+"${GUARD_AUTO_LEDGER[@]}"}; do
+    jq -cn --arg rel "$GUARD_AUTO_REL" --arg abs "$GUARD_AUTO_TREE/$GUARD_AUTO_REL" \
+        '{loop_record_op: "guarded", path: $rel, abs: $abs, tool: "shell"}' \
+        | python3 -I "$HOOK_DIR/loop-record.py" >/dev/null 2>&1 \
+        || deny "auto mode — blocked stop: the shell write of $GUARD_AUTO_REL could not be recorded in the loop record's guarded ledger, so it is not allowed unrecorded."
+done
 if [[ -n "$GUARD_ASK_G" ]]; then
-    ask "guarded path: $GUARD_ASK_G (kit guardrail; approve only if you meant to change it).\\n\\nWrite files with the Write/Edit tool instead."
+    ask_or_block "guarded path: $GUARD_ASK_G (kit guardrail; approve only if you meant to change it).\\n\\nWrite files with the Write/Edit tool instead."
 fi
 if [[ -n "$GUARD_ASK_S" ]]; then
     ask "This test run rewrites the snapshots ($GUARD_ASK_S).\\n\\n.claude/rules/05-testing.md forbids snapshot updates that bypass Write/Edit. Approve only if the user asked for it."
 fi
 if [[ -n "$GUARD_ASK_C" ]]; then
-    ask "This tool option writes a guarded config ($GUARD_ASK_C): tsc --init writes tsconfig.json, coverage.thresholds.autoUpdate rewrites the vitest config. Approve only if you meant to change it."
+    ask_or_block "This tool option writes a guarded config ($GUARD_ASK_C): tsc --init writes tsconfig.json, coverage.thresholds.autoUpdate rewrites the vitest config. Approve only if you meant to change it."
 fi
 if [[ -n "$GUARD_ASK_K" ]]; then
     ask "This run deletes Vitest's caches ($GUARD_ASK_K) instead of running tests. Say why, then let the user decide."
@@ -1007,10 +1057,10 @@ if [[ -n "$GUARD_ASK_Q" ]]; then
     ask "kit-cwd: this kit script ($GUARD_ASK_Q) is run by a relative path where the directory is not the project root or a registered worktree, or is not provably so: a nested copy of the kit script would run instead of the project's own.\\n\\nRun it as the first command, from the project root or a registered worktree (or after a lone 'cd <absolute root> &&'). Approve only if that copy is the one you mean."
 fi
 if [[ -n "$GUARD_ASK_P" ]]; then
-    ask "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: $PROTECTED_TEXT. Approve only if this subtree is meant to go."
+    ask_or_block "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: $PROTECTED_TEXT. Approve only if this subtree is meant to go."
 fi
 if [[ -n "$GUARD_ASK_M" ]]; then
-    ask "this moves a path under a protected dir: $GUARD_ASK_M.\\n\\nProtected: $PROTECTED_TEXT. A move out of the tree is a deletion from it; Write/Edit cannot rename, so the user decides."
+    ask_or_block "this moves a path under a protected dir: $GUARD_ASK_M.\\n\\nProtected: $PROTECTED_TEXT. A move out of the tree is a deletion from it; Write/Edit cannot rename, so the user decides."
 fi
 if [[ -n "$GUARD_ASK_F" ]]; then
     ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."
@@ -1022,7 +1072,7 @@ if [[ -n "$GUARD_ASK_O" ]]; then
     ask "This writes outside the project ($GUARD_ASK_O): no guardrail of the kit covers that path. Say what it writes and why, then let the user decide."
 fi
 if [[ -n "$GUARD_ASK_U" ]]; then
-    ask "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
+    ask_or_block "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
 fi
 if [[ -n "$GUARD_ASK_R" ]]; then
     ask "This rm deletes recursively ($GUARD_ASK_R). Say what it removes and why, then let the user decide."

@@ -720,13 +720,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
   "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
   "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 32' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 34' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1358,7 +1359,7 @@ pk PK30 has "$ROOT/docs/Claude_Workflows.md" 'git push'
 pk PK30.2 has "$ROOT/docs/Claude_Workflows.md" 'gh pr'
 pk PK31 test -n "$pk_local"
 for n in 'Rebase' 'go-ahead' 'python3 .claude/hooks/loop-record.py --clear'; do pk "PK31 $n" has_in "$pk_local" "$n"; done
-pk PK32 in_order "$(cat "$GITHUB_AGENT")" '**Screenshots**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
+pk PK32 in_order "$(cat "$GITHUB_AGENT")" '**Contract contradiction**' '**Screenshots**' '**Guarded files touched**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
 pk PK32.2 has "$GITHUB_AGENT" '--body-file'
 for f in "$TRACKS" "$SMALL_CMD" "$ORCH"; do pk "PK33 $(basename "$f")" grep -Eq -- '-b feat/[^ `]+ <base>' "$f"; done
 pk PK33.2 lacks "$ROOT/.claude/agents/implementer.md" 'confirms it at the merge'
@@ -1442,5 +1443,78 @@ pk PK45.4 has_in "$pk_tracks_close" "a worktree handoff's \`/loop:ship\` step 5 
 pk PK45.5 has_in "$pk_tracks_close" 'else report and stop'
 pk PK45.6 in_order "$pk_tracks_close" '`/loop:ship` step 5' 'loop-record.py --clear' 'phase: shipped' 'worktree removal'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'PK25-PK44: failing, see above' >&2; exit 1; }
+
+# AMC1-AMC19 (docs/specs/auto-mode.md): the auto mode's prompts, agent, budget and wiring.
+ARBITER="$ROOT/.claude/agents/arbiter.md"
+SPEC_CMD="$ROOT/.claude/commands/loop/spec.md"
+INTERFACE_CMD="$ROOT/.claude/commands/loop/interface.md"
+REVIEW_CMD="$ROOT/.claude/commands/loop/review.md"
+BUDGET_RULE="$ROOT/.claude/rules/11-token-budget.md"
+pk AMC1 has "$ORCH" '| Gate after the contract | `moi` | `auto` |'
+for n in '| Interface: pick a mock-up (UI only) |' '| Contract question at the first gate (B3) |' \
+         '| Plan-critic `interpretation` findings |' '| Open questions + test plan |' \
+         '| Frozen-test correction (plan or EXECUTE) |' '| Commit, push, PR |' '| Merge of the PR |'; do
+    pk "AMC1 $n" has "$ORCH" "$n"
+done
+for n in 'blocked: <cause>' 'no push, no PR' 'python3 .claude/hooks/loop-record.py --clear' 'a remaining ask' \
+         'plan-critic `BLOCKED`' 'an attempts cap' 'a red gate after the fix budget' 'an undecidable case' \
+         "changes an acceptance criterion's meaning"; do
+    pk "AMC2 $n" has "$ORCH" "$n"
+done
+for n in 'header `Contract gate`' 'Contract go — docs/work/<slug>/research.md' 'Validation: auto' '`as written`' \
+         'Contract (validated by this go)'; do
+    pk "AMC3 $n" has "$ORCH" "$n"
+done
+amc_claude="$(tr '\n' ' ' <"$ROOT/CLAUDE.md" | tr -s ' ')"
+pk AMC4 has_in "$amc_claude" 'never proceed on silence in `moi`'
+pk AMC4.2 has "$ROOT/CLAUDE.md" 'Agents: `.claude/agents/` (14)'
+pk AMC5 test -f "$ARBITER"
+pk AMC5.2 grep -qx 'model: inherit' "$ARBITER"
+pk AMC5.3 bash -c '! grep -E "^tools:.*(Write|Edit)" "$1"' _ "$ARBITER"
+pk AMC5.4 bash -c '! grep -q "^effort:" "$1"' _ "$ARBITER"
+for n in 'ARBITER VERDICT' 'kind: frozen-case' 'sha256:' 'verdict: unfreeze | refuse' '2 rounds' \
+         'never the agent that wrote the plan' 'acceptance criterion' 'unfreeze-queue.md' 'git apply --check -' \
+         'case-hash.sh'; do
+    pk "AMC5 $n" has "$ARBITER" "$n"
+done
+pk AMC6 grep -Eq '^\| `inherit` \|.*`arbiter`' "$BUDGET_RULE"
+pk AMC6.2 test "$(wc -l <"$BUDGET_RULE")" -le 42
+pk AMC7 has "$SPEC_CMD" '`Validation : moi | auto`'
+pk AMC7.2 has "$SPEC_CMD" 'in the same call'
+for n in '`arbiter`' '2 rounds' 'arbiter go'; do pk "AMC8 $n" has "$PLAN" "$n"; done
+for n in 'In `auto`' 'no canvas render' 'no gate' 'reasons in `design.md`'; do pk "AMC9 $n" has "$INTERFACE_CMD" "$n"; done
+pk AMC10 in_order "$(cat "$GITHUB_AGENT")" '**Contract contradiction**' '**Screenshots**' '**Guarded files touched**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
+pk AMC11 has "$SHIP" 'python3 .claude/hooks/loop-record.py --guarded-block'
+pk AMC11.2 has "$SHIP" 'a blocked stop pushes nothing'
+pk AMC12 has "$TESTS_GUIDE" 'no matching `unfreeze` verdict'
+pk AMC12.2 has "$TESTS_GUIDE" 'a `refuse`d case changed'
+pk AMC12.3 has "$TESTS_GUIDE" 'does not hash to its verdict'
+for n in 'In `auto`' 'without asking' '`arbiter`'; do pk "AMC13 $n" has "$REVIEW_CMD" "$n"; done
+pk AMC14 test "$(grep -c '14 subagents' "$ROOT/README.md")" -ge 2
+pk AMC14.2 lacks "$ROOT/README.md" '13 subagents'
+for n in 'only opens the `Contract gate`' 'python3 .claude/hooks/loop-record.py --mode' \
+         'a restart after `research` reads `--mode`' 'continues in `moi`'; do
+    pk "AMC15 $n" has "$ORCH" "$n"
+done
+for n in 'never issue a command that asks' 'auto mode — blocked stop:' 'without `barrier: true`'; do
+    pk "AMC16 $n" has "$ORCH" "$n"
+done
+for n in 'a snapshot update' 'a recursive delete' 'a secret read' 'cannot parse' 'a whole-folder formatter' \
+         'written from the shell' 'safe list' 'outside the' 'a codegen target' 'git switch -c feat/<slug>'; do
+    pk "AMC16 asks: $n" has "$ORCH" "$n"
+done
+for n in '(`vitest -u`)' '(`rm -r`)' 'a secret read, a command' 'the guard cannot parse' 'or a failed guard' \
+         'a whole-folder formatter, a TypeScript' 'a TypeScript source' 'a deleted Vitest cache' \
+         'an option off the safe list' 'a kit script' 'a write through a temporary-folder or fd path' \
+         'a write outside the' 'a tool option aimed at a folder or file' 'a codegen target'; do
+    pk "AMC16 shell asks: $n" has "$ORCH" "$n"
+done
+pk AMC17 jq -e '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]
+    | select(.command | test("enforce-git-workflow\\.sh")) | .timeout] | length == 1 and .[0] >= 20' "$SETTINGS"
+pk AMC18 has "$PLAN" 'In `auto`, `arbitrate` goes to the `arbiter`'
+pk AMC18.2 has "$ORCH" 'one fresh `arbiter` per queued case id'
+pk AMC19 has "$ORCH" 'Do not enter Phase 4 on silence in `moi`'
+pk AMC19.2 has "$ORCH" 'do not enter Phase 3 on silence in `moi`'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC1-AMC19: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

@@ -75,7 +75,10 @@ Read by a `reviewer` assigned `tests` (`.claude/agents/reviewer.md`). On a diff 
         removes an assertion beyond it → **Critical**;
       - a changed frozen case with no row and no `amended` line → **Critical**;
       - without one → it stays **Major**, cited in `.claude/.tdd-unfrozen` or not;
-      - edited with no `.tdd-unfrozen` entry at all → **Critical**.
+      - edited with no `.tdd-unfrozen` entry at all → **Critical**;
+      - in auto mode, an unfrozen case with no matching `unfreeze` verdict in the
+        record's ledger, one whose diff does not hash to its verdict's title, or a `refuse`d case changed
+        → **Critical**.
 - [ ] A **snapshot** (`toMatchSnapshot` / `toMatchInlineSnapshot`) inside one of
       the three frozen files: **Major**. It is the only assertion that rewrites
       itself — `vitest -u` edits it in place, the runner is the writer, and no

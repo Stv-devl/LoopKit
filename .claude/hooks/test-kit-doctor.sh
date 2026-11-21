@@ -420,5 +420,20 @@ mkdir -p "$KP"
 "$KIT/install.sh" "$KP" --no-ci >/dev/null 2>&1
 [[ ! -e "$KP/.claude/recipes" ]] || { echo 'KD23: the install created .claude/recipes' >&2; exit 1; }
 python3 "$KP/.claude/hooks/kit-doctor.py" | grep -Fq 'No divergence.' || { echo 'KD23: a fresh install diverges' >&2; exit 1; }
+# KD27 (auto-mode) arbiter.md, `model: inherit`, no `effort:`, named in the inherit row: no agent finding
+# on the kit source; the same agent with `effort: high` → an agent-efforts finding naming it.
+for k in agent-models agent-efforts agent-refs; do
+    if grep -A6 "DIVERGENCE  $k\|MISSING     $k" <<<"$SOURCE_OUTPUT" | grep -q arbiter; then
+        echo "KD27: $k reports arbiter on the kit source" >&2; exit 1
+    fi
+done
+mkdir -p "$SCRATCH/.claude/agents"
+printf '| Tier | For | Effort | Agents |\n| --- | --- | --- | --- |\n| `inherit` | gates | set at the call | `reviewer`, `arbiter` |\n' \
+    > "$SCRATCH/.claude/rules/11-token-budget.md"
+printf -- '---\nname: reviewer\nmodel: inherit\n---\n' > "$SCRATCH/.claude/agents/reviewer.md"
+printf -- '---\nname: arbiter\nmodel: inherit\neffort: high\n---\n' > "$SCRATCH/.claude/agents/arbiter.md"
+KD_OUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -A3 'DIVERGENCE  agent-efforts' <<<"$KD_OUT" | grep -q arbiter || { echo 'KD27: effort: high on arbiter not reported' >&2; exit 1; }
+rm -r "$SCRATCH/.claude/agents" "$SCRATCH/.claude/rules/11-token-budget.md"
 
 echo 'kit-doctor version fixtures: green.'

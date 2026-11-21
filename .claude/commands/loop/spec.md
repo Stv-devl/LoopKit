@@ -15,6 +15,13 @@ Produce a **spec on disk** that will serve as the single source of truth for
    need, front surface, acceptance criteria. Propose reasonable defaults, don't
    overwhelm.
 
+   **The validation mode is one of those questions, in the same call:**
+   `Validation : moi | auto` — `moi` (you validate each gate) or `auto` (you validate
+   the contract after research, then agents take every gate until the PR; you merge).
+   Write the answer as `Validation: <mode>` in the spec header. That line only opens the
+   `Contract gate` at the end of research; the mode itself lives in the hook-written
+   record (`/loop:orchestrate`, "Validation mode").
+
    **The token profile is inferred, then printed, not asked** — unless the spec
    touches payment, authorization, a destructive data change, or
    loosens a kit guard / widens what runs without a prompt. On one of those, ask it alone in its
@@ -68,7 +75,9 @@ Produce a **spec on disk** that will serve as the single source of truth for
    so in one line:
    `Spec written. Running the loop: you will validate the contract with research in hand at the first gate.`
    The contract is asked there, as its
-   own question, by `/loop:interface` or `/loop:plan`; nothing proceeds on silence.
+   own question, by `/loop:interface` or `/loop:plan`; nothing proceeds on silence in `moi`.
+   In `auto` the line is
+   `Spec written. Running the loop in auto: you validate the contract after research, then agents take every gate until the PR.`
 
    Two exceptions, where you propose the command instead of running it: the user
    asked to stop after the spec; `.claude/.token-warning` exists (context ≥ 90%) —
@@ -100,6 +109,7 @@ Produce a **spec on disk** that will serve as the single source of truth for
 ```markdown
 # Spec: <title>
 Token profile: <economy | standard | critical>
+Validation: <moi | auto>
 
 ## Objective
 <one sentence: the expected result>

@@ -184,6 +184,15 @@ if head != rec.get("branch"):
         sys.exit(1)
 rel = os.path.relpath(os.path.realpath(path), os.path.realpath(tree))
 rows = {r.get("id"): r.get("sha256") for r in rec["rows"] if isinstance(r, dict) and r.get("path") == rel}
+auto = sys.argv[4] == "1"
+refused = set()
+if auto:
+    for v in rec.get("verdicts") or []:
+        if isinstance(v, dict) and v.get("kind") == "frozen-case" and v.get("path") == rel:
+            if v.get("verdict") == "unfreeze" and v.get("id") not in rows:
+                rows[v.get("id")] = v.get("sha256")
+            elif v.get("verdict") == "refuse":
+                refused.add(v.get("id"))
 if mode == "has":
     sys.exit(0 if rows else 1)
 def refuse(reason):
@@ -199,6 +208,8 @@ try:
                     listed.add(tok.rstrip("!"))
 except OSError:
     pass
+if auto:
+    listed = set()
 data = json.load(sys.stdin)
 ti = data.get("tool_input") or {}
 if data.get("tool_name") != "Edit":
@@ -338,6 +349,8 @@ for case in touched(res, start, start + len(new)):
     if case["id"] not in ids:
         refuse("the edit writes case %s, which is not among the cases it replaces" % (case["id"] or "<no id>"))
 for cid in sorted(ids):
+    if cid in refused:
+        refuse("case %s: the arbiter answered refuse on its correction (auto mode), so it stays frozen" % cid)
     if cid in rows:
         after = [c for c in res if c["id"] == cid]
         if len(after) != 1:
@@ -348,9 +361,10 @@ for cid in sorted(ids):
         if actual != rows[cid]:
             refuse("case %s: its new title hashes to %s, the plan-gate row holds %s" % (cid, actual, rows[cid]))
     elif cid not in listed:
-        refuse("case %s is neither a plan-gate row nor listed on a .tdd-unfrozen line for this path" % cid)
+        refuse("case %s is neither a plan-gate row nor listed on a .tdd-unfrozen line for this path" % cid
+               if not auto else "case %s has neither a plan-gate row nor an unfreeze verdict in the loop record (auto mode: a .tdd-unfrozen line alone unfreezes nothing)" % cid)
 sys.exit(0)
-' "$1" "$FILE_PATH" "$ROWS_LIST" <<<"$INPUT"
+' "$1" "$FILE_PATH" "$ROWS_LIST" "$FREEZE_AUTO" <<<"$INPUT"
 }
 
 # Rows mode's verdict on an edit the insertion rules would deny.
@@ -399,7 +413,15 @@ unfrozen_names() {
     return 1
 }
 ROWS_MODE=0
-if unfrozen_names "$UNFROZEN_LIST"; then
+# Auto mode (docs/specs/auto-mode.md, step 4): no whole-file exemption; a listed file is always in rows
+# mode, whose rows add the arbiter's `unfreeze` verdicts and whose listed-id fallback is off.
+FREEZE_AUTO=0
+[[ -n "$FILE_TREE" ]] && cwk_auto_mode "$FILE_TREE" && FREEZE_AUTO=1
+if [[ "$FREEZE_AUTO" == 1 ]]; then
+    if unfrozen_names "$UNFROZEN_LIST" || unfrozen_names "$ROWS_LIST"; then
+        ROWS_MODE=1
+    fi
+elif unfrozen_names "$UNFROZEN_LIST"; then
     freeze_rows has </dev/null || exit 0
     ROWS_MODE=1
 elif [[ "$ROWS_LIST" != "$UNFROZEN_LIST" ]] && unfrozen_names "$ROWS_LIST"; then
