@@ -102,7 +102,7 @@ You **do not write code here**.
      a section a previous pass rewrote is answered first by narrowing that rewrite.
      Rerun the affected axis on the surviving findings and the
      rewritten sections only (`plan-critic.md`, "Rerun after a rewrite").
-   - `arbitrate`: no rewrite; step 7 prints them under `Plan critic, open`.
+   - `arbitrate`: no rewrite; step 7 prints them under `Plan critic, open`. In `auto`, `arbitrate` goes to the `arbiter` (step 7, auto mode).
    - `blocked`: apply the loop's `BLOCKED` contract.
    - `clear`: the gate clears.
 
@@ -112,7 +112,16 @@ You **do not write code here**.
    failed pass, stop and apply the loop's `BLOCKED` contract; a fourth rewrite is
    never attempted. Persist the final two scores under `## Plan critic` in the
    plan.
-7. **TEST PLAN GATE — stop and ask the user.** Print the `Test plan` section in
+7. **TEST PLAN GATE — stop and ask the user** (`moi`). **In `auto`**
+   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) nobody is asked: one fresh
+   `arbiter` takes the whole gate — the test plan against the spec's Acceptance criteria
+   and Business logic, the expected values' sources and the order, the open questions
+   with their proposed answers, and `Plan critic, open`. Its `go` or numbered corrections;
+   **2 rounds** at most (rewrite, a second fresh `arbiter`), then a blocked stop.
+   `## Gate` records `arbiter go`, never a user go: the record keeps no plan rows from it,
+   and each frozen case the plan amends needs its own `kind: frozen-case` verdict
+   (`/loop:orchestrate` Phase 4, auto mode) before its `.tdd-unfrozen` line. The rest of
+   this step is the `moi` gate. Print the `Test plan` section in
    full and wait for an explicit go.
 
    **The go is asked through `AskUserQuestion`, in every pipeline** (`light`,
@@ -201,7 +210,7 @@ You **do not write code here**.
    This is the **last moment where fixing is free**: after the go, those files are
    frozen (`.claude/rules/05-testing.md`) and the implementation is written
    against them. Amend the plan from the answer, then continue. Do not start
-   EXECUTE on silence.
+   EXECUTE on silence in `moi`.
 
 8. **Stop.** Suggest `/loop:orchestrate docs/work/<slug>/plan.md` (which executes,
    reviews and ships), or execute inline if the caller already asked for it.

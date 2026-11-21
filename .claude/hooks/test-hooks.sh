@@ -5805,7 +5805,726 @@ run_loop_to_pr_review6_cases() {
     rm -rf "$tmp"
 }
 
+# ---- auto-mode (AM): guard classes, mode record, verdict ledger, write/shell guards, freeze.
+# am_tree <dir> <variant>: make_app_tree `approots` (app_roots ["frontend"]) made a git repo on
+# `feat/s1` (from `audit/x`), with a loop record written by the test, never by a hook under test:
+# auto (mode auto + contract_go) | moi (no mode) | noc (mode auto, no contract_go) | other (auto,
+# branch feat/s2) | link (auto, the record a symlink) | none (no record).
+am_tree() {
+    local d="$1" v="$2" branch=feat/s1 extra
+    make_app_tree "$d" approots
+    git init -q -b main "$d"
+    git -C "$d" config user.email fixture@loopkit.invalid
+    git -C "$d" config user.name Fixture
+    git -C "$d" add -A
+    git -C "$d" commit -q -m seed
+    git -C "$d" branch audit/x
+    git -C "$d" switch -q -c feat/s1 audit/x
+    mkdir -p "$d/.claude" "$d/docs/work/s1"
+    printf 'r\n' >"$d/docs/work/s1/research.md"
+    case "$v" in
+        auto | link) extra='{mode: "auto", contract_go: {at: "2026-11-20T00:00:00Z", tool_use_id: "toolu_c"}}' ;;
+        moi) extra='{}' ;;
+        noc) extra='{mode: "auto"}' ;;
+        other) extra='{mode: "auto", contract_go: {at: "2026-11-20T00:00:00Z", tool_use_id: "toolu_c"}}'; branch=feat/s2 ;;
+        none) return 0 ;;
+        *) return 1 ;;
+    esac
+    jq -n --arg branch "$branch" --arg sha "$(git -C "$d" rev-parse audit/x)" "
+        {version: 1, slug: \"s1\", plan: \"docs/work/s1/plan.md\", branch: \$branch, base: \"audit/x\",
+         base_sha: \$sha, repo: \"o/r\", default_branch: \"main\", barrier: true, base_ok: true,
+         rows: [], verdicts: [], guarded: [], at: \"2026-11-20T00:00:00Z\", tool_use_id: \"toolu_c\"}
+        + $extra" >"$d/.claude/.loop-record.json"
+    if [[ "$v" == link ]]; then
+        mv "$d/.claude/.loop-record.json" "$d/.claude/.rec-target.json"
+        ln -s .rec-target.json "$d/.claude/.loop-record.json"
+    fi
+}
+
+# am_class <tree> <rel> <want>: cwk_auto_class prints exactly <want>.
+am_class() {
+    local got
+    CASES=$((CASES + 1))
+    got="$(CLAUDE_PROJECT_DIR="$1" bash -c 'source "$1/hook-guarded.sh"; cwk_auto_class "$2"' _ "$HOOKS_DIR" "$2" 2>&1)" || true
+    [[ "$got" == "$3" ]] || fail hook-guarded.sh "AM3 cwk_auto_class $2" "expected '$3', got '$got'"
+}
+
+# am_mode <id> <label> <tree> <want 0|1>: cwk_auto_mode's exit status.
+am_mode() {
+    local code
+    CASES=$((CASES + 1))
+    set +e
+    CLAUDE_PROJECT_DIR="$3" bash -c 'source "$1/hook-guarded.sh"; cwk_auto_mode "$2"' _ "$HOOKS_DIR" "$3" >/dev/null 2>&1
+    code=$?
+    set -e
+    [[ "$code" -eq "$4" ]] || fail hook-guarded.sh "$1 $2" "cwk_auto_mode: expected exit $4, got $code"
+}
+
+run_auto_mode_step1_cases() {
+    local tmp out rel
+    tmp="$(mktemp -d)"
+    # AM1 the new guarded paths ask with no record, as vite.config.ts does.
+    am_tree "$tmp/a1" none
+    for rel in lefthook.yml .npmrc pnpm-workspace.yaml .github/CODEOWNERS .github/actions/x/action.yml \
+               vitest.setup.ts vite.config.ts; do
+        out="$(pf_probe "$tmp/a1" Write "$rel")"
+        g15_expect AM1 ask "$out" "guarded path"
+    done
+    # AM2 the same patterns under an app root; a source file there is not guarded.
+    for rel in frontend/lefthook.yml frontend/vitest.setup.ts; do
+        out="$(pf_probe "$tmp/a1" Write "$rel")"
+        g15_expect AM2 ask "$out" "guarded path"
+    done
+    out="$(pf_probe "$tmp/a1" Write frontend/src/a.ts)"
+    g15_expect AM2 pass "$out"
+    # AM3 the two auto classes.
+    for rel in .claude/settings.json .claude/settings.local.json .github/workflows/ci.yml \
+               .github/actions/x/action.yml .github/CODEOWNERS .claude/project.json .claude/hooks/x.sh; do
+        am_class "$tmp/a1" "$rel" denied
+    done
+    for rel in vite.config.ts frontend/vite.config.ts .claude/.tdd-unfrozen .claude/.size-exempt package.json \
+               eslint.config.js playwright.config.ts tsconfig.app.json vitest.config.ts lefthook.yml .npmrc \
+               pnpm-workspace.yaml vitest.setup.ts src/test/setup.ts; do
+        am_class "$tmp/a1" "$rel" ledgered
+    done
+    am_class "$tmp/a1" src/a.ts none
+    # AM4 cwk_auto_mode: only a valid auto record of this branch with its contract go.
+    am_tree "$tmp/a4" auto;   am_mode AM4 "auto rec" "$tmp/a4" 0
+    am_mode AM4 "no record" "$tmp/a1" 1
+    am_tree "$tmp/a4m" moi;   am_mode AM4 "moi rec" "$tmp/a4m" 1
+    am_tree "$tmp/a4n" noc;   am_mode AM4 "no contract_go" "$tmp/a4n" 1
+    am_tree "$tmp/a4o" other; am_mode AM4 "other branch" "$tmp/a4o" 1
+    am_tree "$tmp/a4l" link;  am_mode AM4 "symlinked record" "$tmp/a4l" 1
+    rm -rf "$tmp"
+}
+
+AM_SHA='9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+
+# am_mode_cli <tree>: what `loop-record.py --mode` prints from <tree>.
+am_mode_cli() {
+    (cd "$1" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --mode 2>/dev/null)
+}
+
+# am_block <path> <case> <sha> <verdict>: a fenced frozen-case verdict block.
+am_block() {
+    printf '```\nARBITER VERDICT\nkind: frozen-case\npath: %s\ncase: %s\nsha256: %s\nverdict: %s\n```\n' "$1" "$2" "$3" "$4"
+}
+
+# am_stop <cwd> <agent_type|-> <last_assistant_message> [agent_id]: a SubagentStop input
+# (`-` leaves agent_type out).
+am_stop() {
+    jq -cn --arg cwd "$1" --arg t "$2" --arg m "$3" --arg id "${4:-a1}" '
+        {session_id: "s", hook_event_name: "SubagentStop", cwd: $cwd, stop_hook_active: false,
+         agent_id: $id, agent_transcript_path: "/nonexistent", last_assistant_message: $m}
+        + (if $t == "-" then {} else {agent_type: $t} end)'
+}
+
+# am_no_decision <id> <label>: the hook printed nothing and exited 0.
+am_no_decision() {
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 && -z "$LP_OUT" ]] || fail loop-record.py "$1 $2" "expected no output, got exit $LP_CODE: ${LP_OUT:0:200}"
+}
+
+run_auto_mode_step2_cases() {
+    local tmp r rec q qm want before out t tr
+    tmp="$(mktemp -d)"
+    q=$'Contract go — docs/work/s1/research.md\nValidation: auto\n\nObjective …'
+    lp_shim "$tmp/sh"
+
+    # AM10 the auto contract go opens the record with the mode.
+    r="$tmp/r10"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    printf 'r\n' >"$r/docs/work/s1/research.md"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    want="$(jq -cn --arg sha "$(git -C "$r" rev-parse audit/x)" \
+        '{slug: "s1", plan: "docs/work/s1/plan.md", branch: "feat/s1", base: "audit/x", base_sha: $sha,
+          mode: "auto", tool: "toolu_lp", rows: [], verdicts: [], guarded: []}')"
+    lp_rec AM10 'contract go' "$rec" \
+        '{slug, plan, branch, base, base_sha, mode, tool: .contract_go.tool_use_id, rows, verdicts, guarded}' "$want"
+    git -C "$r" switch -q -c feat/s1 audit/x
+
+    # AM12 --mode reads it.
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == auto ]] || fail loop-record.py "AM12 --mode auto rec" "expected auto, got '$out'"
+
+    # AM16 a later plan go of the same pass keeps the mode; another pass replaces the record.
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nsrc/a/x.utils.test.ts | U2 | '"$AM_SHA" go)" "$tmp/sh"
+    lp_rec AM16 'same pass plan go' "$rec" '{mode, c: (.contract_go | type), rows: (.rows | length), v: (.verdicts | type), g: (.guarded | type)}' \
+        '{"mode":"auto","c":"object","rows":1,"v":"array","g":"array"}'
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s2/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
+    lp_rec AM16 'other pass plan go' "$rec" '{slug, mode, contract_go}' '{"slug":"s2","mode":null,"contract_go":null}'
+
+    # AM11 `Validation: moi` opens nothing; --mode prints moi.
+    rm -f "$rec"
+    lp_run "$(lp_ask "$r" 'Contract gate' $'Contract go — docs/work/s1/research.md\nValidation: moi' 'as written')" "$tmp/sh"
+    lp_none AM11 'Validation: moi' "$rec"
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == moi ]] || fail loop-record.py "AM11/AM12 --mode no record" "expected moi, got '$out'"
+
+    # AM13 a subagent's contract go records nothing.
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written' | jq -c '. + {agent_id: "a1"}')" "$tmp/sh"
+    lp_none AM13 'agent_id' "$rec"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written' | jq -c '. + {agent_type: "arbiter"}')" "$tmp/sh"
+    lp_none AM13 'agent_type' "$rec"
+
+    # AM14 only exactly `as written`; an existing record is left untouched.
+    for t in amend 'tighten the scope' 'As written'; do
+        lp_run "$(lp_ask "$r" 'Contract gate' "$q" "$t")" "$tmp/sh"
+        lp_none AM14 "answer '$t'" "$rec"
+    done
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    before="$(sha256sum <"$rec" 2>/dev/null || true)"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" amend)" "$tmp/sh"
+    lp_same AM14 'amend keeps the record' "$rec" "$before"
+
+    # AM15 a missing or misspelt Validation line, a research file that does not exist.
+    rm -f "$rec"
+    for qm in $'Contract go — docs/work/s1/research.md\nObjective' \
+              $'Contract go — docs/work/s1/research.md\nValidation: Auto' \
+              $'Contract go — docs/work/s9/research.md\nValidation: auto'; do
+        lp_run "$(lp_ask "$r" 'Contract gate' "$qm" 'as written')" "$tmp/sh"
+        lp_none AM15 "question '${qm:0:60}'" "$rec"
+    done
+
+    # AM17 a pre-filled Contract gate is denied.
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written' PreToolUse)" "$tmp/sh"
+    lp_verdict AM17 'pre-filled contract gate' deny 'answered by the user'
+
+    # AM12 --mode is moi once HEAD is another branch.
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    git -C "$r" switch -q -c other
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == moi ]] || fail loop-record.py "AM12 --mode other branch" "expected moi, got '$out'"
+    git -C "$r" switch -q audit/x
+
+    # AM19 --clear leaves moi.
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
+    CASES=$((CASES + 1))
+    [[ ! -e "$rec" && "$(am_mode_cli "$r")" == moi ]] || fail loop-record.py AM19 "the record survived --clear or --mode is not moi"
+
+    # AM18 the record stays agent-proof; the two read-only CLIs pass the shell guard.
+    am_tree "$tmp/a18" auto
+    out="$(pf_probe "$tmp/a18" Write .claude/.loop-record.json)"
+    g15_expect AM18 deny "$out" "written only by loop-record.py"
+    for t in 'python3 .claude/hooks/loop-record.py --mode' 'python3 .claude/hooks/loop-record.py --guarded-block'; do
+        out="$(pd_probe "$tmp/a18" "$t")"
+        g15_expect AM18 pass "$out"
+    done
+    out="$(pd_probe "$tmp/a18" 'python3 .claude/hooks/loop-record.py < x.json')"
+    g15_expect AM18 deny "$out"
+
+    # ---- step 2b, the verdict ledger (SubagentStop).
+    r="$tmp/r20"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
+    printf 'r\n' >"$r/docs/work/s1/research.md"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    git -C "$r" switch -q -c feat/s1 audit/x
+    # AM20 an arbiter's unfreeze verdict is ledgered.
+    lp_run "$(am_stop "$r" arbiter "Checked the hunk.
+$(am_block src/a/x.utils.test.ts U2 "$AM_SHA" unfreeze)" a20)" "$tmp/sh"
+    am_no_decision AM26 'AM20 run'
+    lp_rec AM20 'unfreeze verdict' "$rec" '.verdicts | map({kind, path, id, sha256, verdict, agent_id})' \
+        "[{\"kind\":\"frozen-case\",\"path\":\"src/a/x.utils.test.ts\",\"id\":\"U2\",\"sha256\":\"$AM_SHA\",\"verdict\":\"unfreeze\",\"agent_id\":\"a20\"}]"
+    # AM22 a second verdict on the same case changes nothing.
+    lp_run "$(am_stop "$r" arbiter "$(am_block src/a/x.utils.test.ts U2 "$AM_SHA" refuse)" a22)" "$tmp/sh"
+    am_no_decision AM26 'AM22 run'
+    lp_rec AM22 'first verdict final' "$rec" '[.verdicts[] | .verdict]' '["unfreeze"]'
+    # AM21 a refuse is ledgered as such.
+    lp_run "$(am_stop "$r" arbiter "$(am_block src/a/x.utils.test.ts U3 "$AM_SHA" refuse)" a21)" "$tmp/sh"
+    lp_rec AM21 'refuse verdict' "$rec" '[.verdicts[] | select(.id == "U3") | .verdict]' '["refuse"]'
+    # AM23 any other agent, or none, records nothing.
+    for t in reviewer implementer '' -; do
+        lp_run "$(am_stop "$r" "$t" "$(am_block src/a/x.utils.test.ts U4 "$AM_SHA" unfreeze)")" "$tmp/sh"
+        lp_rec AM23 "agent_type '$t'" "$rec" '[.verdicts[] | select(.id == "U4")] | length' 0
+    done
+    # AM25 a malformed block records nothing.
+    for t in "$(am_block src/a/x.utils.test.ts U5 "${AM_SHA:1}" unfreeze)" \
+             "$(am_block src/a/x.utils.test.ts X5 "$AM_SHA" unfreeze)" \
+             "$(am_block src/a/x.utils.test.ts U5 "$AM_SHA" maybe)" \
+             "$(printf '```\nARBITER VERDICT\nkind: frozen-case\ncase: U5\nsha256: %s\nverdict: unfreeze\n```\n' "$AM_SHA")"; do
+        lp_run "$(am_stop "$r" arbiter "$t")" "$tmp/sh"
+        lp_rec AM25 'malformed block' "$rec" '[.verdicts[] | select(.id == "U5" or .id == "X5")] | length' 0
+    done
+    # AM26 stop_hook_active records nothing, and no run returns a decision.
+    lp_run "$(am_stop "$r" arbiter "$(am_block src/a/x.utils.test.ts U6 "$AM_SHA" unfreeze)" | jq -c '.stop_hook_active = true')" "$tmp/sh"
+    am_no_decision AM26 'stop_hook_active run'
+    lp_rec AM26 'stop_hook_active' "$rec" '[.verdicts[] | select(.id == "U6")] | length' 0
+    # AM27 a decision block is a trace entry only.
+    lp_run "$(am_stop "$r" arbiter "$(printf '```\nARBITER VERDICT\nkind: decision\nquestion: fix now or follow-up?\nverdict: follow-up\n```\n')" a27)" "$tmp/sh"
+    am_no_decision AM26 'AM27 run'
+    lp_rec AM27 'decision trace' "$rec" '[.verdicts[] | select(.kind == "decision") | {question, verdict}]' \
+        '[{"question":"fix now or follow-up?","verdict":"follow-up"}]'
+    # AM40 the block found in the transcript: its last assistant text, then a SubagentHandback message.
+    tr="$tmp/tr.jsonl"
+    jq -cn --arg t "$(am_block src/a/x.utils.test.ts U7 "$AM_SHA" unfreeze)" \
+        '{type: "assistant", message: {role: "assistant", content: [{type: "text", text: $t}]}}' >"$tr"
+    lp_run "$(am_stop "$r" arbiter 'done' | jq -c --arg p "$tr" '.agent_transcript_path = $p')" "$tmp/sh"
+    lp_rec AM40 'transcript text' "$rec" '[.verdicts[] | select(.id == "U7") | .verdict]' '["unfreeze"]'
+    jq -cn --arg t "$(am_block src/a/x.utils.test.ts U8 "$AM_SHA" refuse)" \
+        '{type: "assistant", message: {role: "assistant", content: [{type: "tool_use", name: "SubagentHandback", input: {message: $t}}]}}' >"$tr"
+    jq -cn '{type: "assistant", message: {role: "assistant", content: [{type: "text", text: "Handed back."}]}}' >>"$tr"
+    lp_run "$(am_stop "$r" arbiter 'Handed back.' | jq -c --arg p "$tr" '.agent_transcript_path = $p')" "$tmp/sh"
+    lp_rec AM40 'SubagentHandback message' "$rec" '[.verdicts[] | select(.id == "U8") | .verdict]' '["refuse"]'
+    printf '{"type":"assistant","message":{"content":[{"type":"text","text":"nothing here"}]}}\n' >"$tr"
+    lp_run "$(am_stop "$r" arbiter 'nothing here' | jq -c --arg p "$tr" '.agent_transcript_path = $p')" "$tmp/sh"
+    lp_rec AM40 'no block anywhere' "$rec" '.verdicts | length' 5
+    # AM24 a moi record, or none: nothing recorded, no record created.
+    jq '.mode = null | .contract_go = null' "$rec" >"$rec.x" && mv "$rec.x" "$rec"
+    lp_run "$(am_stop "$r" arbiter "$(am_block src/a/x.utils.test.ts U9 "$AM_SHA" unfreeze)")" "$tmp/sh"
+    lp_rec AM24 'moi rec' "$rec" '[.verdicts[] | select(.id == "U9")] | length' 0
+    rm -f "$rec"
+    lp_run "$(am_stop "$r" arbiter "$(am_block src/a/x.utils.test.ts U9 "$AM_SHA" unfreeze)")" "$tmp/sh"
+    lp_none AM24 'no record' "$rec"
+    rm -rf "$tmp"
+}
+
+# am_verdicts <tree> <json array>: sets the record's verdicts (the test writes them, no hook).
+am_verdicts() {
+    local rec="$1/.claude/.loop-record.json"
+    jq --argjson v "$2" '.verdicts = $v' "$rec" >"$rec.x" && mv "$rec.x" "$rec"
+}
+
+# am_v <path> <id> <verdict>: one frozen-case verdict entry.
+am_v() {
+    jq -cn --arg p "$1" --arg i "$2" --arg v "$3" --arg s "$AM_SHA" \
+        '{kind: "frozen-case", path: $p, id: $i, sha256: $s, verdict: $v, agent_id: "a", at: "t"}'
+}
+
+# am_unfrozen_edit <tree> <added line>: an Edit appending <added line> to .claude/.tdd-unfrozen
+# (created with one comment line), through protect-files.sh.
+am_unfrozen_edit() {
+    printf '# listing\n' >"$1/.claude/.tdd-unfrozen"
+    project_hook_probe protect-files.sh "$1" \
+        "$(jq -cn --arg f "$1/.claude/.tdd-unfrozen" --arg n "# listing"$'\n'"$2" \
+            '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"# listing",new_string:$n}}')"
+}
+
+# am_guarded <tree> <jq filter> <want> <id> <label>: the record's guarded rows through <jq filter>.
+am_guarded() {
+    local got
+    CASES=$((CASES + 1))
+    got="$(jq -c "$2" "$1/.claude/.loop-record.json" 2>&1)" || true
+    [[ "$got" == "$3" ]] || fail loop-record.py "$4 $5" "$2: expected $3, got $got"
+}
+
+am_sha() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+
+run_auto_mode_step3_cases() {
+    local tmp t rel out sx sb
+    tmp="$(mktemp -d)"
+    t="$tmp/a"; am_tree "$t" auto
+    # AM28 the denied class.
+    for rel in .claude/settings.json .claude/settings.local.json .github/actions/x/action.yml .github/CODEOWNERS; do
+        out="$(pf_probe "$t" Write "$rel")"
+        g15_expect AM28 deny "$out" "auto mode"
+    done
+    for rel in .github/workflows/x.yml .claude/project.json; do
+        out="$(pf_probe "$t" Edit "$rel")"
+        g15_expect AM28 deny "$out" "auto mode"
+    done
+    # AM29 the ledgered class: written with no ask, one guarded row each.
+    sx="$(am_sha x)"; sb="$(am_sha $'{}\n')"
+    out="$(pf_probe "$t" Write vite.config.ts)"
+    g15_expect AM29 pass "$out"
+    out="$(pf_probe "$t" Write frontend/vite.config.ts)"
+    g15_expect AM29 pass "$out"
+    am_guarded "$t" '[.guarded[] | {path, before, after, tool}]' \
+        "[{\"path\":\"vite.config.ts\",\"before\":\"absent\",\"after\":\"$sx\",\"tool\":\"Write\"},{\"path\":\"frontend/vite.config.ts\",\"before\":\"$sb\",\"after\":\"$sx\",\"tool\":\"Write\"}]" AM29 'two rows'
+    # AM34 an Edit's after-hash is the file with the replacement applied; no match → unknown, still pass.
+    printf 'a\n' >"$t/vite.config.ts"
+    out="$(pf_probe "$t" Edit vite.config.ts)"
+    g15_expect AM34 pass "$out"
+    am_guarded "$t" '.guarded[-1] | {before, after}' "{\"before\":\"$(am_sha $'a\n')\",\"after\":\"$(am_sha $'b\n')\"}" AM34 'edit hash'
+    out="$(project_hook_probe protect-files.sh "$t" "$(jq -cn --arg f "$t/vite.config.ts" \
+        '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"zzz",new_string:"y"}}')")"
+    g15_expect AM34 pass "$out"
+    am_guarded "$t" '.guarded[-1].after' '"unknown"' AM34 'no match'
+    # AM30 .tdd-unfrozen on an unfreeze verdict passes and is ledgered; without one, a blocked stop.
+    mkdir -p "$t/src/a"; printf 'x\n' >"$t/src/a/x.utils.test.ts"
+    am_verdicts "$t" "[$(am_v src/a/x.utils.test.ts U2 unfreeze)]"
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
+    g15_expect AM30 pass "$out"
+    am_guarded "$t" '.guarded[-1].path' '".claude/.tdd-unfrozen"' AM30 'ledgered'
+    am_verdicts "$t" '[]'
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
+    g15_expect AM30 deny "$out" "auto mode — blocked stop:"
+    # AM27 a decision trace backs nothing.
+    am_verdicts "$t" '[{"kind":"decision","question":"q","verdict":"v","agent_id":"a","at":"t"}]'
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
+    g15_expect AM27 deny "$out" "auto mode — blocked stop:"
+    # AM31 a refused id in the line.
+    am_verdicts "$t" "[$(am_v src/a/x.utils.test.ts U2 refuse),$(am_v src/a/x.utils.test.ts U3 unfreeze)]"
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2, U3: r')"
+    g15_expect AM31 deny "$out" "auto mode — blocked stop:"
+    # AM32 an implementation path, or the id on another test path.
+    am_verdicts "$t" "[$(am_v src/a/x.utils.test.ts U2 unfreeze)]"
+    printf 'x\n' >"$t/src/a/x.utils.ts"; printf 'x\n' >"$t/src/a/y.utils.test.ts"
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.ts  # U2: r')"
+    g15_expect AM32 deny "$out" "auto mode — blocked stop:"
+    out="$(am_unfrozen_edit "$t" 'src/a/y.utils.test.ts  # U2: r')"
+    g15_expect AM32 deny "$out" "auto mode — blocked stop:"
+    # AM43 a guarded path outside both auto classes: the app-root folder itself.
+    out="$(pf_probe "$t" Write frontend)"
+    g15_expect AM43 deny "$out" "auto mode — blocked stop: frontend would ask"
+    # AM35 shell: a denied target is denied; a ledgered one passes with a shell row.
+    out="$(pd_probe "$t" 'cp /tmp/a .claude/settings.json')"
+    g15_expect AM35 deny "$out" "auto mode"
+    out="$(pd_probe "$t" 'cp /tmp/a package.json')"
+    g15_expect AM35 pass "$out"
+    am_guarded "$t" '.guarded[-1] | {path, after, tool}' '{"path":"package.json","after":"unknown","tool":"shell"}' AM35 'shell row'
+    # AM45 shell to .tdd-unfrozen: a blocked stop, no row.
+    am_verdicts "$t" '[]'
+    out="$(pd_probe "$t" "printf 'src/a/x.utils.test.ts  # U2: r\n' >> .claude/.tdd-unfrozen")"
+    g15_expect AM45 deny "$out" "auto mode — blocked stop:"
+    am_guarded "$t" '[.guarded[] | select(.tool == "shell" and .path == ".claude/.tdd-unfrozen")] | length' 0 AM45 'no row'
+    # AM46 every other shell-guard ask becomes a blocked stop.
+    for rel in 'cp /tmp/a frontend' 'cp /tmp/a "$X"' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
+        out="$(pd_probe "$t" "$rel")"
+        g15_expect AM46 deny "$out" "auto mode — blocked stop:"
+    done
+    # AM33 / moi: the same writes ask, no row; AM45, AM46 ask too.
+    t="$tmp/m"; am_tree "$t" moi
+    for rel in .claude/settings.json .github/CODEOWNERS vite.config.ts frontend; do
+        out="$(pf_probe "$t" Write "$rel")"
+        g15_expect AM33 ask "$out" "guarded path"
+    done
+    am_guarded "$t" '.guarded | length' 0 AM33 'no row in moi'
+    mkdir -p "$t/src/a"; printf 'x\n' >"$t/src/a/x.utils.test.ts"
+    out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
+    g15_expect AM33 ask "$out" "guarded path"
+    out="$(pd_probe "$t" 'cp /tmp/a package.json')"
+    g15_expect AM35 ask "$out" "guarded path"
+    out="$(pd_probe "$t" "printf 'src/a/x.utils.test.ts  # U2: r\n' >> .claude/.tdd-unfrozen")"
+    g15_expect AM45 ask "$out"
+    for rel in 'cp /tmp/a frontend' 'cp /tmp/a "$X"' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
+        out="$(pd_probe "$t" "$rel")"
+        g15_expect AM46 ask "$out"
+    done
+    # AM36 the guarded row cannot be written: deny, never a silent allow.
+    t="$tmp/ro"; am_tree "$t" auto
+    chmod 555 "$t/.claude"
+    out="$(pf_probe "$t" Write vite.config.ts)"
+    chmod 755 "$t/.claude"
+    g15_expect AM36 deny "$out" "auto mode"
+    # AM42 a drop comments out the verdict-backed .tdd-unfrozen line.
+    t="$tmp/d"; am_tree "$t" auto
+    am_verdicts "$t" "[$(am_v src/a/x.utils.test.ts U2 unfreeze),$(am_v src/a/x.utils.test.ts U3 refuse)]"
+    printf 'src/a/x.utils.test.ts  # U2, U3: r\n' >"$t/.claude/.tdd-unfrozen"
+    (cd "$t" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
+    CASES=$((CASES + 1))
+    [[ ! -e "$t/.claude/.loop-record.json" && "$(cat "$t/.claude/.tdd-unfrozen")" == '# src/a/x.utils.test.ts  # U2, U3: r' ]] \
+        || fail loop-record.py "AM42 --clear" "got: $(cat "$t/.claude/.tdd-unfrozen")"
+    t="$tmp/d2"; am_tree "$t" auto
+    am_verdicts "$t" "[$(am_v src/a/x.utils.test.ts U2 unfreeze),$(am_v src/a/x.utils.test.ts U3 refuse)]"
+    printf 'src/a/x.utils.test.ts  # U2, U3: r\n' >"$t/.claude/.tdd-unfrozen"
+    lp_shim "$tmp/sh"
+    lp_run "$(lp_bash "$t" 'gh pr create --repo o/r --base audit/x --head feat/s1 --title "t" --body-file docs/work/s1/pr-body.md' \
+        'https://github.com/o/r/pull/7')" "$tmp/sh"
+    CASES=$((CASES + 1))
+    [[ ! -e "$t/.claude/.loop-record.json" && "$(cat "$t/.claude/.tdd-unfrozen")" == '# src/a/x.utils.test.ts  # U2, U3: r' ]] \
+        || fail loop-record.py "AM42 PR drop" "got: $(cat "$t/.claude/.tdd-unfrozen")"
+    # AM44 concurrent appends never lose one.
+    t="$tmp/c"; am_tree "$t" auto
+    local i lost=0
+    for i in $(seq 1 20); do
+        jq '.verdicts = [] | .guarded = []' "$t/.claude/.loop-record.json" >"$t/.claude/r.x" && mv "$t/.claude/r.x" "$t/.claude/.loop-record.json"
+        am_stop "$t" arbiter "$(am_block src/a/x.utils.test.ts U2 "$AM_SHA" unfreeze)" \
+            | CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" >/dev/null 2>&1 &
+        pf_probe "$t" Write vite.config.ts >/dev/null &
+        wait
+        [[ "$(jq '[(.verdicts | length), (.guarded | length)] == [1, 1]' "$t/.claude/.loop-record.json")" == true ]] || lost=$((lost + 1))
+    done
+    CASES=$((CASES + 1))
+    [[ "$lost" -eq 0 ]] || fail loop-record.py AM44 "$lost of 20 runs lost a row"
+    rm -rf "$tmp"
+}
+
+# am_freeze_rec <dir> <auto|moi> <verdicts json>: the record of an lp_* project, rows emptied, turned
+# into an auto record (contract go) or left moi, carrying <verdicts>.
+am_freeze_rec() {
+    local extra='{}'
+    [[ "$2" == moi ]] || extra='{mode: "auto", contract_go: {at: "2026-11-20T00:00:00Z", tool_use_id: "toolu_c"}}'
+    jq --argjson v "$3" ". + {rows: [], verdicts: \$v, guarded: []} + $extra" "$1/.claude/.loop-record.json" >"$1/.claude/r.x"
+    mv "$1/.claude/r.x" "$1/.claude/.loop-record.json"
+}
+
+# AM37-AM39, AM41, AM47 (auto-mode step 4): in auto the freeze hook's rows are the plan rows plus the
+# `unfreeze` verdicts, a `refuse` verdict keeps its case frozen, and the listed / whole-file fallbacks
+# are off; a moi record ignores verdicts.
+run_auto_mode_step4_cases() {
+    local tmp p x='src/a/x.utils.test.ts' h u2 u2new u2bad addon b2 b2new v
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    h='9168773984070c306b4b682d4a383e3ab211ebe641e4b7d5321ddec058880bb5'
+    u2="  it('U2 returns err', () => {"$'\n''    expect(f(0)).toBe(0)'$'\n''  })'
+    u2new="  it('U2 returns err on empty input', () => {"$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    u2bad="  it('U2 returns err on bad input', () => {"$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    am_v() { jq -cn --arg p "$1" --arg i "$2" --arg h "$3" --arg v "$4" \
+        '[{kind: "frozen-case", path: $p, id: $i, sha256: $h, verdict: $v, at: "2026-11-21T00:00:00Z"}]'; }
+    am_edit() { jq -cn --arg o "$1" --arg n "$2" '{old_string:$o, new_string:$n}'; }
+
+    p="$tmp/unfreeze"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto "$(am_v "$x" U2 "$h" unfreeze)"
+    lp_freeze AM37 pass "$p" Edit "$(am_edit "$u2" "$u2new")"
+    lp_freeze AM37.2 deny "$p" Edit "$(am_edit "$u2" "$u2bad")" "hashes to"
+
+    p="$tmp/refuse"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto "$(am_v "$x" U2 "$h" refuse)"
+    lp_freeze AM38 deny "$p" Edit "$(am_edit "$u2" "$u2new")" "refuse"
+
+    p="$tmp/moirefuse"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" moi "$(am_v "$x" U2 "$h" refuse)"
+    lp_freeze AM39 pass "$p" Edit "$(am_edit "$u2" "$u2bad")"
+
+    p="$tmp/autolisted"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto '[]'
+    lp_freeze AM47 deny "$p" Edit "$(am_edit "$u2" "$u2new")"
+    p="$tmp/autowhole"; lp_freeze_project "$p" feat/s1 '[]' "$x reason"
+    am_freeze_rec "$p" auto '[]'
+    lp_freeze AM47.2 deny "$p" Edit "$(am_edit "$u2" "$u2new")"
+    p="$tmp/moilisted"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" moi '[]'
+    lp_freeze AM47.3 pass "$p" Edit "$(am_edit "$u2" "$u2new")"
+    p="$tmp/moiwhole"; lp_freeze_project "$p" feat/s1 '[]' "$x reason"
+    am_freeze_rec "$p" moi '[]'
+    lp_freeze AM47.4 pass "$p" Edit "$(am_edit "$u2" "$u2new")"
+
+    b2=$'def test_b2_returns_err():\n    assert g(0) == 0'
+    b2new=$'def test_b2_returns_err_on_empty():\n    assert g(0) == -1'
+    for v in unfreeze refuse; do
+        p="$tmp/py-$v"; lp_py_project "$p"
+        am_freeze_rec "$p" auto "$(am_v tests/services/test_b.py B2 e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b "$v")"
+        pv_expect "AM41 $v" "$([[ "$v" == unfreeze ]] && echo pass || echo deny)" \
+            "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
+                --arg o "$b2" --arg n "$b2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    done
+    rm -rf "$tmp"
+}
+
+# am_git <dir> <auto|moi> <origin>: an am_tree on feat/s1 whose base audit/x is pushed to the bare
+# <origin>; src/a/x.utils.test.ts (case U2) is committed on the base.
+am_git() {
+    am_tree "$1" "$2"
+    mkdir -p "$1/src/a"
+    printf '%s\n' "describe('x', () => {" "  it('U2 returns err', () => {" '    expect(f(0)).toBe(0)' '  })' '})' \
+        >"$1/src/a/x.utils.test.ts"
+    git -C "$1" switch -q audit/x
+    git -C "$1" add src/a/x.utils.test.ts
+    git -C "$1" commit -q -m base
+    git -C "$1" switch -q feat/s1
+    git -C "$1" merge -q --ff-only audit/x
+    jq --arg sha "$(git -C "$1" rev-parse audit/x)" '.base_sha = $sha' "$1/.claude/.loop-record.json" >"$1/.claude/r.x"
+    mv "$1/.claude/r.x" "$1/.claude/.loop-record.json"
+    git init -q --bare -b main "$3"
+    git -C "$1" remote add origin "$3"
+    git -C "$1" push -q origin audit/x 2>/dev/null
+}
+
+# am_commit <dir> <path> <content>: writes <content> to <path> and commits it on the current branch.
+am_commit() {
+    mkdir -p "$(dirname "$1/$2")"
+    printf '%s\n' "$3" >"$1/$2"
+    git -C "$1" add "$2"
+    git -C "$1" commit -q -m "edit $2"
+}
+
+# am_row <dir> <path> <before> <after> <tool>: appends a guarded ledger row to the record.
+am_row() {
+    jq --arg p "$2" --arg b "$3" --arg a "$4" --arg t "$5" \
+        '.guarded += [{path: $p, before: $b, after: $a, tool: $t, at: "2026-11-21T00:00:00Z"}]' \
+        "$1/.claude/.loop-record.json" >"$1/.claude/r.x"
+    mv "$1/.claude/r.x" "$1/.claude/.loop-record.json"
+}
+
+# am_expected_block <line>...: the Guarded files touched block holding <line>s, its digest computed here.
+am_expected_block() {
+    local body
+    body="$(printf '%s\n' "$@")"
+    printf '### Guarded files touched\n<!-- guarded-files sha256:%s -->\n%s\n' \
+        "$(printf '%s\n' "$body" | sha256sum | cut -c1-64)" "$body"
+}
+
+# am_pr <id> <want> <dir> [needle]: enforce-git-workflow.sh on the pass's exact `gh pr create`.
+am_pr() {
+    local out
+    out="$(project_hook_probe enforce-git-workflow.sh "$3" "$(jq -cn --arg c "$3" \
+        '{tool_name: "Bash", cwd: $c, tool_input: {command: "gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md"}}')")"
+    pv_expect "$1" "$2" "$out" "${4:-}"
+}
+
+# G22.001-G22.009 (auto-mode step 5): in auto, the pass's PR is allowed only when its body carries,
+# byte for byte, the Guarded files touched block the hook recomputes; moi is unchanged.
+run_auto_mode_step5_cases() {
+    local tmp t bs as block x='src/a/x.utils.test.ts'
+    tmp="$(mktemp -d)"
+    bs="$(printf '{}\n' | sha256sum | cut -c1-64)"
+    as="$(printf '{"name":"x"}\n' | sha256sum | cut -c1-64)"
+
+    t="$tmp/allow"; am_git "$t" auto "$tmp/o1.git"
+    am_commit "$t" package.json '{"name":"x"}'
+    am_row "$t" package.json "$bs" "$as" Write
+    block="$(am_expected_block '- `M package.json` (diff)' \
+        "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
+    printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.001 allow "$t"
+    CASES=$((CASES + 1))
+    [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
+        || fail loop-record.py G22.009 "--guarded-block does not print the expected block"
+    printf 'Summary.\n' >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.002 deny "$t" '--guarded-block'
+    printf 'Summary.\n\n%s\n' "${block/${as:0:12}/${bs:0:12}}" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.003 deny "$t" '--guarded-block'
+
+    t="$tmp/revert"; am_git "$t" auto "$tmp/o2.git"
+    am_row "$t" package.json "$bs" "$as" Write
+    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.004 deny "$t" '--guarded-block'
+    block="$(am_expected_block "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
+    CASES=$((CASES + 1))
+    [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
+        || fail loop-record.py G22.004b "--guarded-block does not print the reverted row's ledger line"
+    printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.004c allow "$t"
+
+    t="$tmp/failure"; am_git "$t" auto "$tmp/o3.git"
+    am_commit "$t" "$x" "describe('x', () => {
+  it('U2 returns err on empty input', () => {
+    expect(f(0)).toBe(-1)
+  })
+})"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "- GUARD FAILURE: $x U2 changed with no ledger row" \
+        "- \`M $x\` (diff)")" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.005 allow "$t"
+
+    t="$tmp/moi"; am_git "$t" moi "$tmp/o4.git"
+    am_commit "$t" package.json '{"name":"x"}'
+    printf 'Summary.\n' >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.006 allow "$t"
+
+    t="$tmp/nofetch"; am_git "$t" auto "$tmp/o5.git"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    git -C "$t" remote set-url origin "$tmp/missing.git"
+    am_pr G22.007 deny "$t" 'Guarded files touched'
+
+    t="$tmp/none"; am_git "$t" auto "$tmp/o6.git"
+    am_commit "$t" src/b.ts 'export const b = 1'
+    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.008 allow "$t"
+
+    t="$tmp/deleted"; am_git "$t" auto "$tmp/o7.git"
+    git -C "$t" rm -q "$x"
+    git -C "$t" commit -q -m "drop $x"
+    block="$(am_expected_block "- GUARD FAILURE: $x U2 changed with no ledger row" "- \`D $x\` (diff)")"
+    CASES=$((CASES + 1))
+    [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
+        || fail loop-record.py G22.010 "--guarded-block does not list the deleted test file as a U2 failure and a D diff line"
+    printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.010b allow "$t"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_pr G22.010c deny "$t" '--guarded-block'
+    rm -rf "$tmp"
+}
+
+# R1, R3, R4, R8 (auto-mode review 1): the lock is agent-proof and --clear works without it, an auto
+# record read from the base branch is moi, a non-canonical verdict path records nothing, and the Python
+# freeze turns the listed and whole-file fallbacks off in auto.
+run_auto_mode_review1_cases() {
+    local tmp t out rec p b2 b2new addon mode line want
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+
+    # R1 a Write to the lock is denied; a directory at the lock path does not keep --clear from removing the record.
+    am_tree "$tmp/r1" auto
+    out="$(pf_probe "$tmp/r1" Write .claude/.loop-record.lock)"
+    g15_expect AM-R1 deny "$out" "loop-record.lock"
+    mkdir "$tmp/r1/.claude/.loop-record.lock"
+    (cd "$tmp/r1" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear </dev/null >/dev/null 2>&1) || true
+    CASES=$((CASES + 1))
+    [[ ! -e "$tmp/r1/.claude/.loop-record.json" ]] || fail loop-record.py AM-R1.2 "the record survived --clear with a directory at the lock path"
+
+    # R3 an auto record read from its base branch is moi; from its own branch it is auto.
+    am_tree "$tmp/r3" auto
+    git -C "$tmp/r3" switch -q audit/x
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$tmp/r3")"
+    [[ "$out" == moi ]] || fail loop-record.py AM-R3 "--mode on the base branch: expected moi, got '$out'"
+    am_mode AM-R3.2 "auto rec on base" "$tmp/r3" 1
+    git -C "$tmp/r3" switch -q feat/s1
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$tmp/r3")"
+    [[ "$out" == auto ]] || fail loop-record.py AM-R3.3 "--mode on the branch: expected auto, got '$out'"
+    am_mode AM-R3.4 "auto rec on branch" "$tmp/r3" 0
+
+    # R4 a verdict block whose path is not canonical records nothing.
+    t="$tmp/r4"; am_tree "$t" auto; rec="$t/.claude/.loop-record.json"
+    lp_shim "$tmp/sh"
+    for p in ./src/a/x.utils.test.ts src/./a/x.utils.test.ts src/../src/a/x.utils.test.ts src//a/x.utils.test.ts /abs/src/a/x.utils.test.ts; do
+        lp_run "$(am_stop "$t" arbiter "$(am_block "$p" U2 "$AM_SHA" refuse)" a4)" "$tmp/sh"
+        lp_rec AM-R4 "path '$p'" "$rec" '.verdicts | length' 0
+    done
+    lp_run "$(am_stop "$t" arbiter "$(am_block src/a/x.utils.test.ts U2 "$AM_SHA" refuse)" a4)" "$tmp/sh"
+    lp_rec AM-R4.2 "canonical path" "$rec" '.verdicts | length' 1
+
+    # R8 AM47 in Python: auto, no verdict, a listed or whole-file line unfreezes nothing; moi keeps both.
+    b2=$'def test_b2_returns_err():\n    assert g(0) == 0'
+    b2new=$'def test_b2_returns_err_on_empty():\n    assert g(0) == -1'
+    for p in "auto-listed|auto|tests/services/test_b.py  # B2: r|deny" "auto-whole|auto|tests/services/test_b.py reason|deny" \
+             "moi-listed|moi|tests/services/test_b.py  # B2: r|pass" "moi-whole|moi|tests/services/test_b.py reason|pass"; do
+        IFS='|' read -r t mode line want <<<"$p"
+        lp_py_project "$tmp/py-$t"
+        printf '%s\n' "$line" >"$tmp/py-$t/.claude/.tdd-unfrozen"
+        am_freeze_rec "$tmp/py-$t" "$mode" '[]'
+        pv_expect "AM47-py $t" "$want" \
+            "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$tmp/py-$t" "$(jq -cn --arg f "$tmp/py-$t/tests/services/test_b.py" --arg c "$tmp/py-$t" \
+                --arg o "$b2" --arg n "$b2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    done
+    rm -rf "$tmp"
+}
+
+# N1 (auto-mode review 2): `git switch -c <branch> <start>` joins the strict grammar only when <start> is a
+# local branch and not also a tag; a sha, a remote ref, HEAD, @, a missing branch or a clash stays an ask.
+run_auto_mode_review2_cases() {
+    local tmp sha out
+    tmp="$(mktemp -d)"
+    make_seed_repo "$tmp/r"
+    git -C "$tmp/r" branch audit/x
+    git -C "$tmp/r" branch both
+    git -C "$tmp/r" tag both
+    git -C "$tmp/r" tag v1
+    sha="$(git -C "$tmp/r" rev-parse HEAD)"
+
+    out="$(git_hook_probe "git switch -c feat/s9 audit/x" "$tmp/r" "$tmp/r")"
+    g15_expect G22.011 pass "$out"
+    out="$(git_hook_probe "git switch -c feat/s9 v1" "$tmp/r" "$tmp/r")"
+    g15_expect G22.012 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 $sha" "$tmp/r" "$tmp/r")"
+    g15_expect G22.013 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 origin/main" "$tmp/r" "$tmp/r")"
+    g15_expect G22.014 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 nope" "$tmp/r" "$tmp/r")"
+    g15_expect G22.015 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 both" "$tmp/r" "$tmp/r")"
+    g15_expect G22.016 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 -x" "$tmp/r" "$tmp/r")"
+    g15_expect G22.017 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 HEAD" "$tmp/r" "$tmp/r")"
+    g15_expect G22.018 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9 @" "$tmp/r" "$tmp/r")"
+    g15_expect G22.019 ask "$out" "git switch -c <branch> <local branch>"
+    out="$(git_hook_probe "git switch -c feat/s9  audit/x" "$tmp/r" "$tmp/r")"
+    g15_expect G22.020 ask "$out" "git switch -c <branch> <local branch>"
+    rm -rf "$tmp"
+}
+
 set -e
+if [[ "${1:-}" == --am-only ]]; then
+    run_auto_mode_step1_cases
+    run_auto_mode_step2_cases
+    run_auto_mode_step3_cases
+    run_auto_mode_step4_cases
+    run_auto_mode_step5_cases
+    run_auto_mode_review1_cases
+    run_auto_mode_review2_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (auto-mode only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --lp6-only ]]; then
     run_loop_to_pr_review6_cases
     [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
@@ -5888,6 +6607,13 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_loop_to_pr_review4_cases
     run_loop_to_pr_review5_cases
     run_loop_to_pr_review6_cases
+    run_auto_mode_step1_cases
+    run_auto_mode_step2_cases
+    run_auto_mode_step3_cases
+    run_auto_mode_step4_cases
+    run_auto_mode_step5_cases
+    run_auto_mode_review1_cases
+    run_auto_mode_review2_cases
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases

@@ -222,6 +222,41 @@ if cwk_is_guard_denied "$REL"; then
     deny "BLOCKED: $REL is never written by hand.\n\n$(cwk_guard_denied_why "$REL")"
 fi
 
+# Auto mode (docs/specs/auto-mode.md V8), read from the edited file's tree: a `denied` path is
+# denied, a `ledgered` one is written without an ask and recorded, `.tdd-unfrozen` needs an
+# arbiter `unfreeze` verdict per (path, id), and any other guarded ask becomes a blocked stop —
+# nobody answers a prompt in auto mode.
+PF_ABS="$FILE_PATH"
+[[ "$PF_ABS" == /* ]] || PF_ABS="${CWD:-$PWD}/$PF_ABS"
+pf_tree() {
+    local d
+    d="$(dirname "$PF_ABS")"
+    while [[ "$d" != / && ! -d "$d" ]]; do d="$(dirname "$d")"; done
+    git -C "$d" rev-parse --show-toplevel 2>/dev/null
+}
+pf_ledger() {
+    jq -c --arg rel "$REL" --arg abs "$PF_ABS" \
+        '{loop_record_op: "guarded", path: $rel, abs: $abs, tool: .tool_name, tool_input: .tool_input}' <<<"$INPUT" \
+        | python3 -I "$(dirname "${BASH_SOURCE[0]}")/loop-record.py" >/dev/null 2>&1 \
+        || deny "auto mode — blocked stop: the write of $REL could not be recorded in the loop record's guarded ledger, so it is not allowed unrecorded."
+}
+PF_AUTO=0
+if [[ "$TOOL_NAME" == Write || "$TOOL_NAME" == Edit ]] && PF_TREE="$(pf_tree)" \
+    && [[ -f "$PF_TREE/.claude/.loop-record.json" ]] && cwk_auto_mode "$PF_TREE"; then
+    PF_AUTO=1
+    PF_CLASS="$(cwk_auto_class "$REL")"
+    if [[ "$PF_CLASS" == denied ]]; then
+        deny "auto mode — blocked stop: $REL is not written in auto mode (docs/specs/auto-mode.md V8); a pass that needs it ends in a blocked stop."
+    fi
+    if [[ "$PF_CLASS" == ledgered && "$REL" != .claude/.tdd-unfrozen ]]; then
+        pf_ledger
+        exit 0
+    fi
+    if [[ "$REL" != .claude/.tdd-unfrozen ]] && cwk_is_guarded "$REL"; then
+        deny "auto mode — blocked stop: $REL would ask (guarded path), and nobody answers a prompt in auto mode."
+    fi
+fi
+
 # Kit code in an installed project: denied by its name or by the file it opens (a
 # symlink alias, dangling or not). The kit repo keeps the guarded ask below.
 if cwk_installed; then
@@ -343,6 +378,11 @@ if head != rec.get("branch"):
     if git("merge-base", "--is-ancestor", sha, "HEAD") is None:
         sys.exit(1)
 rows = {(r.get("path"), r.get("id")) for r in rec["rows"] if isinstance(r, dict)}
+refused = set()
+if os.environ.get("CWK_AUTO_VERDICTS") == "1":
+    found = [v for v in (rec.get("verdicts") or []) if isinstance(v, dict) and v.get("kind") == "frozen-case"]
+    rows |= {(v.get("path"), v.get("id")) for v in found if v.get("verdict") == "unfreeze"}
+    refused = {(v.get("path"), v.get("id")) for v in found if v.get("verdict") == "refuse"}
 line_re = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+(?:[ \t]*,[ \t]*[UMRB][0-9]+)*)[ \t]*:[ \t]*\S.*")
 test_re = re.compile(r"(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+\.test\.tsx?|"
                      + re.escape(tests_root) + r"/(?:[A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_]*\.py")
@@ -371,11 +411,18 @@ for line in file_lines(result):
         if not os.path.isfile(os.path.join(tree, target)):
             sys.exit(1)
         for case_id in re.split(r"[ \t]*,[ \t]*", match.group(2)):
-            if (target, case_id) not in rows:
+            if (target, case_id) not in rows or (target, case_id) in refused:
                 sys.exit(1)
 sys.exit(0)
 ' "$abs" "$tree" "${CWK_CFG_TESTS_ROOT:-tests}" <<<"$INPUT"
 }
+if [[ "$PF_AUTO" == 1 && "$REL" == .claude/.tdd-unfrozen ]]; then
+    if unfrozen_removal_only || CWK_AUTO_VERDICTS=1 unfrozen_record_rows; then
+        pf_ledger
+        exit 0
+    fi
+    deny "auto mode — blocked stop: no unfreeze verdict backs this .tdd-unfrozen entry (every added line needs an arbiter \`unfreeze\` verdict for its test path and each id, and no \`refuse\`)."
+fi
 if [[ "$REL" == .claude/.tdd-unfrozen && ( "$TOOL_NAME" == Write || "$TOOL_NAME" == Edit ) ]] \
     && { unfrozen_removal_only || unfrozen_record_rows; }; then
     exit 0

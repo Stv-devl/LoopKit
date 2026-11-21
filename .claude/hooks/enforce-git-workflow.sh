@@ -2062,6 +2062,23 @@ done <<< "$PARSED"
 # writes, run without a prompt when the tree's loop record (written by loop-record.py from the
 # user's plan-gate go) is valid and the default branch has a server barrier. Anything else
 # falls through to the asks below (docs/specs/loop-to-pr.md, V5).
+# guarded_block_check <tree> <base> <body file>: in auto mode the PR body must carry, byte for byte,
+# the Guarded files touched block recomputed here after one fetch of the base (docs/specs/auto-mode.md,
+# step 5); denies otherwise.
+guarded_block_check() {
+    local cap block body
+    cap="$(command -v timeout || command -v gtimeout)" \
+        || deny "auto mode: cannot compute Guarded files touched — no timeout command to bound the fetch of origin/$2."
+    GIT_TERMINAL_PROMPT=0 "$cap" -k 1 8 git -C "$1" fetch -q --no-tags origin "$2" </dev/null >/dev/null 2>&1 \
+        || deny "auto mode: cannot compute Guarded files touched — git fetch origin $2 failed, so the pass's PR is not opened."
+    block="$(cd "$1" && python3 -I "$(dirname "${BASH_SOURCE[0]}")/loop-record.py" --guarded-block --no-fetch 2>/dev/null)" \
+        && [[ -n "$block" ]] \
+        || deny "auto mode: cannot compute Guarded files touched (loop-record.py --guarded-block failed), so the pass's PR is not opened."
+    body="$(cat "$3" 2>/dev/null)" || body=""
+    [[ "$body" == *"$block"* ]] \
+        || deny "auto mode: the PR body must carry the hook's Guarded files touched block, byte for byte: run \`python3 .claude/hooks/loop-record.py --guarded-block\` and paste its output into docs/work/<slug>/pr-body.md unchanged."
+}
+
 record_allow() {
     local LC_ALL=C text="$COMMAND" tree rec head fields version branch base repo barrier base_ok slug
     local b="" ba="" r="" rslug cap rc
@@ -2091,6 +2108,7 @@ record_allow() {
     if [[ -n "$r" ]]; then
         [[ "$r" == "$repo" && "$ba" == "$base" && "$base_ok" == true && "$slug" == "$rslug" ]] || return 0
         [[ -f "$tree/docs/work/$slug/pr-body.md" && ! -L "$tree/docs/work/$slug/pr-body.md" ]] || return 0
+        cwk_auto_mode "$tree" && guarded_block_check "$tree" "$base" "$tree/docs/work/$slug/pr-body.md"
         decide allow "the pass's own PR, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
     fi
     git -C "$tree" show-ref --verify --quiet "refs/heads/$b" || return 0
@@ -2224,6 +2242,7 @@ grammar_strict() {
     local add_form="^git( -C ($safe))? (add|stage)( --)?(( $safe)+)\$"
     local commit_form="^git( -C ($safe))? commit -m ($double|$single|$word)\$"
     local switch_form="^git switch -c ($branch)\$"
+    local switch_start_form="^git switch -c ($branch) ($branch)\$"
     text="${text#"${text%%[! $'\t']*}"}"
     text="${text%"${text##*[! $'\t']}"}"
     [[ "$text" =~ [[:cntrl:]] ]] && return 1
@@ -2235,6 +2254,11 @@ grammar_strict() {
         [[ -z "${BASH_REMATCH[2]}" ]] || grammar_value_ok "${BASH_REMATCH[2]}"
     elif [[ "$text" =~ $switch_form ]]; then
         [[ "${BASH_REMATCH[1]}" != -* ]]
+    elif [[ "$text" =~ $switch_start_form ]]; then
+        # Group 2 is the start point: a local branch that is not also a tag, never a sha or a remote ref.
+        [[ "${BASH_REMATCH[1]}" != -* && "${BASH_REMATCH[2]}" != -* ]] || return 1
+        git -C "$BASE_DIR" show-ref --verify --quiet "refs/heads/${BASH_REMATCH[2]}" 2>/dev/null || return 1
+        ! git -C "$BASE_DIR" show-ref --verify --quiet "refs/tags/${BASH_REMATCH[2]}" 2>/dev/null
     else
         return 1
     fi
@@ -2273,7 +2297,7 @@ grammar_decide() {
         fi
         return 0
     fi
-    ask "This is not a plain git call: only \`git add <paths>\`, \`git commit -m \"<one line>\"\` and \`git switch -c <branch>\` run without a prompt, each alone in its call. Show the exact call, then let the user decide."
+    ask "This is not a plain git call: only \`git add <paths>\`, \`git commit -m \"<one line>\"\`, \`git switch -c <branch>\` and \`git switch -c <branch> <local branch>\` run without a prompt, each alone in its call. Show the exact call, then let the user decide."
 }
 
 grammar_decide

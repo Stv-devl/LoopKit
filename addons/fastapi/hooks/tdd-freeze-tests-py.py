@@ -175,12 +175,17 @@ def main() -> None:
         sys.exit(0)
 
     rows = {}
-    if lib.is_unfrozen(file_path):
+    auto, granted, refused_ids = lib.loop_auto(file_path)
+    if auto:
+        if lib.is_unfrozen(file_path) or lib.rows_entry(file_path):
+            rows = {**granted, **lib.loop_rows(file_path)}
+    elif lib.is_unfrozen(file_path):
         rows = lib.loop_rows(file_path)
         if not rows:
             sys.exit(0)
     elif lib.rows_entry(file_path):
         rows = lib.loop_rows(file_path)
+    rows_mode = bool(rows) or bool(refused_ids)
 
     try:
         with open(abs_test, encoding="utf-8") as fh:
@@ -190,7 +195,8 @@ def main() -> None:
 
     def rows_verdict() -> None:
         """Rows mode decides what the insertion rules would deny (docs/specs/loop-to-pr.md, step 5)."""
-        why = lib.rows_refusal(file_path, rows, current, tool_input, payload.get("tool_name") or "")
+        why = lib.rows_refusal(file_path, rows, current, tool_input, payload.get("tool_name") or "",
+                               auto, frozenset(refused_ids))
         if not why:
             lib.notice(
                 "TDD: amended case(s) of the frozen test %s edited as recorded at the plan gate "
@@ -217,7 +223,7 @@ def main() -> None:
                 "changed. tdd-prove-red-py is re-running it; read its verdict "
                 "before writing any implementation." % file_path
             )
-        if rows:
+        if rows_mode:
             rows_verdict()
         lib.deny(
             "TDD: %s is frozen — it was validated at the /loop:plan gate and proved red, "
@@ -326,7 +332,7 @@ def main() -> None:
                     "the code it would neutralise is even written" % (names, dotted)
                 )
 
-    if refused and rows:
+    if refused and rows_mode:
         rows_verdict()
     if refused:
         lib.deny(

@@ -103,13 +103,13 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
                └── /loop:orchestrate <artifact> runs the whole loop ──┘
 ```
 
-- `/loop:interface` and `/loop:plan` fix **what is built** and never proceed on
-  silence; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
+- `/loop:interface` and `/loop:plan` fix **what is built** and never proceed on silence in
+  `moi`; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
 - Stories are sliced **functional, before the architecture**. External docs are
   researched once: `docs/research-cache/settled.md` is read before any fetch.
 - **EXECUTE stays sequential** on the main thread; the RED legs go to one
   `test-writer` per feature, GREEN past 70% and every fix batch to `implementer`.
-  Agents: `.claude/agents/` (13). Separate tracks get separate worktrees, their number
+  Agents: `.claude/agents/` (14). Separate tracks get separate worktrees, their number
   computed · `/loop:tracks`.
 - Token profile `economy` by default, persisted in work artifacts ·
   `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual Codex

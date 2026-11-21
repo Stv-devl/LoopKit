@@ -60,6 +60,12 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
    Keep rejected alternatives to one line each; do not paste full losing
    proposals into downstream prompts.
 
+   **In `auto`** (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) the pick is
+   final here: the main thread's front-runner (economy, 2 alternatives), or the
+   `designer` judge on a `critical` profile; write the reasons in `design.md`. Then
+   no canvas render (step 4) and no gate (step 5): the contract was already taken at the
+   `Contract gate`.
+
 4. **RENDER — the canvas.** Default, both because the agents have no eyes and
    because a graft costs one drag instead of three chat rounds. See *The canvas*
    below for the design brief, the arity per profile, and the fallback when the skill
@@ -103,7 +109,7 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
      design rounds: they do not count toward the cap above.
 
    Nothing downstream happens until the user validates. **Do not continue on
-   silence.**
+   silence** in `moi`; in `auto` this gate does not exist (step 3).
 
    > Why this gate exists, and it is the same argument as `/loop:plan`'s: `typecheck`,
    > `lint` and `build` verify a property, so they can be automated. "Is this the

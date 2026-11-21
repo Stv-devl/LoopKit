@@ -339,7 +339,7 @@ copy_tree() {
     done < <(find "$src" \
         \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' -o -name 'kit-backup' \) -prune -o \
         -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
-                 ! -name '.loop-record.json' \
+                 ! -name '.loop-record.json' ! -name '.loop-record.lock' \
                  ! -path "$src/project.json" \
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
 }
@@ -383,6 +383,7 @@ PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
   "Bash(python3 .claude/hooks/kit-gate-route.py *)", "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
   "Bash(bash .claude/hooks/test-attempts.sh)", "Bash(bash .claude/hooks/test-attempts.sh *)",
@@ -633,7 +634,7 @@ ensure_gitignore() {
         local line
         for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
             .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
-            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/ .claude/.loop-record.json; do
+            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/ .claude/.loop-record.json .claude/.loop-record.lock; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
@@ -663,6 +664,7 @@ __pycache__/
 .claude/.quota-warning
 .claude/.tdd-red/
 .claude/.loop-record.json
+.claude/.loop-record.lock
 # Les sauvegardes du code du kit qu'install.sh a remplacé : à toi de les supprimer.
 .claude/kit-backup/
 # Le handoff d'une session interrompue : local, périmé dès qu'on reprend.

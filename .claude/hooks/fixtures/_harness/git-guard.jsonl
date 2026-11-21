@@ -263,7 +263,7 @@
 {"id":"G14.133","verdict":"ask","command":"git add \\-A","reason":"not a plain git call"}
 {"id":"G14.134","verdict":"ask","command":"git add \\.","reason":"not a plain git call"}
 {"id":"G14.135","verdict":"ask","command":"git add :/","reason":"not a plain git call"}
-{"id":"G14.136","verdict":"ask","command":"git switch -c x main","reason":"not a plain git call"}
+{"id":"G14.136","verdict":"ask","command":"git switch -c x origin/main","reason":"not a plain git call"}
 {"id":"G14.137","verdict":"ask","command":"git add src/x.t[s]","reason":"not a plain git call"}
 {"id":"G14.138","verdict":"ask","command":"git -C __FEAT_TREE__&id add src/x.ts","reason":"not a plain git call"}
 {"id":"G14.139","verdict":"ask","command":"git commit -m src/[xy].ts","reason":"not a plain git call"}

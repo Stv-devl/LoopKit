@@ -28,6 +28,52 @@ Select once in Phase 0 and persist `Token profile: <value>` in every
 the cases `11-token-budget.md` lists. A downstream command inherits it and never
 silently upgrades it. Mechanical shell gates always run.
 
+## Validation mode — `moi` or `auto`, chosen once
+
+The framing asks `Validation : moi | auto` (`/loop:spec` step 1; a full/BMAD entry is
+asked at Phase 0 step 2, `AskUserQuestion`), never again in the pass. Two sources, one
+job each: the spec's `Validation:` line (or that Phase 0 answer, copied into the
+handoff) only opens the `Contract gate` at the end of Phase 1 and grants nothing; from
+the contract go on, `python3 .claude/hooks/loop-record.py --mode` alone decides. A
+restart in phase `research` re-reads the spec line;
+a restart after `research` reads `--mode`, and `moi` there (no record, cleared,
+mismatched) continues in `moi`.
+
+| Gate after the contract | `moi` | `auto` |
+| --- | --- | --- |
+| Interface: pick a mock-up (UI only) | the user picks | the front-runner (economy, 2 alternatives) or the `designer` judge (`critical`); reasons in `design.md`; no canvas render |
+| Contract question at the first gate (B3) | asked | already taken at the `Contract gate` |
+| Plan-critic `interpretation` findings | the user | the `arbiter` |
+| Open questions + test plan | the user | the `arbiter` |
+| Frozen-test correction (plan or EXECUTE) | the user | the `arbiter` (`unfreeze` / `refuse`) |
+| Commit, push, PR | the agent | the agent |
+| Merge of the PR | the user | the user |
+
+In `auto`, every gate after the contract goes to **one fresh `arbiter` per decision**,
+never resumed, never the agent that asked; its verdict block is ledgered in the record
+by a hook (`SubagentStop`), so the PR's `Decided without you` comes from the record.
+The main thread and its agents **never issue a command that asks** (destructive git,
+`gh pr merge`, a second push, a secret read, a whole-folder formatter); the kit's
+guarded asks are denied in `auto` with a reason opening `auto mode — blocked stop:`.
+The shell asks the hook keeps (nobody answers them in `auto`) are never issued either:
+a snapshot update (`vitest -u`), a recursive delete (`rm -r`), a secret read, a command
+the guard cannot parse or a failed guard, a whole-folder formatter, a TypeScript source
+written from the shell, a deleted Vitest cache, an option off the safe list, a kit script
+run from a nested folder, a write through a temporary-folder or fd path, a write outside the
+project, a tool option aimed at a folder or file, and a codegen target.
+
+**A contract contradicted mid-run:** never rewrite the contract. Continue on it as
+written when something coherent can be built, and put the contradiction first in the PR
+(`Contract contradiction`); when nothing coherent can be built → blocked stop.
+
+**Blocked stop** (`auto` only). Its causes: a remaining ask (a deny opening
+`auto mode — blocked stop:`), plan-critic `BLOCKED`, an attempts cap,
+a red gate after the fix budget, an undecidable case,
+a correction that changes an acceptance criterion's meaning (the `arbiter` answers `blocked`). It ends the run: handoff `blocked: <cause>`,
+board line `BLOCKED` (main tree), local commits kept, **no push, no PR**, then
+`python3 .claude/hooks/loop-record.py --clear`. `./workflow.sh` resumes it, in `moi`
+unless a new `Contract gate` is taken.
+
 ## Automatic checkpoints
 
 Maintain `docs/work/<slug>/handoff.md` inline, without a subagent, from the
@@ -189,13 +235,32 @@ agent). Otherwise: "single track, no worktree".
 `/loop:research <entry>` → `docs/work/<slug>/research.md`. Barrier: the file
 exists before designing. Retain its `Traps`: Phase 3 restates them as `Vigilance`.
 
+**End of Phase 1 in `auto`: the one stop after the framing.** Ask one
+`AskUserQuestion`, header `Contract gate`, never pre-filled, whose text opens with
+exactly these two lines (the record hook parses them):
+
+```
+Contract go — docs/work/<slug>/research.md
+Validation: auto
+```
+
+then the spec's Objective, Scope IN/OUT and Acceptance criteria verbatim under
+`Contract (validated by this go)` (full/BMAD: the reviewed stories) and research's
+`Traps`, one line each. Answers: `as written` (→ `kit-attempts.py pass` on `contract`;
+the hook writes the auto record) or free text to amend (the "Contract amendment" rules
+below). Right after `as written`, on the base branch run `git switch -c feat/<slug> <base>`
+(the start point named: the record reads its base from it) before Phase 2 (main tree; a worktree pass already stands on it): auto mode holds only
+on the record's own branch, never on its base. Then check the record: without `barrier: true` (`.claude/.loop-record.json`,
+read-only) auto mode does not start — blocked stop before Phase 2.
+
 ## Phase 2 — INTERFACE (skippable)
 
 `/loop:interface docs/work/<slug>/research.md` → `docs/work/<slug>/design.md`.
 Arity is the profile's call, declared in `/loop:interface`. The retained proposal
 is rendered on the `/design` canvas before the gate. **Human gate**: the user
-picks, edits or grafts, 3 rounds at most; do not enter Phase 3 on silence. A
-canvas edited after the gate reopens it.
+picks, edits or grafts, 3 rounds at most; do not enter Phase 3 on silence in `moi`. A
+canvas edited after the gate reopens it. In `auto` there is no canvas and no gate
+(`/loop:interface`, auto mode).
 
 ## Phase 3 — PLAN
 
@@ -203,7 +268,8 @@ canvas edited after the gate reopens it.
 Critical/Major claims, rewrites until completeness and quality clear (scores kept
 separate) or the ceiling blocks. **Human gate**: it prints the `Test plan` and
 waits for an explicit go — the go freezes the test-first files
-(`.claude/rules/05-testing.md`). Do not enter Phase 4 on silence.
+(`.claude/rules/05-testing.md`). Do not enter Phase 4 on silence in `moi`; in `auto`
+the `arbiter` takes the gate (`/loop:plan` step 7).
 
 **Light pass: the contract is validated at the first gate.** `/loop:spec` chains
 straight into this command, so the user has not yet re-read the written contract:
@@ -298,7 +364,12 @@ and the chat never asks again what the hook's ask asks — make the edit yoursel
 never through `implementer` or `test-writer`, whose contracts forbid rewriting a
 frozen case — then rewrite each plan line with the same id and append
 `amended <date> U2: <old> → <new>` to `## Gate` (create it if absent). The amended
-cases are listed in the PR body (`Frozen cases`, `/loop:ship`). (Small: no correction, the ticket ejects.) On a Python service layer the `-py` hooks
+cases are listed in the PR body (`Frozen cases`, `/loop:ship`). (Small: no correction, the ticket ejects.)
+In `auto` nobody answers the prompt: each queued case carries its fenced `diff` hunk
+against the current test file, and you launch one fresh `arbiter` per queued case id
+with it; then one `.tdd-unfrozen` Edit for the `unfreeze` verdicts only (the hook lets
+in a line only on a ledgered `unfreeze` verdict); a `refuse` keeps the case frozen and
+the work bends to it; an `amended` line decided by the arbiter says so. On a Python service layer the `-py` hooks
 play the same roles (`.claude/rules/07-backend.md`); hand the `test-writer` the
 `.py` path.
 

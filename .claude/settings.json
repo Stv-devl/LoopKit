@@ -49,6 +49,8 @@
       "Bash(python3 .claude/hooks/kit-doctor.py)",
       "Bash(python3 .claude/hooks/kit-doctor.py *)",
       "Bash(python3 .claude/hooks/loop-record.py --clear)",
+      "Bash(python3 .claude/hooks/loop-record.py --mode)",
+      "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
       "Bash(.claude/scripts/loop-pr-state.sh *)",
       "Bash(.claude/scripts/case-hash.sh *)",
       "Bash(.claude/scripts/small-dispatch-check.sh *)",
@@ -140,7 +142,7 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-git-workflow.sh",
-            "timeout": 5,
+            "timeout": 20,
             "onFailure": "block"
           }
         ]
@@ -243,6 +245,16 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/eslint-batch.sh",
             "timeout": 120
+          }
+        ]
+      },
+      {
+        "matcher": "^arbiter$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I $CLAUDE_PROJECT_DIR/.claude/hooks/loop-record.py",
+            "timeout": 20
           }
         ]
       }

@@ -977,4 +977,23 @@ grep -qxF '.claude/.loop-record.json' "$IN62/.gitignore" || fail_in 'IN62: an ex
 "$ROOT/install.sh" "$IN62" --no-ci >/dev/null 2>&1
 [[ "$(grep -cxF '.claude/.loop-record.json' "$IN62/.gitignore")" -eq 1 ]] || fail_in 'IN62: the record line is not written exactly once'
 
+# IN63 (auto-mode) a core install keeps the `^arbiter$` SubagentStop entry beside eslint-batch.sh, the two
+# new loop-record allows, the record lock ignored, and lists arbiter.md in the manifest.
+IN63="$SCRATCH/in63"
+mkdir -p "$IN63/.claude"
+printf '%s\n' '{"hooks":{"SubagentStop":[{"hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/eslint-batch.sh","timeout":120}]}]}}' \
+    >"$IN63/.claude/settings.json"
+"$ROOT/install.sh" "$IN63" --no-ci >/dev/null 2>&1
+jq -e '[.hooks.SubagentStop[] | select(.matcher == "^arbiter$") | .hooks[].command
+        | select(test("loop-record\\.py"))] | length == 1' "$IN63/.claude/settings.json" >/dev/null \
+    || fail_in 'IN63: no ^arbiter$ SubagentStop entry running loop-record.py'
+jq -e '[.hooks.SubagentStop[].hooks[].command | select(test("eslint-batch\\.sh"))] | length == 1' \
+    "$IN63/.claude/settings.json" >/dev/null || fail_in 'IN63: the eslint-batch.sh SubagentStop entry is gone'
+for a in 'Bash(python3 .claude/hooks/loop-record.py --mode)' 'Bash(python3 .claude/hooks/loop-record.py --guarded-block)'; do
+    jq -e --arg a "$a" '.permissions.allow | index($a) != null' "$IN63/.claude/settings.json" >/dev/null \
+        || fail_in "IN63: allow missing: $a"
+done
+grep -qxF '.claude/.loop-record.lock' "$IN63/.gitignore" || fail_in 'IN63: the record lock is not ignored'
+grep -qF '.claude/agents/arbiter.md' "$IN63/.claude/kit-manifest" || fail_in 'IN63: arbiter.md not in the manifest'
+
 echo 'install fixtures: green.'
