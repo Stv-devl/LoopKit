@@ -154,6 +154,7 @@ FLAG_RECURSIVE = {"--out-dir", "--emptyOutDir", "--coverage.reportsDirectory", "
 CFG_PROJECT = {"-p", "--project"}
 CFG_TOOL = {"-c", "--config", "--root", "--dir"}
 VALUE = "value"
+BOOL = frozenset({"true", "false"})
 
 
 class Names(frozenset):
@@ -171,15 +172,15 @@ POOLS = Names({"threads", "forks", "vmThreads", "vmForks"})
 VITE_COMMANDS = {"build", "dev", "serve", "preview", "optimize"}
 SAFE_VITEST = {
     "-t": VALUE, "--testNamePattern": VALUE, "--reporter": VITEST_REPORTERS, "--project": VALUE,
-    "--coverage": None,
-    "--coverage.enabled": None, "--coverage.include": VALUE, "--coverage.exclude": VALUE,
-    "--coverage.reporter": COVERAGE_REPORTERS, "--bail": VALUE, "--retry": VALUE, "--silent": None,
-    "--passWithNoTests": None, "--ui": None, "--run": None, "--watch": None, "-w": None,
-    "--shard": VALUE, "--sequence.shuffle": None, "--sequence.seed": VALUE, "--maxWorkers": VALUE,
+    "--coverage": BOOL,
+    "--coverage.enabled": BOOL, "--coverage.include": VALUE, "--coverage.exclude": VALUE,
+    "--coverage.reporter": COVERAGE_REPORTERS, "--bail": VALUE, "--retry": VALUE, "--silent": BOOL,
+    "--passWithNoTests": BOOL, "--ui": BOOL, "--run": BOOL, "--watch": BOOL, "-w": None,
+    "--shard": VALUE, "--sequence.shuffle": BOOL, "--sequence.seed": VALUE, "--maxWorkers": VALUE,
     "--minWorkers": VALUE, "--pool": POOLS, "--environment": ENVIRONMENTS, "--testTimeout": VALUE,
     "--hookTimeout": VALUE, "--teardownTimeout": VALUE, "--changed": VALUE, "--mode": VALUE,
-    "--exclude": VALUE, "--hideSkippedTests": None, "--logHeapUsage": None, "--globals": None,
-    "--allowOnly": None, "--no-color": None, "--color": None,
+    "--exclude": VALUE, "--hideSkippedTests": BOOL, "--logHeapUsage": BOOL, "--globals": BOOL,
+    "--allowOnly": BOOL, "--no-color": None, "--color": BOOL,
     "--update": frozenset({"false"}), "--help": None, "-h": None, "--version": None, "-v": None,
 }
 SAFE_PLAYWRIGHT = {

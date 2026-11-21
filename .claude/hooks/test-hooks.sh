@@ -1411,6 +1411,31 @@ run_git_foreign_repo_cases() {
     g15_expect G15.36 ask "$out" "outside the project" "$proj/sub"
     out="$(git_hook_probe "cd sub && git status" "$proj" "$tmp")"
     g15_expect G15.37 ask "$out" "a cd earlier"
+    # G15.37a-g: a read-only git call after literal cds that all land in the project repo
+    # passes; a cd into another repo, a cd the hook cannot read, or a writing call still asks.
+    mkdir -p "$proj/d"
+    out="$(git_hook_probe "cd $proj && git status && git diff" "$proj" "$tmp")"
+    g15_expect G15.37a pass "$out"
+    out="$(git_hook_probe "cd $proj/d; git log -1; git branch --show-current" "$proj" "$tmp")"
+    g15_expect G15.37b pass "$out"
+    out="$(git_hook_probe "cd d && git diff --stat main -- x.ts" "$proj" "$tmp")"
+    g15_expect G15.37c pass "$out"
+    out="$(git_hook_probe "cd $proj/d && cd ../sub && git status" "$proj" "$tmp")"
+    g15_expect G15.37d ask "$out" "a cd earlier"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.37d "the planted core.fsmonitor ran inside the hook"
+    out="$(git_hook_probe "cd \"\$D\" && git status" "$proj" "$tmp")"
+    g15_expect G15.37e ask "$out" "a cd earlier"
+    out="$(git_hook_probe "cd $proj/d && git branch newb" "$proj" "$tmp")"
+    g15_expect G15.37f ask "$out" "a cd earlier"
+    out="$(git_hook_probe "cd ~ && git status" "$proj" "$tmp")"
+    g15_expect G15.37g ask "$out" "a cd earlier"
+    git init -q --bare "$proj/d/evil"
+    git -C "$proj/d/evil" config core.fsmonitor "touch $marker"
+    out="$(git_hook_probe "cd d/evil && git status" "$proj" "$tmp")"
+    g15_expect G15.37h ask "$out" "a cd earlier"
+    [[ ! -e "$marker" ]] || fail enforce-git-workflow.sh G15.37h "the planted core.fsmonitor ran inside the hook"
+    out="$(git_hook_probe "cd $proj/d/evil && git log -1" "$proj" "$tmp")"
+    g15_expect G15.37i ask "$out" "a cd earlier"
     out="$(git_hook_probe "git config core.fsmonitor x" "$proj" "$tmp")"
     g15_expect G15.38 ask "$out" "git config writes"
     out="$(git_hook_probe "git init x" "$proj" "$tmp")"
@@ -6513,6 +6538,13 @@ run_auto_mode_review2_cases() {
 }
 
 set -e
+if [[ "${1:-}" == --guard-only ]]; then
+    run_shell_guard_cases
+    run_git_foreign_repo_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (shell and git guard only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --am-only ]]; then
     run_auto_mode_step1_cases
     run_auto_mode_step2_cases

@@ -249,6 +249,10 @@ SWITCH = {
 }
 ADD_SUBS = {"add", "stage"}
 QUIET_SUBS = {"add", "stage", "status", "diff", "log"}
+READ_SUBS = {"status", "diff", "log", "show", "check-ignore", "ls-files", "rev-parse", "blame",
+             "shortlog", "describe", "merge-base", "cat-file", "ls-tree", "show-ref"}
+READ_BRANCH_FLAGS = {"--show-current", "--list", "-l", "-a", "--all", "-r", "--remotes", "-v",
+                     "-vv", "--verbose", "--no-color"}
 RAW_SEPARATORS = re.compile(r"[\s;&|()`'\"]+|\$\(")
 TDD_TARGET = re.compile(sys.argv[3].replace("[:space:]", r"\s"))
 TDD_FROZEN = re.compile(sys.argv[4].replace("[:space:]", r"\s"))
@@ -312,7 +316,7 @@ MAX_ALIAS_HOPS = 5
 LOST_UNCOMMITTED = "every uncommitted change there is lost, and no commit or stash holds it"
 rows = []
 state = {"capped": False, "unread": False, "deadline": None, "cd": False, "prior": False,
-         "builtins": None, "common": {}}
+         "builtins": None, "common": {}, "cd_dirs": set(), "cd_unread": False}
 
 
 def strip_comments(text):
@@ -510,6 +514,36 @@ def readable_git_dir(directory):
             or any(parts[k] == ".git" and parts[k + 1] == "modules" for k in range(len(parts) - 2))):
         return False
     return project_repo(directory)
+
+
+def note_cd(args, base):
+    """Record where a cd may land: every literal target, a relative one joined to each place
+    the call may already stand in. Anything the hook cannot read marks the whole call unread."""
+    args = args[1:] if args[:1] == ["--"] else args
+    if len(args) != 1:
+        state["cd_unread"] = True
+        return
+    arg = args[0]
+    if arg.startswith(("-", "~")) or any(ch in arg for ch in "$`*?[{}\n"):
+        state["cd_unread"] = True
+        return
+    if os.path.isabs(arg):
+        state["cd_dirs"].add(os.path.normpath(arg))
+        return
+    state["cd_dirs"] |= {os.path.normpath(os.path.join(d, arg)) for d in state["cd_dirs"] | {base}}
+
+
+def read_only_call(sub, args):
+    """True for a git call that only reads: it can run no program of a vetted repo's own."""
+    if sub in READ_SUBS:
+        return True
+    return sub == "branch" and all(a in READ_BRANCH_FLAGS for a in args)
+
+
+def cd_proven():
+    """True when every cd of the call is literal and each place it may land is the project's repo."""
+    return not state["cd_unread"] and bool(state["cd_dirs"]) \
+        and all(os.path.isdir(d) and project_repo(d) for d in state["cd_dirs"])
 
 
 def foreign_verdict(sub, directory, moved):
@@ -1636,7 +1670,9 @@ def parse_git(seg, start, base, assigns):
             "configs": configs, "other_globals": other_globals, "git_env": git_env,
             "dir_unread": dir_unread, "moved": state["cd"] or state["prior"]})
     if sub != HIDDEN and sub not in ADD_SUBS and destr == "-":
-        destr = foreign_verdict(sub, directory, state["cd"])
+        proven = state["cd"] and directory == base and not (git_dir or work_tree) \
+            and read_only_call(sub, args) and cd_proven()
+        destr = foreign_verdict(sub, directory, state["cd"] and not proven)
     if sub != HIDDEN:
         destr = kit_combine(destr, kit_verdict(sub, args, directory, {
             "dir_unread": dir_unread, "git_env": git_env, "moved": state["cd"]}))
@@ -1679,6 +1715,10 @@ def walk(text, base, depth):
         pending = not quiet_git(seg, i)
         prog = seg[i]
         if prog in ("cd", "pushd"):
+            state["cd"] = True
+            note_cd(seg[i + 1:], base)
+            continue
+        if prog == "popd":
             state["cd"] = True
             continue
         if prog == "eval":

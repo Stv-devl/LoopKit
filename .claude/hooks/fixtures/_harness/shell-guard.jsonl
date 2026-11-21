@@ -806,6 +806,13 @@
 {"id":"X24.475","verdict":"ask","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"not the project root or a registered worktree"}
 {"id":"X24.476","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh 2>&1 | tail -3"}
 {"id":"X24.477","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"bash .claude/hooks/test-hooks.sh; echo done"}
+{"id":"X24.478","verdict":"pass","command":"pnpm vitest run src/features/agent-chat --coverage.enabled=false"}
+{"id":"X24.479","verdict":"pass","command":"for i in 1 2 3; do pnpm vitest run src/features/agent-chat --coverage.enabled=false 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E \"FAIL\" -A14 | head -30; done; echo done"}
+{"id":"X24.480","verdict":"pass","command":"pnpm test:run --coverage=false"}
+{"id":"X24.481","verdict":"pass","command":"pnpm exec vitest run --coverage.enabled=true --silent=true --passWithNoTests=false"}
+{"id":"X24.482","verdict":"pass","command":"pnpm vitest run --globals=true --allowOnly=false --sequence.shuffle=false --hideSkippedTests=true"}
+{"id":"X24.483","verdict":"ask","command":"pnpm vitest run --coverage.enabled=yes","reason":"safe-option list"}
+{"id":"X24.484","verdict":"ask","command":"pnpm test:run --silent=./x.cjs","reason":"safe-option list"}
 {"id":"X29.01","verdict":"pass","command":"sed -n 196,262p e2e/takeoff-measurement-lines.public.spec.ts"}
 {"id":"X29.02","verdict":"pass","command":"sed -n 1,5p src/features/a/services/a-line.repository.ts"}
 {"id":"X29.03","verdict":"pass","command":"sed -n 1p app/services/a-list.py"}
