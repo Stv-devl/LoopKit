@@ -1,0 +1,1 @@
+{"tool_name":"Edit","tool_input":{"file_path":"__FIXTURE_ROOT__/src/item.utils.ts","old_string":"export const value = 1","new_string":"export const value = 1\n\nexport function bonus() { return 2 }"}}

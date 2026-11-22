@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 2
 #
 # Hook: tdd-require-red
 # Event: PreToolUse (Write|Edit)
@@ -39,8 +40,16 @@
 #
 
 set -e
+# shellcheck disable=SC2034  # read by the sourced hook-lib.sh
+CWK_GUARD_HOOK=1
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
+if ! declare -F cwk_config cwk_tdd_load cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -55,7 +64,10 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 # module would be unwritable. See cwk_foreign_toolchain in hook-lib.sh.
 cwk_foreign_toolchain "$FILE_PATH" && exit 0
 
-# Only the three test-first layers.
+# Only the three test-first layers. A layer module ends in .ts or .tsx: anything else
+# needs no layer word, so the project's config is read only for those.
+[[ "$FILE_PATH" == *.ts || "$FILE_PATH" == *.tsx ]] || exit 0
+cwk_tdd_load || true
 if [[ ! "$FILE_PATH" =~ $CWK_TDD_IMPL_RE ]]; then
     exit 0
 fi
@@ -107,7 +119,8 @@ extract_exported_symbols() {
 # with no message at all. Only the authored `\n` is expanded; every other backslash is left alone.
 deny() {
     local reason
-    reason="${1//\\n/$'\n'}"
+    cwk_cfg_reason "${1//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     cwk_log_health_deny "$reason"
     jq -n --arg r "$reason" '{
       hookSpecificOutput: {
@@ -117,6 +130,17 @@ deny() {
       }
     }'
     exit 0
+}
+
+# A marker with no digest, an empty one, or `unavailable` written on a machine
+# that can hash now, proves a red on no particular version of the test: an
+# empty file written by hand passes as one. `unavailable` stays valid only
+# where no hash tool exists at all. Reads MARKED_DIGEST and CURRENT_DIGEST.
+require_marker_digest() {
+    if [[ -z "$MARKED_DIGEST" ]] \
+       || [[ "$MARKED_DIGEST" == "unavailable" && "$CURRENT_DIGEST" != "unavailable" ]]; then
+        deny "Test-first: marker without digest, re-save the test. The RED marker for '$TEST_PATH' records no usable sha256 of the test it ran, so it proves no red for '$FILE_PATH' (.claude/rules/05-testing.md).\n\nRe-save '$TEST_PATH': tdd-prove-red runs it again and records a marker with its digest. A marker is never written by hand."
+    fi
 }
 
 is_unfrozen() {
@@ -176,18 +200,19 @@ if [[ -f "$FILE_PATH" ]]; then
     ADDED_LIST=$(printf '%s' "$ADDED" | tr '\n' ' ')
 
     if [[ -z "$TEST_PATH" ]]; then
-        deny "Test-first: this edit to '$FILE_PATH' exports $ADDED_LIST, which the file did not export before, and '$BASE.test.ts' does not exist (.claude/rules/05-testing.md).\n\nA newly-exported symbol on an existing module is a new module in every way that matters here. Write the test first, from the Test plan the user validated at the /loop:plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this.\n\nIf this is a pure rename (the old export is gone from the same edit), that is a plan-level correction, not new behaviour: add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
+        deny "Test-first: this edit to '$FILE_PATH' exports $ADDED_LIST, which the file did not export before, and '$BASE.test.ts' does not exist (.claude/rules/05-testing.md).\n\nA newly-exported symbol on an existing module is a new module in every way that matters here. Write the test first, from the Test plan the user validated at the /loop:plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this.\n\nIf this is a pure rename (the old export is gone from the same edit), that is a plan-level correction, not new behaviour: add one line to .claude/.tdd-unfrozen (this write will ask the user), exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
     fi
 
     MARKER="$(marker_path "$TEST_PATH")"
 
     if [[ ! -f "$MARKER" ]]; then
-        deny "Test-first: this edit to '$FILE_PATH' exports $ADDED_LIST, which the file did not export before, but '$TEST_PATH' has never been observed FAILING on it (.claude/rules/05-testing.md).\n\nWrite or extend the test for $ADDED_LIST first, from the /loop:plan test plan, then save it — the tdd-prove-red hook runs it and records the failure. Only then come back and write this.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
+        deny "Test-first: this edit to '$FILE_PATH' exports $ADDED_LIST, which the file did not export before, but '$TEST_PATH' has never been observed FAILING on it (.claude/rules/05-testing.md).\n\nWrite or extend the test for $ADDED_LIST first, from the /loop:plan test plan, then save it — the tdd-prove-red hook runs it and records the failure. Only then come back and write this.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen (this write will ask the user), exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
     fi
 
     MARKED_DIGEST=$(grep -m1 '^sha256:' "$MARKER" 2>/dev/null | cut -d: -f2)
     CURRENT_DIGEST=$(file_digest "$TEST_PATH")
-    if [[ -n "$MARKED_DIGEST" && "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
+    require_marker_digest
+    if [[ "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
           && "$MARKED_DIGEST" != "$CURRENT_DIGEST" ]]; then
         deny "Test-first: the RED marker for '$TEST_PATH' was recorded on a different version of that file, so it proves nothing about $ADDED_LIST as things stand now (.claude/rules/05-testing.md).\n\nRe-save the test file: tdd-prove-red runs it again and records a fresh verdict. Read that verdict before writing '$FILE_PATH' — anything other than 'RED confirmed' means the red was not real."
     fi
@@ -204,7 +229,7 @@ if [[ -f "$FILE_PATH" ]]; then
     done <<< "$ADDED"
 
     if [[ -n "$UNPROVEN" ]]; then
-        deny "Test-first: this edit to '$FILE_PATH' exports ${UNPROVEN% } — the most recent proved RED for '$TEST_PATH' did not name ${UNPROVEN% } as missing, so it proves nothing about it (.claude/rules/05-testing.md).\n\nSave '$TEST_PATH' with a case that exercises ${UNPROVEN% } and let tdd-prove-red observe it fail, then come back and write this.\n\nIf ${UNPROVEN% } is only a helper of this module, keep it unexported instead: an internal function is covered by the cases of the export that uses it.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
+        deny "Test-first: this edit to '$FILE_PATH' exports ${UNPROVEN% } — the most recent proved RED for '$TEST_PATH' did not name ${UNPROVEN% } as missing, so it proves nothing about it (.claude/rules/05-testing.md).\n\nSave '$TEST_PATH' with a case that exercises ${UNPROVEN% } and let tdd-prove-red observe it fail, then come back and write this.\n\nIf ${UNPROVEN% } is only a helper of this module, keep it unexported instead: an internal function is covered by the cases of the export that uses it.\n\nGenuine exception (pure rename, adoption on a legacy module): add one line to .claude/.tdd-unfrozen (this write will ask the user), exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
     fi
 
     exit 0
@@ -214,13 +239,13 @@ fi
 is_unfrozen "$FILE_PATH" && exit 0
 
 if [[ -z "$TEST_PATH" ]]; then
-    deny "Test-first: '$FILE_PATH' is one of the three test-first layers (.claude/rules/05-testing.md) and '$BASE.test.ts' does not exist.\n\nWrite the test first, from the Test plan the user validated at the /loop:plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this file.\n\nIf this write is a pure move of code that already exists elsewhere, that is the exception: add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>\n\n(the path first, the reason after it or behind a '#' — both are read), then write it."
+    deny "Test-first: '$FILE_PATH' is one of the three test-first layers (.claude/rules/05-testing.md) and '$BASE.test.ts' does not exist.\n\nWrite the test first, from the Test plan the user validated at the /loop:plan gate. Run it, see it fail — the tdd-prove-red hook records that failure — then come back and write this file.\n\nIf this write is a pure move of code that already exists elsewhere, that is the exception: add one line to .claude/.tdd-unfrozen (this write will ask the user), exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>\n\n(the path first, the reason after it or behind a '#' — both are read), then write it."
 fi
 
 MARKER="$(marker_path "$TEST_PATH")"
 
 if [[ ! -f "$MARKER" ]]; then
-    deny "Test-first: '$TEST_PATH' exists but has never been observed FAILING, so the RED phase is not proved and '$FILE_PATH' cannot be created yet (.claude/rules/05-testing.md).\n\nRewrite or re-save the test file: the tdd-prove-red hook runs it and records the failure. A test that passes before its implementation exists asserts nothing — that is what this gate is looking for.\n\nIf that hook answered that it could not run the test runner, fix RUN_TESTS in .claude/hooks/tdd-prove-red.sh first — no re-save will ever produce a marker until it points at this repo's run-once script.\n\nGenuine exception (pure code move, adoption on a legacy module): add one line to .claude/.tdd-unfrozen, exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
+    deny "Test-first: '$TEST_PATH' exists but has never been observed FAILING, so the RED phase is not proved and '$FILE_PATH' cannot be created yet (.claude/rules/05-testing.md).\n\nRewrite or re-save the test file: the tdd-prove-red hook runs it and records the failure. A test that passes before its implementation exists asserts nothing — that is what this gate is looking for.\n\nIf that hook answered that it could not run the test runner, fix RUN_TESTS in .claude/hooks/tdd-prove-red.sh first — no re-save will ever produce a marker until it points at this repo's run-once script.\n\nGenuine exception (pure code move, adoption on a legacy module): add one line to .claude/.tdd-unfrozen (this write will ask the user), exactly in this shape:\n\n    $FILE_PATH  # <one-line reason>"
 fi
 
 # A marker proves a red on the file that was running THEN. If the test file has
@@ -228,7 +253,8 @@ fi
 # and rewritten at the same path.
 MARKED_DIGEST=$(grep -m1 '^sha256:' "$MARKER" 2>/dev/null | cut -d: -f2)
 CURRENT_DIGEST=$(file_digest "$TEST_PATH")
-if [[ -n "$MARKED_DIGEST" && "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
+require_marker_digest
+if [[ "$MARKED_DIGEST" != "unavailable" && "$CURRENT_DIGEST" != "unavailable" \
       && "$MARKED_DIGEST" != "$CURRENT_DIGEST" ]]; then
     deny "Test-first: the RED marker for '$TEST_PATH' was recorded on a different version of that file, so it proves nothing about the test as it stands now (.claude/rules/05-testing.md).\n\nRe-save the test file: tdd-prove-red runs it again and records a fresh verdict. Read that verdict before creating '$FILE_PATH' — anything other than 'RED confirmed' means the red was not real."
 fi

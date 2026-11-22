@@ -8,9 +8,9 @@
       # Vite : règle `base` dans vite.config.ts sur '/<nom-du-repo>/' si le site
       # n'est pas à la racine du domaine, ou tous les assets partent en 404.
       - name: Package for Pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: dist
       - name: Publish
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

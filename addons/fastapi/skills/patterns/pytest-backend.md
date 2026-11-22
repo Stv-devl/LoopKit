@@ -176,7 +176,7 @@ async def test_get_project_not_found(client: AsyncClient) -> None:
 ## Service test
 
 ```python
-async def test_create_project(db: AsyncSession, tenant: Tenant) -> None:
+async def test_b1_create_project(db: AsyncSession, tenant: Tenant) -> None:
     result = await project_service.create(db, tenant.id, ProjectCreate(name="Test"))
 
     assert result.name == "Test"
@@ -186,7 +186,7 @@ async def test_create_project(db: AsyncSession, tenant: Tenant) -> None:
 ## Isolation test — the one that must exist
 
 ```python
-async def test_get_by_id_rejects_other_tenant(db: AsyncSession, tenant: Tenant) -> None:
+async def test_b2_get_by_id_rejects_other_tenant(db: AsyncSession, tenant: Tenant) -> None:
     """Tenant B must not reach tenant A's row."""
     project = await project_service.create(db, tenant.id, ProjectCreate(name="Secret"))
 
@@ -194,7 +194,7 @@ async def test_get_by_id_rejects_other_tenant(db: AsyncSession, tenant: Tenant) 
         await project_service.get_by_id(db, "other-tenant", project.id)
 
 
-async def test_list_filters_by_tenant(db: AsyncSession, tenant: Tenant) -> None:
+async def test_b3_list_filters_by_tenant(db: AsyncSession, tenant: Tenant) -> None:
     await project_service.create(db, tenant.id, ProjectCreate(name="Mine"))
 
     rows, total = await project_service.list_all(db, "other-tenant")
@@ -217,7 +217,7 @@ fails on every refactor of the plumbing, which is exactly backwards.
 from unittest.mock import AsyncMock, patch
 
 
-async def test_ingestion_indexes_every_chunk(db: AsyncSession, tenant: Tenant) -> None:
+async def test_b4_ingestion_indexes_every_chunk(db: AsyncSession, tenant: Tenant) -> None:
     embed = AsyncMock(return_value=[[0.1] * 1024, [0.2] * 1024])
 
     with patch("app.services.ingestion.embedding.embed_texts", embed):
@@ -232,7 +232,7 @@ The exception `05-testing.md` allows — an effect with no return value and no
 other observable trace — is real here, and the isolation filter is the case:
 
 ```python
-async def test_search_scopes_query_to_the_calling_tenant(
+async def test_b5_search_scopes_query_to_the_calling_tenant(
     db: AsyncSession, tenant: Tenant
 ) -> None:
     """The document belongs to another tenant; the filter must carry the caller's."""

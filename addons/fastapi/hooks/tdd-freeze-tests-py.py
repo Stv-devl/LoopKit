@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: tdd-freeze-tests-py
 # Event: PreToolUse (Write|Edit)
@@ -15,13 +16,25 @@
 #
 # `.claude/.tdd-unfrozen` is the visible exception, shared with the TypeScript
 # cycle: a path, with a reason, in review.
-#
-# CONFIGURE: the layers and the module root live in tdd_py_lib.py.
 
+import json
 import os
 import re
 import sys
 
+
+def _ask_on_crash(kind, value, trace):
+    """Any uncaught error, a mismatched tdd_py_lib.py included, asks: exit 1 would let the write through."""
+    note = (f"{os.path.basename(sys.argv[0])} failed ({kind.__name__}: {value}); the hooks in .claude/hooks come "
+            "from two kit versions. Restore them: rerun install.sh on this project, or /kit:init.")
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                       "permissionDecision": "ask",
+                                                       "permissionDecisionReason": note}}))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+sys.excepthook = _ask_on_crash
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import tdd_py_lib as lib  # noqa: E402
@@ -149,7 +162,10 @@ def main() -> None:
     payload = lib.read_payload()
     tool_input = payload.get("tool_input") or {}
     file_path = tool_input.get("file_path") or ""
-    if not file_path or not lib.is_frozen_test(file_path):
+    if not file_path or not file_path.endswith(".py"):
+        sys.exit(0)
+    lib.configure(ask_on_pass=True)
+    if not lib.VALUES or not lib.is_frozen_test(file_path):
         sys.exit(0)
 
     abs_test = lib.abs_path(file_path)
@@ -158,14 +174,42 @@ def main() -> None:
     if not os.path.isfile(abs_test):
         sys.exit(0)
 
-    if lib.is_unfrozen(file_path):
-        sys.exit(0)
+    rows = {}
+    auto, granted, refused_ids = lib.loop_auto(file_path)
+    if auto:
+        if lib.is_unfrozen(file_path) or lib.rows_entry(file_path):
+            rows = {**granted, **lib.loop_rows(file_path)}
+    elif lib.is_unfrozen(file_path):
+        rows = lib.loop_rows(file_path)
+        if not rows:
+            sys.exit(0)
+    elif lib.rows_entry(file_path):
+        rows = lib.loop_rows(file_path)
+    rows_mode = bool(rows) or bool(refused_ids)
 
     try:
         with open(abs_test, encoding="utf-8") as fh:
             current = fh.read()
     except OSError:
         sys.exit(0)
+
+    def rows_verdict() -> None:
+        """Rows mode decides what the insertion rules would deny (docs/specs/loop-to-pr.md, step 5)."""
+        why = lib.rows_refusal(file_path, rows, current, tool_input, payload.get("tool_name") or "",
+                               auto, frozenset(refused_ids))
+        if not why:
+            lib.notice(
+                "TDD: amended case(s) of the frozen test %s edited as recorded at the plan gate "
+                "(loop record rows, .tdd-unfrozen ids). The amended cases go in the PR body "
+                "(Frozen cases)." % file_path
+            )
+        lib.deny(
+            "TDD: %s has amended cases recorded at the plan gate (rows mode), and this edit is "
+            "refused: %s.\n\nEdit only the amended cases, one Edit per case, giving each the exact "
+            "name the gate hashed. Any other correction is queued in "
+            "docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk); the main "
+            "thread stops once for the whole batch (orchestrate.md, Phase 4)." % (file_path, why)
+        )
 
     impl_rel = lib.impl_for_test(file_path)
     dotted = lib.dotted_module(impl_rel)
@@ -174,22 +218,27 @@ def main() -> None:
     content = tool_input.get("content")
     if content is not None:
         if content == current:
-            print(
-                '{"systemMessage": %s}'
-                % _json(
-                    "TDD: identical re-save of the frozen test '%s' — allowed, nothing "
-                    "changed. tdd-prove-red-py is re-running it; read its verdict "
-                    "before writing any implementation." % file_path
-                )
+            lib.notice(
+                "TDD: identical re-save of the frozen test '%s' — allowed, nothing "
+                "changed. tdd-prove-red-py is re-running it; read its verdict "
+                "before writing any implementation." % file_path
             )
-            sys.exit(0)
+        if rows_mode:
+            rows_verdict()
         lib.deny(
             "TDD: %s is frozen — it was validated at the /loop:plan gate and proved red, "
             "and a wholesale overwrite rewrites assertions with nothing watching.\n\n"
             "Adding a case is allowed, as an Edit that inserts after the last line of "
             "the previous case and carries its own assertion. Correcting a case is a "
-            "plan-level decision: say which case and why, add one line to "
-            "`.claude/.tdd-unfrozen`:\n\n    %s  # <one-line reason>\n\nthen edit.\n\n"
+            "plan-level decision: a subagent stops and reports the case id and why; "
+            "the main thread queues it in docs/work/<slug>/unfreeze-queue.md (case id, "
+            "old and new line, reason, hunk) and stops once for the whole batch, where "
+            "the main thread adds one line per path to `.claude/.tdd-unfrozen` (one "
+            "write, it asks the user):\n\n"
+            "    %s  # <case id>: <one-line reason>\n\n"
+            "each plan line rewritten (same id), `amended` appended to plan.md's "
+            "`## Gate`; the amended cases are listed in the PR body (Frozen cases). "
+            "Then edit.\n\n"
             "The implementation bends to the test — fix %s instead."
             % (file_path, file_path, impl_rel)
         )
@@ -283,6 +332,8 @@ def main() -> None:
                     "the code it would neutralise is even written" % (names, dotted)
                 )
 
+    if refused and rows_mode:
+        rows_verdict()
     if refused:
         lib.deny(
             "TDD: %s is frozen and this edit is not a pure insertion — %s.\n\n"
@@ -293,28 +344,24 @@ def main() -> None:
             "return/raise at its own top level, no skip/xfail, no patch of the module "
             "under test.\n\n"
             "Denied: rewriting an assertion, renaming or deleting a case, anchoring on "
-            "part of a line. That is a plan-level correction — say which case and why, "
-            "add one line to `.claude/.tdd-unfrozen`:\n\n    %s  # <one-line reason>\n\n"
-            "then edit.\n\n"
+            "part of a line. That is a plan-level correction — a subagent stops and "
+            "reports the case id and why; the main thread queues it in "
+            "docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk) "
+            "and stops once for the whole batch, where the main thread adds one line "
+            "per path to `.claude/.tdd-unfrozen` (one write, it asks the user):\n\n"
+            "    %s  # <case id>: <one-line reason>\n\n"
+            "each plan line rewritten (same id), `amended` appended to plan.md's "
+            "`## Gate`; the amended cases are listed in the PR body (Frozen cases). "
+            "Then edit.\n\n"
             "The implementation bends to the test: fix %s."
             % (file_path, refused, file_path, impl_rel)
         )
 
-    print(
-        '{"systemMessage": %s}'
-        % _json(
-            "TDD: case appended to the frozen test %s — allowed as a pure insertion. "
-            "Say which behaviour it covers and why the /loop:plan test plan missed it."
-            % file_path
-        )
+    lib.notice(
+        "TDD: case appended to the frozen test %s — allowed as a pure insertion. "
+        "Say which behaviour it covers and why the /loop:plan test plan missed it."
+        % file_path
     )
-    sys.exit(0)
-
-
-def _json(text: str) -> str:
-    import json
-
-    return json.dumps(text)
 
 
 if __name__ == "__main__":

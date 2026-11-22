@@ -26,7 +26,7 @@ For an ingestion or retrieval pipeline, also
    (`.claude/rules/07-backend.md`): `tdd-require-red-py.py` denies creating the
    module until `tdd-prove-red-py.py` has seen this file fail for a reason that
    proves something. Take the cases from `docs/work/<slug>/plan.md`'s `Test plan`
-   when there is one.
+   when there is one; each test is named `test_b<n>_…` after its case id.
 
    > The name is not free: `tests/` **mirrors** `app/`, and that mapping is how
    > the hooks pair the two files. `tests/services/test_export.py` pairs with

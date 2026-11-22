@@ -1,0 +1,3 @@
+{"mode": "review", "round": 3, "plan": "docs/work/kit-prompts/plan.md", "findings": [
+  {"id": "R3M1", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-workflow-contracts.sh", "line": 1256, "problem": "PK21/PK23 `if command -v jq` guards are dead code (the suite already needs jq from :461 under set -e).", "scenario": "A reader believes PK21/PK23 can be skipped without jq; they cannot.", "regression": false, "status": "new", "closure": null}
+]}

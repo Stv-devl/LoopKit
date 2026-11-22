@@ -43,7 +43,7 @@ because they are steps you can delete, not because `00-project.md` counts them.
 | dev server | ✓ | — | a local role. There is nothing to serve in CI |
 | *(not a role)* coverage floor | ✓ | ✓ | thresholds live in `vite.config.ts` (`tooling-config.md`), **not** in the YAML |
 | *(not a role)* bundle secret scan | ✓ | ✓ | the other half of `/loop:ship`'s deterministic security pair |
-| `/audit:security` (one surface) | on a `critical` profile only | — | it needs an agent's judgement, not a runner's |
+| `security-auditor` (the surfaces the diff touches) | on a `critical` profile only | — | it needs an agent's judgement, not a runner's |
 
 > **Why the tests and the floor are two steps and not one.** `test:coverage`
 > covers both in one command, and that is exactly what made it dangerous: it
@@ -121,6 +121,23 @@ happened for weeks. `workflow-names` compares all three.
 The thresholds are not a twin here: the coverage floor lives in
 `vite.config.ts`, and the YAML only calls the script that reads it.
 
+## Repository settings
+
+A workflow that runs is not yet a gate: GitHub merges a red pull request unless
+the repository says otherwise. Set these once, by hand, in the repository's
+settings (`/kit:doctor` reports, informational only, when `main` has neither a
+ruleset nor classic protection):
+
+- **A ruleset on `main`**: a pull request is required before merging, the
+  required status check is `Gates` (the `ci.yml` job), no force push, no
+  deletion.
+- **`CODEOWNERS`**: `install.sh` ships `.github/CODEOWNERS` with the CI. It
+  covers `.claude/hooks/`, `.claude/settings.json`, `.claude/project.json`,
+  `.github/workflows/` and itself (`.github/CODEOWNERS`); replace `@OWNER`, then turn on "Require review from Code Owners" in the same
+  ruleset, so a change to the guardrails needs its owner.
+- **An environment `production`** with a required reviewer: `deploy.yml` runs in
+  it, so a deploy waits for a human even after a green push.
+
 ## The one gate a runner cannot decide
 
 `pnpm audit --prod --audit-level=high` red, **with no fix published**, is the case
@@ -186,16 +203,25 @@ write there — it is `try_files` in nginx, or `FallbackResource` in Apache. Bot
 snippets say so, and `ghcr`'s carries the nginx line in its Dockerfile sketch.
 The trap does not disappear with the fragment; it moves.
 
+The SSH target also requires `DEPLOY_KNOWN_HOSTS`: generate it once with
+`ssh-keyscan` and verify its host key out of band before storing it as a secret.
+
 ## The four properties of the CD, and why each is load-bearing
 
 They are implemented in `deploy.yml` and commented there. Repeated here only
 because deleting one is easy and looks harmless:
 
-1. **It deploys only what a green CI produced — with no exception.** A manual
-   `workflow_dispatch` used to rebuild from an arbitrary checkout, which shipped
-   a binary no gate had seen while the file claimed the opposite. It now
-   *resolves* the latest successful CI run on the default branch and deploys
-   that run's artefact, or refuses to start. There is no rebuild branch left.
+1. **It deploys only what a green CI produced — with no exception.** A
+   `workflow_run` deploy needs a green CI from a `push` in the same repository
+   (a fork controls its own `ci.yml`, so it is refused). On both paths, Resolve
+   proves that the commit is on the default branch. A dispatch still runs the
+   file of the ref it was started from, so for any other ref the barrier is
+   property 4, not Resolve.
+   A manual `workflow_dispatch` used to rebuild from an arbitrary checkout,
+   which shipped a binary no gate had seen while the file claimed the opposite.
+   It now *resolves* the latest successful CI run on the default branch and
+   deploys that run's artefact, or refuses to start. There is no rebuild branch
+   left.
 2. **It ships that run's artefact, never a rebuild.** Rebuilding sends a binary
    nothing tested — same commit, different output, and no one sees it happen.
 3. **The job provides the environment; the `Publish` step never assumes it.**
@@ -210,7 +236,18 @@ because deleting one is easy and looks harmless:
 4. **`environment: production` is the human gate.** It is inert until you set a
    required reviewer in Settings → Environments. Without that, the workflow
    deploys on every merge to `main` — which may well be what you want, but it
-   should be a decision you made.
+   should be a decision you made. `workflow_dispatch` runs the file of the
+   chosen ref, so a branch can edit its own `if:` and Resolve step. Where the
+   deploy needs an environment secret, the environment is the barrier: set
+   "Deployment branches and tags" to Selected with the default branch, not
+   "Protected branches only", which allows every branch when no protection rule
+   exists, and keep deploy secrets as environment secrets with the
+   repository-level copies deleted. `ghcr` has no secret: it logs in with
+   `GITHUB_TOKEN`, so a branch workflow with `packages: write` can push whatever
+   the rule says, and trust there rests on who holds write access. `pages` is not
+   settled. Plan limits: required reviewers exist on GitHub Free, Pro and Team
+   for public repositories only; branch rules and environment secrets are also
+   available on private Pro and Team; on private Free there are neither.
 
 ## What is deliberately not here
 

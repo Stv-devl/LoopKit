@@ -41,7 +41,7 @@ files this run just wrote, never one that already existed:
 | --- | --- |
 | The six hooks in `settings.json` | the kit wrote that `settings.json` (otherwise they land in the `.new`, for you to merge) |
 | `@07-backend.md` in the `CLAUDE.md` rules index | same |
-| `app\|alembic` in `PROTECTED_DIRS` | same |
+| `app\|alembic` in `protected_dirs` of `.claude/project.json` | same |
 
 Everything below needs to know what **your** project does, and stays manual.
 None of it is optional: a guardrail that is not wired is indistinguishable from
@@ -78,13 +78,13 @@ in `07-backend.md` explains why the scope matters.
 > that would run at all. `/backend:deps-audit` exists — what was missing is its
 > place in the gate.
 
-### 3. `.claude/commands/loop/ship.md` → the gates
+### 3. `.claude/overlays/commands/loop/ship.md` → the `extra-gates` section
 
 **This is the edit everyone forgets, and it makes `/loop:ship` useless on a Python
-repo.** The gate block is written in `pnpm`: on a backend-only project none of
-those five commands exist. Add the backend ones alongside (the file already
-carries a `<!-- FILL -->` right there), or replace them outright if the repo has
-no front end:
+repo.** The kit's gate block is written in `pnpm`: on a backend-only project none of
+those five commands exist. The ship prompt is kit code and is never edited: write the
+backend commands in the `extra-gates` section of `.claude/overlays/commands/loop/ship.md`
+(they join the same batch), and say there if the repo has no front end:
 
 ```bash
 python -m pytest        # run-once, no watch mode. `-m` puts the root on sys.path
@@ -106,12 +106,14 @@ An older uv answers `uv audit` with `unrecognized subcommand`: fall back to
 uvx pip-audit --disable-pip --no-deps -r "$TMP/req.txt"`. Never a bare
 `uvx pip-audit`: it audits its own throwaway environment, not the project.
 
-### 4. `.claude/guides/review/` → the backend checklists
+### 4. `.claude/overlays/guides/review/` → the backend checklists
 
-Each reviewer reads only its dimension's checklist under `.claude/guides/review/`.
-`tests-python.md` already sends a Python diff to `07-backend.md`; add a line naming
-`07-backend.md` to `correctness.md` and `security.md` too, or a backend diff is
-reviewed against the rules of a React app.
+Each reviewer reads only its dimension's checklist, and the `extra-checks` section of its
+overlay under `.claude/overlays/guides/review/`. `tests-python.md` already sends a Python
+diff to `07-backend.md`; add a line naming `07-backend.md` to the `extra-checks` section of
+`.claude/overlays/guides/review/correctness.md` and of
+`.claude/overlays/guides/review/security.md` too, or a backend diff is reviewed against the
+rules of a React app.
 
 ### 5. `.claude/rules/02-architecture.md` → the Backend section
 
@@ -128,6 +130,9 @@ app/
 ├── schemas/              # Pydantic request/response
 └── core/                 # config, database, auth, exceptions, middleware, clients
 ```
+
+and replace `Server roots: none.` with ``Server roots: `app`, `alembic`.`` — the twin of
+`server_roots` in `.claude/project.json`, which `install.sh --fastapi` wires.
 
 Rules: no business logic in `api/` · no `fastapi` import in `services/` ·
 business exceptions converted by one global handler · every query filtered by
@@ -147,12 +152,13 @@ single `.claude/.tdd-unfrozen` shared by both cycles.
 This used to be a manual edit, which put the one line tying the two cycles
 together in the list of things nobody does.
 
-### 7. `enforce-backend-layers.py` → the configuration
+### 7. `.claude/project.json` → the `fastapi` block
 
-`MODULE_ROOT` (default `app/`, matched on a path boundary), `SESSION_NAMES` (how
-this project names its `AsyncSession`) and `EXTERNAL_CLIENTS` (your LLM / vector
-/ storage clients and the modules allowed to import them). Left empty, check 3
-is off.
+`module_root` (default `app`, matched on a path boundary), `tests_root`,
+`test_first_dirs`, `session_names` (how this project names its `AsyncSession`)
+and `external_clients` (your LLM / vector / storage clients and the module
+prefixes allowed to import them). Left empty, check 3 is off. The hooks read it;
+no hook file is edited.
 
 > `.claude/hooks/enforce-architecture.py` (the front-end one) is untouched: it
 > only inspects `src/**/*.ts`.

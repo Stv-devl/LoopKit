@@ -8,6 +8,12 @@ CRITIC="$ROOT/.claude/agents/plan-critic.md"
 PRODUCT="$ROOT/.claude/commands/loop/product.md"
 ORCHESTRATE="$ROOT/.claude/commands/loop/orchestrate.md"
 REVIEW="$ROOT/.claude/commands/loop/review.md"
+SMALL="$ROOT/.claude/commands/loop/small.md"
+SHIP="$ROOT/.claude/commands/loop/ship.md"
+TRACKS="$ROOT/.claude/commands/loop/tracks.md"
+WORKTREES="$ROOT/.claude/guides/10-worktrees.md"
+GITHUB_AGENT="$ROOT/.claude/agents/github.md"
+RESEARCH="$ROOT/.claude/commands/loop/research.md"
 SPIKE="$ROOT/.claude/commands/loop/spike.md"
 RECIPE="$ROOT/.claude/commands/kit/recipe.md"
 
@@ -54,7 +60,7 @@ grep -Fq 'frontend-design' "$DESIGNER"
 grep -Fq 'Impeccable, loaded by `designer`' "$INTERFACE"
 grep -Fq 'only on a UI feature' "$ORCHESTRATE"
 grep -Fq 'only on a UI feature' "$PLAN"
-[ "$(ls "$ROOT"/.claude/commands/loop/*.md | wc -l)" -eq 12 ]
+[ "$(ls "$ROOT"/.claude/commands/loop/*.md | wc -l)" -eq 13 ]
 for f in PRODUCT.md DESIGN.md; do
   [ "$(wc -l < "$ROOT/$f")" -le 10 ]
 done
@@ -214,7 +220,7 @@ for phase in research interface plan execute review ship; do
 done
 grep -q 'handoff-codex.md`, its name before 0.2' "$ROOT/.claude/commands/loop/orchestrate.md"
 TEMPLATE_PHASES="$(sed -nE 's/^phase: [a-z-]+ +# (.*)$/\1/p' "$ROOT/.claude/commands/handoff/codex.md")"
-[[ "$TEMPLATE_PHASES" == "research | interface | plan | execute | review | ship" ]]
+[[ "$TEMPLATE_PHASES" == "research | interface | plan | execute | review | ship | awaiting-merge" ]]
 
 # After /clear, the SessionStart hook names the next feature: an interrupted one
 # first (IN LOOP with a handoff), else the topmost READY line. Only on `clear`.
@@ -230,7 +236,7 @@ cat > "$NX/docs/product/backlog.md" <<'BOARD'
 BOARD
 next_ctx clear | grep -q '/loop:orchestrate docs/specs/billing.md'
 if next_ctx clear | grep -q 'checkout/1.2'; then exit 1; fi
-next_ctx clear | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"'
+next_ctx clear | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"'
 [[ -z "$(next_ctx startup)" ]]
 [[ -z "$(next_ctx resume)" ]]
 printf '| checkout 1.1 — cart | docs/stories/checkout/1.1.md | full | IN LOOP | — |\n' >> "$NX/docs/product/backlog.md"
@@ -272,5 +278,1243 @@ sl() { printf '{"context_window":{"used_percentage":%s},"workspace":{"project_di
 sl 69.9; [[ ! -e "$SL/.claude/.token-delegate" ]]
 sl 70; [[ -e "$SL/.claude/.token-delegate" ]]
 sl 40; [[ ! -e "$SL/.claude/.token-delegate" ]]
+
+# Light loop with one stop fewer (docs/specs/light-fewer-gates.md): the spec
+# chains into the loop, the contract is asked at the first gate, the go is
+# recorded, case ids, frozen-test corrections confirmed at the merge.
+# A section whose end anchor is missing fails instead of reading to the end of
+# the file; a section is always assigned first so `set -e` sees that failure.
+section() { awk -v s="$2" -v e="$3" '!on && index($0, s) { on = 1; print; next } on && index($0, e) { ended = 1; exit } on; END { exit !ended }' "$1"; }
+TESTS_GUIDE="$ROOT/.claude/guides/review/tests.md"
+TEST_WRITER="$ROOT/.claude/agents/test-writer.md"
+SHIP="$ROOT/.claude/commands/loop/ship.md"
+PY_FREEZE="$ROOT/addons/fastapi/hooks/tdd-freeze-tests-py.py"
+if section "$PLAN" '7. **TEST PLAN GATE' 'no such end anchor' >/dev/null; then exit 1; fi
+if grep -Fq 'Once the spec is written, stop and propose' "$SPEC"; then exit 1; fi
+if grep -Fq 'Frame the contract, stop.' "$SPEC"; then exit 1; fi
+grep -Fq 'you will validate the contract with research in hand at the first gate' "$SPEC"
+grep -Fq '.token-warning' "$SPEC"
+grep -Fq './workflow.sh "/loop:orchestrate docs/specs/<slug>.md"' "$SPEC"
+gate_ui="$(section "$INTERFACE" '5. **INTERFACE GATE' '6. **Write**')"
+grep -Fq 'Contract (validated by this go)' <<<"$gate_ui"
+grep -Fq 'first round only' <<<"$gate_ui"
+grep -Fq 'write `design.md` (step 6) first' <<<"$gate_ui"
+design_gate="$(section "$INTERFACE" '## Chosen at the gate' '## Rejected')"
+grep -Fq 'Contract: as written' <<<"$design_gate"
+gate_plan="$(section "$PLAN" '7. **TEST PLAN GATE' '8. **Stop')"
+grep -Fq 'amended:' <<<"$gate_plan"
+grep -Fq 'proposed answer' <<<"$gate_plan"
+grep -Fq '## Gate' <<<"$gate_plan"
+grep -Fq 'asks step 7 again' <<<"$gate_plan"
+grep -Fq '`research.md` is read-only' <<<"$gate_plan"
+template_plan="$(section "$PLAN" '## Test plan (gate' '### Test-after')"
+grep -Fq -- '- [ ] U1' <<<"$template_plan"
+grep -Fq 'next free id' <<<"$template_plan"
+resume="$(section "$ORCHESTRATE" '## Phase 0 —' '## Phase 0.5 —')"
+grep -Fq '`## Gate` present' <<<"$resume"
+grep -Fq 'surviving blockers: none' <<<"$resume"
+phase3="$(section "$ORCHESTRATE" '## Phase 3 —' '## Phase 4 —')"
+grep -Fq 'Do not enter Phase 4 on silence' <<<"$phase3"
+grep -Fq 're-enters at the earliest phase' <<<"$phase3"
+grep -Fq 'from scratch' <<<"$phase3"
+if grep -Fq 'Each amendment is one failure on `contract`' <<<"$phase3"; then exit 1; fi
+ceiling="$(section "$ORCHESTRATE" '## Gate attempt ceiling' '## Phase 0 —')"
+grep -Fq '`contract`' <<<"$ceiling"
+if grep -Fq '(except on a contract amendment, below)' <<<"$resume"; then exit 1; fi
+phase4="$(section "$ORCHESTRATE" '## Phase 4 —' '## Phase 5 —')"
+if grep -Fq 'RED-leg `test-writer`' <<<"$phase4"; then exit 1; fi
+grep -Fq 'you append its plan line' <<<"$phase4"
+grep -Fq '`## Gate` amendment' "$TESTS_GUIDE"
+no_amendment="$(grep -F 'without one' "$TESTS_GUIDE")"
+grep -Fq 'stays **Major**' <<<"$no_amendment"
+TESTS_PY="$ROOT/.claude/guides/review/tests-python.md"
+grep -Fq '`## Gate` amendment' "$TESTS_PY"
+grep -Fq 'no assertion removed' "$TESTS_PY"
+grep -Fq 'case-insensitive' "$TESTS_PY"
+BACKEND_TEST="$ROOT/addons/fastapi/commands/backend/test.md"
+grep -Fq 'test_b<n>_{action}_{scenario}' "$BACKEND_TEST"
+grep -Fq 'next free `B` id' "$BACKEND_TEST"
+grep -Fq 'test_b<n>_' "$ROOT/addons/fastapi/commands/backend/service.md"
+if grep -Fq 'contract, stops.' "$ROOT/docs/RATIONALE.md"; then exit 1; fi
+grep -Fq 'append each further amendment' <<<"$gate_plan"
+grep -Fq 'no assertion removed' "$TESTS_GUIDE"
+naming="$(section "$TEST_WRITER" 'The case name is the case' 'Both outcomes')"
+grep -Fq 'starts with the case id' <<<"$naming"
+grep -Fq 'next free case id' "$ROOT/.claude/agents/implementer.md"
+grep -Fq 'with its case id' "$DEBUG"
+grep -Fq "it('R1 " "$ROOT/.claude/skills/patterns/tests.md"
+grep -Fq 'test_b1_' "$ROOT/addons/fastapi/skills/patterns/pytest-backend.md"
+if grep -Fq "**s'arrête** — tu relis les critères" "$ROOT/docs/Claude_Workflows.md"; then exit 1; fi
+commit_step="$(section "$SHIP" '### 4. Commit' '### 4bis')"
+grep -Fq '`amended`' <<<"$commit_step"
+if grep -Fq '`## Gate` (step 2)' "$SHIP"; then exit 1; fi
+merge_step="$(section "$SHIP" '2. Present the branch' '3. After the merge')"
+grep -Fq '`amended`' <<<"$merge_step"
+grep -Fq 'test hunk' <<<"$merge_step"
+if grep -Fq 'otherwise ask for them here' "$SHIP"; then exit 1; fi
+if grep -Fq 'tell the user' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"; then exit 1; fi
+grep -Fq 'The main thread records it' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+grep -Fq 'rewrite the plan line (same id)' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+if grep -Fq 'say so to the user' "$ROOT/.claude/hooks/tdd-freeze-tests.sh"; then exit 1; fi
+if grep -Fq 'say which case and why' "$PY_FREEZE"; then exit 1; fi
+grep -Fq 'the main thread adds one line' "$PY_FREEZE"
+if grep -Fq 'say which case and why' "$ROOT/.claude/hooks/prevent-destructive-commands.sh"; then exit 1; fi
+if grep -Fq 'tell the user, with which case and why' "$ROOT/.claude/commands/audit/mutation.md"; then exit 1; fi
+if grep -Fq "et s'arrêter là" "$ROOT/docs/ADAPTATION.md"; then exit 1; fi
+if grep -Eq '^[[:space:]]*/loop:orchestrate docs/specs/<slug>\.md[[:space:]]*$' "$ROOT/README.md"; then exit 1; fi
+
+# Small-lane command and workflow contracts.
+[ "$(grep -Fc 'AskUserQuestion' "$SMALL")" -eq 1 ]
+for trigger in 'schema change' 'critical trigger' 'new dependency' 'new screen'; do
+  grep -Fq "$trigger" "$SMALL"
+done
+research_line=$(grep -nF 'Research inline' "$SMALL" | head -1 | cut -d: -f1)
+draft_line=$(grep -nF 'Draft the small spec' "$SMALL" | head -1 | cut -d: -f1)
+paths_line=$(grep -nF 'small-paths.sh' "$SMALL" | head -1 | cut -d: -f1)
+go_line=$(grep -nF 'AskUserQuestion' "$SMALL" | head -1 | cut -d: -f1)
+dispatch_line=$(grep -nF 'small-dispatch-check.sh' "$SMALL" | tail -1 | cut -d: -f1)
+dispatch_before=$(grep -nF 'small-dispatch-check.sh' "$SMALL" | head -1 | cut -d: -f1)
+paths_after=$(grep -nF 'small-paths.sh' "$SMALL" | tail -1 | cut -d: -f1)
+[ "$research_line" -lt "$draft_line" ]
+[ "$paths_line" -lt "$go_line" ]
+[ "$dispatch_before" -lt "$go_line" ]
+[ "$go_line" -lt "$dispatch_line" ]
+[ "$go_line" -lt "$paths_after" ]
+grep -Fq './workflow.sh "/loop:orchestrate docs/specs/small/<name>.md"' "$SMALL"
+if grep -Fq 'EnterWorktree' "$SMALL"; then exit 1; fi
+
+small_pick=$(grep -nF 'docs/specs/small/' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+light_pick=$(grep -nF 'Light pass' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+ready_pick=$(grep -nF 'FEATURE READY check' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+resume_rule=$(grep -nF 'is a resume' "$ORCHESTRATE" | head -1 | cut -d: -f1)
+[ "$small_pick" -lt "$light_pick" ]
+[ "$small_pick" -lt "$ready_pick" ]
+[ "$small_pick" -lt "$resume_rule" ]
+small_branch=$(section "$ORCHESTRATE" 'Small pipeline' 'FEATURE READY check')
+for required in 'Pipeline: small' 'Entry:' 'small-plan.sh' 'one reviewer' 'one verifier' 'implementer' 'small-scope.sh'; do
+  grep -Fq "$required" <<<"$small_branch"
+done
+if grep -Fq 'AskUserQuestion' <<<"$small_branch"; then exit 1; fi
+
+grep -Fq 'small-ticket' "$WORKTREES"
+if grep -Fq 'What lives in the main tree only' "$WORKTREES"; then exit 1; fi
+for required in 'small-scope.sh' '4bis.1' '4bis.2' '4bis.3' 'merge --ff-only'; do
+  grep -Fq "$required" "$SHIP"
+done
+
+small_slug=$(grep -nF -- '- entry `docs/specs/small/<name>.md`' "$RESEARCH" | head -1 | cut -d: -f1)
+generic_slug=$(grep -nF -- '- entry `docs/specs/<x>.md`' "$RESEARCH" | head -1 | cut -d: -f1)
+[ "$small_slug" -lt "$generic_slug" ]
+
+for required in 'docs/work/small-<name>/ejected' 're-enter: /loop:spec' 'S2 trigger:' 'review FAIL:' 'kit-attempts.py'; do
+  grep -Fq "$required" <<<"$small_branch"
+done
+attempt_line=$(grep -F 'kit-attempts.py' <<<"$small_branch" | head -1)
+grep -Fq 'without `--board/--unit`' <<<"$attempt_line"
+for required in '--status' 'in flight' 'ejected' 'to clean'; do
+  grep -Fq -- "$required" "$SMALL"
+done
+grep -Fq "plan's \`Acceptance criteria\`" "$REVIEW"
+github_small=$(section "$GITHUB_AGENT" 'For a small-ticket branch' '1. `git worktree list`')
+grep -Fq 'small-ticket' <<<"$github_small"
+grep -Fq 'merge --ff-only' <<<"$github_small"
+grep -Fq "spec's \`Base:\`" <<<"$github_small"
+grep -Fq 'Do not copy' <<<"$github_small"
+grep -Fq 'docs/work/' <<<"$github_small"
+grep -Fq 'small-ticket dirty-tree exception' "$TRACKS"
+grep -Fq 'unmerged `small-*` worktrees' "$TRACKS"
+grep -Fq 'close this terminal' "$SHIP"
+grep -Fq '/loop:small --status' "$SHIP"
+grep -Fq 'no board line to move' "$SHIP"
+grep -Fq 'Step 6 and the closing line print that cleanup' "$SHIP"
+grep -Fq 'git worktree remove .claude/worktrees/small-<name>' "$SHIP"
+
+# W7 guard-writes: the TDD escape hatch is now a guarded write, and the deny
+# texts say so; ADAPTATION names the guarded set and the kit-repo prompts.
+TDD_RED_HOOK="$ROOT/.claude/hooks/tdd-require-red.sh"
+TDD_FREEZE_HOOK="$ROOT/.claude/hooks/tdd-freeze-tests.sh"
+ADAPTATION="$ROOT/docs/ADAPTATION.md"
+[[ "$(grep -c 'this write will ask the user' "$TDD_RED_HOOK")" -eq 5 ]]
+[[ "$(grep -c 'this write will ask the user' "$TDD_FREEZE_HOOK")" -eq 2 ]]
+grep -Fq '## 14. Chemins gardés' "$ADAPTATION"
+for needle in 'hook-guarded.sh' '.claude/.tdd-red/' 'vite.config.*' 'package.json' \
+              "dans le dépôt du kit, chaque écriture d'un hook, d'un script ou des settings demande ton accord" \
+              '**Le code du kit, refusé dans un projet installé.**'; do
+    section "$ADAPTATION" '## 14. Chemins gardés' '## Vérifier que le câblage tient' | grep -Fq -- "$needle"
+done
+
+# W12 the .tdd-unfrozen write is a user prompt now: orchestrate Phase 4 and the
+# mutation audit say so, and the unattended claim is qualified; ADAPTATION names
+# the two settings files instead of a glob.
+MUTATION="$ROOT/.claude/commands/audit/mutation.md"
+grep -Fq 'the `.tdd-unfrozen` write asks the user' "$ORCHESTRATE"
+grep -Fq 'the `.tdd-unfrozen` write asks the user' "$MUTATION"
+if grep -Fq 'Correcting one never stops EXECUTE — it may run unattended' "$ORCHESTRATE"; then exit 1; fi
+adapt_guard=$(section "$ADAPTATION" '## 14. Chemins gardés' '## Vérifier que le câblage tient')
+grep -Fq '`.claude/settings.json`' <<<"$adapt_guard"
+grep -Fq '`.claude/settings.local.json`' <<<"$adapt_guard"
+if grep -Fq 'settings*.json' <<<"$adapt_guard"; then exit 1; fi
+
+# K1 light-permissions-git: the narrow permissions, exactly; the commit and
+# staging forms the git hook polices; keys ignored; the branch hint.
+SETTINGS="$ROOT/.claude/settings.json"
+jq -e '.permissions.defaultMode == "acceptEdits"' "$SETTINGS" >/dev/null
+for allow in 'Bash(git add *)' 'Bash(git commit -m *)' 'Bash(git switch -c *)' \
+             'Bash(git branch --show-current)' 'Bash(git worktree list)'; do
+    jq -e --arg a "$allow" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
+done
+for wide in 'Bash(git commit *)' 'Bash(git switch *)' 'Bash(git branch *)' 'Bash(git push *)' 'Bash(git *)' \
+            'Bash(git -C *)' 'Bash(git -C * commit *)' 'Bash(git -C * commit -m *)'; do
+    if jq -e --arg a "$wide" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null; then exit 1; fi
+done
+grep -Fq 'git commit -m "<one line>"' "$GITHUB_AGENT"
+grep -Fq 'never `.`, `-A`, `--all`, `-u`' "$GITHUB_AGENT"
+for ignored in '*.pem' '*.key' 'credentials.*'; do
+    grep -qxF "$ignored" "$ROOT/.gitignore"
+done
+# K1 harness-hooks DA1: the kit's Read deny, exactly and in order (a `!` entry
+# carves only out of the entries before it); the doc names the union and the gap.
+jq -e '.permissions.deny == ["Read(.env)", "Read(.env.*)", "Read(!.env.example)",
+        "Read(!.env.sample)", "Read(!.env.template)", "Read(!.env.*.example)",
+        "Read(!.env.*.sample)", "Read(!.env.*.template)", "Read(*.pem)", "Read(*.key)",
+        "Read(credentials.*)", "Read(.credentials.*)"]' "$SETTINGS" >/dev/null
+grep -Fq 'Read(!.env.example)' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'permissions.deny' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'sandbox.enabled' "$ROOT/docs/ADAPTATION.md"
+GIT_HOOK="$ROOT/.claude/hooks/enforce-git-workflow.sh"
+grep -Fq 'git switch -c feat/<scope>' "$GIT_HOOK"
+if grep -Fq 'git checkout -b' "$GIT_HOOK"; then exit 1; fi
+# K1 docs: the hold-back and the measure method; the prompts a light pass keeps.
+for needle in 'tool_use' 'tool_result'; do
+    grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+for needle in 'git push' 'gh pr' '--amend' '--discard-changes' 'chemins gardés'; do
+    grep -Fq -- "$needle" "$ROOT/docs/Claude_Workflows.md"
+done
+
+# K1b install.sh strips exactly the five P1 allows K1 names, no other list.
+P1_KIT="$(sed -n "/^P1_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^P1_ALLOWS='//; s/'\$//")"
+jq -en --argjson kit "$P1_KIT" \
+    '($kit | sort) == (["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
+                        "Bash(git branch --show-current)", "Bash(git worktree list)"] | sort)' >/dev/null
+# K1c docs: the removal on hold-back, settings.local.json, and the prompts the
+# amendment adds to a light pass.
+for needle in 'retirés' 'settings.local.json'; do
+    grep -Fq "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+# K1 harness-hooks A0: the hold-back message and list in the doc match install.sh.
+for needle in 'Bash(pnpm build *)' \
+              'tdd-require-red.sh' 'auto-approve-config.sh'; do
+    grep -Fq -- "$needle" "$ROOT/docs/ADAPTATION.md"
+done
+if grep -Fq 'merge their .new copies' "$ROOT/docs/ADAPTATION.md"; then exit 1; fi
+for needle in 'rm -r' 'pathspec'; do
+    grep -Fq -- "$needle" "$ROOT/docs/Claude_Workflows.md"
+done
+if grep -Fq 'blocks both' "$ROOT/.claude/commands/loop/ship.md"; then exit 1; fi
+# K1d amendment 2: git add alone and git stage in §15; the github agent stages
+# from another tree with -C and knows the new asks; the light pass lists --patch.
+adapt_p1=$(section "$ADAPTATION" '## 15. Permissions étroites' '## Vérifier que le câblage tient')
+for needle in 'seul dans son appel' 'git stage'; do
+    grep -Fq -- "$needle" <<<"$adapt_p1"
+done
+for needle in 'git -C <tree> add' '--include'; do
+    grep -Fq -- "$needle" "$GITHUB_AGENT"
+done
+grep -Fq -- '--patch' "$ROOT/docs/Claude_Workflows.md"
+# K1e git-allow-grammar: the strict forms are the only prompt-free ones.
+grep -Fq 'formes strictes' <<<"$adapt_p1"
+if grep -Fq 'peuvent le précéder' <<<"$adapt_p1"; then exit 1; fi
+grep -Fq 'strict forms' "$GITHUB_AGENT"
+if grep -Fq 'git add/stage/status/diff/log' "$GITHUB_AGENT"; then exit 1; fi
+grep -Fq 'formes strictes' "$ROOT/docs/Claude_Workflows.md"
+# K1f the three guard hooks fail closed: every handler naming one carries onFailure=block
+# (a timeout or a crash otherwise falls through to the normal permission flow).
+jq -e '[.hooks[][].hooks[]
+        | select(.command | endswith("protect-files.sh") or endswith("prevent-destructive-commands.sh")
+                            or endswith("enforce-git-workflow.sh"))]
+       | length >= 5 and all(.onFailure == "block")
+         and ([.[].command | sub(".*/"; "")] | unique | length == 3)' "$ROOT/.claude/settings.json" >/dev/null
+# K1g the two TDD guards fail closed too: a timeout or a crash must not let a
+# module through before its RED, or a frozen test be rewritten.
+jq -e '[.hooks[][].hooks[]
+        | select(.command | endswith("tdd-require-red.sh") or endswith("tdd-freeze-tests.sh"))]
+       | length == 2 and all(.onFailure == "block")
+         and ([.[].command | sub(".*/"; "")] | unique | length == 2)' "$ROOT/.claude/settings.json" >/dev/null
+# HC harness-cd: a deploy leaves only from a green push of this repository's
+# default branch, on pinned actions and CLIs, to a host whose key is known.
+CD_DIR="$ROOT/templates/github"
+CD_DEPLOY="$CD_DIR/deploy.yml"
+CD_SSH="$CD_DIR/publish/ssh.yml"
+# HC1a reproduces the hole: a run from a fork's `main` satisfies the old condition.
+grep -Fxq -- "    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == github.event.repository.default_branch)" "$CD_DEPLOY"
+# HC1b one job-level condition, and nothing YAML would fold into it.
+[ "$(grep -c '^    if:' "$CD_DEPLOY")" -eq 1 ]
+[ "$(awk '/^jobs:/ { jobs = 1; next } jobs && /^  [^ #]/ { n++ } END { print n + 0 }' "$CD_DEPLOY")" -eq 1 ]
+if grep -Fq '>-' "$CD_DEPLOY"; then exit 1; fi
+awk '/^    if:/ { seen = 1; next } seen && /[^[:space:]]/ { match($0, /^ */); exit (RLENGTH > 4) }' "$CD_DEPLOY"
+# The whole `run:` body of a named step, from the line after `run: |` to the next
+# line indented less than the body (blank lines kept only between body lines).
+cd_run_body() {
+    awk -v name="$2" '
+        !step && $0 ~ ("^ +- name: " name "$") { step = 1; next }
+        step && !body && /^ +run: \|$/ { body = 1; next }
+        body && /^[[:space:]]*$/ { blank = blank "\n"; next }
+        body && /^          / { printf "%s%s\n", blank, $0; blank = ""; next }
+        body { exit }
+    ' "$1"
+}
+# HC1c-e the Resolve body is byte for byte what the kit means: dispatch picks the newest
+# successful push run of the default branch, and both paths refuse a commit that is not on
+# it before any output is written.
+cmp -s <(cd_run_body "$CD_DEPLOY" 'Resolve the CI run to deploy') - <<'EOF'
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_run" ]; then
+            id="$RUN_ID"; sha="$RUN_SHA"
+          else
+            # Dispatch manuel : le dernier CI VERT issu d'un push sur la branche par défaut.
+            # Aucun run vert → on s'arrête, plutôt que de déployer autre chose.
+            # `|| true` : sans lui, un `gh` en échec (réseau, token) fait
+            # retourner 1 à `read`, et `set -e` tue le step AVANT le message
+            # ci-dessous — le garde ne couvrait que le cas « aucun run vert »,
+            # pas le cas « gh est cassé ». Les deux mènent ici maintenant.
+            id=""; sha=""
+            read -r id sha < <(gh run list --workflow=CI --branch="$DEFAULT_BRANCH" --event=push \
+              --status=success --limit=1 \
+              --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"') || true
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "Aucun run CI vert exploitable sur $DEFAULT_BRANCH." >&2
+              echo "Causes : aucun run reussi, ou 'gh run list' a echoue." >&2
+              exit 1
+            fi
+            echo "Dispatch manuel : deploiement du run CI $id ($sha)."
+            # Si ce run a plus de `retention-days` (7 dans ci.yml), son artefact
+            # a expire et le telechargement plus bas echouera sur un message qui
+            # ne dit pas ca. Relancer le CI sur la branche par defaut regle le
+            # cas ; monter la retention dans ci.yml est l'autre option.
+          fi
+          # Le `head_branch` d'un run ne suffit pas : un push de TAG rapporte
+          # son nom de tag comme `head_branch`, donc un tag nommé comme la
+          # branche par défaut passe le `if:`. On exige que le commit soit
+          # un ancêtre (ou la tête) de la branche par défaut.
+          status="$(gh api "repos/$GH_REPO/compare/$sha...refs/heads/$DEFAULT_BRANCH?per_page=1" --jq .status)"
+          case "$status" in
+            ahead|identical) ;;
+            *) echo "Le commit $sha n'est pas sur la branche $DEFAULT_BRANCH : deploiement refuse." >&2; exit 1 ;;
+          esac
+          echo "id=$id"   >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+EOF
+# HC3a-f the SSH target refuses any host key but the pinned one.
+if grep -Eq 'accept-new|StrictHostKeyChecking=no' "$CD_SSH"; then exit 1; fi
+if grep -oiE 'StrictHostKeyChecking[^[:alnum:]]*[[:alnum:]-]*' "$CD_SSH" | grep -vx 'StrictHostKeyChecking=yes'; then exit 1; fi
+# the whole Publish body: guards, the secret written to known_hosts before rsync, and rsync's strict option.
+cmp -s <(cd_run_body "$CD_SSH" 'Publish') - <<'EOF'
+          set -euo pipefail
+          : "${DEPLOY_HOST:?secret DEPLOY_HOST manquant}"
+          : "${DEPLOY_PATH:?variable DEPLOY_PATH manquante — refus de rsync --delete vers la racine}"
+          : "${DEPLOY_KNOWN_HOSTS:?secret DEPLOY_KNOWN_HOSTS manquant — refus de deployer sans cle d hote}"
+          case "$DEPLOY_PATH" in
+            /) echo "DEPLOY_PATH=/ interdit avec --delete." >&2; exit 1 ;;
+            /*) : ;;
+            *) echo "DEPLOY_PATH doit être un chemin absolu (reçu: $DEPLOY_PATH)." >&2; exit 1 ;;
+          esac
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"
+EOF
+grep -Fxq -- '          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}' "$CD_SSH"
+grep -Eq '^ *# +secret +DEPLOY_KNOWN_HOSTS ' "$CD_SSH"
+grep -Eq '^ *# +secret +DEPLOY_HOST .*statique' "$CD_SSH"
+# nothing outside the comments may scan a host key: the env block and the steps before `run:` included.
+if grep -vE '^[[:space:]]*#' "$CD_SSH" | grep -Fq 'ssh-keyscan'; then exit 1; fi
+# HC2a-b every active `uses:` is pinned to a full SHA with its exact tag, and none went missing.
+cd_uses="$(grep -rhE '^[^#]*\buses["'"'"']?[[:space:]]*:' "$CD_DIR")"
+[ -n "$cd_uses" ]
+if grep -Ev '^[[:space:]]*(- )?uses: [^[:space:]@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$cd_uses"; then exit 1; fi
+[ "$(wc -l <<<"$cd_uses")" -eq 13 ]
+# HC2c every CLI call names an exact version, and no other launcher appears.
+cd_active="$(find "$CD_DIR" -type f -exec awk '
+    FNR == 1 { if (cont != "") print cont; cont = "" }
+    cont == "" && /^[[:space:]]*#/ { next }
+    { line = $0
+      if (cont != "") { sub(/^[[:space:]]+/, "", line); line = cont " " line; cont = "" }
+      if (line ~ /\\[[:space:]]*$/) { sub(/[[:space:]]*\\[[:space:]]*$/, "", line); cont = line; next }
+      sub(/[[:space:]]+#.*$/, "", line)
+      print line }
+    END { if (cont != "") print cont }' {} +)"
+cd_calls="$(grep -oE 'pnpm([[:space:]]+[^[:space:];&|]+)*[[:space:]]+dlx([[:space:]]+-[^[:space:];&|]+)*[[:space:]]+[^[:space:];&|]+' <<<"$cd_active")"
+if grep -Ev '^pnpm (dlx vercel@[0-9]+\.[0-9]+\.[0-9]+|--package=netlify-cli@[0-9]+\.[0-9]+\.[0-9]+ dlx netlify)$' <<<"$cd_calls"; then exit 1; fi
+grep -Fq 'netlify-cli@' <<<"$cd_calls"
+grep -Fq 'vercel@' <<<"$cd_calls"
+cd_flags='(-[^[:space:]]+[[:space:]]+)*'
+cd_before='(^|[^[:alnum:]_.-])'
+if grep -Eq "${cd_before}(npx|pnpx|bunx|yarn[[:space:]]+dlx)([^[:alnum:]_.-]|\$)|${cd_before}npm[[:space:]]+${cd_flags}(i|install|exec|x)([[:space:]]|\$)|${cd_before}(pnpm|yarn)[[:space:]]+${cd_flags}(add|global)([[:space:]]|\$)" <<<"$cd_active"; then exit 1; fi
+# HC2d dependabot is byte for byte what the kit means: both ecosystems weekly, npm majors left out.
+cmp -s "$CD_DIR/dependabot.yml" - <<'EOF'
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+EOF
+# HC4 the docs and comments state the same guarantees.
+CD_CI_MD="$ROOT/.claude/skills/templates/ci.md"
+cd_property="$(section "$CD_CI_MD" '1. **It deploys only what a green CI produced' '2. **It ships')"
+grep -Fq 'push' <<<"$cd_property"
+grep -Fq 'same repository' <<<"$cd_property"
+grep -Fq 'DEPLOY_KNOWN_HOSTS' "$CD_CI_MD"
+cd_environment="$(section "$CD_CI_MD" '4. **`environment: production` is the human gate.' '## What is deliberately not here')"
+for needle in 'runs the file of the chosen ref' '"Deployment branches and tags"' '"Protected branches only"' 'environment secrets' 'GitHub Free' '`ghcr` has no secret' 'who holds write access' '`pages` is not settled'; do
+    grep -Fq -- "$needle" <<<"$(tr -s ' \n' ' ' <<<"$cd_environment")"
+done
+cd_adapt="$(section "$ROOT/docs/ADAPTATION.md" '**`deploy.yml`** est **assemblé**' 'Puis **`CLAUDE.md`, section `Environment`**')"
+cd_adapt_flat="$(tr -s ' \n' ' ' <<<"$cd_adapt")"
+# shellcheck disable=SC1112  # the French apostrophe in a needle is literal on purpose
+for needle in 'DEPLOY_KNOWN_HOSTS' 'statique' 'dependabot' 'doit fusionner le `deploy.yml.new`' 'son propre `--deploy=<cible>`' 'hors terminal le défaut est `none`' 'cette fusion rend `DEPLOY_KNOWN_HOSTS` obligatoire' 'à la main' 'majeures' 'Deployment branches and tags' 'secrets d’environnement' 'GitHub Free' '`ghcr` n'"'"'a aucun secret' 'sur qui a l'"'"'accès en écriture' 'ce point n'"'"'est pas tranché'; do
+    grep -Fq -- "$needle" <<<"$cd_adapt_flat"
+done
+for cd_snippet in netlify vercel ssh; do
+    grep -Fq -- 'Settings → Environments → `production` → Environment secrets' "$CD_DIR/publish/$cd_snippet.yml"
+done
+grep -Fq -- 'ssh-keyscan -t ed25519 <hote> | ssh-keygen -lf -' "$CD_SSH"
+grep -Fq -- 'chemin OpenSSH standard' "$CD_SSH"
+cd_comment="$(awk '/^    if:/ { printf "%s", block; exit } /^ *#/ { block = block $0 "\n"; next } { block = "" }' "$CD_DEPLOY")"
+grep -Fq 'push' <<<"$cd_comment"
+grep -Fq 'fork' <<<"$cd_comment"
+cd_header="$(section "$CD_DEPLOY" '#   1. Il ne déploie' '#   2. Il déploie')"
+grep -Fq 'push' <<<"$cd_header"
+grep -Eq '# Dispatch manuel.*push' "$CD_DEPLOY"
+# HP-B1 harness-prompts: files are written through Write/Edit, never through an
+# interpreter, and a guarded-path ask is the user's to answer.
+hp_line="$(grep -F '**Never write any file from the shell**' -A2 "$ROOT/CLAUDE.md")"
+for hp_needle in 'python3 -' 'node -e' 'perl -i' 'heredoc' 'never by switching tools' 'auto-memory included'; do
+    grep -Fq -- "$hp_needle" <<<"$hp_line"
+done
+for hp_agent in implementer test-writer; do
+    grep -Fq 'never by switching tools' "$ROOT/.claude/agents/$hp_agent.md"
+    grep -Fq 'node -e' "$ROOT/.claude/agents/$hp_agent.md"
+done
+hp_flow="$(section "$ROOT/docs/Claude_Workflows.md" '## Hors boucle' '## ')"
+grep -Fq 'bash .claude/hooks/test-hooks.sh' <<<"$hp_flow"
+grep -Fq '$(…)' <<<"$hp_flow"
+# HP-B2 harness-prompts: the prompt allows, exactly, in settings.json and in
+# install.sh's prompt allow list; no wide form; every star only trailing.
+HP_WANT='["Bash(pnpm exec tsc --noEmit)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
+  "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
+  "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
+  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)"]'
+for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
+    HP_WANT="$(jq -c --arg s "$hp_suite" \
+        '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
+done
+HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 34' >/dev/null
+jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
+# Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
+# codex-handoff.sh); their allows stay in the kit and never ride to a target.
+for hp_dev in install workflow-contracts; do
+    for hp_form in "Bash(bash .claude/hooks/test-$hp_dev.sh)" "Bash(bash .claude/hooks/test-$hp_dev.sh *)"; do
+        jq -e --arg a "$hp_form" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
+        if jq -en --argjson kit "$HP_KIT" --arg a "$hp_form" '$kit | index($a)' >/dev/null; then exit 1; fi
+    done
+done
+# Ship audit C1: no kit shell file feeds Python from stdin or -c without -I, which
+# would put the cwd first on sys.path and import a planted root re.py/json.py.
+hp_noi="$(grep -nE 'python3( +-[A-Za-z]+)* +(-c|-)( |$)' "$ROOT/install.sh" "$ROOT/workflow.sh" \
+    "$ROOT/codex-handoff.sh" "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE 'python3( +-[A-Za-z]+)* +-[A-Za-z]*I' || true)"
+if [[ -n "$hp_noi" ]]; then printf 'python3 without -I:\n%s\n' "$hp_noi" >&2; exit 1; fi
+# Review 6: workflow.sh runs workflow.py without its own directory on sys.path, so
+# a root select.py written beside it is never imported by the launcher.
+mkdir -p "$WS/hp-wf/run"
+cp "$ROOT/workflow.sh" "$ROOT/workflow.py" "$WS/hp-wf/"
+printf 'open(%s, "w").close()\n' "'$WS/hp-wf/planted-ran'" > "$WS/hp-wf/select.py"
+(cd "$WS/hp-wf/run" && bash ../workflow.sh --help >/dev/null 2>&1) || true
+if [[ -e "$WS/hp-wf/planted-ran" ]]; then echo 'workflow.sh imported a planted root module' >&2; exit 1; fi
+for hp_wide in 'Bash(pnpm exec *)' 'Bash(uv run *)' 'Bash(python3 *)' 'Bash(node *)' 'Bash(bash *)' \
+               'Bash(bash -x *)' 'Bash(mkdir -p *)' 'Bash(sed -i *)' 'Bash(git switch *)' \
+               'Bash(git branch *)' 'Bash(git worktree add *)' 'Bash(git worktree remove *)' \
+               'Bash(pnpm test:run *)' 'Bash(pnpm test:coverage *)' 'Bash(pnpm typecheck *)' \
+               'Bash(pnpm lint *)' 'Bash(pnpm build *)' 'Bash(pnpm vitest run *)' \
+               'Bash(pnpm exec vitest run *)' 'Bash(pnpm exec tsc --noEmit *)' \
+               'Bash(pnpm exec playwright test *)'; do
+    if jq -e --arg a "$hp_wide" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null; then exit 1; fi
+done
+jq -e '[.permissions.allow[] | select(startswith("Bash(")) | ltrimstr("Bash(") | rtrimstr(")") | rtrimstr(" *")]
+       | all(contains("*") | not)' "$SETTINGS" >/dev/null
+hp_py="$(sed -n '/^add_py_hooks()/,/^}/p' "$ROOT/install.sh")"
+for hp_uv in '"Bash(uv run ruff check .)"' '"Bash(uv run ruff check app)"' '"Bash(uv run ruff check app/)"' \
+             '"Bash(uv run mypy app)"' '"Bash(uv run pyright)"'; do
+    grep -Fq -- "$hp_uv" <<<"$hp_py"
+done
+# K3a harness-kit-ci: ci.md, shipped to every target, names the repository
+# settings that make the gates binding.
+K3_CI_MD="$ROOT/.claude/skills/templates/ci.md"
+k3_settings="$(awk '/^## Repository settings/ { f = 1; next } f && /^## / { exit } f' "$K3_CI_MD")"
+grep -Fq 'ruleset' <<<"$k3_settings"
+grep -Fq '`main`' <<<"$k3_settings"
+grep -Fq 'pull request' <<<"$k3_settings"
+grep -Fq '`Gates`' <<<"$k3_settings"
+grep -Fq 'force push' <<<"$k3_settings"
+grep -Fq 'deletion' <<<"$k3_settings"
+grep -Fq 'CODEOWNERS' <<<"$k3_settings"
+grep -Fq '`production`' <<<"$k3_settings"
+grep -Fq 'required reviewer' <<<"$k3_settings"
+# K3b `kit` is this repo's own check: never a required check of a target.
+if grep -Fq '`kit`' "$K3_CI_MD"; then exit 1; fi
+grep -Fq 'check requis `kit`' "$ROOT/docs/ADAPTATION.md"
+# K3c the CODEOWNERS template covers the three guarded paths.
+for k3_path in /.claude/hooks/ /.claude/settings.json /.github/workflows/; do
+    grep -Eq "^${k3_path//./\\.}[[:space:]]+@" "$ROOT/templates/github/CODEOWNERS"
+done
+# K3d CODEOWNERS owns itself: a PR that empties it needs the owner too.
+grep -Eq '^/\.github/CODEOWNERS[[:space:]]+@' "$ROOT/templates/github/CODEOWNERS"
+# K2a harness-kit-ci: the kit's own CI lints what it ships and keeps every suite.
+K2_CI="$ROOT/.github/workflows/kit-ci.yml"
+grep -Fq 'shellcheck -S warning .claude/hooks/*.sh .claude/scripts/*.sh' "$K2_CI"
+grep -Fq 'args: check --select E4,E7,E9,F' "$K2_CI"
+grep -Fq 'src: .claude/hooks' "$K2_CI"
+grep -Eq '^[[:space:]]+run: actionlint \.github/workflows/\*\.yml$' "$K2_CI"
+grep -Fq 'for f in templates/github/publish/*.yml; do' "$K2_CI"
+grep -Fq -- './install.sh "$d" --deploy="$t" </dev/null' "$K2_CI"
+grep -Fq 'actionlint "$d"/.github/workflows/*.yml' "$K2_CI"
+for k2_suite in test-hooks test-install test-kit-doctor test-small-lane test-attempts test-audit-surface test-gate-route test-workflow-contracts test-rules-floor test-measure; do
+    grep -Eq "^[[:space:]]+run: \.claude/hooks/${k2_suite}\.sh$" "$K2_CI"
+done
+grep -Eq '^[[:space:]]+run: python3 \.claude/hooks/kit-doctor\.py$' "$K2_CI"
+# K2b every `uses:` of the kit CI is pinned to a full SHA with its exact tag.
+k2_uses="$(grep -E '^[^#]*\buses:' "$K2_CI")"
+[ "$(wc -l <<<"$k2_uses")" -eq 2 ]
+if grep -Ev '^[[:space:]]*(- )?uses: [^[:space:]@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$k2_uses"; then exit 1; fi
+# K2c a hung step cannot hold the runner, and the checkout token is not kept.
+grep -Eq '^[[:space:]]+timeout-minutes: 30$' "$K2_CI"
+grep -Eq '^[[:space:]]+persist-credentials: false$' "$K2_CI"
+# K2d each tarball is checked against a literal digest of the very file that is
+# downloaded and extracted, and no step is allowed to fail quietly.
+k2_sums="$(sed -nE 's/^.*"[0-9a-f]{64}  ([A-Za-z0-9._-]+\.tar\.gz)" \| sha256sum -c -$/\1/p' "$K2_CI")"
+[ "$(wc -l <<<"$k2_sums")" -eq 2 ]
+grep -Fxq 'shellcheck-v0.11.0.linux.x86_64.tar.gz' <<<"$k2_sums"
+grep -Fxq 'actionlint_1.7.12_linux_amd64.tar.gz' <<<"$k2_sums"
+while IFS= read -r k2_tar; do
+    grep -Eq "^[[:space:]]+curl -fsSLO https://github\.com/[^[:space:]]+/${k2_tar//./\\.}$" "$K2_CI"
+    grep -Fq "tar -xzf $k2_tar " "$K2_CI"
+done <<<"$k2_sums"
+if grep -Eq '\|\| true|continue-on-error' "$K2_CI"; then exit 1; fi
+# K2e ruff is the pinned version, checked against a literal digest.
+grep -Eq '^[[:space:]]+version: 0\.17\.4$' "$K2_CI"
+grep -Eq '^[[:space:]]+checksum: [0-9a-f]{64}$' "$K2_CI"
+
+# C1-C9 fewer-asks: the prompt half of the pass. Each needle is the rule an agent
+# reads; the hooks enforce what they can, these lines say the rest.
+fa_orch="$ROOT/.claude/commands/loop/orchestrate.md"
+grep -Fq 'kit scripts run from the project root by relative path, never behind `cd x;`' "$fa_orch"
+grep -Fq 'work artifacts are written with Write/Edit, never from the shell' "$fa_orch"
+grep -Fq 'all the entries a gate needs go in one Edit' "$fa_orch"
+grep -Fq "the chat never asks again what the hook's ask asks" "$fa_orch"
+grep -Fq '# U2, U5:' "$fa_orch"
+grep -Fq 'hand the `github` agent the subject only' "$ROOT/.claude/commands/loop/ship.md"
+grep -Fq 'remove the applied `.tdd-unfrozen` entries in one Edit' "$ROOT/.claude/commands/loop/ship.md"
+grep -Fq 'a body asked by the caller goes into the PR body, never into the commit' "$ROOT/.claude/agents/github.md"
+grep -Fq 'git -C <tree> commit -m "<one line>"' "$ROOT/.claude/agents/github.md"
+for fa_agent in implementer test-writer e2e-tester; do
+    grep -Fq 'no no-op probe' "$ROOT/.claude/agents/$fa_agent.md"
+    grep -Fq 'never redirect gate output to a file' "$ROOT/.claude/agents/$fa_agent.md"
+done
+grep -Fq 'never by switching tools' "$ROOT/.claude/agents/e2e-tester.md"
+grep -Fq 'node -e' "$ROOT/.claude/agents/e2e-tester.md"
+for fa_cmd in loop/spec bmad/pm; do
+    grep -Fq 'printed, not asked' "$ROOT/.claude/commands/$fa_cmd.md"
+    grep -Fq 'loosens a kit guard' "$ROOT/.claude/commands/$fa_cmd.md"
+    if grep -Fq 'asked alone and asked always' "$ROOT/.claude/commands/$fa_cmd.md"; then exit 1; fi
+done
+for fa_cmd in interface plan; do
+    grep -Fq "exactly the user's own words is recorded, not asked again" "$ROOT/.claude/commands/loop/$fa_cmd.md"
+done
+grep -Fq 'je lance' "$ROOT/CLAUDE.md"
+grep -Fq 'cd dir;' "$ROOT/CLAUDE.md"
+
+# W1-W4 (app-roots-codegen): /kit:init writes .claude/project.json; the doctor and the
+# adaptation guide name it; every project_config.py call runs python3 -I.
+KIT_INIT="$ROOT/.claude/commands/kit/init.md"
+for needle in '.claude/project.json' 'app_roots' 'codegen_commands' 'pyproject.toml'; do
+    grep -Fq "$needle" "$KIT_INIT"
+done
+grep -Fq 'project-config' "$ROOT/.claude/commands/kit/doctor.md"
+grep -Fq '.claude/project.json' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'frontend/vite.config.' "$ROOT/docs/ADAPTATION.md"
+grep -Fq 'project_config.py' "$ROOT/.claude/hooks/hook-guarded.sh"
+
+# W5: no rule line was added for this pass; counted as test-rules-floor.sh counts the core total.
+RULES_TOTAL="$(wc -l "$ROOT/CLAUDE.md" "$ROOT"/.claude/rules/*.md | tail -1 | awk '{print $1}')"
+RULES_CEILING="$(sed -n 's/^CORE_CEILING=\([0-9][0-9]*\)$/\1/p' "$ROOT/.claude/hooks/test-rules-floor.sh")"
+[[ -n "$RULES_CEILING" && "$RULES_TOTAL" -le "$RULES_CEILING" ]] || {
+    echo "W5/PK3: the session floor is $RULES_TOTAL lines, over test-rules-floor.sh's ceiling ${RULES_CEILING:-?}" >&2
+    exit 1
+}
+for f in "$ROOT"/.claude/hooks/*.sh "$ROOT/install.sh"; do
+    [[ "$(basename "$f")" == test-* ]] && continue
+    if grep -n 'project_config\.py' "$f" | grep -v '^[0-9]*:[[:space:]]*#' \
+        | grep 'roots\|check' | grep -qv 'python3 -I'; then
+        exit 1
+    fi
+done
+
+# pr-screenshots: the PR body order, the pr-assets publishing and cleanup, the
+# capture contract, and no other image host.
+pr_template=$(section "$GITHUB_AGENT" '**Body**: in this order' '### The rules that make it short')
+pr_last=0
+for pr_needle in '<One line: what this does' '**Where to look**' '**Uncertain**' '- `<sha>`' '**Screenshots** —'; do
+    pr_line=$(grep -Fn -- "$pr_needle" <<<"$pr_template" | head -n 1 | cut -d: -f1)
+    [[ -n "$pr_line" && "$pr_line" -gt "$pr_last" ]] || { echo "PR body order broken at: $pr_needle" >&2; exit 1; }
+    pr_last=$pr_line
+done
+for pr_needle in 'one line per commit' '--body-file' 'kit-pr-assets.py commit' 'kit-pr-assets.py drop' 'pr-assets'; do
+    grep -Fq -- "$pr_needle" "$GITHUB_AGENT"
+done
+for pr_needle in PR_SHOTS PR_SHOTS_DIR .pr-shots/ emulateMedia PW_BASE_URL; do
+    grep -Fq -- "$pr_needle" "$ROOT/.claude/skills/e2e-playwright/SKILL.md"
+done
+grep -Fq 'Screenshots:' "$ROOT/.claude/agents/e2e-tester.md"
+for pr_needle in 'kit-pr-assets.py ui' 'ls-files --others --exclude-standard' 'PR_SHOTS=before'; do
+    grep -Fq -- "$pr_needle" "$REVIEW"
+done
+grep -Fq 'kit-pr-assets.py drop' "$SHIP"
+grep -Fq 'MERGED' "$SHIP"
+for pr_file in "$GITHUB_AGENT" "$ROOT/.claude/skills/e2e-playwright/SKILL.md" "$ROOT/.claude/agents/e2e-tester.md"; do
+    if grep -Eiq 'imgur|supabase|upload-artifact|s3\.' "$pr_file"; then echo "foreign image host in $pr_file" >&2; exit 1; fi
+done
+
+# PK1 (project-config): no hook holds a moved project value or its default literal; the
+# values live in .claude/project.json, read by project_config.py.
+PK1_OUT="$(python3 -I - "$ROOT" <<'PY'
+import ast
+import glob
+import io
+import json
+import os
+import re
+import sys
+import tokenize
+
+root = sys.argv[1]
+icons = "|".join(json.load(open(os.path.join(root, ".claude", "project.json")))["forbidden_icons"])
+literals = ["example|sample|template", r"^\.env\.example$", "app/services", "lib/client",
+            '"main|master"', "cwk_bin prettier", "cwk_bin eslint", "Protected: src/", icons]
+shell_names = ["PROTECTED_DIRS", "PROTECTED_BRANCHES", "RUN_TESTS", "CWK_TDD_LAYERS"]
+py_names = {"DATA_CLIENT_MODULE", "DATA_CLIENT_OWN_PATH", "COMPOSITION_ROOTS", "SHARED_DIRS",
+            "SECRET_KEEP", "MODULE_ROOT", "TESTS_ROOT", "TEST_FIRST_DIRS", "SESSION_NAMES",
+            "EXTERNAL_CLIENTS"}
+files = []
+for pattern in (".claude/hooks/*.sh", ".claude/hooks/*.py", "addons/fastapi/hooks/*.sh", "addons/fastapi/hooks/*.py"):
+    files += glob.glob(os.path.join(root, pattern))
+bad = []
+for path in sorted(files):
+    name = os.path.basename(path)
+    if name in ("project_config.py", "kit-doctor.py") or name.startswith(("test-", "test_")):
+        continue
+    text = open(path, encoding="utf-8").read()
+    rel = os.path.relpath(path, root)
+    if name.endswith(".sh"):
+        for number, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for var in shell_names:
+                if re.search(rf'(^|[^A-Za-z0-9_]){var}="[^$]', line):
+                    bad.append(f"{rel}:{number}: {var}= literal")
+            if "ENV_TEMPLATE_RE" in line or re.search(r"SECRET_KEEP\s*=", line):
+                bad.append(f"{rel}:{number}: env template copy")
+            for literal in literals:
+                if literal in line:
+                    bad.append(f"{rel}:{number}: {literal}")
+        continue
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in py_names:
+                bad.append(f"{rel}:{node.lineno}: {target.id} =")
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant) \
+                    and isinstance(first.value.value, str):
+                docs.update(range(first.lineno, first.end_lineno + 1))
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT or token.start[0] in docs:
+            continue
+        for literal in literals:
+            if literal in token.string:
+                bad.append(f"{rel}:{token.start[0]}: {literal}")
+print("\n".join(sorted(set(bad))))
+PY
+)"
+if [[ -n "$PK1_OUT" ]]; then printf 'PK1: a hook still holds a project value:\n%s\n' "$PK1_OUT" >&2; exit 1; fi
+
+# PK2: every reader call runs isolated, and no file sources or evals reader output.
+PK2_OUT="$(grep -nE 'project_config\.py' "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh \
+    "$ROOT"/addons/*/hooks/*.sh "$ROOT/install.sh" 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | grep -E 'python3( +-[A-Za-z]+)* +"?[^ ]*project_config\.py' | grep -vE 'python3 +-I' || true)"
+if [[ -n "$PK2_OUT" ]]; then printf 'PK2: reader call without -I:\n%s\n' "$PK2_OUT" >&2; exit 1; fi
+if grep -nE '(source|eval|\.) +.*project_config\.py' "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/scripts/*.sh \
+        "$ROOT/install.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
+    echo 'PK2: reader output sourced or evaluated' >&2; exit 1
+fi
+
+# PK4: the four hooks that read project values are guard files, each stamped.
+for pk_hook in tdd-freeze-tests.sh no-forbidden-icons.sh enforce-architecture.py tdd-prove-red.sh; do
+    grep -q '^# cwk-guard-api: [0-9]' "$ROOT/.claude/hooks/$pk_hook"
+done
+
+# PK5: /kit:init writes the project values into .claude/project.json, never into a hook.
+for pk_key in protected_branches test_command env_template_suffixes forbidden_icons tdd_layers; do
+    grep -Fq "$pk_key" "$KIT_INIT"
+done
+if grep -nE '^[0-9]+\. +`?(\.claude/hooks/|[a-z_-]+\.(sh|py)`)' "$KIT_INIT"; then
+    echo 'PK5: a /kit:init step edits a hook' >&2; exit 1
+fi
+
+# PK6 (amended with PV3): cwk_is_guarded stays two-state, 0 or 1; an unreadable config is the
+# degraded mode, which turns the hook's pass into an ask, never a third return code that a bare
+# `if cwk_is_guarded` would read as "not guarded".
+PK6_BODY="$(sed -n '/^cwk_is_guarded() {/,/^}/p' "$ROOT/.claude/hooks/hook-guarded.sh")"
+[[ -n "$PK6_BODY" ]] || { echo 'PK6: cwk_is_guarded not found' >&2; exit 1; }
+if grep -nE 'return +[2-9]' <<<"$PK6_BODY"; then
+    echo 'PK6: cwk_is_guarded returns a third state' >&2; exit 1
+fi
+
+# PK7 (review 1): a hook whose reading of the project values changed carries a new stamp, so
+# the line is inert since kit-boundary: protect-files 2 → 3, auto-approve-config 1 → 2.
+pk7_stamp() { sed -n 's/^# cwk-guard-api: \([0-9][0-9]*\)$/\1/p' "$ROOT/.claude/hooks/$1" | head -n 1; }
+[[ "$(pk7_stamp protect-files.sh)" -ge 3 ]] || { echo 'PK7: protect-files.sh stamp is below 3' >&2; exit 1; }
+[[ "$(pk7_stamp auto-approve-config.sh)" -ge 2 ]] || { echo 'PK7: auto-approve-config.sh stamp is below 2' >&2; exit 1; }
+
+# PK8: the never-matching pattern stays under BSD's repetition limit (RE_DUP_MAX 255).
+pk8_count="$(sed -n "s/^CWK_NEVER_RE=.*{\([0-9][0-9]*\)}'.*/\1/p" "$ROOT/.claude/hooks/hook-guarded.sh")"
+[[ -n "$pk8_count" && "$pk8_count" -le 255 ]] || { echo "PK8: CWK_NEVER_RE repeats ${pk8_count:-?} times" >&2; exit 1; }
+pk8_files=()
+for pk8_f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/*.py "$ROOT"/.claude/scripts/*.sh \
+             "$ROOT"/addons/fastapi/hooks/*.sh "$ROOT"/addons/fastapi/hooks/*.py; do
+    [[ "$(basename "$pk8_f")" == test-* ]] || pk8_files+=("$pk8_f")
+done
+if grep -nE '\{(25[6-9]|2[6-9][0-9]|[3-9][0-9]{2}|[0-9]{4,})\}' "${pk8_files[@]}"; then
+    echo 'PK8: an ERE repeats more than 255 times (RE_DUP_MAX on BSD)' >&2; exit 1
+fi
+
+# PK9: CODEOWNERS owns .claude/project.json, the file that holds every project value.
+grep -Eq '^/\.claude/project\.json[[:space:]]+@' "$ROOT/templates/github/CODEOWNERS" \
+    || { echo 'PK9: CODEOWNERS does not own .claude/project.json' >&2; exit 1; }
+grep -Fq '.claude/project.json' <<<"$(grep -A4 '^- \*\*`CODEOWNERS`\*\*' "$ROOT/.claude/skills/templates/ci.md")" \
+    || { echo 'PK9: ci.md does not list .claude/project.json among the owned paths' >&2; exit 1; }
+
+# review-convergence: the routed gates (plan critic and review), their prose contracts.
+rc_has() {
+    local id="$1" text="$2" needle
+    shift 2
+    for needle in "$@"; do
+        grep -Fq -- "$needle" <<<"$text" || { echo "$id failed: lacks $needle" >&2; exit 1; }
+    done
+}
+RC_REVIEWER="$ROOT/.claude/agents/reviewer.md"
+RC_VERIFIER="$ROOT/.claude/agents/verifier.md"
+RC_IMPLEMENTER="$ROOT/.claude/agents/implementer.md"
+RC_WORKFLOWS="$ROOT/docs/Claude_Workflows.md"
+# T1 plan-critic carries the P1 classes, the kinds, the closure and the rerun answer.
+rc_has T1 "$(cat "$CRITIC")" vigilance '(a)' '(b)' '(c)' '(d)' demonstrated interpretation \
+    'Closure:' 'fixed | not fixed'
+# T2 plan.md step 6 routes through kit-gate-route.py, the unconditional block first.
+rc_step6="$(section "$PLAN" '6. **PLAN CRITIC GATE' '7. **TEST PLAN GATE')"
+rc_has T2 "$rc_step6" 'rewritten sections' '## Vigilance' 'no failed attempt' kit-gate-route.py \
+    write-closure 'narrowing that rewrite' 'never re-entered as `interpretation`' \
+    'Critical/Major claim to a `verifier`' 'whatever `next` is'
+awk -v a='whatever `next` is' -v b='write-closure' '
+    { buf = buf $0 "\n" }
+    END { i = index(buf, a); j = index(buf, b); exit !(i > 0 && j > 0 && i < j) }' <<<"$rc_step6" \
+    || { echo "T2 failed: whatever \`next\` is must precede the first write-closure" >&2; exit 1; }
+# T3 plan.md step 7 opens arbitration and records the pass on the go.
+rc_has T3 "$(section "$PLAN" '7. **TEST PLAN GATE' '8. **Stop')" 'Plan critic, open' 'kit-attempts.py pass'
+# T4 orchestrate Phase 5 snapshots, routes and re-reviews on the fix diff.
+rc_has T4 "$(section "$ORCHESTRATE" '## Phase 5 —' '## Phase 6 —')" 'fix diff' follow-ups.md \
+    'kit-gate-route.py snapshot' kit-gate-route.py write-closure 'Growth:'
+# T5 reviewer re-review mode, review.md stage 3 routing, ship reads the follow-ups.
+rc_has T5 "$(cat "$RC_REVIEWER")" 'fixed | not fixed' regression 'Closure:' fix-introduced 'only when'
+rc_has T5 "$(section "$REVIEW" '### Stage 3 — SYNTHESIS' '## Output')" follow-ups.md kit-gate-route.py \
+    write-closure
+rc_has T5 "$(cat "$SHIP")" follow-ups.md
+# T6 implementer answers a fix-introduced finding with the smaller fix and reports growth.
+rc_has T6 "$(cat "$RC_IMPLEMENTER")" fix-introduced 'smaller fix' 'Growth:'
+# T7 verifier gets the fix base and checks a regression claim.
+rc_has T7 "$(cat "$RC_VERIFIER")" fix-base regression
+# T8 one source for what records a failed review attempt.
+rc_head="$(sed -n 1,15p "$REVIEW")"
+! grep -Fq 'Any surviving Critical/Major records one failed attempt' <<<"$rc_head" \
+    || { echo "T8 failed: review.md still records its own attempt rule" >&2; exit 1; }
+rc_has T8 "$rc_head" kit-gate-route.py
+# T9 the plan template records its Base.
+rc_has T9 "$(cat "$PLAN")" 'Base: <sha>'
+# T10 a Codex fix batch resumes on the fix diff.
+rc_has T10 "$(section "$ORCHESTRATE" '`review_status: fixes-handed-to-codex` →' '`ship` → Phase 6')" 'fix diff'
+# T11 the French map names the new mechanics.
+rc_has T11 "$(cat "$RC_WORKFLOWS")" follow-ups.md fix-introduced Vigilance 'interprétation'
+# T12 plan.md step 6 derives leg from the routing file, execute-red always claude.
+rc_has T12 "$rc_step6" 'workflow-routing.yml' 'execute-red' 'always `claude`'
+# T13 review.md 3bis: a not-fixed finding re-enters the route, the main thread writes its own
+# findings' Closure, and only orchestrate Phase 5 increments the round.
+rc_3bis="$(section "$REVIEW" '3bis. **Route the survivors' '4. Report the refuted')"
+rc_has T13 "$rc_3bis" 'status: not-fixed' 'main thread' 'a fresh `/loop:review` is round 1'
+
+# PK10 (kit-boundary): every kit-code entry but the stamp is guarded, the stamp is not, and
+# CWK_KIT_CODE names every entry of the spec's kit-code list.
+PK10_OUT="$(CLAUDE_PROJECT_DIR="$ROOT" bash -c '
+    source "$1" || exit 99
+    for e in "${CWK_KIT_CODE[@]}"; do
+        [[ "$e" == .claude/INSTALL_PROFILE ]] && continue
+        cwk_is_guarded "${e//\*/x}" || echo "unguarded: $e"
+    done
+    cwk_is_guarded .claude/INSTALL_PROFILE && echo "guarded stamp"
+    for e in .claude/hooks/x .claude/scripts/x addons/fastapi/hooks/x workflow.py workflow.sh \
+             codex-handoff.sh install.sh .claude/project.json .claude/INSTALL_PROFILE; do
+        cwk_is_kit_code "$e" || echo "not kit code: $e"
+    done' _ "$ROOT/.claude/hooks/hook-guarded.sh" 2>&1)" || { echo "PK10: $PK10_OUT" >&2; exit 1; }
+[[ -z "$PK10_OUT" ]] || { echo "PK10: $PK10_OUT" >&2; exit 1; }
+# PK11 the hold-back is gone from install.sh, and project_config.py has no snapshot subcommand.
+for pk_dead in guard_api_missing reader_stale 'P1 held back'; do
+    if grep -Fq "$pk_dead" "$ROOT/install.sh"; then echo "PK11: install.sh still holds $pk_dead" >&2; exit 1; fi
+done
+if grep -qw held "$ROOT/install.sh"; then echo 'PK11: install.sh still holds held' >&2; exit 1; fi
+if grep -Eq 'argv\[1\] == "snapshot"|^def snapshot' "$ROOT/.claude/hooks/project_config.py"; then
+    echo 'PK11: project_config.py still has a snapshot subcommand' >&2; exit 1
+fi
+# PK12 /kit:init writes a proposal the user applies; ADAPTATION §15 names the backup, not the hold-back.
+for pk_needle in '.claude/project.proposed.json' 'bash .claude/scripts/kit-apply.sh'; do
+    grep -Fq "$pk_needle" "$ROOT/.claude/commands/kit/init.md" || { echo "PK12: init.md lacks $pk_needle" >&2; exit 1; }
+done
+PK12_S15="$(section "$ADAPTATION" '## 15. ' '## Vérifier que le câblage tient')"
+grep -Fq '.claude/kit-backup/' <<<"$PK12_S15" || { echo 'PK12: §15 does not name .claude/kit-backup/' >&2; exit 1; }
+if grep -Fq 'P1 held back' <<<"$PK12_S15"; then echo 'PK12: §15 still names P1 held back' >&2; exit 1; fi
+# PK13 the three guard hooks carry the deny text through CWK_KIT_DENY, never a literal copy.
+for pk_hook in protect-files.sh prevent-destructive-commands.sh enforce-git-workflow.sh; do
+    grep -Fq 'CWK_KIT_DENY' "$ROOT/.claude/hooks/$pk_hook" || { echo "PK13: $pk_hook ignores CWK_KIT_DENY" >&2; exit 1; }
+    if grep -Fq 'kit code changes in the LoopKit repo' "$ROOT/.claude/hooks/$pk_hook"; then
+        echo "PK13: $pk_hook copies the deny text" >&2; exit 1
+    fi
+done
+# PK14 (review round 1): the TDD messages that send the agent to .claude/project.json name the route
+# that works in an installed project, where that file is kit code.
+for pk_needle in '/kit:init' 'bash .claude/scripts/kit-apply.sh'; do
+    grep -Fq "$pk_needle" "$ROOT/.claude/hooks/tdd-prove-red.sh" || { echo "PK14: tdd-prove-red.sh lacks $pk_needle" >&2; exit 1; }
+done
+# ship-audit-surface: step 1bis picks the surfaces from the diff and files the follow-ups.
+sa_1bis="$(section "$SHIP" '### 1bis.' '### 2. Acceptance criteria')"
+# T14 ship.md 1bis runs the selector, never drops, says not armed, files follow-ups.
+rc_has T14 "$sa_1bis" kit-audit-surface.py 'not armed' follow-ups.md 'never drops' \
+    'review security ran' 'one `security-auditor`' 'Audit added:' 'the surfaces the user named'
+# T15 the guide names the diff as the selector, not one surface per profile reason.
+sa_guide="$(section "$ROOT/.claude/guides/ship.md" '## Why `critical` arms an audit' '## Why advancing the state')"
+rc_has T15 "$sa_guide" kit-audit-surface.py diff
+! grep -Fq 'One surface is one `security-auditor`' <<<"$sa_guide" \
+    || { echo "T15 failed: the guide still says one surface is one security-auditor" >&2; exit 1; }
+# T16 the ship report carries both not-armed variants.
+rc_has T16 "$(section "$SHIP" '## Output' '## Rules')" 'not armed — profile' \
+    'not armed — diff touches no audit surface'
+# T17 the French map names the selector and the follow-ups beside step 1bis.
+rc_has T17 "$(grep -F 1bis "$RC_WORKFLOWS")" kit-audit-surface.py follow-ups.md
+# T18 any non-zero exit of the selector stops the ship, not only exit 2.
+rc_has T18 "$sa_1bis" 'any non-zero exit'
+
+# ---- kit-prompts step 6: no project value in a kit prompt; values live in overlays/project.json.
+kp_dirs=()
+for d in "$ROOT"/.claude/{agents,commands,skills,guides} "$ROOT"/addons/*/{agents,commands,skills,guides}; do
+    [[ -d "$d" ]] && kp_dirs+=("$d")
+done
+# kp_prompt_paths <text>: kit prompt paths named in <text> and not under .claude/overlays/, one per line.
+kp_prompt_paths() {
+    local p rel
+    grep -oE '[A-Za-z0-9./_-]*(agents|commands|skills|guides|templates|patterns)/[A-Za-z0-9/._-]+\.md' <<<"$1" \
+        | while IFS= read -r p; do
+            [[ "$p" == .claude/overlays/* ]] && continue
+            rel="${p#.claude/}"
+            case "$rel" in templates/* | patterns/*) rel="skills/$rel" ;; esac
+            if [[ -f "$ROOT/.claude/$rel" ]] || compgen -G "$ROOT/addons/*/$rel" >/dev/null; then
+                printf '%s\n' "$p"
+            fi
+        done || true
+}
+# PK15 no FILL marker left in a kit prompt, core or addon.
+if grep -rnE -- '<!-- FILL|— FILL>' "${kp_dirs[@]}"; then echo 'PK15: a FILL marker in a kit prompt' >&2; exit 1; fi
+# PK16 every slot line names its own overlay, whose template holds the section, and back.
+kp16_lines="$(grep -rnoE '\*\*Project slot `[a-z-]+`\*\* — `## [a-z-]+` in `\.claude/overlays/[^`]+`' "$ROOT/.claude" || true)"
+[[ -n "$kp16_lines" ]] || { echo 'PK16: no slot line at all' >&2; exit 1; }
+while IFS= read -r kp_line; do
+    kp_file="${kp_line%%:*}"; kp_rel="${kp_file#"$ROOT/.claude/"}"
+    kp_slot="$(sed -E 's/.*\*\*Project slot `([a-z-]+)`.*/\1/' <<<"$kp_line")"
+    kp_sect="$(sed -E 's/.*`## ([a-z-]+)` in.*/\1/' <<<"$kp_line")"
+    kp_over="$(sed -E 's/.*`\.claude\/overlays\/([^`]+)`.*/\1/' <<<"$kp_line")"
+    [[ "$kp_slot" == "$kp_sect" ]] || { echo "PK16: $kp_rel slot $kp_slot names section $kp_sect" >&2; exit 1; }
+    [[ "$kp_over" == "$kp_rel" ]] || { echo "PK16: $kp_rel names the overlay of $kp_over" >&2; exit 1; }
+    grep -qx "## $kp_slot" "$ROOT/templates/overlays/$kp_rel" 2>/dev/null \
+        || { echo "PK16: templates/overlays/$kp_rel lacks ## $kp_slot" >&2; exit 1; }
+done <<<"$kp16_lines"
+while IFS= read -r -d '' kp_tpl; do
+    kp_rel="${kp_tpl#"$ROOT/templates/overlays/"}"
+    while IFS= read -r kp_sect; do
+        case "$kp_sect" in 'Recipes' | 'Local rules') continue ;; esac
+        grep -Fq "**Project slot \`$kp_sect\`**" "$ROOT/.claude/$kp_rel" 2>/dev/null \
+            || { echo "PK16: overlay section $kp_rel ## $kp_sect has no slot line" >&2; exit 1; }
+    done < <(sed -n 's/^## //p' "$kp_tpl")
+done < <(find "$ROOT/templates/overlays" -type f -name '*.md' -print0)
+# PK17 github.md reads protected_branches; correctness.md reads data_client.shared_dirs, no count.
+kp_gh="$ROOT/.claude/agents/github.md"
+grep -Fq 'protected_branches' "$kp_gh" && grep -Fq '.claude/project.json' "$kp_gh" \
+    || { echo 'PK17: github.md does not read protected_branches' >&2; exit 1; }
+if grep -F 'a commit on' "$kp_gh" | grep -Eq '`(main|master)`'; then echo 'PK17: github.md names a protected branch' >&2; exit 1; fi
+kp_cr="$ROOT/.claude/guides/review/correctness.md"
+grep -Fq 'data_client.shared_dirs' "$kp_cr" || { echo 'PK17: correctness.md does not read shared_dirs' >&2; exit 1; }
+if grep -Eq 'project\.json`,[[:space:]]+[a-z]+[[:space:]]+entries' "$kp_cr"; then echo 'PK17: correctness.md states a count' >&2; exit 1; fi
+# PK18 ADAPTATION §2/§9/§10/§12/§13 and init.md steps 2/9/10/12 write overlays or the proposal,
+# never a kit prompt; init.md has a Port step naming the backup.
+kp_adapt="$ROOT/docs/ADAPTATION.md"
+for kp_n in 2 9 10 12 13; do
+    kp_text="$(awk -v n="$kp_n" '$0 ~ "^## "n"\\. " { on = 1; print; next } on && /^## [0-9]+\. |^## [A-Z]/ { exit } on' "$kp_adapt")"
+    [[ -n "$kp_text" ]] || { echo "PK18: ADAPTATION §$kp_n not found" >&2; exit 1; }
+    grep -Eq '\.claude/overlays/|project\.proposed\.json|\.claude/project\.json' <<<"$kp_text" \
+        || { echo "PK18: ADAPTATION §$kp_n names no overlay nor project.json" >&2; exit 1; }
+    kp_bad="$(kp_prompt_paths "$kp_text")"
+    [[ -z "$kp_bad" ]] || { echo "PK18: ADAPTATION §$kp_n names kit prompts: $kp_bad" >&2; exit 1; }
+done
+kp_init="$ROOT/.claude/commands/kit/init.md"
+for kp_n in 2 9 10 12; do
+    kp_text="$(awk -v n="$kp_n" '/^## Phase 3/ { p3 = 1; next } p3 && /^## / { exit } p3 && $0 ~ "^"n"\\. " { on = 1; print; next } on && /^[0-9]+\. / { exit } on' "$kp_init")"
+    [[ -n "$kp_text" ]] || { echo "PK18: init.md step $kp_n not found" >&2; exit 1; }
+    grep -Eq '\.claude/overlays/|project\.proposed\.json|\.claude/project\.json' <<<"$kp_text" \
+        || { echo "PK18: init.md step $kp_n names no overlay nor project.json" >&2; exit 1; }
+    kp_bad="$(kp_prompt_paths "$kp_text")"
+    [[ -z "$kp_bad" ]] || { echo "PK18: init.md step $kp_n names kit prompts: $kp_bad" >&2; exit 1; }
+done
+kp_port="$(awk '/^## Phase [0-9]+ — Port/ { on = 1; print; next } on && /^## / { exit } on' "$kp_init")"
+[[ -n "$kp_port" ]] && grep -Fq '.claude/kit-backup/' <<<"$kp_port" \
+    || { echo 'PK18: init.md has no Port step naming .claude/kit-backup/' >&2; exit 1; }
+# PK19 recipes, the CLAUDE.md kit-code line, the manifest in README and ADAPTATION.
+grep -Fq '.claude/recipes/' "$ROOT/.claude/commands/kit/recipe.md" && grep -Fq '## Recipes' "$ROOT/.claude/commands/kit/recipe.md" \
+    || { echo 'PK19: recipe.md does not route an installed project to .claude/recipes/' >&2; exit 1; }
+grep -F 'Kit code' "$ROOT/CLAUDE.md" | grep -F 'prompts' | grep -Fq '.claude/overlays/' \
+    || { echo 'PK19: CLAUDE.md kit-code line does not name prompts and overlays' >&2; exit 1; }
+grep -Fq '.claude/kit-manifest' "$ROOT/README.md" || { echo 'PK19: README lacks .claude/kit-manifest' >&2; exit 1; }
+grep -Fq '.claude/kit-manifest' "$kp_adapt" || { echo 'PK19: ADAPTATION lacks .claude/kit-manifest' >&2; exit 1; }
+# PK20 the fastapi README §3/§4 name overlays and no kit prompt to edit; security.md has its section.
+kp_fa="$(section "$ROOT/addons/fastapi/README.md" '### 3.' '### 5.')"
+grep -Fq '.claude/overlays/' <<<"$kp_fa" || { echo 'PK20: fastapi README §3/§4 name no overlay' >&2; exit 1; }
+kp_bad="$(kp_prompt_paths "$kp_fa")"
+[[ -z "$kp_bad" ]] || { echo "PK20: fastapi README §3/§4 name kit prompts: $kp_bad" >&2; exit 1; }
+grep -qx '## extra-checks' "$ROOT/templates/overlays/guides/review/security.md" 2>/dev/null \
+    || { echo 'PK20: security.md overlay lacks ## extra-checks' >&2; exit 1; }
+# PK21 the ship bundle-secret scan computes its directories from app_roots, never a literal src/.
+kp_ship="$ROOT/.claude/commands/loop/ship.md"
+kp_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp_ship")"
+[[ -n "$kp_fence" ]] || { echo 'PK21: ship.md bundle-scan fence not found' >&2; exit 1; }
+grep -Fq 'app_roots' <<<"$kp_fence" && grep -Fq '.claude/project.json' <<<"$kp_fence" \
+    || { echo 'PK21: ship.md bundle-scan fence does not read app_roots from .claude/project.json' >&2; exit 1; }
+! grep -Fq 'test -d src/' <<<"$kp_fence" || { echo 'PK21: ship.md bundle-scan fence still tests a literal src/' >&2; exit 1; }
+if command -v jq >/dev/null 2>&1; then
+    kp_tmp="$(mktemp -d)"
+    mkdir -p "$kp_tmp/.claude" "$kp_tmp/frontend/src"
+    printf '{"app_roots": ["frontend"]}\n' >"$kp_tmp/.claude/project.json"
+    printf 'const a = import.meta.env.VITE_X_SECRET\nVITE_X_SECRET=1\n' >"$kp_tmp/frontend/src/a.ts"
+    kp_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp_fence")"
+    kp_out="$(cd "$kp_tmp" && bash -c "$kp_scan" 2>&1 || true)"
+    rm -rf "$kp_tmp"
+    grep -Fq 'frontend/src/a.ts' <<<"$kp_out" || { echo "PK21: executed fence did not scan frontend/src: $kp_out" >&2; exit 1; }
+    ! grep -Fq 'SCAN NOT RUN' <<<"$kp_out" || { echo "PK21: executed fence reported SCAN NOT RUN: $kp_out" >&2; exit 1; }
+fi
+# PK22 every kit prompt importing @/lib/client in an example names data_client.module.
+for kp_f in templates/feature.md templates/fixtures.md patterns/react-query.md; do
+    kp_p="$ROOT/.claude/skills/$kp_f"
+    grep -Fq '@/lib/client' "$kp_p" || continue
+    grep -Fq 'data_client.module' "$kp_p" || { echo "PK22: $kp_f imports @/lib/client without naming data_client.module" >&2; exit 1; }
+done
+# PK23 the bundle-scan fence falls back to src on empty app_roots, and reports each missing root.
+kp23_ship="${KP23_SHIP:-$ROOT/.claude/commands/loop/ship.md}"
+kp23_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp23_ship")"
+if command -v jq >/dev/null 2>&1; then
+    kp23_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp23_fence")"
+    kp23_tmp="$(mktemp -d)"
+    mkdir -p "$kp23_tmp/.claude" "$kp23_tmp/src"
+    printf '{"app_roots": []}\n' >"$kp23_tmp/.claude/project.json"
+    printf 'VITE_X_SECRET=1\n' >"$kp23_tmp/src/a.ts"
+    kp23_out="$(cd "$kp23_tmp" && bash -c "$kp23_scan" 2>&1 || true)"
+    rm -rf "$kp23_tmp"
+    grep -Fq 'src/a.ts' <<<"$kp23_out" || { echo "PK23: empty app_roots did not fall back to src: $kp23_out" >&2; exit 1; }
+    ! grep -Fq 'SCAN NOT RUN' <<<"$kp23_out" || { echo "PK23: empty app_roots reported SCAN NOT RUN: $kp23_out" >&2; exit 1; }
+    kp23_tmp="$(mktemp -d)"
+    mkdir -p "$kp23_tmp/.claude" "$kp23_tmp/frontend/src"
+    printf '{"app_roots": ["frontend","web"]}\n' >"$kp23_tmp/.claude/project.json"
+    kp23_out="$(cd "$kp23_tmp" && bash -c "$kp23_scan" 2>&1 || true)"
+    rm -rf "$kp23_tmp"
+    grep -Fq 'SCAN NOT RUN: no web/src' <<<"$kp23_out" || { echo "PK23: missing web/src not reported: $kp23_out" >&2; exit 1; }
+fi
+# PK24 the bundle-scan fence also scans <root>/.env.example for each declared root.
+kp24_ship="${KP24_SHIP:-$ROOT/.claude/commands/loop/ship.md}"
+kp24_fence="$(awk '/^```bash/ { buf = ""; inb = 1; next } /^```/ && inb { if (buf ~ /Bundle secrets/) { printf "%s", buf; exit } inb = 0; next } inb { buf = buf $0 "\n" }' "$kp24_ship")"
+if command -v jq >/dev/null 2>&1; then
+    kp24_scan="$(sed -n '/^# Bundle secrets/,$p' <<<"$kp24_fence")"
+    kp24_tmp="$(mktemp -d)"
+    mkdir -p "$kp24_tmp/.claude" "$kp24_tmp/frontend/src"
+    printf '{"app_roots": ["frontend"]}\n' >"$kp24_tmp/.claude/project.json"
+    printf 'const a = 1\n' >"$kp24_tmp/frontend/src/a.ts"
+    printf 'VITE_X_SECRET=\n' >"$kp24_tmp/frontend/.env.example"
+    kp24_out="$(cd "$kp24_tmp" && bash -c "$kp24_scan" 2>&1 || true)"
+    rm -rf "$kp24_tmp"
+    grep -Fq 'frontend/.env.example' <<<"$kp24_out" || { echo "PK24: fence did not scan frontend/.env.example: $kp24_out" >&2; exit 1; }
+fi
+
+# github-sync-local: the github agent keeps local in sync, ff-only, never forced.
+gs_never='Never `--force`, `reset --hard`, `pull --rebase` or a rebase to make the sync fit.'
+gs_sec="$(awk '/^### Keeping local in sync/ { on = 1; print; next } on && /^##/ { exit } on' "$GITHUB_AGENT")"
+# GS1 the section exists, before ## Output format.
+[[ -n "$gs_sec" ]] || { echo 'GS1: github.md has no ### Keeping local in sync section' >&2; exit 1; }
+gs_at="$(grep -n '^### Keeping local in sync' "$GITHUB_AGENT" | head -1 | cut -d: -f1)"
+gs_out="$(grep -n '^## Output format' "$GITHUB_AGENT" | head -1 | cut -d: -f1)"
+[[ -n "$gs_out" && "$gs_at" -lt "$gs_out" ]] || { echo 'GS1: Keeping local in sync is not before ## Output format' >&2; exit 1; }
+# GS2 the three sync commands.
+for gs_p in '`git fetch origin`' '`git merge --ff-only origin/<branch>`' '`git fetch origin <base>:<base>`'; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS2: sync section lacks $gs_p" >&2; exit 1; }
+done
+# GS3 the three triggers.
+for gs_p in 'after a merge you ran' 'after a PR you merged or found' 'at the start of a task, when origin is ahead'; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS3: sync section lacks trigger: $gs_p" >&2; exit 1; }
+done
+# GS4 report-not-fix, dirty tree, and the one-line Never sentence.
+for gs_p in 'Diverged or blocked: report it, change nothing.' 'a dirty tree the fast-forward would overwrite' "$gs_never"; do
+    grep -Fq "$gs_p" <<<"$gs_sec" || { echo "GS4: sync section lacks: $gs_p" >&2; exit 1; }
+done
+# GS5 the Local: report line with its three forms.
+gs_local="$(sed -n "${gs_out},\$p" "$GITHUB_AGENT" | grep -E '^- Local:' || true)"
+for gs_p in '<old>..<new>' 'up to date' 'diverged:'; do
+    grep -Fq "$gs_p" <<<"$gs_local" || { echo "GS5: Output format - Local: line lacks $gs_p" >&2; exit 1; }
+done
+# GS6a inside the section, force/reset/rebase appear only on the Never line.
+gs_bad="$(grep -E -- '--force|reset --hard|rebase' <<<"$gs_sec" | grep -vF "$gs_never" || true)"
+[[ -z "$gs_bad" ]] || { echo "GS6a: sync section names force/reset/rebase outside the Never sentence: $gs_bad" >&2; exit 1; }
+# GS6b file-wide, reset --hard and pull --rebase only on the Never line.
+gs_bad="$(grep -E -- 'reset --hard|pull --rebase' "$GITHUB_AGENT" | grep -vF "$gs_never" || true)"
+[[ -z "$gs_bad" ]] || { echo "GS6b: github.md names reset --hard / pull --rebase outside the Never sentence: $gs_bad" >&2; exit 1; }
+# GS7 diverged means commits on both sides; a branch only ahead has its own Local: form.
+grep -Fq 'commits on both sides' <<<"$gs_sec" || { echo "GS7: sync section does not define diverged as commits on both sides" >&2; exit 1; }
+grep -Fq 'ahead:' <<<"$gs_local" || { echo "GS7: Output format - Local: line lacks the ahead: form" >&2; exit 1; }
+
+# PK25-PK39 (loop-to-pr): the pass ends on a PR when a remote exists. Every failing id is reported.
+GITHUB_AGENT="$ROOT/.claude/agents/github.md"
+ORCH="$ROOT/.claude/commands/loop/orchestrate.md"
+TRACKS="$ROOT/.claude/commands/loop/tracks.md"
+SMALL_CMD="$ROOT/.claude/commands/loop/small.md"
+PK_FAIL=0
+pk() { local id="$1"; shift; "$@" || { echo "$id: failed" >&2; PK_FAIL=1; }; }
+has() { grep -Fq -- "$2" "$1"; }
+lacks() { ! grep -Fq -- "$2" "$1"; }
+has_in() { grep -Fq -- "$2" <<<"$1"; }
+lacks_in() { ! grep -Fq -- "$2" <<<"$1"; }
+in_order() { local text="$1" rest; shift; for n in "$@"; do rest="${text#*"$n"}"; [[ "$rest" != "$text" ]] || return 1; text="$rest"; done; }
+pk_pr="$(section "$SHIP" '#### 4bis-PR' '#### 4bis-local' || true)"
+pk_local="$(section "$SHIP" '#### 4bis-local' '### 5.' || true)"
+pk_outside="$(awk '/^#### 4bis-local/{skip=1; next} /^### 5\./{skip=0} !skip' "$SHIP")"
+pk_push='git push -u origin <branch>'
+pk_create='gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md'
+
+pk PK25 lacks "$GITHUB_AGENT" 'ALWAYS asks for validation before anything'
+for n in '`gh pr merge`' 'force-push' '`gh issue`' 'comment' 'explicit go-ahead'; do pk "PK25 $n" has "$GITHUB_AGENT" "$n"; done
+pk PK26 test -n "$pk_pr"
+for n in 'rebase' 'merge --ff-only' 'je pousse' '--force'; do pk "PK26 no $n" lacks_in "$pk_pr" "$n"; done
+for n in 'loop-pr-state.sh --chain' 'MERGED' 'baseRefName'; do pk "PK26 $n" has_in "$pk_pr" "$n"; done
+pk_gate="$(section "$PLAN" '7. **' '8. **' || true)"
+for n in 'AskUserQuestion' 'every pipeline' 'header `Plan gate`' 'Plan go — docs/work/<slug>/plan.md' 'Frozen cases to amend:'; do
+    pk "PK27 $n" has_in "$pk_gate" "$n"
+done
+pk PK28 has "$ORCH" 'unfreeze-queue.md'
+pk PK28.2 has "$ORCH" 'stops once for the whole batch'
+pk PK28.3 lacks "$ORCH" 'confirms it at the merge'
+pk PK28.4 grep -Eq 'EnterWorktree[^.]*`path`' "$ORCH"
+pk PK29 has "$TESTS_GUIDE" 'does not match its recorded new title'
+pk PK29.2 has "$TESTS_GUIDE" 'no row and no `amended` line'
+pk PK30 has "$ROOT/docs/Claude_Workflows.md" 'git push'
+pk PK30.2 has "$ROOT/docs/Claude_Workflows.md" 'gh pr'
+pk PK31 test -n "$pk_local"
+for n in 'Rebase' 'go-ahead' 'python3 .claude/hooks/loop-record.py --clear'; do pk "PK31 $n" has_in "$pk_local" "$n"; done
+pk PK32 in_order "$(cat "$GITHUB_AGENT")" '**Contract contradiction**' '**Screenshots**' '**Guarded files touched**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
+pk PK32.2 has "$GITHUB_AGENT" '--body-file'
+for f in "$TRACKS" "$SMALL_CMD" "$ORCH"; do pk "PK33 $(basename "$f")" grep -Eq -- '-b feat/[^ `]+ <base>' "$f"; done
+pk PK33.2 lacks "$ROOT/.claude/agents/implementer.md" 'confirms it at the merge'
+pk PK34 lacks_in "$pk_outside" "waits for the user's explicit"
+pk PK34.2 lacks_in "$pk_outside" 'in the merge presentation (step 4bis, which every pass'
+pk PK34.3 has_in "$(section "$SHIP" '### 2. Acceptance' '### 3.' || true)" 'PR body (`Frozen cases`)'
+for f in "$ORCH" "$TRACKS"; do
+    pk "PK35 $(basename "$f")" has "$f" 'loop-pr-state.sh --chain'
+    pk "PK35.2 $(basename "$f")" has "$f" 'phase: awaiting-merge'
+done
+pk PK35.3 has_in "$(section "$SHIP" '### 5. Advance' '### 6.' || true)" '`closable`'
+pk PK36 has "$GITHUB_AGENT" "$pk_push"; pk PK36.2 has "$GITHUB_AGENT" "$pk_create"
+pk PK36.3 has_in "$pk_pr" "$pk_push"
+pk PK36.4 has_in "$pk_pr" "$pk_create"
+pk PK36.5 bash -c '! grep "gh pr create" "$1" | grep -vq -- "--repo"' _ "$GITHUB_AGENT"
+pk_small="$(section "$SHIP" '## Small-ticket integration' '## Output' || true)"
+pk_gsmall="$(section "$GITHUB_AGENT" 'Asked to integrate' '###' || true)"
+for t in "$pk_small" "$pk_gsmall"; do
+    pk PK37 has_in "$t" 'gh pr create'
+    pk PK37.2 has_in "$t" 'no remote'
+    pk PK37.3 has_in "$t" 'merge --ff-only'
+done
+for n in 'Never push or open a PR without an explicit go-ahead' 'Show the title + body first'; do
+    pk "PK38 ship $n" lacks_in "$pk_outside" "$n"
+    pk "PK38 github $n" lacks "$GITHUB_AGENT" "$n"
+done
+pk PK38.2 lacks "$GITHUB_AGENT" 'If push/PR was requested: draft the message, **show it, ask, then run**'
+pk PK38.3 has "$GITHUB_AGENT" 'show it, ask, then run'
+pk PK39 grep -Eq 'ship \| awaiting-merge' "$ROOT/.claude/commands/handoff/codex.md"
+pk PK39.2 has "$ORCH" '`awaiting-merge` →'
+pk PK39.3 grep -Eq 'closing check.*SHIPPED|SHIPPED.*closing check' "$ROOT/.claude/commands/loop/product.md"
+# LP49 (loop-to-pr) after /clear, an IN LOOP line whose handoff awaits its PR's merge is not an
+# interrupted feature: the topmost READY line is proposed and the other named as awaiting merge.
+LP49="$WS/lp49"
+rm -rf -- "$LP49"; mkdir -p "$LP49/docs/product" "$LP49/docs/work/cart-1.1"
+printf '| Feature / story | Entry artifact | Pipeline | State | Shipped |\n| --- | --- | --- | --- | --- |\n| cart 1.1 | docs/stories/cart/1.1.md | full | IN LOOP | — |\n| billing | docs/specs/billing.md | light | READY | — |\n' \
+    > "$LP49/docs/product/backlog.md"
+printf -- '---\nphase: awaiting-merge\npr: https://github.com/o/r/pull/7\n---\n' > "$LP49/docs/work/cart-1.1/handoff.md"
+lp49_ctx() { printf '{"hook_event_name":"SessionStart","source":"clear"}' | CLAUDE_PROJECT_DIR="$LP49" python3 "$ROOT/.claude/hooks/next-feature-on-clear.py"; }
+pk LP49 has_in "$(lp49_ctx)" '/loop:orchestrate docs/specs/billing.md'
+pk LP49.2 has_in "$(lp49_ctx)" 'awaiting PR merge: cart 1.1'
+pk LP49.3 lacks_in "$(lp49_ctx)" 'docs/work/cart-1.1/handoff.md'
+printf -- '---\nphase: execute\n---\n' > "$LP49/docs/work/cart-1.1/handoff.md"
+pk LP49.4 has_in "$(lp49_ctx)" '/loop:orchestrate docs/work/cart-1.1/handoff.md'
+# PK40-PK42 (loop-to-pr review round 1): the closing check never switches an open pass away
+# (the new pass stacks), closes a merged main-tree pass from the default branch after the
+# fast-forward sync, and the local clean-up leaves a worktree with `keep` then `git worktree remove`.
+pk_close="$(section "$ORCH" '0. **Closing check**' '1. **Small pipeline**' || true)"
+pk PK40.0 test -n "$pk_close"
+pk PK40 lacks_in "$pk_close" 'git switch <base>'
+pk PK40.2 has_in "$pk_close" 'will stack on that branch'
+pk PK40.3 has_in "$pk_close" 'switch nothing'
+pk PK41 in_order "$pk_close" '`closable`' 'git switch <default branch>' 'git fetch origin' \
+    'git merge --ff-only origin/<default branch>' '`/loop:ship` step 5' 'git branch -d'
+pk PK41.2 in_order "$(grep -F -A6 'closes the pass' "$TRACKS")" 'git switch <default branch>' \
+    'git fetch origin' 'git merge --ff-only origin/<default branch>' '`/loop:ship` step 5' 'git branch -d'
+pk PK42 has_in "$pk_local" 'ExitWorktree` with `keep`'
+pk PK42.2 lacks_in "$pk_local" 'ExitWorktree` (`remove`)'
+pk PK42.3 in_order "$pk_local" 'ExitWorktree` with `keep`' 'git worktree remove .claude/worktrees/<slug>' 'git branch -d feat/<slug>'
+pk_status="$(section "$SMALL_CMD" '## Status (`--status`)' '## Template' || true)"
+pk PK43 has_in "$pk_status" 'loop-pr-state.sh feat/small-<name>'
+pk PK43.2 has_in "$pk_status" 'its PR `MERGED`'
+# PK44 (loop-to-pr review round 2, N3): the switch and the sync apply to the main tree's handoff only
+# (git refuses a branch checked out in the main tree, so a worktree's switch never lands); a worktree
+# handoff goes straight to step 5 and the clean-up; the default branch comes from `gh repo view`.
+pk PK44 has_in "$pk_close" "the **main tree's** handoff"
+pk PK44.2 has_in "$pk_close" 'a worktree handoff skips the switch and the sync'
+pk PK44.3 has_in "$pk_close" 'gh repo view --json defaultBranchRef'
+pk_tracks_close="$(section "$TRACKS" '**Closing check first**' 'Stories: the directory passed' || true)"
+pk PK44.4 test -n "$pk_tracks_close"
+pk PK44.5 has_in "$pk_tracks_close" "the **main tree's** handoff"
+pk PK44.6 has_in "$pk_tracks_close" 'a worktree handoff skips the switch and the sync'
+pk PK44.7 has_in "$pk_tracks_close" 'gh repo view --json defaultBranchRef'
+# PK45-PK45.4 (loop-to-pr review round 3, M2): a worktree handoff's step 5 runs in the main tree, which
+# must stand on the synced default branch (else report and stop); the record clear and `phase: shipped`
+# come before the worktree removal, in both files.
+pk PK45 has_in "$pk_close" "a worktree handoff's \`/loop:ship\` step 5 runs in the main tree, which must be on the synced default branch"
+pk PK45.2 has_in "$pk_close" 'else report and stop'
+pk PK45.3 in_order "$pk_close" '`/loop:ship` step 5' 'loop-record.py --clear' 'phase: shipped' 'worktree removal'
+pk PK45.4 has_in "$pk_tracks_close" "a worktree handoff's \`/loop:ship\` step 5 runs in the main tree, which must be on the synced default branch"
+pk PK45.5 has_in "$pk_tracks_close" 'else report and stop'
+pk PK45.6 in_order "$pk_tracks_close" '`/loop:ship` step 5' 'loop-record.py --clear' 'phase: shipped' 'worktree removal'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK25-PK44: failing, see above' >&2; exit 1; }
+
+# AMC1-AMC19 (docs/specs/auto-mode.md): the auto mode's prompts, agent, budget and wiring.
+ARBITER="$ROOT/.claude/agents/arbiter.md"
+SPEC_CMD="$ROOT/.claude/commands/loop/spec.md"
+INTERFACE_CMD="$ROOT/.claude/commands/loop/interface.md"
+REVIEW_CMD="$ROOT/.claude/commands/loop/review.md"
+BUDGET_RULE="$ROOT/.claude/rules/11-token-budget.md"
+pk AMC1 has "$ORCH" '| Gate after the contract | `moi` | `auto` |'
+for n in '| Interface: pick a mock-up (UI only) |' '| Contract question at the first gate (B3) |' \
+         '| Plan-critic `interpretation` findings |' '| Open questions + test plan |' \
+         '| Frozen-test correction (plan or EXECUTE) |' '| Commit, push, PR |' '| Merge of the PR |'; do
+    pk "AMC1 $n" has "$ORCH" "$n"
+done
+for n in 'blocked: <cause>' 'no push, no PR' 'python3 .claude/hooks/loop-record.py --clear' 'a remaining ask' \
+         'plan-critic `BLOCKED`' 'an attempts cap' 'a red gate after the fix budget' 'an undecidable case' \
+         "changes an acceptance criterion's meaning"; do
+    pk "AMC2 $n" has "$ORCH" "$n"
+done
+for n in 'header `Contract gate`' 'Contract go — docs/work/<slug>/research.md' 'Validation: auto' '`as written`' \
+         'Contract (validated by this go)'; do
+    pk "AMC3 $n" has "$ORCH" "$n"
+done
+amc_claude="$(tr '\n' ' ' <"$ROOT/CLAUDE.md" | tr -s ' ')"
+pk AMC4 has_in "$amc_claude" 'never proceed on silence in `moi`'
+pk AMC4.2 has "$ROOT/CLAUDE.md" 'Agents: `.claude/agents/` (14)'
+pk AMC5 test -f "$ARBITER"
+pk AMC5.2 grep -qx 'model: inherit' "$ARBITER"
+pk AMC5.3 bash -c '! grep -E "^tools:.*(Write|Edit)" "$1"' _ "$ARBITER"
+pk AMC5.4 bash -c '! grep -q "^effort:" "$1"' _ "$ARBITER"
+for n in 'ARBITER VERDICT' 'kind: frozen-case' 'sha256:' 'verdict: unfreeze | refuse' '2 rounds' \
+         'never the agent that wrote the plan' 'acceptance criterion' 'unfreeze-queue.md' 'git apply --check -' \
+         'case-hash.sh'; do
+    pk "AMC5 $n" has "$ARBITER" "$n"
+done
+pk AMC6 grep -Eq '^\| `inherit` \|.*`arbiter`' "$BUDGET_RULE"
+pk AMC6.2 test "$(wc -l <"$BUDGET_RULE")" -le 42
+pk AMC7 has "$SPEC_CMD" '`Validation : moi | auto`'
+pk AMC7.2 has "$SPEC_CMD" 'in the same call'
+for n in '`arbiter`' '2 rounds' 'arbiter go'; do pk "AMC8 $n" has "$PLAN" "$n"; done
+for n in 'In `auto`' 'no canvas render' 'no gate' 'reasons in `design.md`'; do pk "AMC9 $n" has "$INTERFACE_CMD" "$n"; done
+pk AMC10 in_order "$(cat "$GITHUB_AGENT")" '**Contract contradiction**' '**Screenshots**' '**Guarded files touched**' '**Frozen cases**' '**Open questions**' '**Review**' '**Gates**'
+pk AMC11 has "$SHIP" 'python3 .claude/hooks/loop-record.py --guarded-block'
+pk AMC11.2 has "$SHIP" 'a blocked stop pushes nothing'
+pk AMC12 has "$TESTS_GUIDE" 'no matching `unfreeze` verdict'
+pk AMC12.2 has "$TESTS_GUIDE" 'a `refuse`d case changed'
+pk AMC12.3 has "$TESTS_GUIDE" 'does not hash to its verdict'
+for n in 'In `auto`' 'without asking' '`arbiter`'; do pk "AMC13 $n" has "$REVIEW_CMD" "$n"; done
+pk AMC14 test "$(grep -c '14 subagents' "$ROOT/README.md")" -ge 2
+pk AMC14.2 lacks "$ROOT/README.md" '13 subagents'
+for n in 'only opens the `Contract gate`' 'python3 .claude/hooks/loop-record.py --mode' \
+         'a restart after `research` reads `--mode`' 'continues in `moi`'; do
+    pk "AMC15 $n" has "$ORCH" "$n"
+done
+for n in 'never issue a command that asks' 'auto mode — blocked stop:' 'without `barrier: true`'; do
+    pk "AMC16 $n" has "$ORCH" "$n"
+done
+for n in 'a snapshot update' 'a recursive delete' 'a secret read' 'cannot parse' 'a whole-folder formatter' \
+         'written from the shell' 'safe list' 'outside the' 'a codegen target' 'git switch -c feat/<slug>'; do
+    pk "AMC16 asks: $n" has "$ORCH" "$n"
+done
+for n in '(`vitest -u`)' '(`rm -r`)' 'a secret read, a command' 'the guard cannot parse' 'or a failed guard' \
+         'a whole-folder formatter, a TypeScript' 'a TypeScript source' 'a deleted Vitest cache' \
+         'an option off the safe list' 'a kit script' 'a write through a temporary-folder or fd path' \
+         'a write outside the' 'a tool option aimed at a folder or file' 'a codegen target'; do
+    pk "AMC16 shell asks: $n" has "$ORCH" "$n"
+done
+pk AMC17 jq -e '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]
+    | select(.command | test("enforce-git-workflow\\.sh")) | .timeout] | length == 1 and .[0] >= 20' "$SETTINGS"
+pk AMC18 has "$PLAN" 'In `auto`, `arbitrate` goes to the `arbiter`'
+pk AMC18.2 has "$ORCH" 'one fresh `arbiter` per queued case id'
+pk AMC19 has "$ORCH" 'Do not enter Phase 4 on silence in `moi`'
+pk AMC19.2 has "$ORCH" 'do not enter Phase 3 on silence in `moi`'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC1-AMC19: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

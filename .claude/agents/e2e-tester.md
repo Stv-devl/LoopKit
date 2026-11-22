@@ -59,12 +59,23 @@ mocked. Read it before writing a line, and apply the matching rule:
    already covers better; say which ones you skipped and why.
 2. Write your spec at the given path, following the skill's naming convention
    (the suffix decides whether it needs a session).
-3. Run **only your file**: `pnpm exec playwright test <your file>`.
+3. Run **only your file**: `pnpm exec playwright test <your file>`. Write files
+   with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+   `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer,
+   never by switching tools. Also: no no-op probe (`python3 - <<EOF print("noop")`,
+   an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact command and read its output.
 4. On failure, diagnose before reporting: **is the app broken, or is the spec
    wrong?** A bad selector is your bug, not a finding. Fix your spec, run again.
    A real defect is a finding — capture the evidence from the trace.
 5. Never loosen an assertion to get green. If the app is wrong, the red is the
    deliverable.
+
+## PR screenshots
+
+When `PR_SHOTS` is set, follow the skill's "PR screenshots" section in your own
+spec: an inline `shot()`, the names, the after/before timing, the variants and
+the dark mechanism. You write images only under `PR_SHOTS_DIR`. In before mode a
+failing run is expected and is not a finding. Never capture on real data.
 
 ## Output format (mandatory)
 
@@ -77,6 +88,8 @@ mocked. Read it before writing a line, and apply the matching rule:
 - Findings: <path or screen> — <defect + how it reproduces>   (or "none")
 - Spec health: <anything fragile you had to do — a testid you added, a wait you
   wish you didn't need>
+- Screenshots: <PR_SHOTS_DIR> (<n> files; dark: <mechanism|none: why>; before: <n|none: why>)
+  — or `Screenshots: none (<why>)` when PR_SHOTS was unset or capture was not allowed
 ```
 
 Report the real run output. A green line you did not observe is worse than no

@@ -35,9 +35,9 @@ by `/loop:research` and `doc-researcher`, never copied into a hot rule.
 | Server-side authorization | <RLS / middleware / none — name it> |
 | Migrations | <tool + folder, or n/a> |
 
-The first row must match `DATA_CLIENT_MODULE` and `DATA_CLIENT_OWN_PATH` in
-`enforce-architecture.py`; the composition roots must match `02-architecture.md`
-and `COMPOSITION_ROOTS`. Change each pair together. Supabase projects replace
+The first row must match `data_client.module` and `own_path` in
+`.claude/project.json`; the composition roots must match `02-architecture.md`
+and `data_client.composition_roots`. Change each pair together. Supabase projects replace
 this file with the addon copy.
 
 Scaffolding config: `.claude/skills/templates/tooling-config.md`.

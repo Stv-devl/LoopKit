@@ -1,8 +1,8 @@
 # Supabase Client & Auth (front end)
 
-<!-- FILL: file paths, provider and hook names. What must not change: the client
-     is created once, only the data layer imports it, and the generated DB types
-     are the source of truth for row shapes. -->
+> Note: file paths, provider and hook names are placeholders, use this repo's when applying.
+> What must not change: the client is created once, only the data layer imports it, and the
+> generated DB types are the source of truth for row shapes.
 
 > The client lives in `src/lib/supabase.ts` and **only `*.gateway.ts` /
 > `services.ts` may import it** (`.claude/rules/02-architecture.md`, enforced by
@@ -52,6 +52,8 @@ Vite builds, whatever the variable is called.
 ```bash
 supabase gen types --linked > src/types/database.types.ts
 ```
+
+The redirect needs `["supabase","gen","types"]` in `.claude/project.json` `codegen_commands` (a guarded file; `/kit:init` proposes it), else the shell guard denies it.
 
 Regenerate it **in the same change as the migration**. Without it the gateway
 types its rows by hand, drifts from the schema, and `any` comes back in through

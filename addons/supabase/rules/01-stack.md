@@ -1,4 +1,4 @@
-<!-- budget: 150 lines · /kit:doctor rules-budget -->
+<!-- budget: 150 lines · addon +105 · /kit:doctor rules-budget -->
 # Technical Stack
 
 <!-- OVERRIDE of `.claude/rules/01-stack.md`: install.sh copies this file OVER the core one.
@@ -115,9 +115,9 @@ Everything downstream reads this table: the `reviewer` agent's `correctness`,
 `security` and `db` dimensions, and every command that talks about "the data
 layer". Leave it stale and the guardrails guard the wrong thing.
 
-**`enforce-architecture.py` does not read it — it carries its own copy**, and
-here it must read `DATA_CLIENT_MODULE = "lib/supabase"`,
-`DATA_CLIENT_OWN_PATH = "lib/supabase.ts"`. Change both together, never one
+**`enforce-architecture.py` does not read it — it reads `.claude/project.json`**,
+where `data_client.module` must be `"lib/supabase"` and
+`data_client.own_path` `"lib/supabase.ts"`. Change both together, never one
 alone: the hook matching a module nobody imports is not a loose guardrail, it is
 **no guardrail at all**, silently, while this table says the layer is covered.
 

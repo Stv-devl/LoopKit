@@ -50,7 +50,8 @@ pnpm add -D @stryker-mutator/core @stryker-mutator/vitest-runner
 }
 ```
 
-<!-- FILL: adjust the globs to this repo's real layout, cf. 02-architecture.md. -->
+**Project slot `globs`** — `## globs` in `.claude/overlays/commands/audit/mutation.md`; absent → the globs built from `app_roots` and `tdd_layers` of `.claude/project.json`.
+The section holds this repo's real globs, cf. `02-architecture.md`.
 
 - **`break: null` on purpose.** This is not a gate. Past ~80 % the returns
   collapse, and a threshold nobody reaches is a threshold somebody disables —
@@ -137,8 +138,10 @@ freeze allows exactly that: appending a new `it()` is a pure insertion, permitte
 without ceremony (`tdd-freeze-tests.sh`). Say which behaviour it covers and why
 the `/loop:plan` test plan missed it.
 
-Only a survivor caused by a **wrong** assertion needs `.claude/.tdd-unfrozen` —
-tell the user, with which case and why, before touching anything.
+Only a survivor caused by a **wrong** assertion needs `.claude/.tdd-unfrozen`
+(the `.tdd-unfrozen` write asks the user) —
+name the case id and why in the proposal; the fix goes back through the loop,
+which records it as a `## Gate` amendment (`orchestrate.md`, Phase 4).
 
 Propose. Apply nothing here.
 

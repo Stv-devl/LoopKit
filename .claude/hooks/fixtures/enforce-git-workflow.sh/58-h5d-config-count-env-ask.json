@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz GIT_CONFIG_VALUE_0=ps git zz"}}

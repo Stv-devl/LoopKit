@@ -1,0 +1,8 @@
+- minor | kit-gate-route.py:396 | path check accepts `src//x.ts`, trailing `/`, `\`; such a path silently routes out of scope | review round 2
+- minor | test-gate-route.sh G26 | no positive case: a substring `..` check would pass and refuse `a..b.ts` | review round 2
+- minor | test-gate-route.sh G29 | `refused` calls pass an empty needle; use `Base:` / `fix-base` | review round 2
+- minor | kit-gate-route.py:121 | `rev-parse --end-of-options` needs a recent git; the kit declares no git floor (fails closed) | review round 2
+- minor | kit-gate-route.py:382 | only literal `none` is no scenario; `null`, `n/a`, `-` count as a scenario | review round 2
+- minor | plan.md:86 | `leg` from the routing `provider` ignores the Codex-absent fallback (fails safe, extra rewrite) | review round 2
+- minor | review.md:228 | uncovered acceptance criterion is Critical, but no guidance to fill `class`/`path`/`scenario`, so round ≥2 can route it follow-up | review round 2
+- minor | various | the 22 round-1 Minors listed in handoff.md `## In progress` (newline in fields, `.env` with `git add -A`, pathspec slug, symlinks, `registered_stems`, C-quoted names, BASE_LINE `\s*`, unreferenced fix-base tree, OSError exit 1, status enum, step 7 pass wording, stale orchestrate Phase 3 summary, `3bis` numbering, G17, G6, `$(section …)` args, git config isolation, G23 needle, `Base:` computation, bmad qa Minors) | review round 1

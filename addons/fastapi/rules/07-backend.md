@@ -1,4 +1,4 @@
-<!-- budget: 290 lines · /kit:doctor rules-budget -->
+<!-- budget: 290 lines · addon +290 · /kit:doctor rules-budget -->
 # Backend — FastAPI + Python
 
 <!-- FILL: Python version, package manager (pip / uv / poetry), and the real
@@ -145,7 +145,7 @@ language. Writing them from the shell is denied like their TypeScript twins
 **Scope: `app/services/**`, in both spellings** — the package this file
 prescribes, and the flat `app/services.py` a small service ends up with. `api/`,
 `models/`, `schemas/` and `core/` stay test-after. Widening the scope is one
-constant: `TEST_FIRST_DIRS` in `tdd_py_lib.py`.
+value: `fastapi.test_first_dirs` in `.claude/project.json`.
 
 **The test↔module mapping is the mirror**, which is why `tests/` mirroring `app/`
 (`patterns/pytest-backend.md`) is load-bearing rather than a convention:

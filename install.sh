@@ -3,7 +3,7 @@
 # LoopKit — installe le kit dans un projet cible.
 #
 #   ./install.sh /chemin/vers/mon-projet [--react-ts] [--supabase] [--fastapi]
-#                                        [--no-ci]
+#                                        [--no-ci] [--lefthook]
 #                                        [--deploy=none|netlify|vercel|pages|ssh|ghcr]
 #
 # Sans profil, installe le core agnostique. --react-ts ajoute les hooks front ;
@@ -18,9 +18,17 @@
 #           omis dans un script (pas de TTY), c'est `none` — le workflow echoue
 #           alors volontairement tant que personne n'a choisi.
 #
-# Ne remplace jamais un fichier existant : il écrit `<fichier>.new` à côté.
-# Exception volontaire : settings.json fusionne les hooks sélectionnés dans le
-# fichier actif, faute de quoi une mise à jour installe des guardrails muets.
+# --lefthook  installe lefthook.yml (pre-push : typecheck, lint, test:run).
+#           Omis dans un terminal, la question est posee, non par defaut ;
+#           sans terminal, rien n'est installe.
+#
+# Le code du kit (hooks, scripts, lanceurs, et les prompts : agents, commands, skills, guides)
+# est remplacé par la version du kit, après une sauvegarde de chaque fichier qui diffère dans
+# .claude/kit-backup/<heure UTC>/. Les prompts livrés sont listés dans .claude/kit-manifest ;
+# les valeurs propres au projet vivent dans .claude/overlays/ et .claude/project.json. Tout
+# autre fichier existant n'est jamais remplacé : il écrit `<fichier>.new` à côté. Exception
+# volontaire : settings.json fusionne les hooks sélectionnés dans le fichier actif, faute
+# de quoi une mise à jour installe des guardrails muets.
 
 set -euo pipefail
 
@@ -32,9 +40,11 @@ WITH_FASTAPI=false
 WITH_REACT_TS=false
 DEPLOY_TARGET=""
 NO_CI=false
+WITH_LEFTHOOK=false
 
 for arg in "$@"; do
     case "$arg" in
+        --lefthook) WITH_LEFTHOOK=true ;;
         --react-ts) WITH_REACT_TS=true ;;
         --supabase) WITH_SUPABASE=true ;;
         --fastapi)  WITH_FASTAPI=true ;;
@@ -73,9 +83,18 @@ if [[ ! -d "$TARGET" ]]; then
     echo "erreur: '$TARGET' n'est pas un dossier." >&2
     exit 1
 fi
+# Le kit ne s'installe jamais dans lui-même (ni par un lien) : son code y écraserait sa
+# propre source, et le tampon d'installation en ferait un projet installé.
+if [[ "$(cd "$TARGET" && pwd -P)" == "$(cd "$KIT_DIR" && pwd -P)" ]]; then
+    echo "erreur: '$TARGET' est le kit lui-même ($KIT_DIR) : install.sh installe le kit dans un autre projet." >&2
+    exit 1
+fi
 
 SKIPPED=()
 INSTALLED=()
+# Code du kit écrasé par ce run (chemins relatifs), et son dossier de sauvegarde.
+KIT_OVERWRITTEN=()
+KIT_BACKUP=""
 
 # copy_file <source> <destination>
 copy_file() {
@@ -88,6 +107,121 @@ copy_file() {
         cp "$src" "$dst"
         INSTALLED+=("$dst")
     fi
+}
+
+# copy_kit <source> <destination>
+# Le code du kit (hooks, scripts, lanceurs, prompts) appartient au kit : il est écrasé, jamais
+# laissé en .new. Un fichier qui diffère est d'abord sauvegardé, à son chemin relatif,
+# sous .claude/kit-backup/<heure UTC>/ (un dossier par run, créé seulement si besoin).
+copy_kit() {
+    local src="$1" dst="$2" rel
+    mkdir -p "$(dirname "$dst")"
+    if [[ ! -e "$dst" ]]; then
+        cp "$src" "$dst"
+        INSTALLED+=("$dst")
+        return
+    fi
+    cmp -s "$src" "$dst" && return 0
+    rel="${dst#"$TARGET"/}"
+    [[ -n "$KIT_BACKUP" ]] || KIT_BACKUP=".claude/kit-backup/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$TARGET/$KIT_BACKUP/$(dirname "$rel")"
+    cp -p "$dst" "$TARGET/$KIT_BACKUP/$rel"
+    cp "$src" "$dst"
+    KIT_OVERWRITTEN+=("$rel")
+}
+
+# Prompts du kit : une seule source par destination, copiée une seule fois (une sauvegarde
+# par chemin et par run). PROMPT_RELS[i] (chemin relatif) ← PROMPT_SRCS[i] ; une source vide
+# laisse le fichier en place. PROMPT_KEPT : laissés en place et différents des deux addons.
+PROMPT_RELS=()
+PROMPT_SRCS=()
+PROMPT_KEPT=()
+
+# prompt_source <source> <chemin relatif> : la source d'un prompt ; un appel plus tardif pour
+# le même chemin la remplace (le coeur d'abord, puis l'addon choisi).
+prompt_source() {
+    local src="$1" rel="$2" i
+    for i in "${!PROMPT_RELS[@]}"; do
+        if [[ "${PROMPT_RELS[$i]}" == "$rel" ]]; then
+            PROMPT_SRCS[i]="$src"
+            return 0
+        fi
+    done
+    PROMPT_RELS+=("$rel")
+    PROMPT_SRCS+=("$src")
+}
+
+# addon_marker <addon> : le fichier qu'un run de cet addon laisse dans le projet.
+addon_marker() {
+    case "$1" in
+        supabase) echo ".claude/skills/patterns/SUPABASE-ADDON.md" ;;
+        fastapi) echo ".claude/skills/patterns/FASTAPI-ADDON.md" ;;
+    esac
+}
+
+# resolve_prompt_winners : un prompt que livre aussi un addon, quand aucun addon choisi par ce
+# run ne l'a pris : l'addon installé par un run précédent (son marqueur, lu avant les copies)
+# gagne ; deux tels addons → le fichier reste en place.
+resolve_prompt_winners() {
+    local i rel src a cands
+    for i in "${!PROMPT_RELS[@]}"; do
+        rel="${PROMPT_RELS[$i]}"
+        src="${PROMPT_SRCS[$i]}"
+        [[ "$src" == "$KIT_DIR/.claude/"* ]] || continue
+        cands=()
+        for a in "${ADDONS_BEFORE[@]:-}"; do
+            [[ -n "$a" && -f "$KIT_DIR/addons/$a/${rel#.claude/}" ]] && cands+=("$KIT_DIR/addons/$a/${rel#.claude/}")
+        done
+        if [[ ${#cands[@]} -eq 1 ]]; then
+            PROMPT_SRCS[i]="${cands[0]}"
+        elif [[ ${#cands[@]} -ge 2 ]]; then
+            PROMPT_SRCS[i]=""
+            if [[ -e "$TARGET/$rel" ]] && ! cmp -s "$TARGET/$rel" "${cands[0]}" \
+                    && ! cmp -s "$TARGET/$rel" "${cands[1]}"; then
+                PROMPT_KEPT+=("$rel")
+            fi
+        fi
+    done
+}
+
+# flush_prompts : chaque prompt copié une fois depuis sa source gagnante (copy_kit).
+flush_prompts() {
+    local i
+    for i in "${!PROMPT_RELS[@]}"; do
+        if [[ -n "${PROMPT_SRCS[$i]}" ]]; then
+            copy_kit "${PROMPT_SRCS[$i]}" "$TARGET/${PROMPT_RELS[$i]}"
+        fi
+    done
+}
+
+# write_manifest : .claude/kit-manifest, trié, après les copies : les prompts de ce run, plus
+# les entrées d'un run précédent dont le fichier existe encore. Écrit d'un coup (tmp + mv).
+write_manifest() {
+    local man="$TARGET/.claude/kit-manifest" tmp line
+    tmp="$(mktemp "$TARGET/.claude/.kit-manifest.XXXXXX")"
+    {
+        printf '%s\n' "${PROMPT_RELS[@]}"
+        if [[ -f "$man" ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ "$line" =~ ^\.claude/(agents|commands|skills|guides)/[A-Za-z0-9._/-]+$ ]] || continue
+                [[ "/$line/" == */../* || "/$line/" == */./* ]] && continue
+                if [[ -f "$TARGET/$line" ]]; then printf '%s\n' "$line"; fi
+            done <"$man"
+        fi
+    } | LC_ALL=C sort -u >"$tmp"
+    mv "$tmp" "$man"
+}
+
+# seed_overlays : les modèles d'overlay du kit, copiés une fois ; un overlay existant est au
+# projet (copy_file : .new seulement s'il diffère du modèle).
+seed_overlays() {
+    local f dst
+    [[ -d "$KIT_DIR/templates/overlays" ]] || return 0
+    while IFS= read -r -d '' f; do
+        dst="$TARGET/.claude/overlays/${f#"$KIT_DIR/templates/overlays/"}"
+        if [[ -e "$dst" ]] && cmp -s "$f" "$dst"; then continue; fi
+        copy_file "$f" "$dst"
+    done < <(find "$KIT_DIR/templates/overlays" -type f -name '*.md' -print0)
 }
 
 # copy_override <source> <destination>
@@ -196,17 +330,85 @@ copy_tree() {
     local src="$1" dst="$2" rel
     while IFS= read -r -d '' f; do
         rel="${f#"$src"/}"
-        copy_file "$f" "$dst/$rel"
+        case "$dst/$rel" in
+            "$TARGET/.claude/hooks/"* | "$TARGET/.claude/scripts/"*) copy_kit "$f" "$dst/$rel" ;;
+            "$TARGET/.claude/agents/"* | "$TARGET/.claude/commands/"* | "$TARGET/.claude/skills/"* \
+                | "$TARGET/.claude/guides/"*) prompt_source "$f" "${dst#"$TARGET"/}/$rel" ;;
+            *) copy_file "$f" "$dst/$rel" ;;
+        esac
     done < <(find "$src" \
-        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' \) -prune -o \
+        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' -o -name 'kit-backup' \) -prune -o \
         -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
+                 ! -name '.loop-record.json' ! -name '.loop-record.lock' \
+                 ! -path "$src/project.json" \
                  ! -name '.hook-timings.log' ! -name '.eslint-queue*' -print0)
 }
+
+# migrate_config <target>
+# `.claude/project.json` n'est jamais copié : `project_config.py migrate` (celui du kit)
+# l'écrit à partir des hooks de la cible, lus AVANT que copy_kit ne les écrase (créé s'il
+# manque, v1 mis à niveau, v2 laissé tel quel). Un fichier invalide reste intact :
+# l'install le signale et continue.
+# KIT_WAS_HERE : la cible avait déjà un kit, donc une migration sans valeur trouvée le dit.
+migrate_config() {
+    local out rc=0 mode=()
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : .claude/project.json non migré (installe python3, puis relance install.sh)." >&2
+        return 0
+    fi
+    ! ${KIT_WAS_HERE:-false} || mode=(--existing)
+    out="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" migrate "$1" ${mode[@]+"${mode[@]}"} 2>&1)" || rc=$?
+    [[ -z "$out" ]] || printf '  %s\n' "$out"
+    if [[ "$rc" != 0 ]]; then
+        echo "  ! .claude/project.json invalide, laissé intact : corrige-le, puis relance install.sh ou /kit:init." >&2
+    fi
+    return 0
+}
+
+# The P1 and prompt allow lists the kit's settings.json carries, kept here as the one written
+# copy the contract suites compare it with (test-workflow-contracts.sh, test-install.sh).
+# shellcheck disable=SC2034  # read by the suites, not by install.sh
+P1_ALLOWS='["Bash(git add *)", "Bash(git commit -m *)", "Bash(git switch -c *)",
+            "Bash(git branch --show-current)", "Bash(git worktree list)"]'
+RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:coverage *)",
+                 "Bash(pnpm lint *)", "Bash(pnpm typecheck *)", "Bash(pnpm vitest run *)",
+                 "Bash(pnpm exec vitest run *)", "Bash(pnpm exec tsc --noEmit *)",
+                 "Bash(pnpm exec playwright test *)",
+                 "Bash(bash .claude/hooks/test-install.sh)", "Bash(bash .claude/hooks/test-install.sh *)",
+                 "Bash(bash .claude/hooks/test-workflow-contracts.sh)",
+                 "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
+# shellcheck disable=SC2034  # read by the suites, not by install.sh
+PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
+  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
+  "Bash(python3 .claude/hooks/kit-gate-route.py *)", "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
+  "Bash(bash .claude/hooks/test-attempts.sh)", "Bash(bash .claude/hooks/test-attempts.sh *)",
+  "Bash(bash .claude/hooks/test-audit-surface.sh)", "Bash(bash .claude/hooks/test-audit-surface.sh *)",
+  "Bash(bash .claude/hooks/test-gate-route.sh)", "Bash(bash .claude/hooks/test-gate-route.sh *)",
+  "Bash(bash .claude/hooks/test-hooks.sh)", "Bash(bash .claude/hooks/test-hooks.sh *)",
+  "Bash(bash .claude/hooks/test-kit-doctor.sh)", "Bash(bash .claude/hooks/test-kit-doctor.sh *)",
+  "Bash(bash .claude/hooks/test-measure.sh)", "Bash(bash .claude/hooks/test-measure.sh *)",
+  "Bash(bash .claude/hooks/test-rules-floor.sh)", "Bash(bash .claude/hooks/test-rules-floor.sh *)",
+  "Bash(bash .claude/hooks/test-small-lane.sh)", "Bash(bash .claude/hooks/test-small-lane.sh *)"]'
 
 # install_settings <target settings> <react true|false>
 # settings.json is the one kit file that must merge on every update: a .new here
 # means newly added hooks stay mute. User keys win; selected hook groups merge by
 # event + matcher and commands remain unique. Re-running is byte-stable.
+# permissions.deny is a union in order, never `unique`: the target's entries
+# first, then the kit's missing ones, so `Read(!.env.example)` stays after
+# `Read(.env.*)` (sorting would put the `!` first and carve nothing).
+# P1 (defaultMode + the narrow git allows) is always applied: the guard hooks that
+# police it are overwritten from the kit by this same run (copy_kit), so they are
+# current. The nine retired
+# argument wildcards of the test/lint/build/typecheck runners go from every target,
+# with the two kit-development suite allows (test-install,
+# test-workflow-contracts) that stay in the kit's own settings; the bare gate forms
+# and everything else stay.
 install_settings() {
     local target="$1" react="$2" selected tmp
     selected="$(mktemp)"
@@ -222,12 +424,18 @@ install_settings() {
                         endswith("prevent-destructive-commands.sh") or
                         endswith("enforce-git-workflow.sh") or
                         endswith("auto-approve-config.sh") or
+                        endswith("loop-record.py") or
                         endswith("next-feature-on-clear.py"));
           .hooks |= with_entries(
             .value |= [ .[] | .hooks |= map(select(core)) | select(.hooks | length > 0) ]
           )
         ' "$KIT_DIR/.claude/settings.json" > "$selected"
     fi
+
+    jq --argjson retired "$RETIRED_ALLOWS" '.permissions.allow = ((.permissions.allow // []) - $retired)' \
+        "$selected" > "$tmp"
+    mv "$tmp" "$selected"
+    tmp="$(mktemp)"
 
     mkdir -p "$(dirname "$target")"
     if [[ ! -e "$target" ]]; then
@@ -237,7 +445,7 @@ install_settings() {
         return
     fi
 
-    jq -s '
+    jq -s --argjson retired "$RETIRED_ALLOWS" '
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
@@ -246,7 +454,11 @@ install_settings() {
       .[0] as $old | .[1] as $new
       | ($new * $old)
       | .permissions.allow = ((($old.permissions.allow // []) + ($new.permissions.allow // [])) | unique)
-      | .hooks = (reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
+      | ($old.permissions.deny // []) as $own
+      | .permissions.deny = ($own + [($new.permissions.deny // [])[] | . as $x | select($own | any(. == $x) | not)])
+      | if .permissions.deny == [] then del(.permissions.deny) else . end
+      | .permissions.allow -= $retired
+      | .hooks =(reduce (($old.hooks // {}) + ($new.hooks // {}) | keys[]) as $event ({};
           .[$event] = merged_groups((($old.hooks[$event] // []) + ($new.hooks[$event] // [])))))
     ' "$target" "$selected" > "$tmp"
     if jq -e --slurpfile candidate "$tmp" '. == $candidate[0]' "$target" >/dev/null; then
@@ -263,7 +475,7 @@ install_settings() {
 # jamais réécrit — il repart en instruction manuelle, comme le reste.
 #
 # Ce qui est câblé ici : les 6 hooks dans settings.json, @07-backend.md dans
-# l'index de CLAUDE.md, app|alembic dans PROTECTED_DIRS.
+# l'index de CLAUDE.md, app et alembic dans protected_dirs (.claude/project.json).
 # Ce qui ne peut pas l'être : 01-stack.md, 00-project.md, 02-architecture.md,
 # ship.md, reviewer.md — ils demandent de savoir ce que fait ton projet.
 # add_py_hooks <fichier settings.json>  → déclare les 6 hooks de l'addon.
@@ -303,15 +515,16 @@ add_py_hooks() {
               "Bash(python -m pytest)", "Bash(python -m pytest *)",
               "Bash(uv run pytest)", "Bash(uv run pytest *)",
               "Bash(mypy *)", "Bash(pyright *)", "Bash(ruff check .)", "Bash(ruff check app)",
-              "Bash(ruff check app/)", "Bash(uv audit *)"]) | unique)
+              "Bash(ruff check app/)", "Bash(uv audit *)",
+              "Bash(uv run ruff check .)", "Bash(uv run ruff check app)", "Bash(uv run ruff check app/)",
+              "Bash(uv run mypy app)", "Bash(uv run pyright)"]) | unique)
         ' "$target" > "$tmp" 2>/dev/null && mv "$tmp" "$target"
 }
 
 wire_fastapi() {
-    local t="$1" f installed_claude=false installed_guard=false
+    local t="$1" f installed_claude=false
     for f in "${INSTALLED[@]:-}"; do
         [[ "$f" == "$t/CLAUDE.md" ]] && installed_claude=true
-        [[ "$f" == "$t/.claude/hooks/prevent-destructive-commands.sh" ]] && installed_guard=true
     done
 
     if ! command -v jq &> /dev/null; then
@@ -327,87 +540,75 @@ wire_fastapi() {
         echo "  câblé : @07-backend.md dans l'index de règles de CLAUDE.md"
     fi
 
-    if $installed_guard && ! grep -q '^PROTECTED_DIRS=.*alembic' \
-                                "$t/.claude/hooks/prevent-destructive-commands.sh"; then
-        perl -0pi -e 's{PROTECTED_DIRS="src\|shared}{PROTECTED_DIRS="src|shared|app|alembic}' \
-            "$t/.claude/hooks/prevent-destructive-commands.sh"
-        echo "  câblé : app|alembic dans PROTECTED_DIRS"
+    local wired=""
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : fastapi non câblé dans .claude/project.json." >&2
+    elif wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" fastapi)"; then
+        if [[ "$wired" == *protected_dirs=changed* ]]; then
+            echo "  câblé : app et alembic dans .claude/project.json (protected_dirs)"
+        fi
+    else
+        echo "  ! .claude/project.json illisible : fastapi non câblé (lance /kit:doctor)." >&2
     fi
 
-    # PROTECTED_DIRS est écrit deux fois — le hook l'applique, CLAUDE.md le
-    # déclare — et le kit dit partout de changer les deux ensemble. Patcher le
-    # seul hook laissait une divergence créée par l'installeur lui-même, que
-    # /kit:doctor signalait sur une install neuve.
+    # protected_dirs est écrit deux fois — .claude/project.json l'applique,
+    # CLAUDE.md le déclare — et le kit dit partout de changer les deux ensemble.
+    # Câbler le seul project.json laissait une divergence créée par l'installeur
+    # lui-même, que /kit:doctor signalait sur une install neuve.
     if $installed_claude && ! grep -q '`alembic/`' "$t/CLAUDE.md"; then
         perl -0pi -e 's{(Recursive delete on: `src/`, `shared/`,)}{$1 `app/`, `alembic/`,}' "$t/CLAUDE.md"
         echo "  câblé : app/ et alembic/ dans la liste protégée de CLAUDE.md"
     elif ! grep -q '`alembic/`' "$t/CLAUDE.md"; then
         echo "  ! CLAUDE.md préexistant : ajoute \`app/\` et \`alembic/\` à ta liste de" >&2
-        echo "    dossiers protégés. PROTECTED_DIRS les a, sa copie déclarée non —" >&2
+        echo "    dossiers protégés. project.json les a, sa copie déclarée non —" >&2
         echo "    /kit:doctor signale la paire." >&2
     fi
 }
 
 # wire_supabase <target>
 # Une seule chose, et c'est la plus coûteuse à oublier : le client vit en
-# `src/lib/supabase.ts` avec cet addon, alors que le hook garde `lib/client` par
-# défaut. Non câblé, `enforce-architecture.py` surveille un module que personne
-# n'importe : le vrai client passe partout, silencieusement, pendant que
-# 01-stack.md affirme que la couche est couverte. /kit:doctor le signale en
+# `src/lib/supabase.ts` avec cet addon, alors que `.claude/project.json` garde
+# `lib/client` par défaut. Non câblé, `enforce-architecture.py` surveille un module
+# que personne n'importe : le vrai client passe partout, silencieusement, pendant
+# que 01-stack.md affirme que la couche est couverte. /kit:doctor le signale en
 # DIVERGENCE data-client — autant ne pas le créer.
 #
-# Même règle que wire_fastapi : uniquement le fichier que CE run vient
-# d'installer. Un enforce-architecture.py préexistant a peut-être déjà ses
-# propres valeurs, et les écraser serait pire que la divergence.
+# `project_config.py wire` ne change data_client que s'il est encore à la valeur
+# par défaut : un projet qui a déjà ses propres valeurs les garde.
 wire_supabase() {
-    local t="$1" f installed_arch=false installed_claude=false installed_guard=false
+    local t="$1" f installed_claude=false
     for f in "${INSTALLED[@]:-}"; do
-        [[ "$f" == "$t/.claude/hooks/enforce-architecture.py" ]] && installed_arch=true
         [[ "$f" == "$t/CLAUDE.md" ]] && installed_claude=true
-        [[ "$f" == "$t/.claude/hooks/prevent-destructive-commands.sh" ]] && installed_guard=true
     done
 
-    if $installed_arch && grep -q 'DATA_CLIENT_MODULE = "lib/client"' \
-                              "$t/.claude/hooks/enforce-architecture.py"; then
-        perl -0pi -e 's{DATA_CLIENT_MODULE = "lib/client"}{DATA_CLIENT_MODULE = "lib/supabase"};
-                      s{DATA_CLIENT_OWN_PATH = "lib/client\.ts"}{DATA_CLIENT_OWN_PATH = "lib/supabase.ts"}' \
-            "$t/.claude/hooks/enforce-architecture.py"
-        echo "  câblé : lib/supabase dans DATA_CLIENT_MODULE / DATA_CLIENT_OWN_PATH"
-        # Les templates nomment le client : le module change, l'export aussi
-        # (`supabase`, pas `client`). Un alias garde les corps des exemples
-        # intacts ; /kit:doctor client-copies vérifie les copies.
-        for f in "$t/.claude/skills/templates/feature.md" "$t/.claude/skills/patterns/react-query.md"; do
-            [[ -f "$f" ]] && perl -pi -e 's{import \{ client \} from "\@/lib/client";}{import { supabase as client } from "\@/lib/supabase";}g' "$f"
-        done
-        [[ -f "$t/.claude/skills/templates/fixtures.md" ]] && perl -0pi -e \
-            's#vi\.mock\("\@/lib/client", \(\) => \(\{\n  client: createMockClient\(\),#vi.mock("\@/lib/supabase", () => ({\n  supabase: createMockClient(),#g' \
-            "$t/.claude/skills/templates/fixtures.md"
-        [[ -f "$t/.claude/skills/templates/tooling-config.md" ]] && perl -pi -e \
-            "s{'src/lib/client\.ts',}{'src/lib/supabase.ts',}" "$t/.claude/skills/templates/tooling-config.md"
+    local wired=""
+    if ! command -v python3 &> /dev/null; then
+        echo "  ! python3 absent : supabase non câblé dans .claude/project.json." >&2
+    else
+        wired="$(python3 -I -B "$KIT_DIR/.claude/hooks/project_config.py" wire "$t" supabase)" \
+            || echo "  ! .claude/project.json illisible : supabase non câblé (lance /kit:doctor)." >&2
+    fi
+    if [[ "$wired" == *data_client=changed* ]]; then
+        echo "  câblé : lib/supabase dans .claude/project.json (data_client)"
+        # Les templates du kit restent tels quels (prompts du kit) : ils disent de lire
+        # data_client.module dans .claude/project.json. Seule la règle du projet change.
         [[ -f "$t/.claude/rules/05-testing.md" ]] && perl -pi -e \
             's{`lib/client\.ts`}{`lib/supabase.ts`}' "$t/.claude/rules/05-testing.md"
-    elif ! $installed_arch && ! grep -q 'DATA_CLIENT_MODULE = "lib/supabase"' \
-                                   "$t/.claude/hooks/enforce-architecture.py"; then
-        echo "  ! enforce-architecture.py préexistant : mets DATA_CLIENT_MODULE à" >&2
-        echo "    \"lib/supabase\" et DATA_CLIENT_OWN_PATH à \"lib/supabase.ts\" à la main." >&2
-        echo "    Non câblé, le garde-fou de couche ne garde rien (README, § 2)." >&2
+    elif ! grep -q '"lib/supabase"' "$t/.claude/project.json" 2>/dev/null; then
+        echo "  ! data_client déjà personnalisé dans .claude/project.json : mets" >&2
+        echo "    data_client.module à \"lib/supabase\" à la main si c'est le client." >&2
     fi
+    [[ "$wired" == *protected_dirs=changed* ]] && echo "  câblé : supabase dans .claude/project.json (protected_dirs)"
 
     # `supabase/` porte les migrations et les edge functions : un rm -rf dessus
     # coûte le schéma. Les deux copies de la liste bougent ensemble, sinon
     # l'installeur fabrique lui-même la divergence que /kit:doctor signale.
-    if $installed_guard && ! grep -q '^PROTECTED_DIRS=.*supabase' \
-                                "$t/.claude/hooks/prevent-destructive-commands.sh"; then
-        perl -0pi -e 's{PROTECTED_DIRS="src\|shared}{PROTECTED_DIRS="src|shared|supabase}' \
-            "$t/.claude/hooks/prevent-destructive-commands.sh"
-        echo "  câblé : supabase dans PROTECTED_DIRS"
-    fi
     if $installed_claude && ! grep -q '`supabase/`' "$t/CLAUDE.md"; then
         perl -0pi -e 's{(Recursive delete on: `src/`, `shared/`,)}{$1 `supabase/`,}' "$t/CLAUDE.md"
         echo "  câblé : supabase/ dans la liste protégée de CLAUDE.md"
     elif ! grep -q '`supabase/`' "$t/CLAUDE.md"; then
         echo "  ! CLAUDE.md préexistant : ajoute \`supabase/\` à ta liste de dossiers" >&2
-        echo "    protégés. PROTECTED_DIRS l'a, sa copie déclarée non — /kit:doctor" >&2
+        echo "    protégés. project.json l'a, sa copie déclarée non — /kit:doctor" >&2
         echo "    signale la paire." >&2
     fi
 }
@@ -431,10 +632,12 @@ ensure_gitignore() {
         # A block written by an older kit lacks the names added since: append
         # only the missing lines, never the block twice.
         local line
-        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md; do
+        for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
+            .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
+            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/ .claude/.loop-record.json .claude/.loop-record.lock; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
-                GITIGNORE_TOUCHED=1
+                GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
             fi
         done
         return
@@ -447,6 +650,10 @@ $GITIGNORE_MARK
 # marqueurs TDD d'un seul poste.
 .claude/worktrees/
 .claude/.hook-timings.log
+.claude/.kit-health.jsonl
+.claude/settings.local.json
+__pycache__/
+.ruff_cache/
 .claude/.eslint-queue
 .claude/.eslint-queue.*
 .claude/.token-delegate
@@ -456,10 +663,23 @@ $GITIGNORE_MARK
 .claude/.codex-ready
 .claude/.quota-warning
 .claude/.tdd-red/
+.claude/.loop-record.json
+.claude/.loop-record.lock
+# Les sauvegardes du code du kit qu'install.sh a remplacé : à toi de les supprimer.
+.claude/kit-backup/
 # Le handoff d'une session interrompue : local, périmé dès qu'on reprend.
 # handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
 docs/work/*/handoff.md
 handoff-codex.md
+# Captures d'écran de PR (e2e-tester) : publiées sur la branche pr-assets, jamais ici.
+.pr-shots/
+# Le corps de PR de /loop:ship : écrit une fois, périmé après la PR, et non suivi il bloque `git worktree remove`.
+docs/work/*/pr-body.md
+# Clés et identifiants : protect-files.sh refuse de les lire, git add les refuse
+# aussi ; ignorés ici pour qu'un `git add .` ne les liste même pas.
+*.pem
+*.key
+credentials.*
 # .claude/.tdd-unfrozen n'est délibérément PAS ignoré : toute la raison d'être de
 # la liste d'exceptions TDD est d'être visible en review (.claude/rules/05-testing.md).
 EOF
@@ -539,8 +759,30 @@ else
     DEPLOY_TARGET="none"
 fi
 
+# Le pre-push local est optionnel : demande seulement dans un terminal, non par
+# defaut. Une fin d'entree (Ctrl-D) vaut non, sans faire echouer `set -e`.
+if ! $WITH_LEFTHOOK && [[ -t 0 ]]; then
+    echo
+    echo "Installer un hook pre-push local (lefthook) ? Il relance typecheck, lint"
+    echo "et test:run avant chaque push."
+    read -r -p "  [o/N] : " answer || answer=""
+    case "$answer" in
+        [oOyY]*) WITH_LEFTHOOK=true ;;
+    esac
+fi
+
 echo "Installation du kit dans : $TARGET"
 
+KIT_WAS_HERE=false
+if [[ -e "$TARGET/.claude/hooks/hook-lib.sh" ]]; then
+    KIT_WAS_HERE=true
+fi
+migrate_config "$TARGET"
+# Les addons d'un run précédent, lus avant toute copie (leur marqueur est un prompt copié).
+ADDONS_BEFORE=()
+for a in supabase fastapi; do
+    if [[ -e "$TARGET/$(addon_marker "$a")" ]]; then ADDONS_BEFORE+=("$a"); fi
+done
 copy_tree "$KIT_DIR/.claude" "$TARGET/.claude"
 install_settings "$TARGET/.claude/settings.json" "$WITH_REACT_TS"
 if $WITH_REACT_TS; then
@@ -550,9 +792,9 @@ else
 fi
 copy_file "$KIT_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
 copy_file "$KIT_DIR/AGENTS.md" "$TARGET/AGENTS.md"
-copy_file "$KIT_DIR/codex-handoff.sh" "$TARGET/codex-handoff.sh"
-copy_file "$KIT_DIR/workflow.py" "$TARGET/workflow.py"
-copy_file "$KIT_DIR/workflow.sh" "$TARGET/workflow.sh"
+copy_kit "$KIT_DIR/codex-handoff.sh" "$TARGET/codex-handoff.sh"
+copy_kit "$KIT_DIR/workflow.py" "$TARGET/workflow.py"
+copy_kit "$KIT_DIR/workflow.sh" "$TARGET/workflow.sh"
 copy_file "$KIT_DIR/docs/Claude_Workflows.md" "$TARGET/docs/Claude_Workflows.md"
 # La checklist d'adaptation part avec le kit : c'est elle que le message de fin
 # et le README désignent, et sans elle le projet cible n'a aucune trace de ce
@@ -575,7 +817,14 @@ if $NO_CI; then
     echo "  Aucun workflow GitHub (--no-ci ou projet local)."
 else
     copy_file "$KIT_DIR/templates/github/ci.yml" "$TARGET/.github/workflows/ci.yml"
+    copy_file "$KIT_DIR/templates/github/dependabot.yml" "$TARGET/.github/dependabot.yml"
+    copy_file "$KIT_DIR/templates/github/CODEOWNERS" "$TARGET/.github/CODEOWNERS"
     install_deploy "$DEPLOY_TARGET"
+fi
+
+if $WITH_LEFTHOOK; then
+    copy_file "$KIT_DIR/templates/lefthook.yml" "$TARGET/lefthook.yml"
+    echo "  lefthook: pnpm add -D lefthook && pnpm exec lefthook install"
 fi
 
 if $WITH_SUPABASE; then
@@ -583,39 +832,35 @@ if $WITH_SUPABASE; then
     ADDON="$KIT_DIR/addons/supabase"
     copy_override "$ADDON/rules/01-stack.md" "$TARGET/.claude/rules/01-stack.md"
     copy_override "$ADDON/rules/06-database.md" "$TARGET/.claude/rules/06-database.md"
-    copy_override "$ADDON/commands/database/migration.md" "$TARGET/.claude/commands/database/migration.md"
+    prompt_source "$ADDON/commands/database/migration.md" .claude/commands/database/migration.md
     for f in "$ADDON/skills/patterns/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/patterns/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/patterns/$(basename "$f")"
     done
     for f in "$ADDON/skills/templates/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/templates/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/templates/$(basename "$f")"
     done
     # Le layer _shared/ des edge functions : du code, pas de la doc.
     copy_tree "$ADDON/functions" "$TARGET/supabase/functions"
-    copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/SUPABASE-ADDON.md"
-    wire_supabase "$TARGET"
+    prompt_source "$ADDON/README.md" "$(addon_marker supabase)"
 fi
 
 if $WITH_FASTAPI; then
     echo "Addon FastAPI inclus."
     ADDON="$KIT_DIR/addons/fastapi"
     copy_override "$ADDON/rules/06-database.md" "$TARGET/.claude/rules/06-database.md"
-    copy_override "$ADDON/commands/database/migration.md" \
-                  "$TARGET/.claude/commands/database/migration.md"
+    prompt_source "$ADDON/commands/database/migration.md" .claude/commands/database/migration.md
     copy_file "$ADDON/rules/07-backend.md" "$TARGET/.claude/rules/07-backend.md"
     # Le rationnel va dans guides/, jamais chargé au démarrage — même partage que
     # le coeur du kit : un piège reste dans la règle, une rétrospective part ici.
-    copy_file "$ADDON/guides/07-backend.md" "$TARGET/.claude/guides/07-backend.md"
+    prompt_source "$ADDON/guides/07-backend.md" .claude/guides/07-backend.md
     for f in "$ADDON/commands/backend/"*.md; do
-        copy_file "$f" "$TARGET/.claude/commands/backend/$(basename "$f")"
+        prompt_source "$f" ".claude/commands/backend/$(basename "$f")"
     done
-    copy_file "$ADDON/commands/refactor/clean-python.md" \
-              "$TARGET/.claude/commands/refactor/clean-python.md"
+    prompt_source "$ADDON/commands/refactor/clean-python.md" .claude/commands/refactor/clean-python.md
     for f in "$ADDON/skills/patterns/"*.md; do
-        copy_file "$f" "$TARGET/.claude/skills/patterns/$(basename "$f")"
+        prompt_source "$f" ".claude/skills/patterns/$(basename "$f")"
     done
-    copy_file "$ADDON/skills/templates/endpoint.md" \
-              "$TARGET/.claude/skills/templates/endpoint.md"
+    prompt_source "$ADDON/skills/templates/endpoint.md" .claude/skills/templates/endpoint.md
     # Extensions explicites, jamais `*` : le glob nu ramasse aussi le
     # `__pycache__/` que laisse le moindre import des hooks Python, et copy_file
     # fait un `cp` sans -r — il échoue sur un dossier. Un run d'install qui casse
@@ -624,10 +869,9 @@ if $WITH_FASTAPI; then
         [[ -f "$f" ]] || continue
         # Les tests des hooks de l'addon tournent dans le kit, pas dans le projet.
         [[ "$(basename "$f")" == test_* ]] && continue
-        copy_file "$f" "$TARGET/.claude/hooks/$(basename "$f")"
+        copy_kit "$f" "$TARGET/.claude/hooks/$(basename "$f")"
     done
-    copy_file "$ADDON/README.md" "$TARGET/.claude/skills/patterns/FASTAPI-ADDON.md"
-    wire_fastapi "$TARGET"
+    prompt_source "$ADDON/README.md" "$(addon_marker fastapi)"
 
     if $WITH_SUPABASE; then
         echo "  ! Les deux addons écrivent 06-database.md et database/migration.md :" >&2
@@ -636,14 +880,52 @@ if $WITH_FASTAPI; then
     fi
 fi
 
+resolve_prompt_winners
+flush_prompts
+write_manifest
+seed_overlays
+# Le câblage des addons vient après les prompts : wire_supabase réécrit des templates copiés ici.
+if $WITH_SUPABASE; then wire_supabase "$TARGET"; fi
+if $WITH_FASTAPI; then wire_fastapi "$TARGET"; fi
+
 chmod +x "$TARGET/.claude/hooks/"*.sh "$TARGET/.claude/hooks/"*.py 2>/dev/null || true
+chmod +x "$TARGET/.claude/scripts/"*.sh 2>/dev/null || true
 chmod +x "$TARGET/codex-handoff.sh" 2>/dev/null || true
 chmod +x "$TARGET/workflow.py" "$TARGET/workflow.sh" 2>/dev/null || true
 
 GITIGNORE_TOUCHED=0
+GITIGNORE_FILLED=0
 ensure_gitignore "$TARGET"
 
 echo
+KIT_CODE_LIST=()
+PROMPTS_ADAPTED=()
+for rel in "${KIT_OVERWRITTEN[@]:-}"; do
+    case "$rel" in
+        "") ;;
+        .claude/agents/* | .claude/commands/* | .claude/skills/* | .claude/guides/*) PROMPTS_ADAPTED+=("$rel") ;;
+        *) KIT_CODE_LIST+=("$rel") ;;
+    esac
+done
+if [[ ${#KIT_CODE_LIST[@]} -gt 0 ]]; then
+    echo "kit code: ${#KIT_CODE_LIST[@]} fichier(s) remplacé(s) par la version du kit ; l'ancienne version est dans $KIT_BACKUP/ :"
+    printf '  %s\n' "${KIT_CODE_LIST[@]}"
+    echo
+else
+    echo "kit code: up to date (aucun fichier du kit à remplacer)."
+    echo
+fi
+if [[ ${#PROMPT_KEPT[@]} -gt 0 ]]; then
+    echo "prompts laissés en place (deux addons installés, aucun choisi par ce run) : ton fichier est gardé tel quel."
+    printf '  %s\n' "${PROMPT_KEPT[@]}"
+    echo
+fi
+if [[ ${#PROMPTS_ADAPTED[@]} -gt 0 ]]; then
+    echo "prompts adaptés : ${#PROMPTS_ADAPTED[@]} prompt(s) du kit remplacé(s) ; ta copie est dans $KIT_BACKUP/."
+    echo "  Porte leurs valeurs dans .claude/overlays/ avec /kit:init (étape Port) :"
+    printf '  %s\n' "${PROMPTS_ADAPTED[@]}"
+    echo
+fi
 if [[ ${#SKIPPED[@]} -gt 0 ]]; then
     echo "Déjà présents — écrits en .new, à fusionner à la main :"
     printf '  %s\n' "${SKIPPED[@]}"
@@ -651,7 +933,10 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
 fi
 
 if [[ "$GITIGNORE_TOUCHED" -eq 1 ]]; then
-    echo "  .gitignore : bloc « état de session » ajouté (9 chemins écrits par les hooks)."
+    echo "  .gitignore : bloc « état de session » ajouté (20 chemins : état écrit par les hooks, clés et identifiants)."
+    echo
+elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
+    echo "  .gitignore : $GITIGNORE_FILLED chemins ajoutés au bloc existant."
     echo
 fi
 
@@ -664,7 +949,8 @@ couvrir : une machine qui n'est pas la tienne.
 
 Le jour où tu pousses sur un dépôt distant :
   ./install.sh <ce projet> --deploy=<cible>
-Il écrira les workflows sans toucher au reste (tout le reste part en .new).
+Il écrira les workflows sans toucher au reste (le code du kit est remplacé après
+sauvegarde dans .claude/kit-backup/, tout le reste part en .new).
 
 EOF
 else
@@ -693,16 +979,18 @@ depuis .claude/skills/templates/lib-core.md. Tous les patterns les importent,
 et les defauts de React Query (staleTime, retry) ne sont nulle part ailleurs.
 
 Addon installé ? Son câblage n'est PAS automatique :
-  .claude/skills/patterns/SUPABASE-ADDON.md  (DATA_CLIENT_MODULE et
-  PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent
+  .claude/skills/patterns/SUPABASE-ADDON.md  (data_client et protected_dirs
+  de .claude/project.json sont câblés automatiquement ; restent
   à faire : la section Backend de 02-architecture.md, les FILL de 01-stack.md,
   le gate edge-function de 00-project.md. Puis vérifier le layer copié :
   cd supabase/functions && deno check _shared/**/*.ts)
   .claude/skills/patterns/FASTAPI-ADDON.md   (les hooks, @07-backend.md et
-  PROTECTED_DIRS sont câblés automatiquement sur une install neuve ; restent à
+  protected_dirs sont câblés automatiquement sur une install neuve ; restent à
   faire : 01-stack.md, 00-project.md, 02-architecture.md, EXTERNAL_CLIENTS,
-  et surtout les gates backend dans commands/ship.md + 07-backend.md dans
-  guides/review/correctness.md et security.md)
+  et surtout les gates backend dans la section extra-gates de
+  .claude/overlays/commands/loop/ship.md, et les lignes 07-backend.md dans les
+  sections extra-checks de .claude/overlays/guides/review/correctness.md et de
+  .claude/overlays/guides/review/security.md ; les prompts eux-mêmes sont au kit)
 
 Lanceur supervisé recommandé :
   ./workflow.sh

@@ -39,7 +39,10 @@ Two consequences for how you write the code in those three sections:
   finds no row')` — a sentence a non-developer could check. Written first, the
   test is the prompt the implementation is generated against. The rule holds in
   every section below, test-first or not: no `it('works')`, and no `should`
-  padding a name that reads better without it.
+  padding a name that reads better without it. On a test-first layer the name
+  starts with the plan's case id (`it('R1 …')`, `/loop:plan`'s Test plan): the
+  freeze forbids renaming it later, and `/loop:review` matches the test to its
+  plan line by that id. Test-after names carry none.
 - **Order the file business-value first**, edge cases last. Not the reverse,
   however tempting the edge cases are to enumerate.
 
@@ -86,7 +89,7 @@ describe('repository.getAll', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {}); // serviceError logs
   });
 
-  it('returns mapped entities on success', async () => {
+  it('R1 returns mapped entities on success', async () => {
     vi.mocked(gateway.fetchAll).mockResolvedValue({ data: [ROW], error: null });
 
     const result = await repository.getAll();
@@ -102,7 +105,7 @@ describe('repository.getAll', () => {
     });
   });
 
-  it('returns a failure Result — never throws — when the gateway errors', async () => {
+  it('R2 returns a failure Result — never throws — when the gateway errors', async () => {
     vi.mocked(gateway.fetchAll).mockResolvedValue({ data: null, error: new Error('boom') });
 
     const result = await repository.getAll();
@@ -115,7 +118,7 @@ describe('repository.getAll', () => {
     expect(result.error.code).toBe('db_error');
   });
 
-  it('maps an empty payload to an empty list, not an error', async () => {
+  it('R3 maps an empty payload to an empty list, not an error', async () => {
     vi.mocked(gateway.fetchAll).mockResolvedValue({ data: null, error: null });
 
     const result = await repository.getAll();
@@ -135,13 +138,13 @@ import { describe, it, expect } from 'vitest';
 import { toEntity } from './item.mapper';
 
 describe('toEntity', () => {
-  it('converts snake_case columns to the domain shape', () => {
+  it('M1 converts snake_case columns to the domain shape', () => {
     expect(
       toEntity({ id: '1', name: 'A', user_id: 'u1', created_at: '2024-01-01T00:00:00Z' }),
     ).toEqual({ id: '1', name: 'A', userId: 'u1', createdAt: new Date('2024-01-01T00:00:00Z') });
   });
 
-  it('parses the date into a Date, not a string', () => {
+  it('M2 parses the date into a Date, not a string', () => {
     const entity = toEntity({ id: '1', name: 'A', user_id: 'u1', created_at: '2024-01-01T00:00:00Z' });
     expect(entity.createdAt).toBeInstanceOf(Date);
   });

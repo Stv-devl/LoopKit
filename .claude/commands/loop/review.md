@@ -8,8 +8,9 @@ argument-hint: [path docs/work/<slug>/plan.md, docs/specs/<x>.md or a story]
 Confront the written code with the project rules and the acceptance criteria.
 
 This is gate `review` under `/loop:orchestrate`'s attempt protocol. A pass clears
-that key. Any surviving Critical/Major records one failed attempt; the third
-returns the board line as `BLOCKED` before another fix/review cycle begins.
+that key. What records a failed attempt is the route `kit-gate-route.py` gives the
+surviving findings (stage 3); the third failure returns the board line as
+`BLOCKED` before another fix/review cycle begins.
 
 Two stages, because a reviewer's job is to be suspicious and a suspicious reviewer
 produces false positives. Stage 1 finds, stage 2 refutes. Only what survives
@@ -52,6 +53,7 @@ with no user surface invokes nothing here, Impeccable included.
    (Critical if it drops an acceptance criterion). **The document is the
    reference, not the canvas it links to** — an artboard edited after the gate
    was validated by nobody (`/loop:interface`, "The canvas").
+   When there is no `design.md`, compare against the plan's `Acceptance criteria`.
 4. Look for what only the eye catches: hierarchy, alignment, contrast, overflow,
    truncation, loading flicker, layout shift when data lands.
 
@@ -118,7 +120,9 @@ A skipped dimension is **announced with its reason**, never dropped silently.
 > and reports any case that was **dropped, weakened or renamed** — an assertion
 > that migrated toward what the code happens to do is a **Major**, even with the
 > suite green. A test edited without a matching entry in `.claude/.tdd-unfrozen`
-> is a **Critical**: the freeze was worked around.
+> is a **Critical**: the freeze was worked around. A correction recorded as a
+> `## Gate` amendment for its case id is reported in one line and flagged for the
+> merge; the matching rules live in `.claude/guides/review/tests.md`.
 >
 > A case **added** beyond the plan is the one legitimate divergence — the test
 > list stays alive. It is still reported, in one line each, so the gate says what
@@ -146,6 +150,32 @@ its place only where a unit test cannot reach.
 > Whether the tester may mutate anything is decided by the `e2e-playwright`
 > skill, not here. On a read-only surface a criterion that needs a mutation comes
 > back as "not coverable" — that is a legitimate result, not a gap in the review.
+
+**PR screenshots (decided on the main thread, before the launch).** `<base>` is
+`git merge-base HEAD <plan Base:, else the default branch>`. The decision reads
+the working tree, untracked files included, never `<base>...HEAD`: before the
+ship commit, that range is empty.
+
+```bash
+{ git -c core.quotePath=false diff --name-only <base>; git ls-files --others --exclude-standard; } | python3 .claude/hooks/kit-pr-assets.py ui
+```
+
+- `none` → no capture, and no `Screenshots run:` line.
+- `ui` → launch the tester with `PR_SHOTS=after` and a fresh
+  `PR_SHOTS_DIR=.pr-shots/<slug>/<run-id>/` (UTC `YYYYMMDDTHHMMSS`). Even when no
+  flow earned a tester, launch one for the changed screen. Then record
+  `Screenshots run: <dir>` in `plan.md`'s `## Gate`, **replacing** any earlier
+  `Screenshots run:` line: a re-review after fixes captures again, and the last
+  run is the one shipped. Older run dirs stay on disk, git-ignored, and are
+  never published.
+- `ui` on a bugfix pass (a `BUG` entry or a `debug.md` entry): the tester runs
+  first with `PR_SHOTS=after` and writes its spec and the after images. Then the
+  MAIN THREAD runs `git worktree add .claude/worktrees/<slug>-base <base>`,
+  installs, serves it on a free port, and runs that tester's spec file itself
+  with `PR_SHOTS=before PW_BASE_URL=<that url>` into the same `PR_SHOTS_DIR`. Its
+  failing exit is expected and is not a finding. Stop that server, then `git worktree remove
+  .claude/worktrees/<slug>-base`. If `git worktree add` or `remove` refuses,
+  stop and report: never `--force`, never `rm`.
 
 Barrier: gather the verdicts and the run outputs.
 
@@ -199,10 +229,34 @@ dimension.
    of what the reviewers said.
 3. Global verdict: **FAIL** if ≥1 Critical or an uncovered criterion, **CONCERNS**
    if only Major/Minor, else **PASS**.
+3bis. **Route the survivors.** Write them with Write to
+   `docs/work/<slug>/route-review-<round>.json`. Each one carries `id`, `severity`, `dimension`,
+   `class`, `path`, `line`, `problem`, `scenario`, `regression`, `status` and `closure`.
+   Round 1 is the first review: a fresh `/loop:review` is round 1, and only
+   `orchestrate.md` Phase 5 step 3 increments the round. A prior finding the re-review
+   answered `not fixed` enters the file again with `status: not-fixed`. The findings the
+   main thread raised itself (stage 0, Impeccable, the acceptance walk) have no verifier
+   to write their `Closure:`: the main thread writes it before the route. Then run
+   `python3 .claude/hooks/kit-gate-route.py route docs/work/<slug>/route-review-<round>.json`.
+   The script appends every Minor and every out-of-scope finding to
+   `docs/work/<slug>/follow-ups.md`, never twice. Its `attempt` is the one `review` records:
+   - `fail` → `kit-attempts.py fail … review "<attempt.reason>"`;
+   - `pass` → `kit-attempts.py pass … review`;
+   - `none` → nothing.
+
+   Branch on `next`:
+   - `write-closure`: write the `Closure:` of each `needs-closure` finding, Edit the input
+     file, and rerun with the same round.
+   - `fix-batch`: the `blocking` findings are the batch (`orchestrate.md` Phase 5).
+   - `clear`: the gate clears. A Minor never starts a fix batch.
 4. Report the refuted findings in one line each — they are the proof the gate
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller
-   (e.g. `/loop:orchestrate` Phase 5) already asked for it.
+   (e.g. `/loop:orchestrate` Phase 5) already asked for it. In `auto`
+   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) the fix batch runs
+   without asking; any choice the route leaves to the user (record the failure or fix, a fix's
+   design, fix now or follow-up) goes to one fresh `arbiter`; two consecutive rounds each
+   bringing a new confirmed fix-introduced Major in the same mechanism → blocked stop.
 
 ## Output
 

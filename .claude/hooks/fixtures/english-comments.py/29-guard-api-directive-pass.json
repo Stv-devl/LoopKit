@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__FIXTURE_ROOT__/app/task.py","content":"#!/usr/bin/env python3\n# cwk-guard-api: 1\n\"\"\"Resolve the targets.\"\"\"\nvalue = 1\n"}}

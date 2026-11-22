@@ -9,8 +9,9 @@
 > and fails on a v4 schema — the error surfaces as an unrelated resolver type
 > mismatch. Check the installed version before debugging the schema.
 >
-> <!-- FILL: where this repo keeps its reusable field schemas, e.g.
-> `src/lib/schemas/auth.ts` exposing `emailField`, `strongPasswordField`. -->
+> **Project slot `field-schemas`** — `## field-schemas` in `.claude/overlays/skills/patterns/forms.md`; absent → `src/features/<f>/schemas`.
+> The section names where this repo keeps its reusable field schemas, e.g.
+> `src/lib/schemas/auth.ts` exposing `emailField`, `strongPasswordField`.
 
 Reuse the shared fields (`import { emailField, strongPasswordField } from
 '@/lib/schemas/auth'`) rather than redeclaring them — `emailField` already trims

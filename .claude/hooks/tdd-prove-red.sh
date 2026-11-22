@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: tdd-prove-red
 # Event: PostToolUse (Write|Edit)
@@ -32,15 +33,16 @@
 #     import of the module under test and one `expect(1).toBe(2)` fails, and
 #     unlocked the implementation for years' worth of nothing.
 #
-# CONFIGURE: swap `pnpm test:run` for this repo's run-once test script
-#            (never watch mode — it does not exit).
-#
 
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+if ! declare -F cwk_config cwk_tdd_load >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_tdd_load); no RED marker can be proved. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
 
-RUN_TESTS="pnpm test:run"
+RUN_TESTS=()
 # Below the harness timeout in settings.json, so a slow suite reports instead of
 # being killed silently. A hook that dies without a word looks like a green gate.
 RUN_TIMEOUT=150
@@ -126,12 +128,14 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
 [[ -z "$FILE_PATH" ]] && exit 0
 
-# A tree with its own toolchain runs its own tests; `$RUN_TESTS` would report a
+# A tree with its own toolchain runs its own tests; `test_command` would report a
 # red that says nothing about it. See cwk_foreign_toolchain in hook-lib.sh.
 cwk_foreign_toolchain "$FILE_PATH" && exit 0
 
 # Only the test-first layers (.claude/rules/05-testing.md). The other test files
 # are written after their code — a red run there means nothing.
+[[ "$FILE_PATH" == *.test.ts || "$FILE_PATH" == *.test.tsx ]] || exit 0
+cwk_tdd_load || true
 if [[ ! "$FILE_PATH" =~ $CWK_TDD_TEST_RE ]]; then
     exit 0
 fi
@@ -179,8 +183,21 @@ emit() {
 # This used to `exit 0` in silence — and since tdd-require-red has no such
 # escape, every module creation was then denied forever, with a message advising
 # a re-save that could not possibly help. Say it instead.
-RUNNER_BIN="${RUN_TESTS%% *}"
-command -v "$RUNNER_BIN" &> /dev/null || emit "TDD hook: '$RUNNER_BIN' is not on PATH, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded — tdd-require-red.sh will refuse to create the implementation module. Point RUN_TESTS in .claude/hooks/tdd-prove-red.sh at this repo's run-once test script (.claude/rules/00-project.md)."
+# The run-once test command is `.claude/project.json` `test_command`, run as an argv
+# with the test path appended. An unreadable config runs nothing: the kit default
+# command is a guess about this repo, and a marker written on a guess is a TDD that
+# believes it is on.
+cwk_config || true
+# In an installed project .claude/project.json is kit code, denied to Write/Edit: the route is the
+# /kit:init proposal, applied by the user.
+KIT_ROUTE="In an installed project .claude/project.json is kit code and Write/Edit are denied there: run /kit:init, then the user runs bash .claude/scripts/kit-apply.sh from a terminal."
+if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+    emit "TDD hook: the RED phase was NOT proved for $FILE_PATH and no marker was recorded: $CWK_CFG_REASON"
+fi
+RUN_TESTS=(${CWK_CFG_TEST_COMMAND[@]+"${CWK_CFG_TEST_COMMAND[@]}"})
+[[ "${#RUN_TESTS[@]}" -gt 0 ]] || emit "TDD hook: .claude/project.json test_command is empty, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded. Set it to this repo's run-once test command (.claude/rules/00-project.md). $KIT_ROUTE"
+RUNNER_BIN="${RUN_TESTS[0]}"
+command -v "$RUNNER_BIN" &> /dev/null || emit "TDD hook: '$RUNNER_BIN' is not on PATH, so the RED phase could NOT be proved for $FILE_PATH and no marker was recorded — tdd-require-red.sh will refuse to create the implementation module. Point test_command in .claude/project.json at this repo's run-once test script (.claude/rules/00-project.md). $KIT_ROUTE"
 
 # ---------------------------------------------------------------- implementation
 
@@ -227,9 +244,9 @@ MISSING=$(printf '%s' "$MISSING" | sed '/^[[:space:]]*$/d')
 
 set +e
 if command -v timeout &> /dev/null; then
-    TEST_OUTPUT=$(timeout "$RUN_TIMEOUT" $RUN_TESTS "$FILE_PATH" 2>&1)
+    TEST_OUTPUT=$(timeout "$RUN_TIMEOUT" "${RUN_TESTS[@]}" "$FILE_PATH" 2>&1)
 else
-    TEST_OUTPUT=$($RUN_TESTS "$FILE_PATH" 2>&1)
+    TEST_OUTPUT=$("${RUN_TESTS[@]}" "$FILE_PATH" 2>&1)
 fi
 TEST_EXIT=$?
 set -e
@@ -244,7 +261,7 @@ fi
 # Say so — a hook that fails silently is worse than one that is noisy, because
 # it looks like a passing gate.
 if echo "$TEST_OUTPUT" | grep -qiE "ERR_PNPM_|Missing script|Command \"[^\"]*\" not found|No test files found"; then
-    emit "TDD hook: could not run the test runner on $FILE_PATH — the RED phase was NOT proved. Configure the run-once script in .claude/hooks/tdd-prove-red.sh (see 00-project.md).\\n\\n$TAIL"
+    emit "TDD hook: could not run the test runner on $FILE_PATH — the RED phase was NOT proved. Set test_command in .claude/project.json to the run-once script (see 00-project.md). $KIT_ROUTE\\n\\n$TAIL"
 fi
 
 # Vitest exits non-zero when a test fails. The exit code is the signal — parsing

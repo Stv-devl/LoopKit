@@ -5,11 +5,10 @@
 > which is the single source of truth for `Result<T>`, `ServiceError` and
 > `unwrap`. Never redeclare them inside a feature.
 
-<!-- FILL: the gateway bodies below use a small HTTP client (`@/lib/client`) as the
-     neutral example. Swap them for this repo's data client — a BaaS SDK, a
-     generated API client, an ORM. **Only the gateway changes.** The mapper,
-     the repository, the `Result<T>` boundary and the hooks stay identical,
-     which is the whole point of the layering. -->
+The gateway bodies below use a small HTTP client (`@/lib/client`) as the neutral example:
+replace `@/lib/client` by the `data_client.module` of `.claude/project.json` — a BaaS SDK, a
+generated API client, an ORM. **Only the gateway changes.** The mapper, the repository, the
+`Result<T>` boundary and the hooks stay identical, which is the whole point of the layering.
 
 ## When to split
 

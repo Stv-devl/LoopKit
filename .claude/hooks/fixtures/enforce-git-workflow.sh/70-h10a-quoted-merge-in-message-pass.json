@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"git commit -m \"a && git -C __MAIN_TREE__ merge x\""}}

@@ -65,7 +65,9 @@ feature being framed against a product description written for the first.
 ## Two entry points, one loop
 
 **Simple** — one screen, a CRUD, a fix: `/loop:spec` asks 3–4 questions, writes the
-contract, stops. You review the acceptance criteria before anything ships.
+contract and chains into the loop. You validate the contract at the first gate,
+with research in hand — the interface choice when there is a screen, else the
+test plan.
 
 **Complex** — several epics: `/bmad:pm` writes a PRD, `/bmad:sm` slices it into
 **functional** stories, `/stories:review` puts them through a gate,
@@ -219,7 +221,7 @@ read again.
 | `reviewer`     | Adversarial review on one bounded group of dimensions                                              | no                                     |
 | `e2e-tester`   | Writes and runs ONE Playwright spec — proves a flow in a real browser                              | 1 spec                                 |
 | `verifier`     | Tries to **refute** a finding — what survives is real                                              | no                                     |
-| `security-auditor` | Security audit of **one surface**, on the whole repository (not on a diff) — out of the loop, except on a `critical` profile where `/loop:ship` arms one | no |
+| `security-auditor` | Security audit of **one surface**, on the whole repository (not on a diff) — out of the loop, except on a `critical` profile where `/loop:ship` arms one on the surfaces the diff touches (none if none) | no |
 | `github`       | Local commits; anything touching GitHub asks for your go-ahead                                     | yes                                    |
 
 ## The guardrails
@@ -254,7 +256,7 @@ never met it.
 | `protect-files`                   | before write/read      | refuses `.env*`, `.pem`, `.key` in both directions; lock files, `.git/` and `node_modules/` on write only |
 | `no-forbidden-icons`              | before write           | refuses the project's forbidden icon list                                                        |
 | `prevent-destructive-commands`    | before Bash            | refuses `rm -rf` on protected directories, reading secrets from the shell, `chmod 777`, `dd`, force-removing a worktree, writing a test-first layer from the shell, and a snapshot `-u` on a frozen test |
-| `enforce-git-workflow`            | before Bash            | refuses a commit on `main`/`master`, a signature (`-S`, `Co-Authored-By`); asks again for `git push`, `gh pr/issue/comment` and any merge into a protected branch |
+| `enforce-git-workflow`            | before Bash            | refuses a commit on `main`/`master`, a signature (`-S`, `Co-Authored-By`); asks again for `git push`/`send-pack`, `gh pr/issue/comment`, any merge into a protected branch, an alias that hides one, and a mutating git call on a directory it cannot read; reads every git call in the command on its own (global options, `-C`, aliases) |
 | `tdd-require-red`                 | before write           | refuses to **create** `utils`/`mapper`/`repository`-`services` until its test has been seen failing |
 | `tdd-freeze-tests`                | before write           | freezes those test files: adding a case passes, correcting a case is refused (`.claude/.tdd-unfrozen`) |
 | `format-on-save`                  | after write            | formats the file just written (synchronous: what follows must read the formatted bytes)          |
@@ -282,7 +284,7 @@ including a wrong one. Details: `.claude/rules/05-testing.md`.
 | --- | --- | --- |
 | On the diff | `/loop:review`'s `security` dimension — the server-side barrier, exposed keys, Zod at the boundaries, leaks between users | every review; a Critical means FAIL |
 | At ship | `pnpm audit --prod --audit-level=high` (dev-only CVEs reported, not blocking) + a grep for secret-shaped `VITE_*` names | every ship, deterministic, zero tokens |
-| On the repository | `/audit:security` — 6 surfaces, `security-auditor` fan-out, then refutation | on demand; **and automatically on a `critical` profile**, one surface, before the commit |
+| On the repository | `/audit:security` — 6 surfaces, `security-auditor` fan-out, then refutation | on demand; **and automatically on a `critical` profile**, one `security-auditor` on the surfaces the diff touches (none if none), before the commit |
 
 The last row is the one that matters. An audit that only runs when someone
 remembers is an audit that does not run — so the four triggers of the `critical`

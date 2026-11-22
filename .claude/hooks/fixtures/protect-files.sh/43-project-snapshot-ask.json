@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"__PROJECT_ROOT__/.claude/project.snapshot.json","content":"x"},"_expect_reason":"guarded path: .claude/project.snapshot.json"}

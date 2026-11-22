@@ -18,6 +18,12 @@ blob-report/
 !.env.sample
 !.env.template
 
+# Keys and credentials (protect-files.sh denies reading them; the git hook denies
+# staging them); ignoring them keeps `git add .` from even listing them.
+*.pem
+*.key
+credentials.*
+
 # =============================================================================
 # Claude Code session state
 #
@@ -57,6 +63,10 @@ blob-report/
 # Written by tdd-prove-red.sh (RED markers). It also drops its own .gitignore
 # inside the directory; this line is the belt to that pair of braces.
 .claude/.tdd-red/
+
+# Written by loop-record.py from the user's plan-gate go: local to one tree and one pass.
+.claude/.loop-record.json
+.claude/.loop-record.lock
 
 # .claude/.tdd-unfrozen is deliberately NOT ignored: the whole point of the
 # exception list is that it is visible in review (.claude/rules/05-testing.md).
@@ -108,3 +118,11 @@ docs/audits/
 # fresh worktree gets no untracked file (.claude/guides/10-worktrees.md).
 docs/work/*/handoff.md
 handoff-codex.md
+
+# The PR body /loop:ship hands to `gh pr create --body-file`: written once per
+# ship, obsolete after the PR exists, and untracked it would block worktree removal.
+docs/work/*/pr-body.md
+
+# PR screenshots captured by e2e-tester, one dir per review run. Published as
+# blobs on the orphan `pr-assets` branch by kit-pr-assets.py, never committed here.
+.pr-shots/

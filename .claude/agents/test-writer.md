@@ -75,6 +75,10 @@ executes nothing is not a red, whatever it prints.
 | Prover hook | `tdd-prove-red.sh` | `tdd-prove-red-py.py` |
 | Fallback runner | `pnpm test:run <path>` | `python -m pytest <path>` — **`-m`, never the bare `pytest`**, which does not put the project root on `sys.path` |
 
+Type and lint checks go through the project scripts, `pnpm typecheck` and `pnpm lint`
+(`pnpm -C <package> …` in a sub-package), never `npx tsc -p <dir>` or a hand-built
+`npx eslint` line: a config option the shell guard cannot pin prompts, auto mode included.
+
 If the path you were handed is a `.py` and this repo has no `07-backend.md`, the
 Python cycle is not installed here: **stop and say so** rather than writing a
 pytest file no hook will ever prove.
@@ -127,12 +131,17 @@ pytest file no hook will ever prove.
 - One file per layer: the one the latest message hands you. You never write a
   second test file for it, and never any source file that is
   not a test — whatever its extension.
+- Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+  `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
+  Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**
-  `it('returns err(not_found) when the gateway finds no row')` /
-  `def test_get_by_id_raises_not_found_for_another_tenant()`. Never
-  `it('should work')`, never `test_get_by_id_2`. Written first, it is the prompt
+  `it('R2 returns err(not_found) when the gateway finds no row')` /
+  `def test_b3_get_by_id_raises_not_found_for_another_tenant()`. The title
+  starts with the case id the plan gives the line (`U1`, `R2`, `B3`), and the
+  sentence still follows: the id is how `/loop:review` matches the test to its
+  plan line. Never `it('should work')`, never `test_get_by_id_2`. Written first, it is the prompt
   the implementation is generated against, so its precision is the
   implementation's precision.
 - **Both outcomes of the boundary, always.** TypeScript: anything returning

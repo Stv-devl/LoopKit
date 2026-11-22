@@ -15,18 +15,23 @@ Produce a **spec on disk** that will serve as the single source of truth for
    need, front surface, acceptance criteria. Propose reasonable defaults, don't
    overwhelm.
 
-   **The token profile is a question of its own, asked alone and asked always.**
-   Does this feature touch payment, authorization, or a destructive data change?
-   Yes → `Token profile: critical`. Three of the four triggers are here; the
-   fourth is the user asking for it outright, which needs no question.
-   `11-token-budget.md` holds the only copy of that list, and `/loop:ship` reads the
-   profile off this file to arm one `/audit:security` surface before the commit.
+   **The validation mode is one of those questions, in the same call:**
+   `Validation : moi | auto` — `moi` (you validate each gate) or `auto` (you validate
+   the contract after research, then agents take every gate until the PR; you merge).
+   Write the answer as `Validation: <mode>` in the spec header. That line only opens the
+   `Contract gate` at the end of research; the mode itself lives in the hook-written
+   record (`/loop:orchestrate`, "Validation mode").
 
-   It gets its own `AskUserQuestion` call, with the two answers spelled out, and
-   it is not folded into a paragraph with the four others. This interview is the
-   only moment the fact is known — nothing downstream can re-derive it, and
-   defaulting to `economy` disarms the audit **silently**. A closed answer is what
-   makes that impossible to do by accident.
+   **The token profile is inferred, then printed, not asked** — unless the spec
+   touches payment, authorization, a destructive data change, or
+   loosens a kit guard / widens what runs without a prompt. On one of those, ask it alone in its
+   own `AskUserQuestion` call, two answers spelled out: does it need `critical`?
+   Otherwise print `Token profile: economy` in the summary the user validates.
+   `11-token-budget.md` holds the only copy of the `critical` list (the user asking
+   outright is the fourth trigger), and `/loop:ship` reads the profile off this
+   file to arm one `security-auditor` on the surfaces the diff touches (none if none) before the commit. This interview is
+   the only moment the fact is known — nothing downstream can re-derive it, so a
+   trigger is never answered by a default.
 2. **Read `docs/product/brief.md` if it exists**, before anything else — the
    product frame `/loop:product` wrote: `Current surface` says what already exists,
    `Out of product` is the boundary this spec may not cross, and `Product
@@ -64,20 +69,34 @@ Produce a **spec on disk** that will serve as the single source of truth for
    the feature you happen to be holding. Genuinely new — nothing on the board names
    it — goes at the **end** of the table, `READY`. Reordering is `/loop:product`'s, and
    the user's.
-5. **Don't implement.** Once the spec is written, stop and propose
-   `/loop:orchestrate docs/specs/<slug>.md` — which runs the loop:
-   research → interface → plan → execute → review → ship.
+5. **Don't implement — chain into the loop.** Once the spec is written and
+   registered, run `/loop:orchestrate docs/specs/<slug>.md` in this session,
+   without asking (research → interface → plan → execute → review → ship), and say
+   so in one line:
+   `Spec written. Running the loop: you will validate the contract with research in hand at the first gate.`
+   The contract is asked there, as its
+   own question, by `/loop:interface` or `/loop:plan`; nothing proceeds on silence in `moi`.
+   In `auto` the line is
+   `Spec written. Running the loop in auto: you validate the contract after research, then agents take every gate until the PR.`
+
+   Two exceptions, where you propose the command instead of running it: the user
+   asked to stop after the spec; `.claude/.token-warning` exists (context ≥ 90%) —
+   then propose `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`, never a
+   bare fresh session or `/clear` then `go`, which take the topmost `READY` line,
+   not necessarily this one. Everything else is `/loop:orchestrate`'s: its FEATURE
+   READY check and its Phase 0.5 hand-over stop as they always did.
 
 > This is the **light entry** into the shared loop. Don't do the research here:
 > `/loop:research` does it in parallel, with the live DB and blast-radius probes this
-> interview can't run. Frame the contract, stop.
+> interview can't run. Frame the contract, then hand it to the loop.
 
 > **Why this path has no adversarial gate, and that is a decision.** The full
 > pipeline puts `/stories:review` — two stages, adversarial critics — between the
 > slice and the architecture. Here there is one small feature and no slice to get
 > wrong, so the equivalent spend would buy a critic re-reading a contract the user
-> just dictated. What replaces it is downstream and human: the user re-reads the
-> acceptance criteria before anything starts, `/loop:interface` gates the screen and
+> just dictated. What replaces it is downstream and human: the user validates the
+> contract at the first gate of the pass, with research in hand (`/loop:interface`
+> when there is a screen, else `/loop:plan`); `/loop:interface` gates the screen and
 > `/loop:plan` gates the test plan — and it is the **test plan**, not this file, that
 > the frozen tests are written from. What nothing catches on this path is the
 > **product** half: a spec contradicting a `Product invariant` is caught later, by
@@ -90,6 +109,7 @@ Produce a **spec on disk** that will serve as the single source of truth for
 ```markdown
 # Spec: <title>
 Token profile: <economy | standard | critical>
+Validation: <moi | auto>
 
 ## Objective
 <one sentence: the expected result>

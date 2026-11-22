@@ -1,0 +1,11 @@
+# Optional local pre-push: the same gates /loop:ship runs, before a push leaves.
+# Install: pnpm add -D lefthook && pnpm exec lefthook install
+pre-push:
+  parallel: false
+  commands:
+    typecheck:
+      run: pnpm typecheck
+    lint:
+      run: pnpm lint
+    test:
+      run: pnpm test:run

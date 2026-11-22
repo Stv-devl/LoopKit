@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-10-30T07:21:35.733925Z",
+    "reason": "amendment-2 security: quiet git calls write (diff --output, > redirect), concurrent statement after the add (& |), bash $'...' quoting desyncs the tokenizer"
+  }
+}

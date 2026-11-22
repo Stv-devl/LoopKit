@@ -79,9 +79,9 @@ export const resetAllFactories = (): void => {
 >   in `msw-supabase.md`) — in which case say so in `05-testing.md` instead of
 >   leaving the layer silently untested.
 
-<!-- FILL: shape this like the client declared in `.claude/rules/01-stack.md`.
-     The example below mimics a chainable query-builder SDK; a fetch-based
-     client mocks with a single `vi.fn()` per verb instead. -->
+Shape this like the client of `data_client.module` in `.claude/project.json` (declared in
+`.claude/rules/01-stack.md`): replace `lib/client` by that module. The example below mimics a
+chainable query-builder SDK; a fetch-based client mocks with a single `vi.fn()` per verb instead.
 
 ```typescript
 // src/test/mocks/client.ts

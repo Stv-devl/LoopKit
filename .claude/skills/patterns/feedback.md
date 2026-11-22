@@ -1,9 +1,9 @@
 # Feedback Patterns (Loading, Error, Empty)
 
-<!-- FILL: the table below must name the components this repo actually has. It is
-     the anti-hallucination list — an agent that can't find `<State>` will invent
-     a `<Spinner>`. Keep the closing "do not invent them" note pointed at whatever
-     does NOT exist here. -->
+**Project slot `components`** — `## components` in `.claude/overlays/skills/patterns/feedback.md`; absent → the table below is an example.
+The table must name the components this repo actually has. It is the anti-hallucination
+list — an agent that can't find `<State>` will invent a `<Spinner>`. Keep the closing "do
+not invent them" note pointed at whatever does NOT exist here.
 
 ## Actual infra
 
@@ -205,9 +205,8 @@ export function userMessageFor(code: string): string {
 }
 ```
 
-<!-- FILL: the strings above are in French because that is this repo's user
-     language (`.claude/rules/03-conventions.md`). Translate them, don't add a
-     second mechanism. -->
+**Project slot `strings`** — `## strings` in `.claude/overlays/skills/patterns/feedback.md`; absent → the strings above in the language of `.claude/rules/03-conventions.md`.
+Translate them to the user language of this repo, don't add a second mechanism.
 
 > **`src/lib/userMessages.ts` is inside the coverage floor** (`05-testing.md`:
 > `src/lib/**` is in `include`, and the three sanctioned exclusions are the

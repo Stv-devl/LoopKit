@@ -1,0 +1,912 @@
+{"id":"X1.01","verdict":"ask","command":"mv .claude/hooks/tdd-freeze-tests.sh /tmp/","reason":"guarded path:"}
+{"id":"X1.02","verdict":"ask","command":"cp x .claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X1.03","verdict":"ask","command":"echo x >> .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X1.04","verdict":"ask","command":"echo x > package.json","reason":"guarded path:"}
+{"id":"X1.05","verdict":"ask","command":"echo x>package.json","reason":"guarded path:"}
+{"id":"X1.06","verdict":"ask","command":"echo x >| package.json","reason":"guarded path:"}
+{"id":"X1.07","verdict":"ask","command":"echo x &> package.json","reason":"guarded path:"}
+{"id":"X1.08","verdict":"ask","command":"echo x >&package.json","reason":"guarded path:"}
+{"id":"X1.09","verdict":"ask","command":"tee .claude/settings.json","reason":"guarded path:"}
+{"id":"X1.10","verdict":"ask","command":"ln -sf x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.11","verdict":"ask","command":"install x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.12","verdict":"ask","command":"rsync x .claude/hooks/","reason":"guarded path:"}
+{"id":"X1.13","verdict":"deny","command":"truncate -s0 vite.config.ts","reason":"Use Write/Edit"}
+{"id":"X1.14","verdict":"ask","command":"patch package.json p.diff","reason":"guarded path:"}
+{"id":"X1.15","verdict":"ask","command":"sed -n -i 's/a/b/' .claude/settings.json","reason":"guarded path:"}
+{"id":"X1.16","verdict":"ask","command":"sed --in-place 's/a/b/' tsconfig.json","reason":"guarded path:"}
+{"id":"X1.17","verdict":"deny","command":"perl -i -pe 's/a/b/' eslint.config.js","reason":"Write files with the Write/Edit tool"}
+{"id":"X1.18","verdict":"ask","command":"rm .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.19","verdict":"ask","command":"rmdir .claude/scripts","reason":"guarded path:"}
+{"id":"X1.20","verdict":"ask","command":"unlink .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.21","verdict":"ask","command":"shred .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.22","verdict":"ask","command":"chmod -x .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.23","verdict":"ask","command":"chown u .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X1.24","verdict":"ask","command":"cp -t .claude/hooks x","reason":"guarded path:"}
+{"id":"X1.25","verdict":"ask","command":"cp --target-directory=.claude/hooks x","reason":"guarded path:"}
+{"id":"X1.26","verdict":"ask","command":"git diff --output=.claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X1.27","verdict":"ask","command":"git diff --output .claude/.tdd-unfrozen","reason":"guarded path:"}
+{"id":"X8.01","verdict":"ask","command":"cat > package.json <<'EOF'\nit's\nEOF","reason":"guarded path:"}
+{"id":"X8.02","verdict":"ask","command":"echo \"<<EOF\"\nsed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X8.03","verdict":"deny","command":"cat > .claude/.tdd-red/m <<'EOF'\nit's\nEOF","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X8.04","verdict":"deny","command":"touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X4.01","verdict":"ask","command":"rm -rf .github/workflows","reason":"guarded path:"}
+{"id":"X4.02","verdict":"ask","command":"mv .github /tmp/","reason":"guarded path:"}
+{"id":"X4.03","verdict":"ask","command":"cp -r /tmp/h/. .claude/worktrees/x/.claude/","reason":"guarded path:"}
+{"id":"X4.04","verdict":"ask","command":"rm -rf .claude/hooks","reason":"guarded path:"}
+{"id":"X4.05","verdict":"deny","command":"rm -r .claude/.tdd-red","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X4.06","verdict":"deny","command":"rm .claude/.tdd-red/*","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X2.01","verdict":"deny","command":"find .claude/hooks -name a -exec cp x {} \\;","reason":"Write files with the Write/Edit tool"}
+{"id":"X2.02","verdict":"ask","command":"find .claude/hooks -name a -execdir rm {} \\;","reason":"guarded path:"}
+{"id":"X2.03","verdict":"ask","command":"find .claude/hooks -ok rm {} \\;","reason":"guarded path:"}
+{"id":"X2.04","verdict":"ask","command":"find .claude/hooks -okdir rm {} \\;","reason":"guarded path:"}
+{"id":"X2.05","verdict":"ask","command":"find .claude/hooks -delete","reason":"guarded path:"}
+{"id":"X2.06","verdict":"ask","command":"find . -fprint .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X2.07","verdict":"ask","command":"find . -fprintf .claude/.size-exempt x","reason":"guarded path:"}
+{"id":"X2.08","verdict":"ask","command":"find . -fls .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X2.09","verdict":"ask","command":"sed 'w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.10","verdict":"ask","command":"sed 'W .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.11","verdict":"ask","command":"sed -n 's/x/y/w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.12","verdict":"ask","command":"sed 's|x|y|w .claude/.size-exempt' f","reason":"guarded path:"}
+{"id":"X2.13","verdict":"deny","command":"sed 'e cmd' f","reason":"unresolved write target"}
+{"id":"X2.14","verdict":"deny","command":"rg --pre ./x pat","reason":"unresolved write target"}
+{"id":"X2.15","verdict":"deny","command":"rg --pre=./x pat","reason":"unresolved write target"}
+{"id":"X2.16","verdict":"deny","command":"find .claude/hooks -name a.sh -execdir sed -i 's/a/b/' a.sh \\;","reason":"unresolved write target"}
+{"id":"X3.01","verdict":"deny","command":"node -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.02","verdict":"deny","command":"node -p \"1\"","reason":"unresolved write target"}
+{"id":"X3.03","verdict":"deny","command":"bash -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.04","verdict":"deny","command":"bash -lc \"true\"","reason":"unresolved write target"}
+{"id":"X3.05","verdict":"deny","command":"sh -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.06","verdict":"deny","command":"zsh -c \"true\"","reason":"unresolved write target"}
+{"id":"X3.07","verdict":"deny","command":"python3 -Bc \"1\"","reason":"unresolved write target"}
+{"id":"X3.08","verdict":"deny","command":"perl -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.09","verdict":"deny","command":"perl -ne 'print'","reason":"unresolved write target"}
+{"id":"X3.10","verdict":"deny","command":"ruby -e \"1\"","reason":"unresolved write target"}
+{"id":"X3.11","verdict":"deny","command":"eval \"x\"","reason":"unresolved write target"}
+{"id":"X3.12","verdict":"deny","command":"echo x | bash","reason":"unresolved write target"}
+{"id":"X3.13","verdict":"deny","command":"python3 -c \"open('.claude/.tdd-red/m','w')\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.14","verdict":"deny","command":"python3 - <<'EOF'\nopen('.claude/.tdd-red/m','w')\nEOF","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.15","verdict":"deny","command":"printf \"open('.claude/.tdd-red/m','w')\" | python3","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X3.16","verdict":"deny","command":"touch \"$CLAUDE_PROJECT_DIR/.claude/.tdd-red/m\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X5.01","verdict":"ask","command":"sed -i 's/a/b/' .claude/worktrees/x/.claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X5.02","verdict":"ask","cwd":"__PROJECT_ROOT__/.claude/worktrees/x/.claude/hooks","command":"sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.01","verdict":"ask","command":"cd .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.02","verdict":"ask","cwd":"__PROJECT_ROOT__/.claude/hooks","command":"sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.03","verdict":"ask","cwd":"__PROJECT_ROOT__/src","command":"sed -i 's/a/b/' ../package.json","reason":"guarded path:"}
+{"id":"X6.04","verdict":"ask","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X6.05","verdict":"ask","command":"pushd .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X6.06","verdict":"deny","command":"cp x .claude/hooks/*","reason":"Write files with the Write/Edit tool"}
+{"id":"X6.07","verdict":"deny","command":"cp x .claude/hooks/{a,b}.sh","reason":"Write files with the Write/Edit tool"}
+{"id":"X6.08","verdict":"ask","command":"sed -i 's/a/b/' *.json","reason":"guarded path:"}
+{"id":"X6.09","verdict":"deny","command":"cd \"$D\" && sed -i 's/a/b/' a.sh","reason":"unresolved write target"}
+{"id":"X6.10","verdict":"deny","command":"cd -; sed -i 's/a/b/' a.sh","reason":"unresolved write target"}
+{"id":"X6.11","verdict":"deny","command":"echo x > $T","reason":"unresolved write target"}
+{"id":"X6.12","verdict":"deny","command":"rm \"$f\"","reason":"unresolved write target"}
+{"id":"X6.13","verdict":"deny","command":"sed -i 's/a/b/' ~/x/package.json","reason":"unresolved write target"}
+{"id":"X6.14","verdict":"deny","command":"for f in package.json tsconfig.json; do sed -i 's/a/b/' \"$f\"; done","reason":"unresolved write target"}
+{"id":"X6.15","verdict":"deny","command":"find .claude/hooks -name '*.sh' | xargs sed -i 's/x/y/'","reason":"unresolved write target"}
+{"id":"X6.16","verdict":"pass","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' a.sh"}
+{"id":"X7.01","verdict":"ask","command":"env sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.02","verdict":"ask","command":"nice -n 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.03","verdict":"ask","command":"timeout -k 1 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.04","verdict":"ask","command":"sudo sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.05","verdict":"deny","command":"time sed -i 's/a/b/' vite.config.ts","reason":"Use Write/Edit"}
+{"id":"X7.06","verdict":"ask","command":"(cd .claude/hooks && sed -i 's/a/b/' a.sh)","reason":"guarded path:"}
+{"id":"X7.07","verdict":"ask","command":"(cd src); sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X7.08","verdict":"ask","command":"{ sed -i 's/a/b/' package.json; }","reason":"guarded path:"}
+{"id":"X7.09","verdict":"ask","command":"if true; then sed -i 's/a/b/' package.json; fi","reason":"guarded path:"}
+{"id":"X7.10","verdict":"ask","command":"echo \"$(sed -i 's/a/b/' package.json)\"","reason":"guarded path:"}
+{"id":"X7.11","verdict":"ask","command":"echo \"$(rm .claude/hooks/*)\"","reason":"guarded path:"}
+{"id":"X7.12","verdict":"ask","command":"cat <<EOF\n$(sed -i 's/a/b/' package.json)\nEOF","reason":"guarded path:"}
+{"id":"X7.13","verdict":"ask","command":"x=$((1<<2))\nsed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X10.01","verdict":"ask","command":"rm -rf src/features/x","reason":"under a protected dir"}
+{"id":"X10.02","verdict":"ask","command":"rm src/features/x -rf","reason":"under a protected dir"}
+{"id":"X10.03","verdict":"ask","command":"rm --rec src/features/x","reason":"under a protected dir"}
+{"id":"X10.04","verdict":"ask","command":"rm -Rf src/features/x","reason":"under a protected dir"}
+{"id":"X10.05","verdict":"ask","command":"mv src/features/x /tmp/","reason":"under a protected dir"}
+{"id":"X10.06","verdict":"ask","command":"rm -rf src/*","reason":"under a protected dir"}
+{"id":"X10.07","verdict":"deny","command":"mv src/* /tmp/","reason":"Write files with the Write/Edit tool"}
+{"id":"X10.08","verdict":"deny","command":"rm -rf src","reason":"A subdirectory is asked"}
+{"id":"X11.01","verdict":"deny","command":"rm -rf src/features/x; mkfs.ext4 /dev/sdb","reason":"Disk formatting"}
+{"id":"X11.02","verdict":"deny","command":"cp x .claude/hooks/a.sh; touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X9.01","verdict":"pass","command":"cat .claude/hooks/a.sh"}
+{"id":"X9.02","verdict":"pass","command":"cat .claude/hooks/a.sh # don't"}
+{"id":"X9.03","verdict":"pass","command":"grep x .claude/settings.json"}
+{"id":"X9.04","verdict":"pass","command":"sed -n '/error/p;s/we/x/p' .claude/settings.json"}
+{"id":"X9.05","verdict":"pass","command":"sed -n '0~4p;/x/,+3p' .claude/settings.json"}
+{"id":"X9.06","verdict":"pass","command":"find . -name '*.ts' -exec grep -l x {} +"}
+{"id":"X9.07","verdict":"pass","command":"git commit -m \"note > package.json\""}
+{"id":"X9.08","verdict":"pass","command":"git commit -m \"$(cat <<'EOF'\nit's fine\nEOF\n)\""}
+{"id":"X9.09","verdict":"pass","command":"rm /tmp/x-*"}
+{"id":"X9.10","verdict":"pass","command":"rm 'a[1].txt'"}
+{"id":"X9.11","verdict":"pass","command":"sed -i 's/a/b/' docs/*.md"}
+{"id":"X9.12","verdict":"pass","command":"echo x 2>&1"}
+{"id":"X9.13","verdict":"pass","command":"python3 .claude/hooks/kit-doctor.py"}
+{"id":"X9.14","verdict":"pass","command":".claude/hooks/test-hooks.sh 2>&1 | tail -1"}
+{"id":"X9.15","verdict":"pass","command":"bash .claude/hooks/test-small-lane.sh"}
+{"id":"X9.16","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py fail docs/work/x/plan.md test \"expected > in vite.config.ts\""}
+{"id":"X9.17","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test"}
+{"id":"X15.01","verdict":"deny","command":"cp /tmp/m \\\n  .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X15.02","verdict":"ask","command":"mv /tmp/a \\\n  .claude/hooks/a.sh","reason":"guarded path:"}
+{"id":"X15.03","verdict":"ask","command":"rm -rf \\\n  src/features/x","reason":"under a protected dir"}
+{"id":"X15.04","verdict":"deny","command":"touch .claude/.tdd-\\\nred/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X15.05","verdict":"pass","command":"cat \\\n  .claude/hooks/a.sh"}
+{"id":"X17.01","verdict":"deny","command":"cd -P .claude && touch .tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X17.02","verdict":"ask","command":"cd -- .claude/hooks && sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X17.03","verdict":"ask","command":"env -C .claude/hooks sed -i 's/a/b/' a.sh","reason":"guarded path:"}
+{"id":"X17.04","verdict":"deny","command":"cd /nonexistent; touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X17.05","verdict":"ask","command":"false && cd /tmp; sed -i 's/a/b/' package.json","reason":"guarded path:"}
+{"id":"X18.01","verdict":"deny","command":"cd .claude/hooks && echo \"$(touch ../.tdd-red/m)\" && cd /tmp","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X18.02","verdict":"ask","command":"x=$(sed -i 's/a/b/' package.json); cd docs","reason":"guarded path:"}
+{"id":"X19.01","verdict":"deny","command":"cp -rt .claude/.tdd-red x","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X19.02","verdict":"ask","command":"cp -t.claude/hooks x","reason":"guarded path:"}
+{"id":"X19.03","verdict":"ask","command":"mv --target-directory=.claude/hooks x","reason":"guarded path:"}
+{"id":"X19.04","verdict":"ask","command":"install -Dt .claude/hooks x","reason":"guarded path:"}
+{"id":"X19.05","verdict":"ask","command":"cp --target=.claude/hooks x","reason":"guarded path:"}
+{"id":"X20.01","verdict":"deny","command":"patch -p1 < fix.diff","reason":"unresolved write target"}
+{"id":"X20.02","verdict":"ask","command":"patch -o package.json x p.diff","reason":"guarded path:"}
+{"id":"X21.01","verdict":"ask","command":"perl -i -p fix.pl package.json","reason":"guarded path:"}
+{"id":"X21.02","verdict":"ask","command":"perl -pi fix.pl package.json","reason":"guarded path:"}
+{"id":"X22.01","verdict":"ask","command":"rm -rf docs/work/x","reason":"deletes recursively"}
+{"id":"X22.02","verdict":"ask","command":"rm -r tests","reason":"deletes recursively"}
+{"id":"X22.03","verdict":"ask","command":"rm --recursive a","reason":"deletes recursively"}
+{"id":"X22.04","verdict":"ask","command":"timeout 9 rm -fr docs/x","reason":"deletes recursively"}
+{"id":"X22.05","verdict":"deny","command":"rm -rf src","reason":"protected directory"}
+{"id":"X22.06","verdict":"ask","command":"rm -rf src/features/x","reason":"under a protected dir"}
+{"id":"X22.07","verdict":"pass","command":"rm a.txt"}
+{"id":"X22.08","verdict":"pass","command":"git rm -r docs/x"}
+{"id":"X22.09","verdict":"pass","command":"git commit -m \"drop rm -r docs\""}
+{"id":"X22.10","verdict":"ask","command":"rm -rf /tmp/x","reason":"/tmp/x"}
+{"id":"X23.01","verdict":"deny","command":"rm -rf .git","reason":".git written by rm-r"}
+{"id":"X23.02","verdict":"deny","command":"rm -r ./.git/objects","reason":".git/objects written by rm-r"}
+{"id":"X23.03","verdict":"deny","command":"find .git -delete","reason":"git's own store"}
+{"id":"X23.04","verdict":"deny","command":"git log --output=.git/config","reason":".git/config written by"}
+{"id":"X23.05","verdict":"deny","command":"git log --output=.git/refs/heads/main","reason":".git/refs/heads/main written by"}
+{"id":"X23.06","verdict":"ask","command":"rm -rf .*","reason":"guarded"}
+{"id":"X23.07","verdict":"ask","command":"rm -rf .g*","reason":"guarded"}
+{"id":"X23.08","verdict":"ask","command":"find . -name .git -exec rm -rf {} +","reason":"guarded"}
+{"id":"X23.09","verdict":"ask","command":"find . -name __pycache__ -exec rm -rf {} +","reason":"guarded"}
+{"id":"X23.10","verdict":"ask","command":"find . -name x -execdir rm -rf {} \\;","reason":"guarded"}
+{"id":"X23.11","verdict":"ask","command":"rm -rf .github/tmp","reason":".github/tmp"}
+{"id":"X23.12","verdict":"deny","setup":"aliasdir","cwd":"__FIXTURE_ROOT__/real","command":"rm -rf .git","reason":".git written by rm-r"}
+{"id":"X23.13","verdict":"deny","setup":"aliasdir","cwd":"__FIXTURE_ROOT__/real","command":"touch .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X23.14","verdict":"pass","setup":"aliasdir","cwd":"__FIXTURE_ROOT__/real","command":"touch notes.md"}
+{"id":"X23.15","verdict":"pass","command":"rm -f .git/index.lock"}
+{"id":"X23.16","verdict":"pass","command":"rm .git/refs/heads/main.lock"}
+{"id":"X23.17","verdict":"deny","command":"rm -rf .git/index.lock","reason":".git/index.lock written by rm-r"}
+{"id":"X23.18","verdict":"deny","command":"rm -f .git/index","reason":".git/index written by rm"}
+{"id":"X23.19","verdict":"deny","command":"rm -f .git/objects/pack/x.lock","reason":".git/objects/pack/x.lock written by rm"}
+{"id":"X23.20","verdict":"deny","command":"rm -f .git/index.lock .git/HEAD","reason":".git/HEAD written by rm"}
+{"id":"X23.21","verdict":"deny","command":"mv .git/index.lock x","reason":".git/index.lock written by mv"}
+{"id":"X23.22","verdict":"deny","command":"rm -f .git/index.lock/../config","reason":".git/config written by rm"}
+{"id":"X24.001","verdict":"deny","command":"pnpm exec rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.002","verdict":"deny","command":"npx rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.003","verdict":"deny","command":"pnpm -r exec rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.004","verdict":"deny","command":"pnpm --filter x exec rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.005","verdict":"deny","command":"pnpm build --emptyOutDir=src","reason":"src written by"}
+{"id":"X24.006","verdict":"deny","command":"pnpm build --outDir src","reason":"src written by"}
+{"id":"X24.007","verdict":"deny","command":"pnpm build --outDir=src","reason":"src written by"}
+{"id":"X24.008","verdict":"deny","command":"pnpm test:run --coverage.reportsDirectory=..","reason":"project root or a folder above it"}
+{"id":"X24.009","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory ..","reason":"project root or a folder above it"}
+{"id":"X24.010","verdict":"deny","command":"pnpm test:run --outputFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.011","verdict":"deny","command":"pnpm test:run --outputFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.012","verdict":"deny","command":"pnpm vitest run --outputFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.013","verdict":"deny","command":"pnpm exec vitest run --outputFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.014","verdict":"deny","command":"pnpm exec tsc --noEmit --incremental --tsBuildInfoFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.015","verdict":"deny","command":"eslint --fix src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.016","verdict":"deny","command":"pnpm exec playwright test --output=src","reason":"src written by"}
+{"id":"X24.017","verdict":"deny","command":"pnpm exec playwright test --output src","reason":"src written by"}
+{"id":"X24.018","verdict":"deny","setup":"pkgroot","cwd":"__FIXTURE_ROOT__/docs","command":"pnpm build --outDir src","reason":"src written by"}
+{"id":"X24.019","verdict":"deny","setup":"pkgabove","cwd":"__FIXTURE_ROOT__/p","command":"pnpm build --outDir src","reason":"src written by"}
+{"id":"X24.020","verdict":"ask","setup":"pkgabove","cwd":"__FIXTURE_ROOT__/p","command":"pnpm build --outDir out/x","reason":"out/x"}
+{"id":"X24.021","verdict":"deny","setup":"pkgalias","cwd":"__FIXTURE_ROOT__/p","command":"pnpm build --outDir src","reason":"src written by"}
+{"id":"X24.022","verdict":"ask","setup":"pkgsub","cwd":"__FIXTURE_ROOT__","command":"pnpm -C sub build --outDir src","reason":"sub/src"}
+{"id":"X24.023","verdict":"deny","command":"pnpm test:run --outputFile=tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.024","verdict":"deny","command":"pnpm test:run --outputFile=src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.025","verdict":"deny","command":"pnpm test:run --outputFile=e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.026","verdict":"deny","command":"rm -rf ../..","reason":"project root or a folder above it"}
+{"id":"X24.027","verdict":"deny","command":"pnpm test:run --coverage.reportsDirectory=.","reason":"project root or a folder above it"}
+{"id":"X24.028","verdict":"deny","command":"rm -rf __PROJECT_ROOT__","reason":"project root or a folder above it"}
+{"id":"X24.029","verdict":"deny","command":"rm -rf ..","reason":"too dangerous"}
+{"id":"X24.030","verdict":"deny","command":"pnpm exec tsc --declarationDir src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.031","verdict":"deny","command":"pnpm test:run --outputFile.json=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.032","verdict":"deny","command":"pnpm test:run --output-file=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.033","verdict":"deny","command":"pnpm exec tsc --outFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.034","verdict":"deny","command":"pnpm exec tsc --generateTrace src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.035","verdict":"deny","command":"pnpm exec vite build --out-dir src","reason":"src written by"}
+{"id":"X24.036","verdict":"deny","command":"pnpm run build --outDir src","reason":"src written by"}
+{"id":"X24.037","verdict":"deny","command":"npm run build -- --outDir src","reason":"src written by"}
+{"id":"X24.038","verdict":"deny","command":"rm -rf docs/x; eslint --fix src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.039","verdict":"deny","command":"ruff check --fix-only tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.040","verdict":"deny","command":"eslint --fix src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.041","verdict":"deny","command":"pnpm typecheck --noEmit false","reason":"unresolved write target"}
+{"id":"X24.042","verdict":"deny","command":"pnpm typecheck --noEmit=false","reason":"unresolved write target"}
+{"id":"X24.043","verdict":"ask","command":"pnpm typecheck -p docs/x.json","reason":"docs/x.json"}
+{"id":"X24.044","verdict":"ask","command":"pnpm typecheck --project docs/x.json","reason":"docs/x.json"}
+{"id":"X24.045","verdict":"ask","command":"pnpm exec vitest run --root docs","reason":"docs"}
+{"id":"X24.046","verdict":"ask","command":"pnpm exec vitest run --root=docs","reason":"docs"}
+{"id":"X24.047","verdict":"ask","command":"pnpm exec vitest run --dir docs","reason":"docs"}
+{"id":"X24.048","verdict":"ask","command":"pnpm exec vitest run --config docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.049","verdict":"ask","command":"pnpm exec vitest run --config=docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.050","verdict":"ask","command":"pnpm exec vitest run -c docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.051","verdict":"pass","command":"pnpm exec vitest run -c vitest.config.ts"}
+{"id":"X24.052","verdict":"pass","command":"pnpm exec tsc -p tsconfig.app.json"}
+{"id":"X24.053","verdict":"pass","command":"pnpm install --dir x"}
+{"id":"X24.054","verdict":"pass","command":"pnpm exec vitest run --root ."}
+{"id":"X24.055","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm typecheck -p docs","reason":"docs"}
+{"id":"X24.056","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --root docs","reason":"docs"}
+{"id":"X24.057","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --root .github/","reason":".github"}
+{"id":"X24.058","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --root .github","reason":".github"}
+{"id":"X24.059","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec tsc -p docs","reason":"docs"}
+{"id":"X24.060","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --dir src","reason":"src"}
+{"id":"X24.061","verdict":"ask","command":"pnpm test:run -c x.mts","reason":"x.mts"}
+{"id":"X24.062","verdict":"ask","setup":"cfgempty","cwd":"__FIXTURE_ROOT__","command":"mkdir -p docs && cp tsconfig.json docs/ && pnpm typecheck -p docs","reason":"docs"}
+{"id":"X24.063","verdict":"ask","command":"find . -name x -exec rm -rf {} \\;","reason":"guarded"}
+{"id":"X24.064","verdict":"deny","command":"sed -n -f x.sed f.txt","reason":"unresolved write target"}
+{"id":"X24.065","verdict":"deny","command":"sed -nf x.sed f.txt","reason":"unresolved write target"}
+{"id":"X24.066","verdict":"deny","command":"sed -n --file=x f.txt","reason":"unresolved write target"}
+{"id":"X24.067","verdict":"deny","command":"sed -n --expr='1e id' f.txt","reason":"unresolved write target"}
+{"id":"X24.068","verdict":"deny","command":"sed -n --expr=1p f.txt","reason":"unresolved write target"}
+{"id":"X24.069","verdict":"deny","command":"rg --hostname-bin x KEY","reason":"unresolved write target"}
+{"id":"X24.070","verdict":"ask","command":"pnpm build --outDir build","reason":"build"}
+{"id":"X24.071","verdict":"ask","command":"pnpm exec playwright test --output=e2e","reason":"e2e"}
+{"id":"X24.072","verdict":"ask","command":"pnpm exec playwright test --output /tmp/x","reason":"/tmp/x"}
+{"id":"X24.073","verdict":"deny","command":"pnpm exec tsc --noEmit --noEmit false","reason":"unresolved write target"}
+{"id":"X24.074","verdict":"ask","command":"pnpm exec tsc -p docs/x.json","reason":"docs/x.json"}
+{"id":"X24.075","verdict":"ask","command":"pnpm exec playwright test -c e2e/p.config.ts","reason":"e2e/p.config.ts"}
+{"id":"X24.076","verdict":"ask","command":"pnpm lint --fix","reason":"formatter"}
+{"id":"X24.077","verdict":"ask","command":"pnpm lint --fix src/a.ts","reason":"formatter"}
+{"id":"X24.078","verdict":"ask","command":"ruff check --fix-only .","reason":"formatter"}
+{"id":"X24.079","verdict":"ask","command":"ruff check --fix=true .","reason":"formatter"}
+{"id":"X24.080","verdict":"ask","command":"ruff check --unsafe-fixes .","reason":"formatter"}
+{"id":"X24.081","verdict":"ask","command":"eslint --fix-only .","reason":"formatter"}
+{"id":"X24.082","verdict":"ask","command":"ruff check --fix-only tests/services","reason":"formatter"}
+{"id":"X24.083","verdict":"ask","command":"tee /home/x","reason":"/home/x"}
+{"id":"X24.084","verdict":"ask","command":"ls > /home/x","reason":"/home/x"}
+{"id":"X24.085","verdict":"ask","command":"pnpm build --outDir dist","reason":"dist"}
+{"id":"X24.086","verdict":"ask","command":"pnpm exec sed -i s/a/b/ package.json","reason":"package.json"}
+{"id":"X24.087","verdict":"pass","command":"pnpm build --emptyOutDir true"}
+{"id":"X24.088","verdict":"pass","command":"pnpm build --emptyOutDir --mode staging"}
+{"id":"X24.089","verdict":"pass","command":"pnpm dev -p 3000"}
+{"id":"X24.090","verdict":"pass","command":"pnpm test:run --project=unit"}
+{"id":"X24.091","verdict":"pass","command":"sed -n 1,5p f.txt"}
+{"id":"X24.092","verdict":"pass","command":"rg KEY src/"}
+{"id":"X24.093","verdict":"pass","command":"pnpm test:run --outputFile=report.json"}
+{"id":"X24.094","verdict":"pass","command":"ruff check --fix app/"}
+{"id":"X24.095","verdict":"pass","command":"ruff check --fix-only app/"}
+{"id":"X24.096","verdict":"pass","command":"ruff check --fix-only app"}
+{"id":"X24.097","verdict":"pass","command":"eslint --fix src/a/a.utils.ts"}
+{"id":"X24.098","verdict":"pass","command":"pnpm build"}
+{"id":"X24.099","verdict":"pass","command":"pnpm test:run"}
+{"id":"X24.100","verdict":"pass","command":"pnpm exec playwright test"}
+{"id":"X24.101","verdict":"pass","command":"pnpm exec tsc --noEmit"}
+{"id":"X24.102","verdict":"pass","command":"ls 2>/dev/null"}
+{"id":"X24.103","verdict":"pass","command":"ls > /dev/null"}
+{"id":"X24.104","verdict":"pass","command":"ls > /tmp/x"}
+{"id":"X24.105","verdict":"pass","command":"tee /tmp/x"}
+{"id":"X24.106","verdict":"pass","command":"rm /tmp/x"}
+{"id":"X24.107","verdict":"ask","setup":"noproject","command":"rm -rf /tmp/x","reason":"CLAUDE_PROJECT_DIR is not an absolute path"}
+{"id":"X24.108","verdict":"deny","setup":"noproject","command":"python3 -c 'x'","reason":"unresolved write target"}
+{"id":"X24.109","verdict":"deny","setup":"noproject","command":"python3 -c 'open(\".claude/.tdd-red/m\",\"w\")'","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X24.110","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=..","reason":"project root or a folder above"}
+{"id":"X24.111","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory ..","reason":"project root or a folder above"}
+{"id":"X24.112","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory=..","reason":"project root or a folder above"}
+{"id":"X24.113","verdict":"deny","command":"pnpm test:run --coverage.reportsDirectory ..","reason":"project root or a folder above"}
+{"id":"X24.114","verdict":"deny","command":"pnpm vitest run --outDir=src","reason":"src written by"}
+{"id":"X24.115","verdict":"deny","command":"pnpm exec vitest run --outDir src","reason":"src written by"}
+{"id":"X24.116","verdict":"deny","command":"pnpm exec vitest run --outDir=src","reason":"src written by"}
+{"id":"X24.117","verdict":"deny","command":"pnpm exec vite build --outDir=src","reason":"src written by"}
+{"id":"X24.118","verdict":"deny","command":"pnpm vite build --outDir src","reason":"src written by"}
+{"id":"X24.119","verdict":"deny","command":"pnpm vite build --outDir=src","reason":"src written by"}
+{"id":"X24.120","verdict":"deny","command":"pnpm exec vite build --emptyOutDir=src","reason":"src written by"}
+{"id":"X24.121","verdict":"deny","command":"pnpm exec vite build --emptyOutDir src","reason":"src written by"}
+{"id":"X24.122","verdict":"deny","command":"pnpm vite build --emptyOutDir=src","reason":"src written by"}
+{"id":"X24.123","verdict":"deny","command":"pnpm build --emptyOutDir src","reason":"src written by"}
+{"id":"X24.124","verdict":"deny","command":"pnpm exec vite build --out-dir=src","reason":"src written by"}
+{"id":"X24.125","verdict":"deny","command":"pnpm build --out-dir src","reason":"src written by"}
+{"id":"X24.126","verdict":"deny","command":"pnpm build --out-dir=src","reason":"src written by"}
+{"id":"X24.127","verdict":"deny","command":"pnpm playwright test --output=src","reason":"src written by"}
+{"id":"X24.128","verdict":"deny","command":"pnpm playwright test --output src","reason":"src written by"}
+{"id":"X24.129","verdict":"deny","command":"pnpm vitest run --outputFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.130","verdict":"deny","command":"pnpm exec vitest run --outputFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.131","verdict":"deny","command":"pnpm exec playwright test --outputFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.132","verdict":"deny","command":"pnpm exec playwright test --outputFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.133","verdict":"deny","command":"pnpm playwright test --outputFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.134","verdict":"deny","command":"pnpm test:run --output-file src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.135","verdict":"deny","command":"pnpm vitest run --output-file=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.136","verdict":"deny","command":"pnpm exec tsc --incremental --tsBuildInfoFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.137","verdict":"deny","command":"pnpm exec tsc --declarationDir=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.138","verdict":"deny","command":"pnpm exec tsc --outFile=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.139","verdict":"deny","command":"pnpm exec tsc --generateTrace=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.140","verdict":"deny","command":"pnpm typecheck --declarationDir src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.141","verdict":"deny","command":"pnpm exec tsc --outDir src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.142","verdict":"ask","command":"pnpm vitest run --config docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.143","verdict":"ask","command":"pnpm vitest run --config=docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.144","verdict":"ask","command":"pnpm vitest run -c docs/vitest.config.ts","reason":"docs/vitest.config.ts"}
+{"id":"X24.145","verdict":"ask","command":"pnpm vitest run --root=docs","reason":"docs"}
+{"id":"X24.146","verdict":"ask","command":"pnpm vitest run --root docs","reason":"docs"}
+{"id":"X24.147","verdict":"ask","command":"pnpm vitest run --dir=docs","reason":"docs"}
+{"id":"X24.148","verdict":"ask","command":"pnpm exec playwright test --config docs/p.config.ts","reason":"docs/p.config.ts"}
+{"id":"X24.149","verdict":"ask","command":"pnpm exec playwright test --config=docs/p.config.ts","reason":"docs/p.config.ts"}
+{"id":"X24.150","verdict":"ask","command":"pnpm playwright test -c docs/p.config.ts","reason":"docs/p.config.ts"}
+{"id":"X24.151","verdict":"ask","command":"pnpm exec tsc --project=docs/x.json","reason":"docs/x.json"}
+{"id":"X24.152","verdict":"ask","command":"pnpm exec tsc --project docs/x.json","reason":"docs/x.json"}
+{"id":"X24.153","verdict":"ask","command":"pnpm exec vite build --config docs/vite.config.ts","reason":"docs/vite.config.ts"}
+{"id":"X24.154","verdict":"ask","command":"pnpm exec vite build --config=docs/vite.config.ts","reason":"docs/vite.config.ts"}
+{"id":"X24.155","verdict":"ask","command":"pnpm exec vite build -c docs/vite.config.ts","reason":"docs/vite.config.ts"}
+{"id":"X24.156","verdict":"deny","command":"pnpm exec tsc --noEmit=false","reason":"unresolved write target"}
+{"id":"X24.157","verdict":"ask","command":"pnpm exec vitest run --outDir build","reason":"build"}
+{"id":"X24.158","verdict":"ask","command":"pnpm playwright test --output build","reason":"build"}
+{"id":"X24.159","verdict":"ask","command":"pnpm vitest run --coverage.reportsDirectory=coverage","reason":"coverage"}
+{"id":"X24.160","verdict":"pass","command":"pnpm vitest run --outputFile=report.json"}
+{"id":"X24.161","verdict":"pass","command":"pnpm exec vitest run --outputFile report.json"}
+{"id":"X24.162","verdict":"pass","command":"pnpm exec playwright test --outputFile=report.json"}
+{"id":"X24.163","verdict":"pass","command":"pnpm vitest run"}
+{"id":"X24.164","verdict":"pass","command":"pnpm vitest run -c vitest.config.ts"}
+{"id":"X24.165","verdict":"pass","command":"pnpm exec playwright test -c playwright.config.ts"}
+{"id":"X24.166","verdict":"pass","command":"pnpm exec vite build --config vite.config.ts"}
+{"id":"X25.01","verdict":"deny","command":"python3 - <<'EOF'\nopen(\"src/features/a/a.repository.ts\",\"w\").write(\"x\")\nEOF","reason":"inline program names a test-first module or a test file"}
+{"id":"X25.02","verdict":"deny","command":"node - <<'EOF'\nrequire(\"fs\").writeFileSync(\"src/x/x.mapper.ts\",\"\")\nEOF","reason":"inline program names a test-first module or a test file"}
+{"id":"X25.03","verdict":"deny","command":"bash <<'EOF'\nf=src/a/x.utils.test.ts; : > \"$f\"\nEOF","reason":"inline program names a test-first module or a test file"}
+{"id":"X27.01","verdict":"deny","command":"cat credentials.json","reason":"secret files"}
+{"id":"X27.02","verdict":"deny","command":"cat .credentials.json","reason":"secret files"}
+{"id":"X25.04","verdict":"deny","command":"python3 - <<'EOF'\nprint(open(\"src/a.ts\").read())\nEOF","reason":"unresolved write target"}
+{"id":"X26.01","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .en*","reason":"a secret file"}
+{"id":"X26.02","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .e*","reason":"a secret file"}
+{"id":"X26.03","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .?nv","reason":"a secret file"}
+{"id":"X26.04","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[e]nv","reason":"a secret file"}
+{"id":"X26.05","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .e\"\"nv","reason":"a secret file"}
+{"id":"X26.06","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .e\\nv","reason":"a secret file"}
+{"id":"X26.07","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .{e,f}nv","reason":"a secret file"}
+{"id":"X26.08","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat serv*","reason":"a secret file"}
+{"id":"X26.09","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat cred*","reason":"a secret file"}
+{"id":"X26.10","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat */.e*","reason":"a secret file"}
+{"id":"X26.11","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat __FIXTURE_ROOT__/.e*","reason":"a secret file"}
+{"id":"X26.12","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"echo \"$(cat .e*)\"","reason":"a secret file"}
+{"id":"X26.13","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep --regexp=KEY .e*","reason":"a secret file"}
+{"id":"X26.14","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep -rne KEY .e*","reason":"a secret file"}
+{"id":"X26.15","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat < .e*","reason":"a secret file"}
+{"id":"X26.16","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":". .e*","reason":"a secret file"}
+{"id":"X26.17","verdict":"deny","setup":"secrets-home","command":"cat ~/.e*","reason":"a secret file"}
+{"id":"X26.18","verdict":"deny","setup":"secrets-sub","cwd":"__FIXTURE_ROOT__","command":"cd sub && cat .e*","reason":"a secret file"}
+{"id":"X26.19","verdict":"ask","setup":"secrets-sub","cwd":"__FIXTURE_ROOT__","command":"cd \"$X\" && cat .e*","reason":"unknown directory"}
+{"id":"X26.20","verdict":"ask","command":"timeout 5 grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.21","verdict":"ask","command":"nice grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.22","verdict":"ask","command":"x=1 \\grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.23","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"tr -d x < .e*","reason":"a secret file"}
+{"id":"X26.24","verdict":"pass","command":"if grep -rq TODO src; then echo y; fi"}
+{"id":"X26.25","verdict":"pass","command":"{ grep -r KEY src; }"}
+{"id":"X26.26","verdict":"deny","command":"cat .env.exam*","reason":"Reading or copying secret files"}
+{"id":"X26.27","verdict":"deny","command":"printenv && mkfs.ext4 /dev/sdb","reason":"Disk formatting"}
+{"id":"X26.28","verdict":"ask","command":"printenv","reason":"may print a secret"}
+{"id":"X26.29","verdict":"ask","command":"env","reason":"may print a secret"}
+{"id":"X26.30","verdict":"ask","command":"set","reason":"may print a secret"}
+{"id":"X26.31","verdict":"ask","command":"rg -uu KEY","reason":"may print a secret"}
+{"id":"X26.32","verdict":"ask","command":"rg --no-ignore KEY .","reason":"may print a secret"}
+{"id":"X26.33","verdict":"ask","command":"rg --hidden KEY","reason":"may print a secret"}
+{"id":"X26.34","verdict":"ask","command":"command grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.35","verdict":"ask","command":"\\grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.36","verdict":"ask","command":"/usr/bin/grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.37","verdict":"ask","command":"env grep -r KEY .","reason":"may print a secret"}
+{"id":"X26.38","verdict":"ask","command":"find . -name x | xargs grep -r KEY","reason":"may print a secret"}
+{"id":"X26.39","verdict":"ask","command":"grep -rZ KEY .","reason":"may print a secret"}
+{"id":"X26.40","verdict":"ask","command":"grep -r --null KEY .","reason":"may print a secret"}
+{"id":"X26.41","verdict":"ask","command":"git grep --untracked KEY","reason":"may print a secret"}
+{"id":"X26.42","verdict":"ask","command":"git grep --no-exclude-standard KEY","reason":"may print a secret"}
+{"id":"X26.43","verdict":"pass","command":"printenv HOME"}
+{"id":"X26.44","verdict":"pass","command":"cat .env.example"}
+{"id":"X26.45","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat notes*"}
+{"id":"X26.46","verdict":"pass","command":"rg KEY src/"}
+{"id":"X26.47","verdict":"pass","command":"grep -rn KEY src/"}
+{"id":"X26.48","verdict":"pass","command":"grep -r KEY ."}
+{"id":"X26.49","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"sed -n 's/a.*b/c/p' notes.txt"}
+{"id":"X26.50","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"sed -n '/^a/,/b*/p' notes.txt"}
+{"id":"X26.51","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep 'a/b*' notes.txt"}
+{"id":"X26.52","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep '.*' notes.txt"}
+{"id":"X26.53","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"rg 'https?://x' src/"}
+{"id":"X26.54","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"awk '/x.*/' notes.txt"}
+{"id":"X26.55","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep -rn 'import .* from' src/"}
+{"id":"X26.56","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat '.e*'"}
+{"id":"X26.57","verdict":"pass","setup":"secrets-dot","cwd":"__FIXTURE_ROOT__","command":"grep TODO *"}
+{"id":"X26.58","verdict":"pass","setup":"secrets-dot","cwd":"__FIXTURE_ROOT__","command":"head *"}
+{"id":"X28.01","verdict":"ask","setup":"secrets-deep","cwd":"__FIXTURE_ROOT__/d","command":"cat */*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/.e*","reason":"exceeded its time budget"}
+{"id":"X28.02","verdict":"deny","setup":"secrets-deep","cwd":"__FIXTURE_ROOT__/d","command":"cat */*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/*/.e*; cat ../.e?v","reason":"a secret file"}
+{"id":"X28.03","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npx cat .e*","reason":"a secret file"}
+{"id":"X28.04","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec cat .e*","reason":"a secret file"}
+{"id":"X28.05","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm -r exec cat .e*","reason":"a secret file"}
+{"id":"X28.06","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm --filter x exec cat .e*","reason":"a secret file"}
+{"id":"X28.07","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"yarn exec cat .e*","reason":"a secret file"}
+{"id":"X28.08","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npm exec -- cat .e*","reason":"a secret file"}
+{"id":"X28.09","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npx -y cat .e*","reason":"a secret file"}
+{"id":"X28.10","verdict":"ask","command":"pnpm exec grep -r KEY .","reason":"may print a secret"}
+{"id":"X28.11","verdict":"ask","command":"npx grep -r KEY .","reason":"may print a secret"}
+{"id":"X28.12","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec cat notes.txt"}
+{"id":"X28.13","verdict":"pass","command":"pnpm exec vitest run"}
+{"id":"X28.15","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .{d..f}nv","reason":"unsupported glob"}
+{"id":"X28.16","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[^x]nv","reason":"unsupported glob"}
+{"id":"X28.17","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[[:alpha:]]nv","reason":"unsupported glob"}
+{"id":"X28.18","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat '.[^x]nv'"}
+{"id":"X28.19","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat '.{d..f}nv'"}
+{"id":"X28.20","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"grep '[[:alpha:]]' notes.txt"}
+{"id":"X28.21","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[!x]nv","reason":"a secret file"}
+{"id":"X28.22","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[a-f]nv","reason":"a secret file"}
+{"id":"X28.23","verdict":"deny","setup":"secrets-keys","cwd":"__FIXTURE_ROOT__","command":"cat *.k*","reason":"a secret file"}
+{"id":"X28.24","verdict":"deny","setup":"secrets-keys","cwd":"__FIXTURE_ROOT__","command":"cat .cred*","reason":"a secret file"}
+{"id":"X28.25","verdict":"deny","setup":"secrets-keys","cwd":"__FIXTURE_ROOT__","command":"cat credent*","reason":"a secret file"}
+{"id":"X28.26","verdict":"deny","setup":"secrets-keys","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.lo*","reason":"a secret file"}
+{"id":"X28.27","verdict":"pass","setup":"secrets-tmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.s*"}
+{"id":"X28.28","verdict":"pass","setup":"secrets-tmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.t*"}
+{"id":"X28.30","verdict":"pass","setup":"secrets-tmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.e*"}
+{"id":"X28.29","verdict":"pass","setup":"secrets-keys","cwd":"__FIXTURE_ROOT__","command":"cat not*"}
+{"id":"X28.31","verdict":"deny","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat */*","reason":"reads server.pem"}
+{"id":"X28.32","verdict":"deny","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat .e*","reason":"reads .env"}
+{"id":"X28.33","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256,257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,289,290,291,292,293,294,295,296,297,298,299,300,.e?v}","reason":"more than 256"}
+{"id":"X28.34","verdict":"deny","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat */*; cat cfg/server.p?m","reason":"a secret file"}
+{"id":"X28.35","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat m00*/x"}
+{"id":"X28.36","verdict":"deny","setup":"secrets-mode","cwd":"__FIXTURE_ROOT__","command":"cat .e*","reason":"a secret file"}
+{"id":"X28.37","verdict":"deny","setup":"secrets-mode","cwd":"__FIXTURE_ROOT__","command":"head -n 50 .e*","reason":"a secret file"}
+{"id":"X28.38","verdict":"deny","setup":"secrets-mode","cwd":"__FIXTURE_ROOT__","command":"cat .*.local","reason":"a secret file"}
+{"id":"X28.39","verdict":"pass","setup":"secrets-mode","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.local.e*"}
+{"id":"X28.40","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec env cat .e*","reason":"a secret file"}
+{"id":"X28.41","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec nice cat .e*","reason":"a secret file"}
+{"id":"X28.42","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec timeout 5 cat .e*","reason":"a secret file"}
+{"id":"X28.43","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npx env cat .e*","reason":"a secret file"}
+{"id":"X28.44","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec x=1 cat .e*","reason":"a secret file"}
+{"id":"X28.45","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npm x cat .e*","reason":"a secret file"}
+{"id":"X28.46","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npx -c 'cat .e*'","reason":"unresolved write target"}
+{"id":"X28.47","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"pnpm exec --call 'cat .e*'","reason":"unresolved write target"}
+{"id":"X28.48","verdict":"deny","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"npm x -c 'cat .e*'","reason":"unresolved write target"}
+{"id":"X28.49","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[e[:alpha:]]nv","reason":"unsupported glob"}
+{"id":"X28.50","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[x[=e=]]nv","reason":"unsupported glob"}
+{"id":"X28.51","verdict":"ask","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat .[e[.n.]]nv","reason":"unsupported glob"}
+{"id":"X28.52","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat '.[e[:alpha:]]nv'"}
+{"id":"X28.53","verdict":"pass","setup":"secrets","cwd":"__FIXTURE_ROOT__","command":"cat '.[x[=e=]]nv' '.[e[.n.]]nv'"}
+{"id":"X23.23","verdict":"pass","command":"rm .git/worktrees/small-x/index.lock"}
+{"id":"X23.24","verdict":"pass","command":"rm -f .git/worktrees/small-x/HEAD.lock"}
+{"id":"X23.25","verdict":"deny","command":"rm .git/worktrees/small-x/config","reason":".git/worktrees/small-x/config written by rm"}
+{"id":"X23.26","verdict":"deny","command":"rm -rf .git/worktrees/small-x","reason":"Do not delete a worktree with rm"}
+{"id":"X23.27","verdict":"deny","command":"rm -rf .git/worktrees/small-x/index.lock","reason":"Do not delete a worktree with rm"}
+{"id":"X23.28","verdict":"pass","command":"rm .git/worktrees/small-x/refs/bisect/x.lock"}
+{"id":"X23.29","verdict":"deny","command":"mv .git/worktrees/small-x/index.lock x","reason":".git/worktrees/small-x/index.lock written by mv"}
+{"id":"X23.30","verdict":"deny","command":"rm .git/worktrees/small-x/index.lock .git/worktrees/small-x/gitdir","reason":".git/worktrees/small-x/gitdir written by rm"}
+{"id":"X24.167","verdict":"deny","command":"pnpm exec env rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.168","verdict":"deny","command":"pnpm exec nice rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.169","verdict":"deny","command":"pnpm exec timeout 5 rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.170","verdict":"deny","command":"npx env rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.171","verdict":"deny","command":"pnpm exec x=1 rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.172","verdict":"deny","command":"npx nice tsc --outDir src","reason":"src written by flag-w"}
+{"id":"X24.173","verdict":"ask","command":"pnpm exec timeout 5 rm -rf docs","reason":"docs"}
+{"id":"X24.174","verdict":"deny","command":"npm x rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.175","verdict":"deny","command":"npm exec -c 'rm -rf .git'","reason":"unresolved write target"}
+{"id":"X24.176","verdict":"deny","command":"npm x -c 'rm -rf .git'","reason":"unresolved write target"}
+{"id":"X24.177","verdict":"deny","command":"pnpm exec --call 'rm -rf .git'","reason":"unresolved write target"}
+{"id":"X24.178","verdict":"deny","command":"pnpm exec nice -n 5 rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.179","verdict":"deny","command":"npx -y env FOO=1 rm -rf .git","reason":".git written by rm-r"}
+{"id":"X24.180","verdict":"pass","command":"pnpm exec env vitest run"}
+{"id":"X24.181","verdict":"deny","command":"pnpm test:run --outputFile.json src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.182","verdict":"deny","command":"pnpm vitest run --outputFile.json src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.183","verdict":"deny","command":"pnpm exec vitest run --outputFile.json src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.184","verdict":"deny","command":"pnpm vitest run --outputFile.json=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.185","verdict":"deny","command":"pnpm exec vitest run --outputFile.json=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.186","verdict":"deny","command":"pnpm vitest run --output-file src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.187","verdict":"deny","command":"pnpm exec vitest run --output-file src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.188","verdict":"deny","command":"pnpm exec vitest run --output-file=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.189","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --dir=docs","reason":"docs"}
+{"id":"X24.190","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --dir docs","reason":"docs"}
+{"id":"X24.191","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --dir=docs","reason":"docs"}
+{"id":"X24.192","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --dir docs","reason":"docs"}
+{"id":"X24.193","verdict":"deny","command":"pnpm test:run --coverage.reportsDirectory .","reason":"project root or a folder above"}
+{"id":"X24.194","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory .","reason":"project root or a folder above"}
+{"id":"X24.195","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory .","reason":"project root or a folder above"}
+{"id":"X24.196","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=.","reason":"project root or a folder above"}
+{"id":"X24.197","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory=.","reason":"project root or a folder above"}
+{"id":"X24.198","verdict":"ask","command":"pnpm typecheck --project=docs/x.json","reason":"docs/x.json"}
+{"id":"X24.199","verdict":"deny","command":"pnpm vitest run --outDir src","reason":"src written by"}
+{"id":"X24.200","verdict":"ask","command":"pnpm build --outDir=build","reason":"build"}
+{"id":"X24.201","verdict":"deny","command":"pnpm vitest run --outputFile=tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.202","verdict":"deny","command":"pnpm exec vitest run --outputFile=tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.203","verdict":"deny","command":"pnpm vitest run --outputFile=src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.204","verdict":"deny","command":"pnpm exec vitest run --outputFile=src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.205","verdict":"deny","command":"pnpm vitest run --outputFile=e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.206","verdict":"deny","command":"pnpm exec vitest run --outputFile=e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.207","verdict":"ask","setup":"pkgalias","cwd":"__FIXTURE_ROOT__/p","command":"pnpm build --outDir out/x","reason":"out/x"}
+{"id":"X24.208","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --root=docs","reason":"docs"}
+{"id":"X24.209","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --dir=docs","reason":"docs"}
+{"id":"X24.210","verdict":"deny","command":"pnpm test:run --outputFile tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.211","verdict":"deny","command":"pnpm test:run --outputFile src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.212","verdict":"deny","command":"pnpm test:run --outputFile e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.213","verdict":"deny","command":"pnpm vitest run --outputFile tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.214","verdict":"deny","command":"pnpm vitest run --outputFile src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.215","verdict":"deny","command":"pnpm vitest run --outputFile e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.216","verdict":"deny","command":"pnpm exec vitest run --outputFile tests/services/test_x.py","reason":"tests/services/test_x.py"}
+{"id":"X24.217","verdict":"deny","command":"pnpm exec vitest run --outputFile src/a.spec.ts","reason":"src/a.spec.ts"}
+{"id":"X24.218","verdict":"deny","command":"pnpm exec vitest run --outputFile e2e/a.spec.ts","reason":"e2e/a.spec.ts"}
+{"id":"X24.219","verdict":"ask","command":"pnpm vitest run --outDir build","reason":"build"}
+{"id":"X24.220","verdict":"ask","command":"pnpm vitest run --outDir=build","reason":"build"}
+{"id":"X24.221","verdict":"ask","command":"pnpm exec vitest run --outDir=build","reason":"build"}
+{"id":"X24.222","verdict":"ask","command":"pnpm exec playwright test --output e2e","reason":"e2e"}
+{"id":"X24.223","verdict":"ask","command":"pnpm exec playwright test --output=/tmp/x","reason":"/tmp/x"}
+{"id":"X24.224","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --root .github","reason":".github"}
+{"id":"X24.225","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --root=.github","reason":".github"}
+{"id":"X24.226","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --root .github","reason":".github"}
+{"id":"X24.227","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --root=.github","reason":".github"}
+{"id":"X24.228","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --root=.github","reason":".github"}
+{"id":"X24.229","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm test:run --dir=src","reason":"src"}
+{"id":"X24.230","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --dir src","reason":"src"}
+{"id":"X24.231","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm vitest run --dir=src","reason":"src"}
+{"id":"X24.232","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --dir src","reason":"src"}
+{"id":"X24.233","verdict":"ask","setup":"cfgdirs","cwd":"__FIXTURE_ROOT__","command":"pnpm exec vitest run --dir=src","reason":"src"}
+{"id":"X24.234","verdict":"ask","command":"pnpm vitest run -c x.mts","reason":"x.mts"}
+{"id":"X24.235","verdict":"ask","command":"pnpm exec vitest run -c x.mts","reason":"x.mts"}
+{"id":"X24.236","verdict":"ask","command":"pnpm exec playwright test -c x.mts","reason":"x.mts"}
+{"id":"X24.237","verdict":"ask","command":"pnpm exec playwright test --config e2e/p.config.ts","reason":"e2e/p.config.ts"}
+{"id":"X24.238","verdict":"ask","command":"pnpm exec playwright test --config=e2e/p.config.ts","reason":"e2e/p.config.ts"}
+{"id":"X24.239","verdict":"pass","command":"pnpm vitest run --outputFile report.json"}
+{"id":"X24.240","verdict":"pass","command":"pnpm exec vitest run --outputFile=report.json"}
+{"id":"X24.241","verdict":"deny","command":"npm exec -c 'touch .claude/.tdd-red/x'","reason":"exec npm exec -c"}
+{"id":"X24.242","verdict":"deny","command":"npm exec --call 'touch .claude/.tdd-red/x'","reason":"exec npm exec --call"}
+{"id":"X24.243","verdict":"deny","command":"npm x -c 'touch .claude/.tdd-red/x'","reason":"exec npm x -c"}
+{"id":"X24.244","verdict":"deny","command":"npx -c 'touch .claude/.tdd-red/x'","reason":"exec npx -c"}
+{"id":"X24.245","verdict":"ask","command":"pnpm exec env -C .claude/hooks sed -i s/a/b/ a.sh","reason":".claude/hooks/a.sh"}
+{"id":"X28.54","verdict":"deny","setup":"secrets-sub","cwd":"__FIXTURE_ROOT__","command":"pnpm exec env -C sub cat .e*","reason":"a secret file"}
+{"id":"X28.55","verdict":"pass","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.local.s*"}
+{"id":"X28.56","verdict":"pass","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.local.t*"}
+{"id":"X28.57","verdict":"deny","setup":"secrets-modetmpl","cwd":"__FIXTURE_ROOT__","command":"cat .e?v.d*","reason":"a secret file"}
+{"id":"X24.246","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\","reason":"src written by flag-r"}
+{"id":"X24.247","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory src; true \\","reason":"src written by flag-r"}
+{"id":"X24.248","verdict":"deny","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts \\","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.249","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\\\\","reason":"src written by flag-r"}
+{"id":"X24.250","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\n","reason":"src written by flag-r"}
+{"id":"X24.251","verdict":"ask","command":"pnpm exec vitest run -c \\","reason":"(cfg)"}
+{"id":"X24.252","verdict":"ask","command":"pnpm vitest run --root docs \\","reason":"targets docs (cfg)"}
+{"id":"X24.253","verdict":"ask","command":"pnpm exec vitest run -c docs/v.ts \\","reason":"docs/v.ts"}
+{"id":"X24.254","verdict":"ask","command":"pnpm exec tsc --noEmit -p docs/x.json \\","reason":"docs/x.json"}
+{"id":"X24.255","verdict":"deny","command":"pnpm exec tsc --noEmit false \\","reason":"unresolved write target"}
+{"id":"X24.256","verdict":"ask","command":"pnpm exec playwright test --config=x.ts \\","reason":"x.ts (cfg)"}
+{"id":"X24.257","verdict":"ask","command":"pnpm vitest run -u","reason":"snapshot"}
+{"id":"X24.258","verdict":"ask","command":"pnpm exec vitest run --update","reason":"snapshot"}
+{"id":"X24.259","verdict":"ask","command":"pnpm exec vitest run --update=true","reason":"snapshot"}
+{"id":"X24.260","verdict":"ask","command":"pnpm test:run -u","reason":"snapshot"}
+{"id":"X24.261","verdict":"ask","command":"pnpm exec playwright test --update-snapshots","reason":"snapshot"}
+{"id":"X24.262","verdict":"ask","command":"pnpm exec playwright test --update-snapshots=all","reason":"snapshot"}
+{"id":"X24.263","verdict":"ask","command":"pnpm exec playwright test --update-snapshots=changed","reason":"snapshot"}
+{"id":"X24.264","verdict":"ask","command":"pnpm exec playwright test -u","reason":"snapshot"}
+{"id":"X24.265","verdict":"ask","command":"pnpm vitest run -u \\","reason":"snapshot"}
+{"id":"X24.266","verdict":"deny","command":"pnpm exec tsc --noEmit --generateCpuProfile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.267","verdict":"deny","command":"pnpm exec playwright test --last-failed-file src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.268","verdict":"deny","command":"pnpm exec playwright test --last-failed-file=.git/config","reason":".git/config written by flag-w"}
+{"id":"X24.269","verdict":"ask","command":"pnpm exec tsc --noEmit --generateCpuProfile .claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.270","verdict":"ask","command":"pnpm exec tsc --noEmit --generateCpuProfile package.json","reason":"package.json written by flag-w"}
+{"id":"X24.271","verdict":"ask","command":"pnpm typecheck --generateCpuProfile package.json","reason":"package.json written by flag-w"}
+{"id":"X24.272","verdict":"ask","command":"pnpm exec playwright test --last-failed-file=package.json","reason":"package.json written by flag-w"}
+{"id":"X24.273","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate","reason":"autoUpdate"}
+{"id":"X24.274","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate=true","reason":"autoUpdate"}
+{"id":"X24.275","verdict":"ask","command":"pnpm exec tsc --noEmit --init","reason":"--init"}
+{"id":"X24.276","verdict":"deny","command":"pnpm exec vitest run --attachmentsDir src","reason":"src written by flag-r"}
+{"id":"X24.277","verdict":"ask","command":"pnpm exec vitest run --attachmentsDir=.claude/hooks","reason":".claude/hooks written by flag-r"}
+{"id":"X24.278","verdict":"ask","command":"pnpm exec vitest run --diff docs/x.mjs","reason":"--diff"}
+{"id":"X24.279","verdict":"pass","command":"pnpm exec playwright test --tsconfig docs/t.json"}
+{"id":"X24.280","verdict":"ask","command":"pnpm vitest run --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X24.281","verdict":"ask","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts $'a\\'b'","reason":"could not parse"}
+{"id":"X24.282","verdict":"ask","command":"pnpm vitest run --coverage.reportsDirectory=src\necho 'x","reason":"could not parse"}
+{"id":"X24.283","verdict":"ask","command":"pnpm vitest run \"a\\","reason":"could not parse"}
+{"id":"X24.284","verdict":"ask","command":"pnpm test:coverage --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X24.285","verdict":"ask","command":"timeout 60 pnpm test:run --coverage.reportsDirectory=src $'a\\'b'","reason":"could not parse"}
+{"id":"X28.58","verdict":"ask","command":"pnpm vitest run $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.59","verdict":"ask","command":"pnpm test:run $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.60","verdict":"ask","command":"ls $(( $(rm -rf src) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.61","verdict":"ask","command":"pnpm vitest run $(( `rm -rf src` ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.62","verdict":"ask","command":"pnpm vitest run \"$(( $(rm -rf src) ))\"","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.63","verdict":"ask","command":"ls <(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.64","verdict":"ask","command":"cat >(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X28.65","verdict":"deny","command":"pnpm test:run <(rm -rf .git)","reason":".git written by rm-r"}
+{"id":"X28.66","verdict":"deny","command":"ls <(touch .claude/.tdd-red/m)","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X28.67","verdict":"pass","command":"pnpm vitest run src/a.test.ts \\"}
+{"id":"X28.68","verdict":"pass","command":"ls \\"}
+{"id":"X28.69","verdict":"pass","command":"pnpm exec playwright test --update-snapshots=none"}
+{"id":"X28.70","verdict":"pass","command":"ls $(( 1 + 2 ))"}
+{"id":"X28.71","verdict":"pass","command":"ls \"<(rm -rf src)\""}
+{"id":"X28.72","verdict":"pass","command":"ls $(( 1<(2) ))"}
+{"id":"X28.73","verdict":"pass","command":"pnpm vitest run --ui"}
+{"id":"X28.74","verdict":"ask","command":"pnpm exec vitest run -c \\\\","reason":"(cfg)"}
+{"id":"X28.75","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src \\\\","reason":"src written by flag-r"}
+{"id":"X28.76","verdict":"ask","command":"pnpm vitest run $(rm -rf src)","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X24.286","verdict":"deny","command":"pnpm exec vitest run --coverage.htmlDir src","reason":"src written by flag-r"}
+{"id":"X24.287","verdict":"deny","command":"pnpm vitest run --coverage.htmlDir=src","reason":"src written by flag-r"}
+{"id":"X24.288","verdict":"ask","command":"pnpm exec vitest run --coverage.htmlDir=.claude/hooks","reason":".claude/hooks written by flag-r"}
+{"id":"X24.289","verdict":"ask","command":"pnpm vitest run --clearCache","reason":"clearCache"}
+{"id":"X24.290","verdict":"ask","command":"pnpm test:run --clearCache","reason":"clearCache"}
+{"id":"X28.77","verdict":"ask","command":"echo x > package.json","reason":"Write files with the Write/Edit tool instead."}
+{"id":"X28.78","verdict":"deny","command":"echo x > \"$OUT\"","reason":"Write files with the Write/Edit tool"}
+{"id":"X28.79","verdict":"deny","command":"echo 'export const a = 1' > src/b.ts","reason":"Use Write/Edit"}
+{"id":"X24.291","verdict":"deny","command":"pnpm vitest run --coverage.reportsDirectory=src","reason":"src written by flag-r"}
+{"id":"X24.292","verdict":"deny","command":"pnpm exec vitest run --coverage.reportsDirectory src","reason":"src written by flag-r"}
+{"id":"X24.293","verdict":"deny","command":"pnpm exec tsc --noEmit --tsBuildInfoFile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.294","verdict":"ask","command":"pnpm exec tsc --noEmit --tsBuildInfoFile=package.json","reason":"package.json written by flag-w"}
+{"id":"X24.295","verdict":"deny","command":"pnpm exec tsc --noEmit --generatecpuprofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.296","verdict":"deny","command":"pnpm exec tsc --noEmit -generateCpuProfile .git/config","reason":".git/config written by flag-w"}
+{"id":"X24.297","verdict":"deny","command":"pnpm exec tsc --noEmit --tsbuildinfofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.298","verdict":"deny","command":"pnpm exec tsc --noEmit --noemit false","reason":"unresolved write target"}
+{"id":"X24.299","verdict":"ask","command":"pnpm exec tsc --noEmit -P docs/x.json","reason":"docs/x.json"}
+{"id":"X24.300","verdict":"ask","command":"pnpm exec tsc --noEmit --INIT","reason":"writes a guarded config"}
+{"id":"X24.301","verdict":"deny","command":"pnpm exec tsc --noEmit @docs/opts.txt","reason":"unresolved write target"}
+{"id":"X24.302","verdict":"deny","command":"pnpm exec tsc -outdir src","reason":"src written by flag-w"}
+{"id":"X24.303","verdict":"deny","command":"pnpm typecheck --tsbuildinfofile src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.304","verdict":"ask","command":"pnpm vitest run --output-file.json=.claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.305","verdict":"deny","command":"pnpm exec vitest run --output-file.junit=src/a/a.utils.test.ts","reason":"src/a/a.utils.test.ts"}
+{"id":"X24.306","verdict":"ask","command":"pnpm vitest run -u=all","reason":"snapshot"}
+{"id":"X24.307","verdict":"ask","command":"pnpm vitest run -wu","reason":"snapshot"}
+{"id":"X24.308","verdict":"ask","command":"pnpm vitest run --u","reason":"snapshot"}
+{"id":"X24.309","verdict":"ask","command":"pnpm exec playwright test -uall","reason":"snapshot"}
+{"id":"X24.310","verdict":"ask","command":"pnpm exec playwright test -xu","reason":"snapshot"}
+{"id":"X24.311","verdict":"pass","command":"pnpm exec playwright test -unone"}
+{"id":"X24.312","verdict":"deny","command":"pnpm exec vitest run --attachments-dir src","reason":"src written by flag-r"}
+{"id":"X24.313","verdict":"ask","command":"pnpm vitest run --clear-cache","reason":"deletes Vitest's caches"}
+{"id":"X24.314","verdict":"ask","command":"pnpm vitest run -r docs","reason":"docs"}
+{"id":"X24.315","verdict":"ask","command":"pnpm exec playwright test -cdocs/p.ts","reason":"docs/p.ts"}
+{"id":"X24.316","verdict":"ask","command":"pnpm exec vitest run -cdocs/v.ts","reason":"docs/v.ts"}
+{"id":"X28.80","verdict":"ask","command":"ls $(( 1 + $(( $(rm -rf src) )) ))","reason":"recursive delete/move under a protected dir: src"}
+{"id":"X24.317","verdict":"ask","command":"pnpm exec vitest run --experimental.fsModuleCachePath=src","reason":"--experimental.fsModuleCachePath=src"}
+{"id":"X24.318","verdict":"ask","command":"pnpm test:run --experimental.fsModuleCache --experimental.fsModuleCachePath=.claude/hooks","reason":"--experimental.fsModuleCache"}
+{"id":"X24.319","verdict":"ask","command":"pnpm exec vitest run --execArgv=--import=data:text/javascript,x","reason":"--execArgv=--import=data:text/javascript,x"}
+{"id":"X24.320","verdict":"ask","command":"pnpm vitest run --execArgv=--require=./docs/x.cjs","reason":"safe-option list"}
+{"id":"X24.321","verdict":"ask","command":"pnpm vitest run --clearCache=true","reason":"--clearCache=true"}
+{"id":"X24.322","verdict":"ask","command":"pnpm exec vitest run --clearCache.x","reason":"--clearCache.x"}
+{"id":"X24.323","verdict":"ask","command":"pnpm exec vitest run --clear-cache=1","reason":"--clear-cache=1"}
+{"id":"X24.324","verdict":"ask","command":"pnpm exec vitest run --clearCache","reason":"deletes Vitest's caches"}
+{"id":"X24.325","verdict":"ask","command":"pnpm exec vitest run -wc docs/v.mjs","reason":"-wc"}
+{"id":"X24.326","verdict":"ask","command":"pnpm exec vitest run --config= docs/v.mjs","reason":"--config="}
+{"id":"X24.327","verdict":"ask","command":"pnpm exec vitest run -c= docs/v.mjs","reason":"-c="}
+{"id":"X24.328","verdict":"ask","command":"pnpm exec vitest run -wr docs","reason":"-wr"}
+{"id":"X24.329","verdict":"ask","command":"pnpm vitest run --root= docs","reason":"--root="}
+{"id":"X24.330","verdict":"ask","command":"pnpm test:run ---c docs/v.ts","reason":"---c"}
+{"id":"X24.331","verdict":"ask","command":"pnpm build ---c docs/v.ts","reason":"---c"}
+{"id":"X24.332","verdict":"ask","command":"pnpm exec playwright test -xc docs/p.config.mjs","reason":"-xc"}
+{"id":"X24.333","verdict":"ask","command":"pnpm exec playwright test -xcdocs/p.config.mjs","reason":"-xcdocs/p.config.mjs"}
+{"id":"X24.334","verdict":"ask","command":"pnpm exec vitest run -wc .env.local","reason":"-wc"}
+{"id":"X24.335","verdict":"ask","command":"pnpm exec vitest run --config= .env","reason":"--config="}
+{"id":"X24.336","verdict":"ask","command":"pnpm exec vitest run ---u","reason":"---u"}
+{"id":"X24.337","verdict":"ask","command":"pnpm test:coverage ---u","reason":"---u"}
+{"id":"X24.338","verdict":"ask","command":"pnpm vitest run --update.all","reason":"--update.all"}
+{"id":"X24.339","verdict":"ask","command":"pnpm exec vitest run --update.x","reason":"--update.x"}
+{"id":"X24.340","verdict":"ask","command":"pnpm test:run -wu=all","reason":"-wu=all"}
+{"id":"X24.341","verdict":"ask","command":"pnpm exec vitest run -uw=a","reason":"-uw=a"}
+{"id":"X24.342","verdict":"ask","command":"pnpm exec vitest run --coverage.thresholds.autoUpdate.x","reason":"--coverage.thresholds.autoUpdate.x"}
+{"id":"X24.343","verdict":"deny","command":"pnpm typecheck @docs/opts.txt","reason":"unresolved write target"}
+{"id":"X24.344","verdict":"ask","command":"pnpm exec vitest run -wu","reason":"snapshot"}
+{"id":"X24.345","verdict":"ask","command":"pnpm vitest run --update","reason":"snapshot"}
+{"id":"X24.346","verdict":"ask","command":"pnpm test:run --update","reason":"snapshot"}
+{"id":"X24.347","verdict":"ask","command":"pnpm exec vitest run -r docs","reason":"docs"}
+{"id":"X24.348","verdict":"ask","command":"pnpm exec tsc --noEmit --Project docs/x.json","reason":"docs/x.json"}
+{"id":"X24.349","verdict":"ask","command":"pnpm typecheck --PROJECT docs/x.json","reason":"docs/x.json"}
+{"id":"X24.350","verdict":"ask","command":"pnpm exec vitest run --reporter=./docs/r.mjs","reason":"--reporter=./docs/r.mjs"}
+{"id":"X24.351","verdict":"ask","command":"pnpm exec playwright test --reporter=./docs/r.mjs","reason":"--reporter=./docs/r.mjs"}
+{"id":"X24.352","verdict":"ask","command":"pnpm exec vitest run --pool=./docs/p.mjs","reason":"--pool=./docs/p.mjs"}
+{"id":"X24.353","verdict":"ask","command":"pnpm vitest run --typecheck.enabled --typecheck.checker ./docs/x.sh","reason":"--typecheck."}
+{"id":"X24.354","verdict":"ask","command":"pnpm exec tsc --noEmit --incremental","reason":"--incremental"}
+{"id":"X24.355","verdict":"pass","command":"pnpm exec vitest run src/a/a.utils.test.ts --reporter=verbose"}
+{"id":"X24.356","verdict":"pass","command":"pnpm test:run -t \"adds two numbers\""}
+{"id":"X24.357","verdict":"pass","command":"pnpm test:coverage --coverage.include=src/features/a"}
+{"id":"X24.358","verdict":"pass","command":"pnpm exec playwright test e2e/login.spec.ts --reporter=list --workers=1"}
+{"id":"X24.359","verdict":"pass","command":"pnpm exec playwright test --grep smoke --trace on"}
+{"id":"X24.360","verdict":"pass","command":"pnpm exec playwright test --last-failed"}
+{"id":"X24.361","verdict":"pass","command":"pnpm exec playwright test --list"}
+{"id":"X24.362","verdict":"pass","command":"pnpm exec tsc --noEmit -p tsconfig.app.json"}
+{"id":"X24.363","verdict":"pass","command":"pnpm vitest run src/a/a.utils.test.ts 2>&1 | tail -20"}
+{"id":"X24.364","verdict":"pass","command":"pnpm build --mode production"}
+{"id":"X24.365","verdict":"pass","command":"pnpm exec vitest run --coverage"}
+{"id":"X24.366","verdict":"pass","command":"pnpm exec playwright test --project=chromium"}
+{"id":"X24.367","verdict":"pass","command":"pnpm exec vitest run --project unit"}
+{"id":"X24.368","verdict":"pass","command":"pnpm test:run src/a/a.utils.test.ts --bail=1"}
+{"id":"X24.369","verdict":"pass","command":"pnpm exec playwright test -g smoke -j 2"}
+{"id":"X24.370","verdict":"ask","command":"pnpm vitest run --outputFile.json --experimental.fsModuleCachePath=src --outputFile.junit --clearCache","reason":"deletes Vitest's caches"}
+{"id":"X24.371","verdict":"ask","command":"pnpm vitest run --outputFile.json -u","reason":"rewrites the snapshots"}
+{"id":"X24.372","verdict":"ask","command":"pnpm test:run --outputFile.json --config=docs/evil.config.mjs","reason":"docs/evil.config.mjs"}
+{"id":"X24.373","verdict":"ask","command":"pnpm exec vitest run --output-file.junit --update","reason":"rewrites the snapshots"}
+{"id":"X24.374","verdict":"ask","command":"pnpm test:coverage --outputFile.json '--execArgv=--import=data:text/javascript,x'","reason":"--execArgv"}
+{"id":"X24.375","verdict":"ask","command":"pnpm test:run --dir -u","reason":"rewrites the snapshots"}
+{"id":"X24.376","verdict":"pass","command":"pnpm vitest run --outputFile.json report.json"}
+{"id":"X24.377","verdict":"ask","command":"pnpm test:run '--diff=data:text/javascript,export default {}'","reason":"--diff"}
+{"id":"X24.378","verdict":"ask","command":"pnpm exec vitest run --diff docs/d.mjs","reason":"--diff"}
+{"id":"X24.379","verdict":"ask","command":"pnpm vitest run --reporter=pay","reason":"pay"}
+{"id":"X24.380","verdict":"ask","command":"pnpm test:run --environment pay","reason":"pay"}
+{"id":"X24.381","verdict":"ask","command":"pnpm exec playwright test --reporter=dot,payf","reason":"payf"}
+{"id":"X24.382","verdict":"pass","command":"pnpm vitest run --reporter=verbose"}
+{"id":"X24.383","verdict":"pass","command":"pnpm test:run --reporter=default,json --environment=jsdom --pool=forks"}
+{"id":"X24.384","verdict":"pass","command":"pnpm exec playwright test --reporter=list,html"}
+{"id":"X24.385","verdict":"ask","command":"pnpm build docs/vx","reason":"docs/vx"}
+{"id":"X24.386","verdict":"ask","command":"pnpm exec vite build docs/vx","reason":"docs/vx"}
+{"id":"X24.387","verdict":"deny","command":"pnpm test:run *","reason":"glob"}
+{"id":"X24.388","verdict":"deny","command":"pnpm exec vitest run ?*","reason":"glob"}
+{"id":"X24.389","verdict":"pass","command":"pnpm test:run src/a/*.test.ts"}
+{"id":"X24.390","verdict":"deny","command":"python3 .claude/hooks/kit-doctor.py docs/r","reason":"kit-doctor"}
+{"id":"X24.391","verdict":"pass","command":"pnpm exec tsc --noEmit --pretty"}
+{"id":"X24.392","verdict":"pass","command":"pnpm exec vite build --mode staging"}
+{"id":"X24.393","verdict":"ask","command":"pnpm lint --output-file -/../.claude/settings.json","reason":".claude/settings.json written by flag-w"}
+{"id":"X24.394","verdict":"ask","command":"pnpm typecheck -p -/../docs/x.json","reason":"docs/x.json"}
+{"id":"X24.395","verdict":"ask","command":"pnpm lint -c -/../docs/evil.mjs","reason":"docs/evil.mjs"}
+{"id":"X24.396","verdict":"ask","command":"pnpm e2e --output-file.json -u","reason":"rewrites the snapshots"}
+{"id":"X24.397","verdict":"ask","command":"pnpm test:run --reporter=list","reason":"list"}
+{"id":"X24.398","verdict":"ask","command":"pnpm test:coverage --reporter=github","reason":"github"}
+{"id":"X24.399","verdict":"ask","command":"pnpm vitest run --reporter=basic","reason":"basic"}
+{"id":"X24.400","verdict":"pass","command":"pnpm test:run --reporter=agent"}
+{"id":"X24.401","verdict":"ask","command":"pnpm exec playwright test --reporter -x","reason":"-x"}
+{"id":"X24.402","verdict":"ask","command":"pnpm exec playwright test --reporter --list","reason":"--list"}
+{"id":"X24.403","verdict":"pass","command":"pnpm exec playwright test --reporter dot -x"}
+{"id":"X24.404","verdict":"deny","command":"pnpm vitest run -c *","reason":"glob"}
+{"id":"X24.405","verdict":"deny","command":"pnpm test:run --outputFile.json *","reason":"glob"}
+{"id":"X24.406","verdict":"deny","command":"pnpm lint *","reason":"glob"}
+{"id":"X24.407","verdict":"deny","command":"pnpm e2e ?x","reason":"glob"}
+{"id":"X24.408","verdict":"pass","command":"pnpm lint src/*.ts"}
+{"id":"X24.409","verdict":"pass","command":"pnpm playwright test --reporter=line"}
+{"id":"X24.410","verdict":"pass","command":"pnpm typecheck --pretty"}
+{"id":"X24.411","verdict":"ask","command":"echo x > install.sh","reason":"guarded path:"}
+{"id":"X24.412","verdict":"deny","command":"cp /tmp/x workflow.py","reason":"Use Write/Edit"}
+{"id":"X24.413","verdict":"deny","command":"echo x > addons/fastapi/hooks/tdd_py_lib.py","reason":"Use Write/Edit"}
+{"id":"X24.414","verdict":"ask","command":"cp /tmp/x workflow.sh","reason":"guarded path:"}
+{"id":"X24.415","verdict":"ask","command":"echo x > codex-handoff.sh","reason":"guarded path:"}
+{"id":"X24.416","verdict":"deny","command":"cd docs/x && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.417","verdict":"deny","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.418","verdict":"deny","cwd":"__PROJECT_ROOT__/docs/x","command":"python3 .claude/hooks/kit-attempts.py show docs/work/a/b","reason":"kit-cwd"}
+{"id":"X24.419","verdict":"deny","cwd":"__PROJECT_ROOT__/docs/x","command":".claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.420","verdict":"deny","command":"cd docs/x && python3 -I .claude/hooks/kit-doctor.py","reason":"kit-cwd"}
+{"id":"X24.421","verdict":"deny","command":"pushd docs/x && bash .claude/hooks/test-install.sh","reason":"kit-cwd"}
+{"id":"X24.422","verdict":"deny","command":"env -C docs/x bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.423","verdict":"deny","command":"cd docs/x; sh .claude/hooks/test-small-lane.sh","reason":"kit-cwd"}
+{"id":"X24.424","verdict":"deny","command":"cd \"$D\" && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.425","verdict":"deny","command":"echo docs/evil | xargs python3 .claude/hooks/kit-doctor.py","reason":"kit-doctor"}
+{"id":"X24.426","verdict":"deny","command":"xargs -a docs/list python3 .claude/hooks/kit-doctor.py","reason":"kit-doctor"}
+{"id":"X24.427","verdict":"pass","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.428","verdict":"pass","command":".claude/scripts/small-scope.sh abc"}
+{"id":"X24.429","verdict":"deny","cwd":"__PROJECT_ROOT__/.claude/worktrees/x","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.430","verdict":"deny","command":"cd .claude/worktrees/x && .claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.431","verdict":"pass","cwd":"__PROJECT_ROOT__/docs/x","command":"ls .claude/hooks"}
+{"id":"X24.432","verdict":"deny","command":"cd docs/x && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.433","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/w","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.434","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/w && .claude/scripts/small-scope.sh abc","reason":"kit-cwd"}
+{"id":"X24.435","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.436","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.437","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/copy && python3 .claude/hooks/kit-doctor.py","reason":"kit-cwd"}
+{"id":"X24.438","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/ghost && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.439","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -P node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.440","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -P; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.441","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -o physical && cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.442","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"env -C node_modules/foo/../.. bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.443","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -L -P node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.444","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.445","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd -P node_modules/foo && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.446","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -P && cd node_modules/foo && set +P && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.447","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"cd node_modules/foo && cd ../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.448","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.449","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/w && .claude/scripts/small-scope.sh abc"}
+{"id":"X24.450","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.451","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil; ls || cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.452","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"pushd .claude/worktrees/evil; ls || popd && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.453","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"ls | cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.454","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd .claude/worktrees/evil; ls |& cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.455","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"set -eo physical; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.456","verdict":"deny","setup":"pnpmlink","cwd":"__FIXTURE_ROOT__","command":"shopt -so physical; cd node_modules/foo/../.. && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.457","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"! cd __FIXTURE_ROOT__/ghost/.. 2>/dev/null && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.458","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && cd .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.459","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ || bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.460","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__; bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.461","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"ls && cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.462","verdict":"pass","setup":"kitwtrel","cwd":"__FIXTURE_ROOT__/.claude/worktrees/w","command":"bash .claude/hooks/test-hooks.sh"}
+{"id":"X24.463","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"function ls { cd .claude/worktrees/evil; }; ls && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.464","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"trap \"cd .claude/worktrees/evil\" DEBUG; bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.465","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"source docs/s.sh && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.466","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"BASH_ENV=docs/s.sh bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.467","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"$'cd' .claude/worktrees/evil && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.468","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"find .claude/worktrees/evil -maxdepth 1 -name .claude -execdir bash .claude/hooks/test-hooks.sh \\;","reason":"kit-cwd"}
+{"id":"X24.469","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"git status && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.470","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"env -iC .claude/worktrees/evil bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.471","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"timeout 600 bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.472","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"CI=1 bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.473","verdict":"deny","cwd":"__PROJECT_ROOT__/docs/x","command":"cd /proc/self/cwd && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.474","verdict":"deny","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"cd __FIXTURE_ROOT__/.claude/worktrees/stale && bash .claude/hooks/test-hooks.sh","reason":"kit-cwd"}
+{"id":"X24.475","verdict":"deny","cwd":"__PROJECT_ROOT__/docs/x","command":"bash .claude/hooks/test-hooks.sh","reason":"not the project root or a registered worktree"}
+{"id":"X24.476","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__/.claude/worktrees/evil","command":"cd __FIXTURE_ROOT__ && bash .claude/hooks/test-hooks.sh 2>&1 | tail -3"}
+{"id":"X24.477","verdict":"pass","setup":"kitwt","cwd":"__FIXTURE_ROOT__","command":"bash .claude/hooks/test-hooks.sh; echo done"}
+{"id":"X24.478","verdict":"pass","command":"pnpm vitest run src/features/agent-chat --coverage.enabled=false"}
+{"id":"X24.479","verdict":"pass","command":"for i in 1 2 3; do pnpm vitest run src/features/agent-chat --coverage.enabled=false 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E \"FAIL\" -A14 | head -30; done; echo done"}
+{"id":"X24.480","verdict":"pass","command":"pnpm test:run --coverage=false"}
+{"id":"X24.481","verdict":"pass","command":"pnpm exec vitest run --coverage.enabled=true --silent=true --passWithNoTests=false"}
+{"id":"X24.482","verdict":"pass","command":"pnpm vitest run --globals=true --allowOnly=false --sequence.shuffle=false --hideSkippedTests=true"}
+{"id":"X24.483","verdict":"ask","command":"pnpm vitest run --coverage.enabled=yes","reason":"safe-option list"}
+{"id":"X24.484","verdict":"ask","command":"pnpm test:run --silent=./x.cjs","reason":"safe-option list"}
+{"id":"X29.01","verdict":"pass","command":"sed -n 196,262p e2e/takeoff-measurement-lines.public.spec.ts"}
+{"id":"X29.02","verdict":"pass","command":"sed -n 1,5p src/features/a/services/a-line.repository.ts"}
+{"id":"X29.03","verdict":"pass","command":"sed -n 1p app/services/a-list.py"}
+{"id":"X29.04","verdict":"pass","command":"node scripts/x-p.ts"}
+{"id":"X30.01","verdict":"deny","command":"sed -i 's/a/b/' src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.02","verdict":"deny","command":"sed -i.bak 's/a/b/' x.ts","reason":"Use Write/Edit"}
+{"id":"X30.03","verdict":"deny","command":"perl -pi -e 's/a/b/' x.ts","reason":"Use Write/Edit"}
+{"id":"X30.04","verdict":"deny","command":"sed '-i' s/a/b/ src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.05","verdict":"deny","command":"sed \"-i\" s/a/b/ src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.06","verdict":"deny","command":"cp /tmp/x src/a.tsx","reason":"Use Write/Edit"}
+{"id":"X30.07","verdict":"deny","command":"echo x | tee src/a.ts","reason":"Use Write/Edit"}
+{"id":"X30.08","verdict":"deny","command":"cp /tmp/x app/x.py","reason":"Use Write/Edit"}
+{"id":"X30.09","verdict":"deny","command":"sed '-i' s/a/b/ src/features/a/services/a.utils.ts","reason":"test-first"}
+{"id":"X30.10","verdict":"deny","command":"sed \"-i\" s/a/b/ src/features/a/services/a.mapper.ts","reason":"test-first"}
+{"id":"X30.11","verdict":"deny","command":"sed -i 's/a/b/' src/features/a/services/a.utils.ts","reason":"test-first"}
+{"id":"X31.01","verdict":"deny","command":"python3 -c \"open('docs/a.md','w').write('x')\"","reason":"inline programs are not used here"}
+{"id":"X31.02","verdict":"deny","command":"node -p \"require('./.claude/settings.json').permissions\"","reason":"inline programs are not used here"}
+{"id":"X31.03","verdict":"deny","command":"python3 - <<'EOF'\nprint(open(\".claude/hooks/hook-lib.sh\").read())\nEOF","reason":"inline programs are not used here"}
+{"id":"X31.04","verdict":"deny","command":"python3 - <<'EOF'\nopen('docs/work/x/plan.md','w')\nEOF","reason":"inline programs are not used here"}
+{"id":"X31.05","verdict":"deny","command":"python3 -c \"open('.claude/.tdd-red/m','w')\"","reason":"is written only by tdd-prove-red.sh"}
+{"id":"X32.01","verdict":"deny","command":"python3 -c \"print(1)\"","reason":"unresolved write target"}
+{"id":"X32.02","verdict":"deny","command":"python3 -c \"print('a.ts')\"","reason":"unresolved write target"}
+{"id":"X32.03","verdict":"deny","command":"node -p \"process.version.split('.')[0]\"","reason":"unresolved write target"}
+{"id":"X32.04","verdict":"deny","command":"python3 -c \"print(''.join(['a']))\"","reason":"unresolved write target"}
+{"id":"X32.05","verdict":"deny","command":"python3 - <<'EOF'\nprint(\"noop\")\nEOF","reason":"unresolved write target"}
+{"id":"X32.06","verdict":"deny","command":"node -e \"1\"","reason":"unresolved write target"}
+{"id":"X32.07","verdict":"deny","command":"echo x > src/a.ts","reason":"Use Write/Edit"}
+{"id":"X32.08","verdict":"deny","command":"cat >> src/a.ts <<'EOF'\nx\nEOF","reason":"Use Write/Edit"}
+{"id":"X32.09","verdict":"pass","command":"cat >> docs/work/x/plan.md <<'EOF'\nx\nEOF"}
+{"id":"X33.01","verdict":"ask","command":"mv src/features/x/a.ts /tmp/","reason":"moves a path under a protected dir"}
+{"id":"X33.02","verdict":"ask","command":"mv src/a.ts src/b.ts","reason":"moves a path under a protected dir"}
+{"id":"X33.03","verdict":"ask","command":"rm -rf src/features/x","reason":"recursive delete/move under a protected dir"}
+{"id":"X34.01","verdict":"pass","command":"prettier --write src/a.ts >/dev/null"}
+{"id":"X34.02","verdict":"pass","command":"prettier --write src/a.ts 2>&1"}
+{"id":"X34.03","verdict":"pass","command":"prettier --write src/a.ts > /dev/null"}
+{"id":"X34.04","verdict":"pass","command":"prettier --write src/a.ts >/dev/null 2>&1"}
+{"id":"X34.05","verdict":"pass","command":"prettier --write src/a.ts >&2"}
+{"id":"X34.06","verdict":"ask","command":"prettier --write src/a.ts 2>&1 .","reason":"whole folder"}
+{"id":"X34.07","verdict":"ask","command":"prettier --write src/a.ts 2>&1 src/","reason":"whole folder"}
+{"id":"X34.08","verdict":"ask","command":"prettier --write src/a.ts >&2 .","reason":"whole folder"}
+{"id":"X34.09","verdict":"ask","command":"prettier --write src/a.ts 1>&2 src/","reason":"whole folder"}
+{"id":"X34.10","verdict":"ask","command":"prettier --write src/a.ts > out.log .","reason":"whole folder"}
+{"id":"X34.11","verdict":"ask","command":"prettier --write src/a.ts &>/dev/null .","reason":"whole folder"}
+{"id":"X34.12","verdict":"ask","command":"prettier --write .","reason":"whole folder"}
+{"id":"X35.01","verdict":"pass","command":"sed -n \"1,$((3+2))p\" x.py"}
+{"id":"X35.02","verdict":"pass","command":"sed -n '$p' x.py"}
+{"id":"X35.03","verdict":"pass","command":"sed -n \"/x$/p\" f"}
+{"id":"X35.04","verdict":"pass","command":"sed \"s/ *$//\" f"}
+{"id":"X35.05","verdict":"ask","command":"sed -n \"$(echo 1w src/a.ts)\" x.py","reason":"could not parse this command: command substitution in sed script: $(…)"}
+{"id":"X35.06","verdict":"ask","command":"sed -n \"${n},$((n+22))p\" x.py","reason":"could not parse this command: live expansion in sed script: ${…}"}
+{"id":"X35.07","verdict":"ask","command":"sed -n \"${n}\" x.py","reason":"could not parse this command: live expansion in sed script: ${…}"}
+{"id":"X36.01","verdict":"deny","command":"sed \"$(true)w .claude/.tdd-red/m\" x","reason":"and it names .claude/.tdd-red/"}
+{"id":"X37.01","verdict":"pass","command":"cd __PROJECT_ROOT__ && python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test"}
+{"id":"X39.01","verdict":"deny","command":"sed '-i' \"s/$a/b/\" src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.02","verdict":"deny","command":"sed \"-i\" \"s/${a}/b/\" src/features/a/services/a.utils.test.ts","reason":"writing a test-first layer"}
+{"id":"X39.03","verdict":"deny","command":"sed \\-i \"s/$a/b/\" src/features/a/services/a.utils.test.ts","reason":"writing a test-first layer"}
+{"id":"X39.04","verdict":"deny","command":"sed --in''-place \"s/$a/b/\" src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.05","verdict":"deny","command":"sed '-i' \"s/$a/b/\" app/services/x_service.py","reason":"Python test-first layer"}
+{"id":"X39.06","verdict":"deny","command":"python3 '-c' \"open('app/services/x_service.py','w')\"","reason":"test-first"}
+{"id":"X39.07","verdict":"pass","command":"sed -n '1,5p' docs/notes.md"}
+{"id":"X39.08","verdict":"pass","command":"sed -n '/```/p' docs/x.md"}
+{"id":"X39.09","verdict":"ask","command":"sed -n \"/`id`/p\" src/features/a/services/a.utils.test.ts","reason":"could not parse this command"}
+{"id":"X39.10","verdict":"deny","command":"sed -i '/```/d' src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X39.20","verdict":"ask","command":"git status;>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X39.21","verdict":"ask","command":"echo hi;>/dev/null prettier --write .","reason":"whole folder"}
+{"id":"X39.22","verdict":"ask","command":"git status\n>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X39.23","verdict":"pass","command":"prettier --write src/a.ts &>/dev/null"}
+{"id":"X40.01","verdict":"ask","setup":"notmp","command":"cp /tmp/x .claude/settings.json","reason":"guarded path"}
+{"id":"X40.03","verdict":"deny","setup":"notmp","command":"cp x .git/config","reason":".git"}
+{"id":"X40.04","verdict":"deny","setup":"notmp","command":"sed -i s/a/b/ src/App.ts","reason":"written by sed"}
+{"id":"X41.01","verdict":"pass","command":"grep -n \"=>\" src/features/a/a.utils.ts"}
+{"id":"X41.02","verdict":"pass","command":"grep '=>' app/services/x_service.py"}
+{"id":"X41.03","verdict":"pass","command":"grep \"=>\" src/App.tsx"}
+{"id":"X41.04","verdict":"deny","command":"python3 $'-c' \"open('app/services/x_service.py','w')\"","reason":"Python test-first layer"}
+{"id":"X41.05","verdict":"deny","command":"sed $'-i' \"s/a/b/\" src/features/a/services/a.utils.ts","reason":"BLOCKED"}
+{"id":"X41.06","verdict":"ask","command":"echo \"&>/dev/null ruff format .\";>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X41.07","verdict":"ask","command":"echo \\>;2>/dev/null ruff format .","reason":"whole folder"}
+{"id":"X40.02","verdict":"deny","setup":"notmp","command":"sed '-i' s/a/b/ src/features/a/services/a.utils.ts","reason":"writing a test-first layer"}
+{"id":"X37.02","verdict":"deny","command":"cd __PROJECT_ROOT__; python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test","reason":"kit-cwd"}
+{"id":"X42.01","verdict":"deny","command":"echo x >src/features/a/a.utils.t's'","reason":"writing a test-first layer"}
+{"id":"X42.02","verdict":"deny","command":"echo x >src/features/a/a.test.t's'","reason":"writing a test-first layer"}
+{"id":"X42.03","verdict":"deny","command":"echo x >app/services/x_servic''e.py","reason":"Python test-first layer"}
+{"id":"X42.04","verdict":"deny","command":"echo x >src/App.t's'","reason":"Use Write/Edit"}
+{"id":"X42.05","verdict":"deny","command":"echo x >src/App.ts","reason":"Use Write/Edit"}
+{"id":"X42.06","verdict":"pass","command":"echo x >/dev/null"}
+{"id":"X42.07","verdict":"pass","command":"ls > /tmp/claude-x/out.txt"}
+{"id":"X28.81","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"cat m*/x"}
+{"id":"X28.82","verdict":"pass","setup":"secrets-many","cwd":"__FIXTURE_ROOT__","command":"grep -n \"foo\\|bar\" -A14 m*/x | head -60"}
+{"id":"LP2.01","verdict":"deny","command":"echo x > .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP2.02","verdict":"deny","command":"cp /tmp/a .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP2.03","verdict":"deny","command":"rm .claude/.loop-record.json","reason":"written only by loop-record.py"}
+{"id":"LP3.01","verdict":"deny","command":"python3 .claude/hooks/loop-record.py < /tmp/x.json","reason":"only Claude Code runs loop-record.py"}
+{"id":"LP3.02","verdict":"deny","command":"bash -c 'python3 .claude/hooks/loop-record.py'","reason":"only Claude Code runs loop-record.py"}
+{"id":"LP3.03","verdict":"pass","command":"python3 .claude/hooks/loop-record.py --clear"}
+{"id":"LP4.01","verdict":"deny","command":"echo x > .claude/.loop-record.json $'a\\'b'","reason":"could not parse"}
+{"id":"G21.043","verdict":"pass","command":"git push -u origin feat/s1"}
+{"id":"G21.043.2","verdict":"pass","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md"}

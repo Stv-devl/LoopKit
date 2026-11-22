@@ -18,9 +18,17 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
   order (`.claude/rules/05-testing.md`, "A bugfix opens with the test that
   reproduces the bug"): add the case that reproduces it — in a frozen test-first
   file only as a pure new case after the existing ones, the freeze allows that
-  and nothing else — run it and **see it fail**, then fix, then see it pass. A
+  and nothing else; its title starts with the next free case id of its letter,
+  and you report that id so the plan line is appended — run it and **see it
+  fail**, then fix, then see it pass. A
   case that passes before the fix means the finding is not what it claims:
   stop on that finding and report it.
+
+  Take the `fix-introduced` findings first. They sit in a hunk of the previous fix
+  batch, or are a regression it caused. Answer each one first with the
+  smaller fix: revert or narrow the part of the previous batch that created it, before
+  adding code. Growth beyond the files named in the findings and their tests is
+  declared on the `Growth:` line, with its reason.
 
 ## What you receive
 
@@ -34,13 +42,17 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 
 - **Never change an existing test case.** `tdd-freeze-tests.sh` refuses it on the
   test-first files; the only write allowed there is a pure new case. A case that
-  looks wrong → stop and return `Blocked on: <case> — <why>`; the main thread takes
-  it to the user.
+  looks wrong → stop and return `Blocked on: <case id> — <why>`; the main thread
+  queues the correction in `docs/work/<slug>/unfreeze-queue.md` and stops once for
+  the whole batch (`orchestrate.md` Phase 4); the amended cases go in the PR body.
 - Stay inside the batch's files. Something outside it needs to change → say so,
   do not do it.
 - Follow `.claude/rules/` and the template or pattern the plan names; read
   `.claude/skills/project-rules/SKILL.md` to find it. The guardrail hooks run on
   every write; a deny is information, never something to work around.
+- Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
+  `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
+  Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
 - No refactor beyond the batch, no new behaviour the plan does not name.
 
 ## Return
@@ -50,4 +62,5 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 - Files: <path — what changed>
 - Proof: <command> → <pass/fail counts, the real output's last lines>
 - Blocked on: <case — why>   (or "none")
+- Growth: none | <files beyond the findings and their tests> — <reason>   (fix batch only)
 ```

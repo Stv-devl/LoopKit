@@ -1,6 +1,6 @@
 # Workflows — créer une feature
 
-**Une seule boucle**, deux entrées. Prends l'entrée la plus légère qui suffit.
+**Une seule boucle**, trois entrées. Prends l'entrée la plus légère qui suffit.
 
 ```
                                    /loop:product        (une fois par produit)
@@ -10,6 +10,8 @@ ENTRÉE COMPLEXE (multi-épics)           ▼
                                         │
 ENTRÉE SIMPLE (1 écran, CRUD)           │
   /loop:spec ───────────────────────────┤
+ENTRÉE PETITE (changement borné)         │
+  /loop:small ──────────────────────────┤
 ENTRÉE BUG (symptôme → reproduction)    │
   /loop:debug ──────────────────────────┤
                                         ▼
@@ -22,6 +24,13 @@ BOUCLE (identique pour les deux)        ▼
 
 `/loop:orchestrate <artefact>` fait tourner la boucle entière. Chaque étape reste
 appelable seule si tu veux reprendre au milieu.
+
+## Entrée petite
+
+`/loop:small` prépare une modification bornée, hors fondations, dans son propre
+worktree. Une seule validation approuve la spec; le ticket passe ensuite par le
+plan, l'exécution, la revue et le ship normaux. Les tickets disjoints peuvent
+tourner en parallèle, mais sont intégrés un par un par fusion rapide.
 
 **FEATURE READY, concrètement** : c'est `docs/product/backlog.md`, ouvert par
 `/loop:product`. **Une ligne par unité de boucle** — une spec fait une ligne, un
@@ -122,12 +131,61 @@ Il a **deux modes**, détectés automatiquement (`--new` / `--extract` pour forc
 ## Entrée simple (défaut)
 
 ```bash
-/loop:spec ma feature                     # interview → docs/specs/<slug>.md (le contrat)
-/loop:orchestrate docs/specs/<slug>.md    # research → interface → plan → execute → review → ship
+/loop:spec ma feature    # interview → docs/specs/<slug>.md, puis enchaîne /loop:orchestrate
 ```
 
-`/loop:spec` pose 3-4 questions, écrit le contrat, **s'arrête** — tu relis les critères
-d'acceptation avant que quoi que ce soit ne parte.
+**Validation : `moi` ou `auto`**, demandé une fois au cadrage. En `auto`, tu valides le
+contrat après la recherche (`Contract gate`), puis des agents `arbiter` tranchent chaque
+arrêt jusqu'à la PR ; tu ne fais que merger. Le tableau des arrêts par mode est dans
+`/loop:orchestrate`, « Validation mode ».
+
+`/loop:spec` pose 3-4 questions, écrit le contrat, puis **enchaîne la boucle** sans
+redemander. Tu valides le contrat (objectif, périmètre, critères d'acceptation) au
+premier arrêt de la passe, recherche en main : à l'interface s'il y a un écran,
+sinon au plan de tests — une question à part, dans le même arrêt. Il ne s'arrête
+après la spec que si tu le demandes, ou si le contexte dépasse 90 % : il propose
+alors `./workflow.sh "/loop:orchestrate docs/specs/<slug>.md"`.
+
+| Passe light | Avant | Maintenant |
+| --- | --- | --- |
+| Avec écran | go de la spec, interface, plan, merge | interface (+ contrat), plan ; la PR se merge sur GitHub (merge local seulement sans remote) |
+| Sans écran | go de la spec, plan, merge | plan (+ contrat) ; idem |
+
+Entre ces arrêts, la passe ne demande pas d'accord pour les éditions,
+`git add <chemins>`, `git commit -m "<une ligne>"` ni les gates : ces
+formes strictes, seules dans leur appel, sont les seules à passer sans invite.
+Les invites qui restent : `git push`, `gh pr` — sauf le premier push de la branche
+de la passe et sa PR, sous leur forme exacte, quand ton go au gate du plan a écrit
+le record de boucle et que la branche par défaut a sa barrière serveur
+(`/loop:ship` `4bis-PR`) —, un commit avec `--amend` (ou
+`--no-verify`, `--all`, `--include`, `--only`, `--patch`, un pathspec), tout
+autre appel qui nomme `git` et `add`, `stage`, `commit` ou `switch`, un
+`switch`/`checkout` avec
+`--discard-changes` (ou `--force`, `-C`), un `rm -r`, et les écritures sur les
+chemins gardés (`docs/ADAPTATION.md` § 14). Les appels git qui perdent du
+travail demandent aussi : `git clean` sans `-n` effectif (le dernier de
+`-n`/`--dry-run`/`--no-dry-run` gagne), `reset --hard`, `checkout`/`restore`
+qui écrasent des fichiers modifiés, `stash drop`/`clear`, `branch -D`/`-M`/`-f`,
+`update-ref` sur `HEAD` ou une branche, un `worktree add` passé par un alias
+(hors `.claude/worktrees/` ou forcé), et `fetch`/`pull`/`clone`/`ls-remote`
+avec `--upload-pack` (ou une abréviation, `-u`). Côté shell, demandent : une option
+d'outil qui écrit ou charge ailleurs que dans le projet (`--outDir`, `--config`,
+`-p`…), une lecture qui pourrait afficher un secret (`printenv`, `env`,
+`rg -uu`, un `grep -r` hors du wrapper, un glob vers un fichier `.env` dans un
+dossier inconnu, une forme de glob que le hook ne sait pas lire), un
+dossier hors projet. Sont refusés : un `rm -rf` de la racine du projet ou
+d'un dossier au-dessus, toute écriture dans `.git/` (sauf un `rm` simple de
+`*.lock`, y compris sous `.git/worktrees/<nom>/`), un `eslint --fix` ou `ruff --fix` nommant un fichier de test, un
+glob ou un nom qui atteint un secret (`.env*`, `*.pem`, `*.key`, `credentials*`,
+hors `.env.example|sample|template`). Un projet dont les hooks de garde ne
+sont pas à jour garde toutes ses invites, et perd le P1 qu'une installation
+précédente lui avait donné (§ 15).
+
+Un contrat amendé relance la phase qu'il invalide et tout ce qui suit (trois tours
+au plus). Un cas gelé que le plan corrige est une ligne `Frozen cases to amend:` du
+gate : son déblocage s'écrit sans seconde question. Une correction découverte en
+EXECUTE est mise en file (`unfreeze-queue.md`) et t'arrive en un seul lot, un seul
+arrêt. Chaque cas amendé figure dans le corps de la PR (`Frozen cases`).
 
 ## Entrée complexe
 
@@ -194,8 +252,8 @@ Le profil ne réduit jamais les gates mécaniques (typecheck, lint, tests,
 coverage, build, `audit`). Il réduit les relectures identiques par plusieurs
 modèles.
 
-**Il en ajoute un, dans un sens seulement.** `critical` arme un `/audit:security`
-d'**une** surface à `/loop:ship` (étape 1bis) : la liste qui justifie `critical` est
+**Il en ajoute un, dans un sens seulement.** `critical` arme **un** `security-auditor`
+à `/loop:ship` (étape 1bis), sur les surfaces que le diff touche : la liste qui justifie `critical` est
 mot pour mot celle des features où une barrière serveur manquante n'est pas un
 Minor. Descendre une feature en `economy` pour éviter cet agent est une décision
 de sécurité, pas de budget — `.claude/rules/11-token-budget.md`.
@@ -282,6 +340,17 @@ Limite : l'étage 0 ne juge pas le mouvement (captures fixes) et le détecteur
 d'Impeccable ne voit que des motifs de code connus, pas la fluidité : il faut
 regarder la page. Guides : `patterns/motion.md`, `patterns/gsap.md`.
 
+**Captures d'écran de PR.** Quand le diff touche l'UI (décision prise sur l'arbre
+de travail par `kit-pr-assets.py ui`), `/loop:review` lance `e2e-tester` avec
+`PR_SHOTS=after`. Il capture les étapes clés en clair/sombre × desktop/mobile,
+sur données de test uniquement, plus un « avant » sur un bugfix. Les images
+restent dans `.pr-shots/` (ignoré par git). À la PR, l'agent `github` les publie
+en blobs sur la branche orpheline `pr-assets` (`<branche>/<sha7>/`), puis les
+retire quand la PR est `MERGED`, de la pointe de `pr-assets` seulement : elles
+restent dans son historique git. Chaque push et chaque appel `gh` passent par
+une demande d'autorisation. Le corps de PR suit cet ordre : résumé,
+`Where to look`, `Uncertain`, une ligne par commit, `Screenshots`.
+
 Deux commandes bornées vivent autour de cette boucle : `/loop:spike` tranche une
 question fermée (ou retourne `indeterminate` avec la preuve manquante), et
 `/kit:recipe` transforme une procédure déjà prouvée en guide froid cité par un
@@ -290,14 +359,53 @@ shadow-areas de trois éléments maximum ; economy reste silencieux.
 
 **Deux étapes s'arrêtent sur toi, et elles décident deux choses différentes.**
 `/loop:interface` te présente ses propositions et attend que tu tranches (greffe possible,
-3 tours maximum) : ça fixe **ce qu'est l'écran**, et c'est ce qui rend honnête le
+3 tours maximum) — et, en passe light, te demande aussi le contrat au premier tour :
+ça fixe **ce qu'est l'écran**, et c'est ce qui rend honnête le
 fait que `/loop:review` note ensuite un écart en Major. `/loop:plan` imprime son `Test plan`
 et attend ton feu vert : ça fixe **ce que « correct » veut dire pour la logique**,
 et c'est le dernier moment gratuit — juste après, ces fichiers de test gèlent.
 Avant de te le présenter, `plan-critic` cherche les omissions et les défauts
-d'exécution sur deux scores indépendants ; tout Critical/Major est réfuté puis
-corrigé. Chaque gate est plafonné à trois échecs dans `attempts.json` : au
+d'exécution sur deux scores indépendants ; tout Critical/Major est réfuté.
+Chaque gate est plafonné à trois échecs dans `attempts.json` : au
 troisième, la ligne revient `BLOCKED` avec le gate et sa raison.
+
+**Ce qui bloque un plan, et ce qui bloque une review.** Le routage n'est pas de la
+prose appliquée à la main : `kit-gate-route.py` le calcule à partir des champs de
+chaque finding, et le thread principal applique son résultat.
+
+- **Plan.** Seul un trou de contrat bloque :
+  - (a) un critère sans écriture ni cas ;
+  - (b) un comportement sans cas ;
+  - (c) un ordre qui ne s'exécute pas ;
+  - (d) une règle d'architecture ou un invariant violé.
+
+  Un tel finding est **démontré** quand il apporte sa preuve. Il relève de
+  l'**interprétation** quand il dépend d'une lecture du contrat que le contrat ne
+  tranche pas. Tout le reste (un mécanisme d'implémentation, une valeur de mise en
+  page, un cas limite que le code révélera) va en `## Vigilance` : `/loop:review` le
+  vérifie sur le vrai code. Un oubli qu'un hook TDD refuse déjà à EXECUTE est corrigé
+  sans tentative échouée. À la deuxième passe, si tout ce qui survit relève de
+  l'interprétation, il n'y a pas de troisième réécriture : tu arbitres au gate du plan
+  de test, sous `Plan critic, open`, avec une réponse proposée pour chacun. Un
+  finding démontré va en passe 3, puis `BLOCKED`.
+- **Condition de clôture.** Chaque Critical/Major porte un `Closure:`, l'état
+  observable qui le ferme. La passe suivante répond `fixed | not fixed` contre cette
+  condition, sans re-juger la zone. Un Major sans condition descend en Minor ; un
+  Critical sans condition en reçoit une avant tout lot de correctifs.
+- **Re-review après un lot de correctifs.** `kit-gate-route.py snapshot` fixe la base
+  du lot (`fix-base`). La re-review reçoit le diff du lot et le diff de toute la
+  feature. Un bug (sécurité, correctness, intégrité des données, avec un scénario
+  d'échec) bloque partout dans la feature. Une régression causée par le lot bloque
+  même hors de la feature. Le reste (architecture, qualité des tests, maintenabilité)
+  ne bloque que dans les lignes du lot.
+- **Réduire avant d'étendre.** Un finding dans un hunk du lot, ou une régression
+  qu'il a causée, est marqué `fix-introduced`. Le lot suivant y répond d'abord par le
+  correctif plus petit (annuler ou resserrer), et déclare toute croissance sur une
+  ligne `Growth:`. Une réécriture de plan suit la même règle.
+- **`follow-ups.md`.** Les Minors confirmés et les findings hors périmètre sont
+  écrits dans `docs/work/<slug>/follow-ups.md`, sans doublon. Un Minor ne lance jamais
+  de lot de correctifs. `/loop:ship` en affiche le compte au merge, sans écrire de
+  ligne au board.
 Aucune ne remplace l'autre, aucune ne passe sur ton silence. Les gates de `/loop:ship`
 (push, PR, merge) et celui de `/loop:tracks` sont d'une autre nature : ils décident ce
 qui **sort de la machine**, jamais ce qu'elle doit produire.
@@ -405,13 +513,22 @@ boucle, jamais en gate.
 | Commande              | Quand                                                             |
 | --------------------- | ----------------------------------------------------------------- |
 | `/database:migration` | Toute migration SQL — jamais de SQL écrit à la main               |
-| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/loop:ship` sur profil `critical`, une surface |
+| `/audit:security`     | Ce qui est exposé **aujourd'hui**, sur tout le dépôt — pas sur un diff. Armé aussi par `/loop:ship` sur profil `critical` : un `security-auditor` sur les surfaces que le diff touche (aucun sinon) |
 | `/audit:mutation`     | Est-ce que les tests gelés **contraignent** le code, ou se contentent-ils de l'exécuter ? |
 | `/audit:part <nom>`   | Est-ce que **cette partie-là** (react-query, zustand, ci-cd, testing, forms, guardrails…) est cohérente, vraie et réellement appliquée ? Fan-out sur des fichiers disjoints, **réfutation obligatoire** de chaque constat, registre dans `docs/audits/<partie>.md`. Le premier passage est un échantillon ; tous les suivants sont un diff |
 | `/refactor:split`     | Un fichier dépasse son seuil (`.claude/rules/02-architecture.md`) |
 | `/refactor:clean`     | Code mort : exports, dépendances et variables inutilisés          |
 | `/refactor:types`     | Resserrer des types, éliminer un `any` résiduel                   |
 | `/kit:doctor`         | Les valeurs écrites deux fois (règle + copie appliquée) sont-elles encore d'accord ? Plus les chemins, hooks et commandes morts |
+
+**Les suites du kit** se lancent une par appel, sous la forme
+`bash .claude/hooks/test-hooks.sh`, `bash .claude/hooks/test-install.sh`… (un
+`2>&1` final est accepté) : pas de boucle
+`for`, pas de `bash -x` (le debug se fait à la main), et jamais une suite capturée
+par `$(…)`, où ses pièges de contrôle de job fuient. C'est la forme que l'allowlist
+laisse passer sans demande ; dans un projet cible, `test-install.sh` et
+`test-workflow-contracts.sh` sont des suites de développement du kit (elles
+exécutent des fichiers racine) et ne sont pas autorisées.
 
 <!-- FILL : ajoute ici les commandes propres à ce projet (une skill qui pilote
      ton API, un script de déploiement…). -->
@@ -433,18 +550,18 @@ boucle, mêmes agents, des règles et des commandes en plus :
 L'installation copie les fichiers. Sur une install **neuve**, elle câble en plus
 ce qu'elle peut : `--fastapi` déclare les six hooks Python dans `settings.json`,
 `@07-backend.md` dans l'index de `CLAUDE.md` et `app|alembic` dans
-`PROTECTED_DIRS` ; `--supabase` pointe `DATA_CLIENT_MODULE` /
-`DATA_CLIENT_OWN_PATH` sur `lib/supabase` et ajoute `supabase` à
-`PROTECTED_DIRS`. Uniquement des fichiers que le kit vient d'écrire, jamais un
-fichier préexistant (il repart en `.new`).
+`protected_dirs` ; `--supabase` pointe `data_client.module` /
+`own_path` sur `lib/supabase` et ajoute `supabase` à `protected_dirs`. Les
+valeurs vont dans `.claude/project.json`, jamais dans un hook ; l'installeur ne
+touche pas un `CLAUDE.md` préexistant (il repart en `.new`).
 
-Chaque valeur ainsi câblée est écrite **deux fois** — le hook l'applique,
-`CLAUDE.md` ou une règle la déclare — et l'installeur patche les deux copies.
+Chaque valeur ainsi câblée est écrite **deux fois** — `.claude/project.json`
+l'applique, `CLAUDE.md` ou une règle la déclare — et l'installeur écrit les deux.
 C'est `/kit:doctor` qui vérifie qu'elles n'ont pas divergé depuis.
 
 **Le reste du câblage est à faire à la main**, décrit dans le README de l'addon
-(recopié en `.claude/skills/patterns/<NOM>-ADDON.md`) : `EXTERNAL_CLIENTS` dans
-`enforce-backend-layers.py`, la table du client dans `01-stack.md`, les scripts
+(recopié en `.claude/skills/patterns/<NOM>-ADDON.md`) : `fastapi.external_clients` dans
+`.claude/project.json`, la table du client dans `01-stack.md`, les scripts
 de `00-project.md`, et les deux que personne ne pense à faire — **les gates
 backend dans `commands/ship.md`** (le bloc est en `pnpm`, il ne teste rien sur un
 repo Python) et **`07-backend.md` dans la checklist `guides/review/tests-python.md`**.
@@ -489,8 +606,9 @@ qu'un finding de `/loop:review` devient quand une dimension doit creuser.
   assertion, un `it.only` et un composant que le compilateur React a sauté. Les
   deux dernières lignes non plus : une CVE publiée cette semaine ne change rien
   au diff, donc aucune relecture ne peut la voir (`.claude/rules/00-project.md`).
-  Puis, **sur profil `critical` uniquement**, un `security-auditor` d'une surface
-  avant le commit (étape 1bis) — zéro sur les deux autres profils.
+  Puis, **sur profil `critical` uniquement**, un `security-auditor` avant le commit
+  (étape 1bis : `kit-audit-surface.py` choisit les surfaces que le diff touche, ses Majors et Minors vont dans `follow-ups.md`) ;
+  rien de touché → pas d'auditeur, et le rapport dit pourquoi — zéro sur les deux autres profils.
 
 **Hors boucle**
 
@@ -586,9 +704,13 @@ worktree embarque ses hooks et ses règles. Le point de départ des branches, lu
 est un réglage : `worktree.baseRef` dans `settings.json` — le kit livre `head`
 (dépôt local sans origin), à passer en `fresh` sur un repo d'équipe.
 
-L'intégration est une **barrière, une track à la fois** : rebase → gates re-passés
-si le rebase a bougé quelque chose → ton feu vert → merge → suppression du
-worktree. Un merge est aussi gaté qu'un push, et l'agent `github` l'exécute.
+L'intégration passe par une **PR** quand le dépôt a un remote : la branche
+`feat/<slug>` est poussée, la PR ouverte sur sa base, et c'est GitHub qui merge ;
+le board passe `SHIPPED` quand la vérification de clôture
+(`loop-pr-state.sh --chain`) voit la PR mergée. Sans remote, c'est une **barrière
+locale, une track à la fois** : rebase → gates re-passés si le rebase a bougé
+quelque chose → ton feu vert → merge → suppression du worktree. Ce merge local est
+aussi gaté qu'un push, et l'agent `github` l'exécute.
 
 Deux coûts à annoncer avant de forker : le worktree est vide de `node_modules`,
 et le `.env` **ne peut pas être copié par un agent** (`protect-files`) — c'est à
@@ -613,6 +735,10 @@ Règle complète : `.claude/guides/10-worktrees.md`.
 | `verifier`     | Tente de **réfuter** un finding — ce qui survit est réel                        | non       |
 | `security-auditor` | Audit sécurité d'UNE surface, sur le dépôt entier — hors boucle            | non       |
 | `github`       | Commits locaux ; tout ce qui touche GitHub demande ton accord                   | oui       |
+| `doc-researcher` | Recherche UNE surface tierce au RESEARCH, budget réseau borné, réécrit son cache | son fichier de cache |
+| `plan-critic`  | Critique adversariale du plan contre son contrat, deux scores séparés          | non       |
+| `implementer`  | Code UN lot borné : une couche GREEN passé 70 %, ou un lot de corrections de review | le lot    |
+| `arbiter`      | Mode `auto` : tranche à ta place UNE décision d'après le contrat (plan de tests, question ouverte, correction de cas gelé, choix de review) ; un hook enregistre son verdict | non       |
 
 ---
 
@@ -630,6 +756,7 @@ Règle complète : `.claude/guides/10-worktrees.md`.
 - Dans un gate ou un agent : le script de test **run-once**, jamais le mode watch
   (il ne rend jamais la main).
 - Travaux séparés = worktrees séparés ; fondations partagées d'abord, dans
-  l'arbre principal ; merge une track à la fois, avec ton accord.
+  l'arbre principal ; une PR par track (sans remote : merge local, une track à la
+  fois, avec ton accord).
 
 Détails : `.claude/rules/` · patterns : `.claude/skills/patterns|templates/`.

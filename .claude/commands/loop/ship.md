@@ -44,19 +44,26 @@ pnpm audit --dev --audit-level=high || true   # dev-only CVEs: reported, never
 # Bundle secrets. Read the comment under this block before changing a character
 # of it: the `set -o pipefail` and the `test -f` are the check, not decoration.
 set -o pipefail
-test -d src/ || echo "SCAN NOT RUN: no src/"
+roots="$(jq -r '.app_roots[]? | . + "/src"' .claude/project.json 2>/dev/null)"
+[ -n "$roots" ] || roots=src
+dirs=""
+for d in $roots; do
+  if test -d "$d"; then dirs="$dirs $d"; else echo "SCAN NOT RUN: no $d"; fi
+  [ -f "${d%/src}/.env.example" ] && dirs="$dirs ${d%/src}/.env.example"
+done
+[ -n "$dirs" ] || dirs=/dev/null
 grep -rnE 'VITE_[A-Z0-9_]*(SECRET|PRIVATE|SERVICE_ROLE|PASSWORD|TOKEN|_KEY)' \
-     src/ $( [ -f .env.example ] && echo .env.example ) \
+     $dirs $( [ -f .env.example ] && echo .env.example ) \
   | grep -vE '(ANON|PUBLIC|PUBLISHABLE)_KEY'   # everything VITE_* ships in the
                         # bundle — the second grep drops the keys that are
                         # public by design, or this line cries wolf every run
 ```
 
-<!-- FILL: if this repo has a second unit runner (backend), add it to the same
-     batch when the diff touches its surface. E2E is NOT added here: it runs in its
-     own command AFTER this batch is green, never alongside vitest and coverage —
-     sharing the machine with them is what makes a browser suite flaky
-     (`e2e-playwright` skill, "When it runs"). -->
+**Project slot `extra-gates`** — `## extra-gates` in `.claude/overlays/commands/loop/ship.md`; absent → none: only the fence above runs.
+A second unit runner (backend) listed there joins the same batch when the diff touches its
+surface. E2E is NOT added here: it runs in its own command AFTER this batch is green, never
+alongside vitest and coverage — sharing the machine with them is what makes a browser suite
+flaky (`e2e-playwright` skill, "When it runs").
 
 All green is the condition to continue. **Red = stop and fix** — never ship
 "green except one", and never skip this batch because CI repeats it.
@@ -73,21 +80,44 @@ exit 1 with no output is clean; exit 2 means a path could not be read — name i
 and say the check did not run. Do not change a character of that pipeline without
 reading the guide.
 
-### 1bis. Security audit — armed by the token profile, not by memory
+### 1bis. Security audit — armed by the profile, aimed by the diff
 
-Read the profile carried by the artifact. **On `critical` only**, one
-`/audit:security` runs before the commit, scoped to **one surface** — one
-`security-auditor`:
+Read the profile carried by the artifact. `economy` and `standard`: no auditor,
+the report prints `not armed — profile <…>`. **On `critical` only**, before the
+commit:
 
-| What made it `critical` | The surface to audit |
-| --- | --- |
-| authorization, roles, guards, a new table or endpoint | `authz` |
-| payment, billing, anything with a money amount | `authz`, and `input-output` if a webhook or a callback is involved |
-| destructive data change (delete, bulk update, migration with data loss) | `authz` |
-| session, login, logout, token handling | `session` |
-| explicit user request | ask which surface, or run `everything` if they said so |
+1. `<base>` is the plan's `Base:`, else `git merge-base HEAD <default branch>`.
+   Run `python3 .claude/hooks/kit-audit-surface.py select --base <base>`: it reads
+   the working tree against `<base>`, untracked files included, and returns the
+   surfaces the diff touches with one reason each — `authz` for a path under a
+   declared server root, `session` and `input-output` for added trigger lines.
+   The ship stops like a red gate on any non-zero exit of the script.
+2. The profile reason is kept as the record of why the work is `critical`; its
+   surface counts only when the diff touches it, so the selection is the script's:
 
-A Critical finding stops the ship like a red gate: the track stays in its
+   | What made it `critical` | Its surface, when the diff touches it |
+   | --- | --- |
+   | authorization, roles, guards, a new table or endpoint | `authz` |
+   | payment, billing, anything with a money amount | `authz`, and `input-output` if a webhook or a callback is involved |
+   | destructive data change (delete, bulk update, migration with data loss) | `authz` |
+   | session, login, logout, token handling | `session` |
+
+3. The main thread may add a surface the script missed, printing `Audit added:
+   <surface> — <reason>`; it **never drops** one the script returned. An explicit user request runs
+   the surfaces the user named, whatever the script returned.
+4. Something selected → launch **one `security-auditor`** directly with every
+   selected surface, each surface's definition from `/audit:security`, the changed
+   files and the script's reasons — never `/audit:security <list>`, which runs all
+   six. Nothing selected → no auditor; the report prints `Audit: not armed — diff
+   touches no audit surface (<the script's reason>); review security ran`.
+5. Write the auditor's Critical, Major and Minor items with Write to
+   `docs/work/<slug>/audit-1.json` (`surface`, `severity`, `path`, `line` or
+   `null`, `problem`) and run
+   `python3 .claude/hooks/kit-audit-surface.py follow-ups docs/work/<slug>/audit-1.json`:
+   every Major and Minor lands in `follow-ups.md`. Exit 2 means that JSON is wrong:
+   correct it and rerun, never invent a line or drop a finding.
+
+`next: stop` — a Critical — stops the ship like a red gate: the track stays in its
 worktree and the fix comes back through the loop with its reproduction test, never inline here. Not `critical` but the diff
 seems to deserve it → say so in one line and ask.
 
@@ -96,46 +126,104 @@ seems to deserve it → say so in one line and ask.
 Walk the entry artifact's criteria one by one. For each: checked, and **how it was
 observed**. A criterion nobody can observe is not met.
 
+**Frozen cases amended during the pass.** Every `amended` line of `plan.md`'s
+`## Gate` (a plan-gate row, or an EXECUTE batch, `orchestrate.md` Phase 4) goes
+into the PR body (`Frozen cases`), each with its test hunk, on `4bis-PR`, and is
+the user's to confirm in the merge presentation only on `4bis-local`. A refused
+amendment goes back to EXECUTE, then `/loop:review` and this command from step 1.
+
 ### 3. Deploy (only if the diff requires it, and only on request)
 
-<!-- FILL: the real deploy commands, and their traps. Two that bite everywhere:
-     a bulk deploy silently resets per-unit flags, and a migration push applies
-     EVERY pending migration — including ones another session wrote. List the
-     pending state before pushing. -->
+**Project slot `deploy`** — `## deploy` in `.claude/overlays/commands/loop/ship.md`; absent → no deploy known: ask the user.
+The section holds the real deploy commands and their traps. Two that bite everywhere: a bulk
+deploy silently resets per-unit flags, and a migration push applies EVERY pending migration —
+including ones another session wrote. List the pending state before pushing.
 
 Announce what needs deploying and **ask** before running it.
 
 ### 4. Commit
 
-Delegate to the **`github` agent**: it stages, writes the Conventional Commit
+First remove the applied `.tdd-unfrozen` entries in one Edit (delete the lines
+or comment them out: that Edit narrows the freeze and does not ask). Then
+hand the `github` agent the subject only — never body bullets; a body belongs
+to the PR. Delegate to the **`github` agent**: it stages, writes the Conventional Commit
 message, commits locally, and never signs. It commits **on a branch, never on
-`main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>` if it has one, a fresh
-one otherwise. Anything remote (push, PR) waits for the user's explicit
-go-ahead — that gate belongs to the agent, don't bypass it.
+`main`** (`enforce-git-workflow.sh` refuses it) — the track's `feat/<slug>`; on the base
+branch, `git switch -c feat/<slug>` first. The pass's own push and PR follow
+`4bis-PR` with no chat confirmation; any other remote action keeps the user's
+go-ahead — that gate belongs to the agent, don't bypass it. Nothing leaves the
+machine without its `amended` lines: the PR body carries each with its test hunk.
+
+Also hand the agent the `Screenshots run:` dir from `## Gate` (or `none`) and
+`<base>`. The order, when a PR is opened: (a) the agent commits; (b) on a PR with
+a recorded run, the agent runs Publish steps 1-5 (`github.md`, "PR screenshots on
+`pr-assets`") and returns the `section` text; (c) the main thread then writes
+`docs/work/<slug>/pr-body.md` with Write, `Screenshots` block included; (d) the
+agent is called again to run `gh pr create ... --body-file`.
 
 ### 4bis. Integrate
 
 Every loop pass ends on a branch, worktree or not — so this step always applies.
-Of the three sub-steps below, only the **third** (the clean-up) differs when the
-track ran in a worktree.
+`git remote get-url origin` picks the subsection: a remote → `4bis-PR`, none →
+`4bis-local`. **One integration at a time** — never two merges in flight.
 
-**One integration at a time** — never two merges in flight. Then, via the
-`github` agent:
+#### 4bis-PR (a remote exists)
+
+Nothing is replayed or merged locally and nothing is force-pushed: the server
+merges. Via the `github` agent, in this order:
+
+1. `git push -u origin <branch>` — the pass's `feat/<slug>`.
+2. The main thread writes `docs/work/<slug>/pr-body.md` with Write, on `github.md`'s
+   PR template: `Frozen cases` (every `amended` line with its test hunk), `Open
+   questions` (answers taken), `Review` (surviving findings), `Gates`, and
+   `Screenshots` when a run is recorded (step 4's order). In `auto` it also carries
+   `Decided without you` (the record's arbiter verdicts) and `Contract contradiction`
+   (when any) after the summary, and `Guarded files touched`: run `git fetch origin <base>`, then
+   `python3 .claude/hooks/loop-record.py --guarded-block` and paste its output verbatim — the
+   git hook recomputes it and denies `gh pr create` unless the body holds it byte for byte.
+3. `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`.
+
+In `auto`, a red gate after its fix budget, or any other blocked-stop cause
+(`/loop:orchestrate`, "Validation mode"), ends here: a blocked stop pushes nothing and
+opens no PR; the commits stay local.
+
+With the tree's valid loop record (the user's plan-gate go) and the server barrier,
+1 and 3 run without a prompt and **without a chat confirmation**; otherwise each asks
+once, through the hook. Report the PR URL, and for a stacked pass the merge order
+(its base's PR first). Write the handoff with `phase: awaiting-merge` and
+`pr: <url>`; the main tree stays on `feat/<slug>` (the board line and story status
+committed with the pass stay visible). Closing belongs to the **closing check**
+(`orchestrate.md` Phase 0 step 0, `tracks.md`): `.claude/scripts/loop-pr-state.sh --chain feat/<slug>`
+reads the PR's `MERGED` state and `baseRefName`; `closable` runs step 5, then
+`4bis-local` item 3's clean-up.
+
+#### 4bis-local (no remote)
+
+Via the `github` agent:
 
 1. Rebase `feat/<slug>` on the current base branch. If the rebase moved anything,
    **re-run the gates** — the code that merges is not the code you tested.
-2. Present the branch, the diff summary and the exact merge command, and **wait
-   for the go-ahead**. Merging is as gated as pushing.
+2. Present the branch, the diff summary, every `amended` frozen case of
+   `## Gate` (section 2 above) — id, old and new case line, reason, and the test hunk
+   from the diff, so the user confirms the change itself, not its description —
+   the count of lines in `docs/work/<slug>/follow-ups.md` with its path (or
+   `follow-ups: none`), no board line written from it,
+   and the exact merge command, and **wait for the go-ahead**. Merging is as gated
+   as pushing. A refused amendment first re-adds its
+   `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
    Otherwise, **mind who is standing where**:
-   - the session is **inside** the worktree → `ExitWorktree` (`remove`). Git
-     cannot delete the tree you are standing in, and the `github` agent has no
-     such tool: this one is the main thread's job.
+   - the session is **inside** the worktree → `ExitWorktree` with `keep`, then
+     `git worktree remove .claude/worktrees/<slug>`, then `git branch -d feat/<slug>`
+     (a `remove` exit would delete the tree around a record that stays valid in it).
+     Git cannot delete the tree you are standing in, and the `github` agent has no
+     such tool: leaving it is the main thread's job.
    - the worktree belongs to **another** track → `git worktree remove
      .claude/worktrees/<slug>` then `git branch -d feat/<slug>`.
 
-   Never `--force`, never `rm -rf` (the Bash hook blocks both). A refusal means
-   uncommitted work: report it, don't override it.
+   Never `--force`, never `rm -rf` (the Bash hook denies or asks on both). A refusal means
+   uncommitted work: report it, don't override it. Then
+   `python3 .claude/hooks/loop-record.py --clear`: the record authorised this pass only.
 
 A red gate or a failed review means the track stays in its worktree and loops on
 the fix. It does not merge. **Not fixing it today → give the line back**: board
@@ -145,6 +233,10 @@ line → `BLOCKED` with its reason, from the main tree, story `Status` →
 ### 5. Advance the state
 
 In the main tree, after 4bis — the product files never change in a worktree.
+`4bis-local` runs this step right after the merge. On `4bis-PR` the story stays
+`InProgress` and the board line `IN LOOP` until the closing check prints
+`closable`; then it runs (a `closed` PR → board `BLOCKED` "PR closed unmerged",
+story `Approved`).
 
 - Full pipeline: story `Status` → `Done`, fill the Change Log.
 - `docs/product/backlog.md`: the line moves to `SHIPPED` and its `Shipped`
@@ -161,6 +253,12 @@ In the main tree, after 4bis — the product files never change in a worktree.
   move on. Nothing else writes `Current surface`.
 
 - Write nothing to `docs/work/<slug>/` — it stays as the trace of the loop.
+- **`pr-assets` cleanup**, when the repo has a remote `pr-assets` branch: list the
+  `MERGED` PRs (`gh pr list --state merged --json number,headRefName`). Skip any
+  branch name that still has an open PR (`gh pr list --state open --head <B>`).
+  For each of the others, offer the cleanup: `kit-pr-assets.py drop` on that
+  PR's body, as in `github.md`. Each `gh` call and the push keep their default
+  prompt.
 
 ### 6. Next feature
 
@@ -182,23 +280,44 @@ line that looks stale and never by deleting the row. On the full pipeline the
 story goes with it: `Status` → `Dropped`, the reason in its Change Log. "Not now"
 is the line staying `READY` below, or `BLOCKED` with its reason.
 
+## Small-ticket integration
+
+For `Pipeline: small`, step 4 runs `small-scope.sh <name>` before the commit; a
+refusal ejects. With a remote, push `feat/small-<name>` and open its PR on the
+spec's `Base:` with `gh pr create --repo <owner/repo> --base <Base> --head feat/small-<name> --title "<title>" --body-file docs/work/small-<name>/pr-body.md`;
+both ask once (a small pass has no loop record), then print the PR URL.
+With no remote: in 4bis.1, rebase onto the spec's `Base:` branch. In 4bis.2,
+confirm `git -C <main-tree> branch --show-current` equals that Base and that no
+main-tree loop is active; otherwise print `main tree on <x>, not <base>: merge later`.
+Then merge with `git -C <main-tree> merge --ff-only feat/small-<name>`. The
+`<main-tree>` is the first worktree from `git worktree list --porcelain`; the
+merge asks through `enforce-git-workflow.sh` on main/master, through the default
+permission prompt otherwise. In 4bis.3 print, but do not run here,
+`git worktree remove .claude/worktrees/small-<name>` and `git branch -d feat/small-<name>`.
+
+Step 5 has no board line to move. Step 6 and the closing line print that cleanup,
+then `/loop:small --status` to run in the main session, then `close this terminal`.
+
 ## Output
 
 ```
 ## Ship: <feature>
 - Gates: typecheck ✓ | lint ✓ | test:run ✓ (<n> tests) | coverage ✓ (<n>%, or "no config") | build ✓
 - Security: audit ✓ (<n> advisories, or "<pkg> — no fix published, your call") | bundle secrets ✓ (or "SCAN NOT RUN: <the missing path>")
-- Audit: <surface> — <n> Critical / <n> Major   (or "not armed — profile <economy|standard>")
+- Audit: <surfaces> — <n> Critical / <n> Major / <n> Minor → <k> in docs/work/<slug>/follow-ups.md   (or "not armed — profile <economy|standard>", or "not armed — diff touches no audit surface (<reason>); review security ran")
 - Criteria: <n>/<n> met — <the unmet ones, if any>
 - Deploy: <done / pending your validation / n/a>
 - Commit: <hash> <subject>   (remote: <pushed / awaiting validation / not asked>)
 - Branch: feat/<slug> <in main tree | in .claude/worktrees/<slug>> — <merged | awaiting your validation | still open>
-- Board: <feature> → SHIPPED
+- PR: <url> — awaiting merge   (4bis-PR; "none — no remote" on 4bis-local)
+- Follow-ups: <n> in docs/work/<slug>/follow-ups.md   (or "none")
+- Board: <feature> → SHIPPED   (4bis-PR: "<feature> stays IN LOOP until the PR merges")
 - Next: <feature> — <command>
 ```
 
 Then end the turn with one line to the user, in their language: the feature is
-shipped, type `/clear` then `go` to start the next one. A session that chains
+shipped. For a small ticket, print its cleanup, `/loop:small --status` to run in
+the main session, then `close this terminal`. A session that chains
 features rereads every previous one at each turn; `/clear` is the user's command
 (it works from Remote Control), and after it the SessionStart hook
 `next-feature-on-clear.py` hands the fresh session the feature `go` starts.
@@ -207,8 +326,9 @@ features rereads every previous one at each turn; `/clear` is the user's command
 
 - Report faithfully: a skipped gate is announced, not implied.
 - Never the watch-mode script. Always the run-once one.
-- Never push or open a PR without an explicit go-ahead.
-- Same for a merge back into the base branch, and never two at once
+- The pass's own push and PR follow `4bis-PR`; any other push or PR needs an
+  explicit go-ahead.
+- So does a local merge back into the base branch, and never two at once
   (`.claude/guides/10-worktrees.md`).
 
 ## Task: $ARGUMENTS

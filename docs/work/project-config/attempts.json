@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-11-16T13:15:18.775769Z",
+    "reason": "re-review 3: Major G1 hook-lib shell/py TDD regexes (:301,:303,:330) start at CWK_NEVER_RE: old PDC/enforce-git beside new lib pass rm/git rm/git checkout of a frozen test (mixed-version fail-open, Gate says fail closed)"
+  }
+}

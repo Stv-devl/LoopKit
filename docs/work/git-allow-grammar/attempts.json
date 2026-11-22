@@ -1,0 +1,7 @@
+{
+  "security": {
+    "count": 1,
+    "last": "2026-11-01T06:30:57.200171Z",
+    "reason": "hook runs agent-written code before deciding: core.fsmonitor through add --dry-run (regression), planted shlex.py through python3 - (reach widened by acceptEdits)"
+  }
+}

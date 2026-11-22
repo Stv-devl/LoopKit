@@ -34,7 +34,7 @@ the repository boundary.
 May import the client: its own module, `*.gateway.ts`, bare `services.ts`, and
 the composition root: `src/main.tsx`, `src/routes/__root.tsx`. Providers, guards,
 route helpers, hooks and UI use repositories. Keep this line synchronized with
-`COMPOSITION_ROOTS` in `enforce-architecture.py`.
+`data_client.composition_roots` in `.claude/project.json`.
 
 ## File size thresholds
 
@@ -62,6 +62,7 @@ No business logic in pages/components. Use `index.ts` only for 20+ exports.
 ## Backend (fill or delete)
 
 None — this repo is front-end only.
+Server roots: none.
 
 ## Router
 

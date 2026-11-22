@@ -6,8 +6,9 @@ Remote Control too), then `go`. This hook only fires on that clear and adds one
 paragraph of context naming what `go` means: an interrupted feature first (a
 board line `IN LOOP` whose work folder holds a handoff), else the topmost `READY`
 line. An `IN LOOP` line with a worktree is held by another session and skipped;
-one with neither is mentioned, never proposed: it may be held elsewhere.
-Any other session start gets nothing.
+one with neither is mentioned, never proposed: it may be held elsewhere. One
+whose handoff reads `phase: awaiting-merge` shipped to a PR: it is named as
+awaiting merge, never resumed. Any other session start gets nothing.
 """
 from __future__ import annotations
 
@@ -41,8 +42,11 @@ def board_rows(board: Path) -> list[dict[str, str]]:
 
 
 def loop_slug(entry: str) -> str:
-    """`/loop:research`'s slug rule: a story is `<feature>-<n>`, anything else its stem."""
+    """`/loop:research`'s slug rule: a small spec is `small-<name>`, a story
+    `<feature>-<n>`, anything else its stem."""
     path = Path(entry)
+    if len(path.parts) == 4 and path.parts[:3] == ("docs", "specs", "small"):
+        return f"small-{path.stem}"
     if len(path.parts) >= 3 and path.parts[:2] == ("docs", "stories"):
         return f"{path.parts[-2]}-{path.stem}"
     return path.stem
@@ -56,6 +60,16 @@ def handoff_of(project: Path, entry: str) -> str | None:
     return None
 
 
+def awaits_merge(project: Path, handoff: str) -> bool:
+    """The handoff's frontmatter reads `phase: awaiting-merge`: the pass shipped to a PR."""
+    try:
+        text = (project / handoff).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    match = re.match(r"---\n(.*?)\n---", text, re.S)
+    return bool(match and re.search(r"^phase:\s*awaiting-merge\s*(#.*)?$", match.group(1), re.M))
+
+
 def next_feature(project: Path) -> str:
     board = project / "docs" / "product" / "backlog.md"
     if not board.is_file():
@@ -63,21 +77,27 @@ def next_feature(project: Path) -> str:
                 "to run, then /loop:orchestrate <it>.")
     rows = board_rows(board)
     unsure: list[str] = []
+    waiting: list[str] = []
     for row in rows:
         entry = row.get("Entry artifact", "")
         if row.get("State") != "IN LOOP" or entry in ("", "—"):
             continue
         name = row.get("Feature / story", entry)
         handoff = handoff_of(project, entry)
+        if handoff and awaits_merge(project, handoff):
+            waiting.append(name)
+            continue
         if handoff:
             return (f"Interrupted feature: {name}. "
                     f"On `go`, run /loop:orchestrate {handoff}")
         if not (project / ".claude" / "worktrees" / loop_slug(entry)).is_dir():
             unsure.append(name)
     note = ""
+    if waiting:
+        note += f" Also awaiting PR merge: {', '.join(waiting)} — the closing check closes it once merged."
     if unsure:
-        note = (f" Also IN LOOP with no handoff and no worktree: {', '.join(unsure)} — "
-                "another session may hold it; ask the user before resuming it.")
+        note += (f" Also IN LOOP with no handoff and no worktree: {', '.join(unsure)} — "
+                 "another session may hold it; ask the user before resuming it.")
     for row in rows:
         entry = row.get("Entry artifact", "")
         if row.get("State") == "READY" and entry not in ("", "—"):
@@ -98,6 +118,8 @@ def main() -> int:
     try:
         project = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     except FileNotFoundError:
+        return 0
+    if project.name.startswith("small-") and project.parent.parts[-2:] == (".claude", "worktrees"):
         return 0
     context = ("Fresh session after /clear. " + next_feature(project)
                + " Wait for the user's `go` before starting.")

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: tdd-prove-red-py
 # Event: PostToolUse (Write|Edit)
@@ -35,8 +36,6 @@
 # an EXACT match, never a prefix: a project whose `app` package is not importable
 # at all reports `No module named 'app'`, and a prefix match would read that
 # packaging failure as the legitimate first red of every feature.
-#
-# CONFIGURE: the layers, the module root and the runner live in tdd_py_lib.py.
 
 import io
 import os
@@ -125,8 +124,13 @@ def imported_symbols(source: str, dotted: str) -> set:
 def main() -> None:
     payload = lib.read_payload()
     file_path = (payload.get("tool_input") or {}).get("file_path") or ""
-    if not file_path or not lib.is_frozen_test(file_path):
+    if not file_path or not file_path.endswith(".py"):
         sys.exit(0)
+    reason = lib.configure()
+    if lib.VALUES and not lib.is_frozen_test(file_path):
+        sys.exit(0)
+    if reason:
+        lib.emit(f"TDD hook: the RED phase was NOT proved for {file_path} and no marker was recorded.")
 
     abs_test = lib.abs_path(file_path)
     if not os.path.isfile(abs_test):

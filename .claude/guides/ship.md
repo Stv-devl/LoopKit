@@ -39,10 +39,14 @@ bland name. It is a floor.
 `11-token-budget.md` reserves `critical` for payment, authorization, destructive
 data changes or an explicit request — the list of features where a missing
 server-side barrier is not a Minor. The same condition arms both: the profile is
-the repo's statement that this feature is one of the dangerous ones. One surface
-is one `security-auditor`, so the cost is that agent on `critical` and zero
-elsewhere. Running it unasked on every feature is the token cost the audit was
-put out of the loop to avoid.
+the repo's statement that this feature is one of the dangerous ones. The profile
+arms the audit; the diff aims it. `kit-audit-surface.py` reads the ship diff and
+selects only the surfaces it touches: measured on a real project, most `authz`
+audits ran on commits with no server file and reported nothing. Several selected
+surfaces go to one `security-auditor`; none selected runs none and says why, the
+review's `security` dimension having already read the diff. Its Majors and Minors
+land in `follow-ups.md` instead of being lost. Running it unasked on every
+feature is the token cost the audit was put out of the loop to avoid.
 
 ## Why advancing the state comes after the merge
 

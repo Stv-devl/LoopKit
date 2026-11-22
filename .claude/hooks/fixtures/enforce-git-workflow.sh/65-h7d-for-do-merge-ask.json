@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"for i in 1; do git -C __MAIN_TREE__ merge feat/x; done"}}

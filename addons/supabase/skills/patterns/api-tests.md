@@ -1,8 +1,8 @@
 # API Tests (Edge Functions)
 
-<!-- FILL: `example-*` are placeholder function names, and the `_shared/` helpers
-     named here must exist in this repo before an agent imports them. Delete any
-     section whose helper you did not implement — see addons/supabase/functions/. -->
+> Note: `example-*` names are placeholders, use this repo's names when applying. The
+> `_shared/` helpers named here must exist in this repo before an agent imports them: delete
+> any section whose helper you did not implement (see addons/supabase/functions/).
 
 > See `edge-function.md` and `edge-function-tests.md` for the basics.
 

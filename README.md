@@ -1,7 +1,7 @@
 # LoopKit
 
-One loop from idea to commit for Claude Code — 30 commands, 12 subagents, 10
-declarative rules and 14 hooks that mechanically refuse what the rules forbid.
+One loop from idea to pull request for Claude Code — 31 commands, 14 subagents, 10
+declarative rules and 16 hooks that mechanically refuse what the rules forbid.
 Built for React + TypeScript; the backend is a parameter.
 
 ```
@@ -12,6 +12,8 @@ COMPLEX ENTRY (multi-epic)              ▼
                                         │
 SIMPLE ENTRY (one screen, CRUD, fix)    │
   /loop:spec ───────────────────────────┤
+SMALL ENTRY (bounded change)             │
+  /loop:small ───────────────────────────┤
 BUG ENTRY (symptom → reproduction)      │
   /loop:debug ──────────────────────────┤
                                         ▼
@@ -22,21 +24,54 @@ THE LOOP (identical for both)           ▼
        └───────────────── /loop:orchestrate runs the whole thing ─────────────────┘
 ```
 
+Validation `moi` (you take every gate) or `auto` (you validate the contract after research, an
+`arbiter` agent takes each later gate, the PR lists what it decided; you merge). Either way the
+agent commits, pushes its branch and opens the PR; the merge is always yours.
+
 ## Install
 
 ```bash
 git clone <this-repo> loopkit && cd loopkit
 ./install.sh /path/to/my-project      # core: language-agnostic guardrails
 # add --react-ts, --supabase (includes React/TS), and/or --fastapi
+# CI/CD: --deploy=none|netlify|vercel|pages|ssh|ghcr, --no-ci, --lefthook
 /kit:init                             # inspect, ask closed choices, adapt, doctor
-/loop:spec my feature                 # then, inside the project
-/loop:orchestrate docs/specs/<slug>.md
+/loop:spec my feature                 # then, inside the project: it writes the
+                                      # spec and chains /loop:orchestrate
 ```
 
-`install.sh` writes existing kit files as `.new`; the sole exception is
+`install.sh` overwrites kit code (`.claude/hooks/`, `.claude/scripts/`, the root
+launchers, and the kit prompts of `.claude/{agents,commands,skills,guides}/` that it lists in
+`.claude/kit-manifest`) after backing up every file that differs to `.claude/kit-backup/<UTC time>/`,
+and writes the other existing kit files as `.new`; the two exceptions are
 `.claude/settings.json`, whose selected hook blocks are merged idempotently while
-preserving user keys. `/kit:init` adapts the markers it can prove, asks closed questions
-for choices, and reports every marker it must leave open with its exact path.
+preserving user keys, and `.claude/project.json`, which is created or upgraded in
+place from the values of your active hooks and never gets a `.new`. `/kit:init` adapts the markers it can prove, asks closed questions
+for choices, and reports every marker it must leave open with its exact path. It also
+writes `.claude/project.json`: the app roots (`frontend/`, `backend/`) whose configs are
+guarded like the root's, and the code generators allowed to redirect into a source.
+
+**Updating** an installed project is the same command: kit code is replaced (the
+run names the backup folder, or says `kit code: up to date`), other changed kit
+files land as `.new` beside your adapted copy, and `settings.json` merges (retired
+allows removed, deny list unioned in order). The narrow permissions (P1:
+`acceptEdits` plus exact git and gate allows) are always applied, since the guard
+hooks that police them are current. `.claude/project.json` is migrated from your
+old hooks before they are replaced.
+
+**The kit boundary.** In an installed project (`.claude/INSTALL_PROFILE` present) the
+hooks deny every write to kit code, by Write/Edit, shell or git: change it in this
+repo, then re-run `install.sh`. A kit prompt is kit code too (the list is
+`.claude/kit-manifest`): your values and local rules for it live in
+`.claude/overlays/<its path under .claude/>`, never in the prompt. `/kit:init` writes your values as
+`.claude/project.proposed.json`; you apply it from your own terminal with
+`bash .claude/scripts/kit-apply.sh`. In this repo nothing changes: those paths ask.
+
+**CI/CD.** Unless `--no-ci`, the project gets `ci.yml` (the same gates as
+`/loop:ship`), a push-only `deploy.yml` assembled for the chosen target,
+`dependabot.yml` and `CODEOWNERS` — actions pinned by SHA, CLIs by version, the
+SSH host key pinned. `--lefthook` adds a pre-push running typecheck, lint and
+tests. Projects without a remote use `--no-ci`: the gates stay in `/loop:ship`.
 
 ## The loop
 
@@ -45,17 +80,64 @@ for choices, and reports every marker it must leave open with its exact path.
 | `/loop:research` | Multi-modal fan-out: code, blast radius, **the real state of the database**, third-party APIs | `docs/work/<slug>/research.md` |
 | `/loop:interface` | Competing UI proposals on an **editable canvas**, then **you decide**. SKIP when there is no UI | `docs/work/<slug>/design.md` |
 | `/loop:plan` | Write chain + parallelisable lots + contracts + test plan | `docs/work/<slug>/plan.md` |
-| EXECUTE | Inline, sequential, in the plan's order | the code |
+| EXECUTE | Sequential, in the plan's order; RED legs to `test-writer`, GREEN past 70% context and every fix batch to `implementer` | the code |
 | `/loop:review` | Visual pass (UI) · 5 dimensions in parallel · every finding refuted | PASS/CONCERNS/FAIL |
-| `/loop:ship` | Parallel gates, commit via the `github` agent, board updated, next feature named | the commit |
+| `/loop:ship` | Parallel gates, commit, push and PR via the `github` agent, next feature named; the board moves once you merge | the PR |
 
 Every step is callable on its own, so you can rejoin mid-loop.
 
+A pass whose diff touches UI gets PR screenshots: `/loop:review` has
+`e2e-tester` capture the key steps (light/dark × desktop/mobile, test data only,
+plus a "before" image on a bugfix) into the git-ignored `.pr-shots/`. The
+`github` agent publishes them as blobs on the orphan branch `pr-assets`, embeds
+them in the PR body (summary, `Where to look`, `Uncertain`, one line per commit,
+`Screenshots`), and removes them once the PR is `MERGED`, from the tip of
+`pr-assets` only: they stay in its git history. Every push to `pr-assets` asks first.
+
+`/loop:small` dispatches a bounded, non-foundation change into a dedicated
+worktree after **one** approval of its spec (go, edit, or route to `/loop:spec`). The ticket
+then runs plan, execute, a light review and ship with no further question. With a remote it
+pushes `feat/small-<name>` and opens a PR on the spec's `Base:`; both ask once, since a small
+pass has no loop record. Without a remote it fast-forwards locally on your go, one ticket at a
+time. Anything bigger ejects back to `/loop:spec` with its reason: a frozen case to correct, a
+file outside `Files`, a failed review, a gate failed 3 times. Its `.claude/scripts/small-*`
+helpers check the dispatch, compute the allowed paths and refuse a diff that leaves them;
+`/loop:small --status` lists the tickets in flight and what to clean up.
+
+**Push and PR without a prompt.** Your plan-gate go (in `auto`, your contract go) makes a hook
+write `.claude/.loop-record.json`, which no agent can write. With it, and a server-side rule on
+the default branch (a ruleset requiring a pull request), the pass's own first push and its
+`gh pr create` run with no prompt. Every other remote action still asks. Merging the PR closes the
+pass at the next run.
+
+**Auto mode, in practice.** Each decision after the contract goes to a fresh `arbiter`. A hook
+records the verdict, and the PR opens with `Decided without you`. A frozen test changes only on
+an `unfreeze` verdict; a `refuse` is final. Settings, workflows, CODEOWNERS and kit code are
+denied. The other guarded configs (`package.json`, `vite.config.*`, `tsconfig*`…) are written
+without a prompt but recorded, and the PR carries a `Guarded files touched` block that the git
+hook recomputes and checks byte for byte. Anything that would still ask becomes a **blocked
+stop**: commits stay local, no push, no PR, and you take over.
+
+`/loop:spec` chains straight into the loop; its contract is validated at the
+first gate and its acceptance cases carry ids that frozen tests cite. After
+`/loop:ship`, `/clear` reopens on the next feature (a `SessionStart` hook names
+it), and at 97% context `./workflow.sh` restarts Claude on the disk handoff —
+twice per feature at most.
+
 ## What makes it different
 
-- **Hooks that block, not lint.** 14 `PreToolUse` guardrails refuse the write
+- **Hooks that block, not lint.** `PreToolUse` guardrails refuse the write
   itself — a cross-feature import, an `any`, a secret read, a commit on `main`.
   A rule you can check beats a rule you re-read.
+- **Guardrails that guard themselves.** Writing a hook, `settings.json`, an
+  escape-hatch file, a gate config or a workflow asks you first — through
+  Write/Edit or through the shell (redirections, `sed -i`, `perl -i`, heredocs,
+  `python3 -c`, tool output flags). Guard hooks fail closed and never execute
+  repo config; destructive git asks, `.git/` writes are denied.
+- **Fewer prompts, not fewer checks.** Edits run in `acceptEdits`, and only the
+  exact gate commands and strict git forms (`git add`, `git commit -m`,
+  `git switch -c`…) are pre-allowed — the argument wildcards on the test, lint,
+  build and typecheck runners were retired.
 - **A TDD trio that cannot be routed around.** `prove-red` observes the failure,
   `require-red` blocks the module until it exists, `freeze` stops the test
   drifting toward the code. Closed on the shell side too.
@@ -76,17 +158,25 @@ Every step is callable on its own, so you can rejoin mid-loop.
 
 ```
 .claude/rules/      10 rules, loaded every session (and by every subagent)
-.claude/hooks/      14 wired guardrails + the status line
-.claude/agents/     12 subagents
-.claude/commands/   30 slash commands — loop/, bmad/, audit/, refactor/, kit/…
+.claude/hooks/      16 wired hooks + the status line + fixture suites
+.claude/scripts/    the /loop:small helpers, PR state, case hash, kit-apply
+.claude/agents/     14 subagents
+.claude/commands/   31 slash commands — loop/, bmad/, audit/, refactor/, kit/…
 .claude/skills/     patterns, templates, the e2e-playwright skill
 .claude/guides/     rationale + on-demand rules, never auto-loaded
+templates/          github/ (ci, deploy + publish targets, dependabot, CODEOWNERS) · lefthook.yml
 addons/             supabase/ · fastapi/  (opt-in, see below)
 ```
 
-Session floor: **557 lines / ~6,200 tokens**, loaded once per session and per
-subagent — down 55% from 1,245 lines. Contextual detail is routed through
-`.claude/skills/project-rules/`; traps and enforced twins stay hot.
+Session floor: **517 lines / ~5,600 tokens**, loaded once per session and per
+subagent — down 58% from 1,245 lines. `test-rules-floor.sh` holds the core at
+520; an addon rule declares its extra (`addon +N` in its budget header, checked
+against the core rule it replaces), so FastAPI may add 375 lines and Supabase
+220. Contextual detail is routed through `.claude/skills/project-rules/`; traps
+and enforced twins stay hot.
+
+The kit's own CI (`.github/workflows/kit-ci.yml`, never installed) runs every
+fixture suite, lints the hooks and the assembled targets with pinned tools.
 
 **`addons/supabase/`** — stack + DB rules (including **RLS**), the Supabase
 `/database:migration`, front-end patterns and edge functions, plus a real tested
@@ -108,7 +198,9 @@ active `.claude/settings.json`, preserves user keys and never duplicates a hook.
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- `bash`, `python3`, `jq` (for the hooks)
+- `bash`, `python3`, `jq`, `git` (for the hooks)
+- `gh`, authenticated, for the push and PR without a prompt and the barrier check; without
+  a remote, `/loop:ship` merges locally on your go
 - A package manager is needed only for the React/TS profile. `pnpm` is the
   shipped default, replaceable in `00-project.md`, `/loop:ship` and its runners.
 

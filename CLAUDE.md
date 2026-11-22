@@ -30,8 +30,8 @@ and never replaces them · `.claude/guides/rules-index.md`.
 - Any file containing secrets, API keys, or credentials
 - `*.pem`, `*.key`, `credentials.*`
 
-If a task requires environment variables, ask the user to provide the variable
-names (not values) or check `.env.example`.
+If a task needs environment variables, ask for their names (not values) or check `.env.example`.
+Kit code (hooks, scripts, launchers, `project.json`) is denied in an installed project: change it in the LoopKit repo, then `install.sh`. Kit prompts are kit code too; a prompt's project values and local rules live in `.claude/overlays/<its path>`, read it before following the prompt.
 
 ### Destructive Commands
 
@@ -40,15 +40,17 @@ names (not values) or check `.env.example`.
 - `rm -rf` on directories without explicit user confirmation
 - `rm -rf *`, `rm -rf .`, `rm -rf ..`
 - Recursive delete on: `src/`, `shared/`, `.claude/`, `public/`, `node_modules/`,
-  `dist/` <!-- FILL: add yours. The enforced copy is PROTECTED_DIRS in
-  .claude/hooks/prevent-destructive-commands.sh — change both together, never one
-  alone. -->
+  `dist/` <!-- FILL: add yours. The enforced copy is `protected_dirs` in
+  .claude/project.json — change both together, never one alone. -->
 - `chmod 777`, `mkfs`, `dd` to devices
 - `git worktree remove --force`, or deleting a worktree with `rm` — use
   `git worktree remove` (it refuses a dirty tree, and that refusal is the point)
 
-**Never write source from the shell** (redirection, `tee`, `sed -i`): it goes
-around every `Write|Edit` guardrail. Delete specific files, never whole folders.
+**Never write any file from the shell** (redirection, `tee`, `sed -i`, `perl -i`, heredocs, `python3 -`/`-c`,
+`node -e`), auto-memory included: it goes around every `Write|Edit` guardrail. A guarded-path ask is
+the user's to answer, never by switching tools. Delete specific files, never whole folders.
+No `cd dir; …` (absolute paths, or Read/Grep/Glob); never end a turn on "je lance X ?" when X is the next local, reversible step asked.
+A kit script (`.claude/hooks/kit-*.py`, `.claude/scripts/*`) runs first in its own Bash call, or right after a lone `cd <absolute root> &&`.
 
 ## Non-negotiables
 
@@ -86,13 +88,14 @@ around every `Write|Edit` guardrail. Delete specific files, never whole folders.
 
 ## Workflows
 
-**One loop, two entries.** Use the lightest entry that does the job.
+**One loop, three entries.** Use the lightest entry that does the job.
 
 ```
 frame (once) : /loop:product   (the product frame + the backlog board)
                /loop:design-system   (extract from code, or --new to create it
                                       with you, once, from zero)
 simple entry : /loop:spec
+small entry  : /loop:small
 complex entry: /bmad:pm → /bmad:sm → /stories:review → /bmad:architect
 parallelism  : /loop:tracks   (what can run at once right now — 3 max — and
                                the worktrees for it; recomputed after a merge)
@@ -101,20 +104,20 @@ loop (shared): /loop:research → /loop:interface → /loop:plan → EXECUTE
                └── /loop:orchestrate <artifact> runs the whole loop ──┘
 ```
 
-- `/loop:interface` and `/loop:plan` fix **what is built** and never proceed on
-  silence; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
+- `/loop:interface` and `/loop:plan` fix **what is built** and never proceed on silence in
+  `moi`; `/loop:ship` and `/loop:tracks` decide only **what leaves the machine**.
 - Stories are sliced **functional, before the architecture**. External docs are
   researched once: `docs/research-cache/settled.md` is read before any fetch.
 - **EXECUTE stays sequential** on the main thread; the RED legs go to one
   `test-writer` per feature, GREEN past 70% and every fix batch to `implementer`.
-  Agents: `.claude/agents/` (13). Separate tracks get separate worktrees, their number
+  Agents: `.claude/agents/` (14). Separate tracks get separate worktrees, their number
   computed · `/loop:tracks`.
 - Token profile `economy` by default, persisted in work artifacts ·
   `11-token-budget.md`. Launch sessions with `./workflow.sh`; manual Codex
   fallback `/handoff:codex` then `./codex-handoff.sh`.
 - Out of the loop, read-only, never a gate: `/audit:security`, `/audit:mutation`,
   `/audit:part <name>`, `/kit:doctor`. Their fixes come back through the loop.
-  Exception: a `critical` profile arms one `/audit:security` surface at ship.
+  Exception: a `critical` profile arms one `security-auditor` on the surfaces the diff touches at ship.
 
 Full map: `docs/Claude_Workflows.md`.
 

@@ -33,7 +33,7 @@ from pathlib import Path
 # --------------------------------------------------------------- infrastructure
 
 OK, DIVERGENCE, MISSING, FILL, SKIP = "ok", "DIVERGENCE", "MISSING", "FILL", "skip"
-OVER = "OVER"
+OVER, INFO = "OVER", "INFO"
 # Only these three mean "a human has something to decide". The rest is reporting.
 FAILING = (DIVERGENCE, MISSING, OVER)
 
@@ -86,61 +86,147 @@ def fmt(value: object) -> str:
 
 # ----------------------------------------------------------------- twin checks
 
+PROJECT_JSON = ".claude/project.json"
+_PROJECT: list = []
+
+
+def project_values():
+    """`(config, None)` from `.claude/project.json` through the hooks' one reader, or
+    `(None, reason)` when the value twins cannot be checked against it."""
+    if not _PROJECT:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import project_config
+        except ImportError:
+            _PROJECT.append((None, "not checked: project_config.py missing next to kit-doctor.py"))
+            return _PROJECT[0]
+        try:
+            _PROJECT.append((project_config.load_strict(str(ROOT)), None))
+        except project_config.ConfigError as error:
+            reason = (f"source absent: {PROJECT_JSON}" if error.status == 4
+                      else f"not checked: {PROJECT_JSON} is invalid")
+            _PROJECT.append((None, reason))
+    return _PROJECT[0]
+
+
+def unchecked(check: str, reason: str) -> list[Finding]:
+    return [Finding(check, SKIP, reason)]
+
+
+def kit_source_only(check: str) -> list[Finding] | None:
+    """A twin whose one side is a kit prompt runs in the kit repo only: in an installed project
+    the prompt is kit code and holds the kit's default by design, so it never diverges there."""
+    if is_kit_source():
+        return None
+    return unchecked(check, "installed project: the kit prompt keeps the kit default (kit-source check)")
+
+
 def check_protected_dirs() -> list[Finding]:
-    doc, hook = read("CLAUDE.md"), read(".claude/hooks/prevent-destructive-commands.sh")
-    if doc is None or hook is None:
-        return skip("protected-dirs", "CLAUDE.md", "prevent-destructive-commands.sh")
+    """The protected folders, against CLAUDE.md's "Recursive delete on:" list. A project that
+    came with its own CLAUDE.md has no list there: MISSING, so the two copies get created."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("protected-dirs", reason)
+    doc = read("CLAUDE.md")
+    if doc is None:
+        return skip("protected-dirs", "CLAUDE.md")
 
     block = re.search(r"Recursive delete on:(.*?)(?:\n\s*\n|\n- )", doc, re.S)
-    enforced = re.search(r'^PROTECTED_DIRS="([^"]+)"', hook, re.M)
-    if not enforced:
-        return [Finding("protected-dirs", MISSING, "PROTECTED_DIRS no longer parses in the hook")]
+    actual = set(config.protected_dirs)
     if not block:
-        # The common case is not a rename: it is a project that came with its own
-        # CLAUDE.md, so the installer patched the hook and could not patch the doc.
-        return [Finding("protected-dirs", MISSING, "CLAUDE.md declares no protected list — the hook guards alone", [
-            f".claude/hooks/prevent-destructive-commands.sh  →  {fmt({d.replace(chr(92) + '.', '.') for d in enforced.group(1).split('|')})}",
+        return [Finding("protected-dirs", MISSING, "CLAUDE.md declares no protected list — the hooks guard alone", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
             "add that list to CLAUDE.md under \"Recursive delete on:\", so the two copies exist",
         ])]
 
-    # The doc writes them as `src/`; the hook as an alternation with escaped dots.
     declared = set(re.findall(r"`([^`]+?)/`", block.group(1)))
-    actual = {d.replace("\\.", ".") for d in enforced.group(1).split("|")}
-    return compare("protected-dirs", ("CLAUDE.md", declared),
-                   (".claude/hooks/prevent-destructive-commands.sh", actual))
+    return compare("protected-dirs", ("CLAUDE.md", declared), (PROJECT_JSON, actual))
+
+
+def check_server_roots() -> list[Finding]:
+    """The server folders, against `02-architecture.md`'s `Server roots:` line. The rule says
+    "fill or delete" its Backend section: deleted is fine only while no root is declared."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("server-roots", reason)
+    rule = ".claude/rules/02-architecture.md"
+    doc = read(rule)
+    if doc is None:
+        return skip("server-roots", rule)
+    actual = set(config.server_roots)
+    section = re.search(r"^## Backend\b.*?$(.*?)(?=^## |\Z)", doc, re.S | re.M)
+    if not section:
+        if not actual:
+            return [Finding("server-roots", OK, "no Backend section, no server root")]
+        return [Finding("server-roots", MISSING, "the Backend section is deleted but roots are declared", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
+            f"add a `## Backend` section with `Server roots:` to {rule}",
+        ])]
+    line = re.search(r"^Server roots:(.*)$", section.group(1), re.M)
+    if not line:
+        return [Finding("server-roots", MISSING, f"{rule} `## Backend` has no `Server roots:` line", [
+            f"{PROJECT_JSON}  →  {fmt(actual)}",
+            "add `Server roots: none.` or the backticked folders",
+        ])]
+    declared = set(re.findall(r"`([^`]+)`", line.group(1)))
+    return compare("server-roots", (rule, declared), (PROJECT_JSON, actual))
 
 
 def check_data_client() -> list[Finding]:
-    stack, hook = read(".claude/rules/01-stack.md"), read(".claude/hooks/enforce-architecture.py")
-    if stack is None or hook is None:
-        return skip("data-client", "01-stack.md", "enforce-architecture.py")
+    config, reason = project_values()
+    if config is None:
+        return unchecked("data-client", reason)
+    stack = read(".claude/rules/01-stack.md")
+    if stack is None:
+        return skip("data-client", "01-stack.md")
 
     row = re.search(r"\|\s*Where does the client live\?\s*\|\s*`([^`]+)`", stack)
-    own = re.search(r'^DATA_CLIENT_OWN_PATH = "([^"]+)"', hook, re.M)
-    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook, re.M)
-    if not row or not own or not module:
-        return [Finding("data-client", MISSING, "one side no longer parses — the row or the constant moved")]
-
-    findings: list[Finding] = []
-    # A hook whose two constants disagree matches an import path that never
-    # resolves: the layer reads as guarded and is not.
-    if own.group(1) != module.group(1) + ".ts":
-        findings.append(Finding("data-client", DIVERGENCE, "the hook disagrees with itself", [
-            f"DATA_CLIENT_MODULE    →  {module.group(1)}",
-            f"DATA_CLIENT_OWN_PATH  →  {own.group(1)}",
-        ]))
-
+    if not row:
+        return [Finding("data-client", MISSING, "01-stack.md no longer parses — the row moved")]
+    own = config.data_client["own_path"]
     declared = row.group(1)
     if "<" in declared:
-        findings.append(Finding("data-client", FILL, "the rule still carries its placeholder", [
-            f".claude/rules/01-stack.md            →  {declared}",
-            f".claude/hooks/enforce-architecture.py →  src/{own.group(1)} (already enforced)",
-        ]))
-        return findings
+        return [Finding("data-client", FILL, "the rule still carries its placeholder", [
+            f".claude/rules/01-stack.md  →  {declared}",
+            f"{PROJECT_JSON}       →  src/{own} (already enforced)",
+        ])]
+    return compare("data-client", (".claude/rules/01-stack.md", re.sub(r"^src/", "", declared)),
+                   (PROJECT_JSON, own))
 
-    findings += compare("data-client", (".claude/rules/01-stack.md", re.sub(r"^src/", "", declared)),
-                        (".claude/hooks/enforce-architecture.py", own.group(1)))
-    return findings
+
+def check_env_suffixes() -> list[Finding]:
+    """The env template suffixes the hooks let through, against settings.json's Read allows."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("env-suffixes", reason)
+    settings = read(".claude/settings.json")
+    if settings is None:
+        return skip("env-suffixes", "settings.json")
+    try:
+        perms = json.loads(settings).get("permissions", {})
+    except (ValueError, AttributeError):
+        return [Finding("env-suffixes", MISSING, "settings.json does not parse")]
+    entries = [e for key in ("allow", "deny", "ask") for e in perms.get(key, []) if isinstance(e, str)]
+    plain = {m.group(1) for e in entries if (m := re.fullmatch(r"Read\(!\.env\.([a-z0-9]+)\)", e))}
+    nested = {m.group(1) for e in entries if (m := re.fullmatch(r"Read\(!\.env\.\*\.([a-z0-9]+)\)", e))}
+    actual = set(config.env_template_suffixes)
+    out = compare("env-suffixes", (".claude/settings.json Read(!.env.<s>)", plain), (PROJECT_JSON, actual))
+    if plain == actual and nested != actual:
+        out = compare("env-suffixes", (".claude/settings.json Read(!.env.*.<s>)", nested), (PROJECT_JSON, actual))
+    return out
+
+
+def check_test_command() -> list[Finding]:
+    """The hook's run-once command against 00-project.md. A project may run its runner on one
+    file while the rule names the gate script, so a difference is reported, never failing."""
+    config, reason = project_values()
+    if config is None:
+        return unchecked("test-command", reason)
+    rule = read(".claude/rules/00-project.md")
+    command = " ".join(config.test_command)
+    if rule is not None and any(line.strip() == command for line in rule.splitlines()):
+        return [Finding("test-command", OK, command)]
+    return [Finding("test-command", INFO, f"the hook runs `{command}`, 00-project.md does not list it")]
 
 
 def check_client_copies() -> list[Finding]:
@@ -148,15 +234,17 @@ def check_client_copies() -> list[Finding]:
 
     The templates show a gateway importing the client, a test mocking it, and the
     coverage floor excluding its instance file. `/kit:init` declares the client in
-    `enforce-architecture.py`; a template still on `@/lib/client` then teaches a
+    `.claude/project.json`; a template still on `@/lib/client` then teaches a
     path that does not exist, and an exclusion on the wrong file leaves the real
     client counted against the floor.
     """
-    hook = read(".claude/hooks/enforce-architecture.py")
-    module = re.search(r'^DATA_CLIENT_MODULE = "([^"]+)"', hook or "", re.M)
-    if not module:
-        return skip("client-copies", "enforce-architecture.py")
-    declared = module.group(1)
+    gated = kit_source_only("client-copies")
+    if gated is not None:
+        return gated
+    config, reason = project_values()
+    if config is None:
+        return unchecked("client-copies", reason)
+    declared = config.data_client["module"]
 
     seen: dict[str, set[str]] = {}
     for path in (".claude/skills/templates/feature.md", ".claude/skills/templates/fixtures.md",
@@ -184,19 +272,20 @@ def check_client_copies() -> list[Finding]:
 
 
 def check_composition_roots() -> list[Finding]:
-    arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
-    if arch is None or hook is None:
-        return skip("composition-roots", "02-architecture.md", "enforce-architecture.py")
+    config, reason = project_values()
+    if config is None:
+        return unchecked("composition-roots", reason)
+    arch = read(".claude/rules/02-architecture.md")
+    if arch is None:
+        return skip("composition-roots", "02-architecture.md")
 
-    row = next((l for l in arch.splitlines() if "composition root:" in l), None)
-    tup = re.search(r"COMPOSITION_ROOTS = \(([^)]*)\)", hook, re.S)
-    if row is None or not tup:
-        return [Finding("composition-roots", MISSING, "one side no longer parses — the row or the constant moved")]
+    row = next((ln for ln in arch.splitlines() if "composition root:" in ln), None)
+    if row is None:
+        return [Finding("composition-roots", MISSING, "02-architecture.md no longer parses — the row moved")]
 
     declared = set(re.findall(r"`src/([^`]+)`", row))
-    actual = set(re.findall(r'"([^"]+)"', tup.group(1)))
     return compare("composition-roots", (".claude/rules/02-architecture.md", declared),
-                   (".claude/hooks/enforce-architecture.py", actual))
+                   (PROJECT_JSON, set(config.data_client["composition_roots"])))
 
 
 def check_shared_dirs() -> list[Finding]:
@@ -204,19 +293,16 @@ def check_shared_dirs() -> list[Finding]:
     that has already diverged once (`config/` was missing from both import lists
     while the structure diagram carried it).
 
-    Four copies, not two: the tuple, `02-architecture.md`'s forbidden bullet,
-    `CLAUDE.md`'s non-negotiable, and the reviewer's correctness checklist — which restates the list AND
-    its count, the cheapest of the four to let rot.
+    Three copies: the project.json list, `02-architecture.md`'s forbidden bullet and
+    `CLAUDE.md`'s non-negotiable. The reviewer's checklist is a kit prompt: it reads
+    `data_client.shared_dirs` and restates neither the list nor its count.
     """
-    arch, hook = read(".claude/rules/02-architecture.md"), read(".claude/hooks/enforce-architecture.py")
-    doc, rev = read("CLAUDE.md"), read(".claude/guides/review/correctness.md")
-    if hook is None:
-        return skip("shared-dirs", "enforce-architecture.py")
-
-    tup = re.search(r"SHARED_DIRS = \(([^)]*)\)", hook, re.S)
-    if not tup:
-        return [Finding("shared-dirs", MISSING, "SHARED_DIRS no longer parses in the hook")]
-    actual = {d.rstrip("/") for d in re.findall(r'"([^"]+)"', tup.group(1))}
+    config, reason = project_values()
+    if config is None:
+        return unchecked("shared-dirs", reason)
+    arch = read(".claude/rules/02-architecture.md")
+    doc = read("CLAUDE.md")
+    actual = {d.rstrip("/") for d in config.data_client["shared_dirs"]}
 
     # Every doc copy wraps across lines, so each is matched as a block, never a line.
     # Each copy is compared INDEPENDENTLY. An installed project that arrived with
@@ -227,8 +313,6 @@ def check_shared_dirs() -> list[Finding]:
          r"\*\*Forbidden:\*\*(.*?)→ `features/\*`", r"`src/([a-z]+)/\*`", arch),
         ("shared-dirs (CLAUDE.md)", "CLAUDE.md",
          r"shared leaf code \((.*?)\) never imports a feature", r"`([a-z]+)/`", doc),
-        ("shared-dirs (reviewer)", ".claude/guides/review/correctness.md",
-         r"No shared \*\*leaf\*\* code depending on a feature:(.*?)— the full", r"`src/([a-z]+)`", rev),
     )
 
     out: list[Finding] = []
@@ -239,31 +323,19 @@ def check_shared_dirs() -> list[Finding]:
         block = re.search(block_re, text, re.S)
         if not block:
             out.append(Finding(name, MISSING, f"{fname} declares no leaf list — the wording moved", [
-                f".claude/hooks/enforce-architecture.py  →  {fmt(actual)}",
+                f"{PROJECT_JSON}  →  {fmt(actual)}",
                 f"restate that list in {fname}, so the two copies exist",
             ]))
             continue
         out += compare(name, (fname, set(re.findall(item_re, block.group(1)))),
-                       (".claude/hooks/enforce-architecture.py", actual))
-
-    # The correctness checklist also states the COUNT in prose — a number nothing else compares.
-    words = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
-    n = re.search(r"of `enforce-architecture\.py`, (\w+) entries", rev) if rev else None
-    if rev is None:
-        out += skip("shared-dirs (count)", ".claude/guides/review/correctness.md")
-    elif not n:
-        out.append(Finding("shared-dirs (count)", MISSING, "the correctness checklist no longer states the entry count"))
-    elif words.get(n.group(1)) != len(actual):
-        out.append(Finding("shared-dirs (count)", DIVERGENCE, "the stated count is wrong", [
-            f".claude/guides/review/correctness.md  →  {n.group(1)} entries",
-            f".claude/hooks/enforce-architecture.py  →  {len(actual)} entries",
-        ]))
-    else:
-        out.append(Finding("shared-dirs (count)", OK, f"{n.group(1)} entries"))
+                       (PROJECT_JSON, actual))
     return out
 
 
 def check_coverage_floor() -> list[Finding]:
+    gated = kit_source_only("coverage-floor")
+    if gated is not None:
+        return gated
     rule, cfg = read(".claude/rules/05-testing.md"), read(".claude/skills/templates/tooling-config.md")
     if rule is None or cfg is None:
         return skip("coverage-floor", "05-testing.md", "tooling-config.md")
@@ -281,6 +353,9 @@ def check_coverage_floor() -> list[Finding]:
 
 def check_coverage_holes() -> list[Finding]:
     """The floor's exclusion list — the rule calls it "three wiring files and only three"."""
+    gated = kit_source_only("coverage-holes")
+    if gated is not None:
+        return gated
     rule, cfg = read(".claude/rules/05-testing.md"), read(".claude/skills/templates/tooling-config.md")
     if rule is None or cfg is None:
         return skip("coverage-holes", "05-testing.md", "tooling-config.md")
@@ -323,27 +398,31 @@ def check_token_thresholds() -> list[Finding]:
 
 
 def check_tdd_layers() -> list[Finding]:
-    """The four layer words, in the three places that act on them."""
-    lib = read(".claude/hooks/hook-lib.sh")
+    """The layer words, in the three places that act on them."""
+    gated = kit_source_only("tdd-layers")
+    if gated is not None:
+        return gated
+    config, reason = project_values()
+    if config is None:
+        return unchecked("tdd-layers", reason)
     cfg = read(".claude/skills/templates/tooling-config.md")
     mutation = read(".claude/commands/audit/mutation.md")
-    if lib is None or cfg is None or mutation is None:
-        return skip("tdd-layers", "hook-lib.sh", "tooling-config.md", "audit/mutation.md")
+    if cfg is None or mutation is None:
+        return skip("tdd-layers", "tooling-config.md", "audit/mutation.md")
 
-    hooks = re.search(r'CWK_TDD_LAYERS="([^"]+)"', lib)
     coverage = re.search(r"TEST_FIRST = '\{([^}]+)\}'", cfg)
-    if not hooks or not coverage:
-        return [Finding("tdd-layers", MISSING, "one side no longer parses — the layer list moved")]
+    if not coverage:
+        return [Finding("tdd-layers", MISSING, "tooling-config.md no longer parses — the layer list moved")]
 
     sources = {
-        ".claude/hooks/hook-lib.sh": set(hooks.group(1).split("|")),
+        PROJECT_JSON: set(config.tdd_layers),
         ".claude/skills/templates/tooling-config.md": set(coverage.group(1).split(",")),
     }
     globs = re.findall(r"\{([a-z,]+)\}\.ts", mutation)
     if globs:
         sources[".claude/commands/audit/mutation.md"] = set(globs[0].split(","))
 
-    reference = sources[".claude/hooks/hook-lib.sh"]
+    reference = sources[PROJECT_JSON]
     off = {name: words for name, words in sources.items() if words != reference}
     if not off:
         return [Finding("tdd-layers", OK, fmt(reference))]
@@ -520,6 +599,26 @@ def check_ci_scripts() -> list[Finding]:
     return [Finding("ci-scripts", OK, fmt(called))]
 
 
+def check_project_config() -> list[Finding]:
+    """`.claude/project.json` through the hooks' one reader: valid, and every app root exists."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import project_config
+    except ImportError:
+        return [Finding("project-config", DIVERGENCE, "project_config.py missing next to kit-doctor.py")]
+    try:
+        config = project_config.load(str(ROOT))
+    except project_config.ConfigError as error:
+        return [Finding("project-config", DIVERGENCE,
+                        "invalid: the hooks ignore it (no app root, no codegen)", [str(error)])]
+    missing = [root for root in config.app_roots if not (ROOT / root).is_dir()]
+    if missing:
+        return [Finding("project-config", DIVERGENCE, "declared app root(s) missing on disk",
+                        [f"app_roots: {root}" for root in missing])]
+    return [Finding("project-config", OK,
+                    f"{len(config.app_roots)} app root(s), {len(config.codegen_commands)} codegen command(s)")]
+
+
 def check_audit_flags() -> list[Finding]:
     """The dependency audit runs with the same flags in its three copies.
 
@@ -570,10 +669,11 @@ def check_ignored_loop_paths() -> list[Finding]:
         "docs/work/probe/plan.md": "docs/work/", ".claude/rules/probe.md": ".claude/rules/",
         ".claude/agents/probe.md": ".claude/agents/", ".claude/commands/probe.md": ".claude/commands/",
         ".claude/hooks/probe.sh": ".claude/hooks/", ".claude/skills/probe.md": ".claude/skills/",
+        ".claude/scripts/probe.sh": ".claude/scripts/",
         ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
     }
     try:
-        result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", *probes],
+        result = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "check-ignore", *probes],
                                 capture_output=True, text=True)
     except FileNotFoundError:
         return skip("ignored-loop-paths", "git")
@@ -743,16 +843,21 @@ RUNTIME_PATHS = {
     ".claude/.tdd-unfrozen", ".claude/.tdd-red", ".claude/.token-warning",
     ".claude/.token-delegate", ".claude/.token-stop-agents", ".claude/.restart-ready", ".claude/.codex-ready", ".claude/.quota-warning",
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
-    ".claude/settings.local.json", ".claude/worktrees",
+    ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
+    ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
+    ".claude/.loop-record.json",
 }
+PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # In .claude/hooks/ but invoked by a human or by another script, never by
 # settings.json. `hook-lib.sh` and `tdd_py_lib.py` are the two shared libraries,
 # one per language.
 NON_HOOKS = {
-    "hook-lib.sh", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "kit-measure.py", "test-attempts.sh", "test-hooks.sh",
-    "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-rules-floor.sh",
-    "test-workflow-contracts.sh",
+    "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
+    "kit-attempts.py", "kit-audit-surface.py", "kit-gate-route.py", "kit-measure.py", "kit-pr-assets.py",
+    "project_config.py", "test-attempts.sh", "test-audit-surface.sh", "test-gate-route.sh",
+    "test-hooks.sh", "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-pr-assets.sh",
+    "test-rules-floor.sh",
+    "test-small-lane.sh", "test-workflow-contracts.sh",
 }
 REACT_HOOKS = {
     "no-any-type.sh", "no-forbidden-icons.sh", "enforce-architecture.py",
@@ -790,14 +895,39 @@ ADDON_COMMAND_PREFIXES = ("backend:",)
 
 
 def is_kit_source() -> bool:
+    """The kit repo: its markers and no install stamp, the same rule as `cwk_installed`."""
+    if (ROOT / ".claude/INSTALL_PROFILE").exists():
+        return False
     return (ROOT / "install.sh").is_file() and (ROOT / "addons").is_dir()
+
+
+def check_install_stamp() -> list[Finding]:
+    """An installed project carries `.claude/INSTALL_PROFILE`, written by install.sh; the
+    guard hooks read it to tell kit code from project code."""
+    if is_kit_source() or (ROOT / ".claude/INSTALL_PROFILE").exists():
+        return []
+    return [Finding("stamp", DIVERGENCE, "no .claude/INSTALL_PROFILE in an installed project",
+                    ["re-run install.sh from the kit: it writes the stamp"])]
+
+
+def check_kit_backup() -> list[Finding]:
+    """The latest folder install.sh saved replaced kit code into; informational only."""
+    backups = ROOT / ".claude/kit-backup"
+    folders = sorted(p.name for p in backups.iterdir() if p.is_dir()) if backups.is_dir() else []
+    if not folders:
+        return []
+    return [Finding("kit-backup", INFO, f"{len(folders)} backup folder(s), latest .claude/kit-backup/{folders[-1]}",
+                    ["kit code install.sh replaced; delete the folders once you no longer need them"])]
 
 
 def scanned_docs() -> list[Path]:
     docs = [ROOT / name for name in KIT_DOCS]
     if is_kit_source():
         docs.append(ROOT / "README.md")
-    docs += sorted((ROOT / ".claude").rglob("*.md"))
+    worktrees = ROOT / ".claude" / "worktrees"
+    backups = ROOT / ".claude" / "kit-backup"
+    docs += sorted(p for p in (ROOT / ".claude").rglob("*.md")
+                   if worktrees not in p.parents and backups not in p.parents)
     return [d for d in docs if d.is_file()]
 
 
@@ -843,6 +973,74 @@ def check_hook_wiring() -> list[Finding]:
     return findings
 
 
+def check_github_protection() -> list[Finding]:
+    """A default branch with neither a ruleset nor classic protection merges a red PR.
+
+    The branch is the one `gh repo view` names. A ruleset lacking `pull_request`,
+    `non_fast_forward` or `deletion` is named too: the loop record's server barrier needs
+    all three (docs/specs/loop-to-pr.md). Informational only, and silent whenever it cannot know: offline
+    (CWK_DOCTOR_OFFLINE=1), no `gh`, not authenticated, any error or timeout.
+    A 403 on the classic-protection read means "not readable without admin",
+    never "unprotected". Fix: ci.md, "Repository settings".
+    """
+    import os
+    import shutil
+
+    if os.environ.get("CWK_DOCTOR_OFFLINE") == "1" or not shutil.which("gh"):
+        return []
+    env = {**os.environ, "GH_PROMPT_DISABLED": "1"}
+
+    def gh(*args: str) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(["gh", *args], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    auth = gh("auth", "status")
+    if auth is None or auth.returncode != 0:
+        return []
+    repo = gh("repo", "view", "--json", "defaultBranchRef")
+    if repo is None or repo.returncode != 0:
+        return []
+    try:
+        default = (json.loads(repo.stdout).get("defaultBranchRef") or {}).get("name")
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    if not isinstance(default, str) or not re.fullmatch(r"[A-Za-z0-9._/-]+", default):
+        return []
+    where = [".claude/skills/templates/ci.md — Repository settings"]
+    rules = gh("api", f"repos/{{owner}}/{{repo}}/rules/branches/{default}")
+    if rules is None or rules.returncode != 0:
+        return []
+    try:
+        active = json.loads(rules.stdout)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(active, list):
+        return []
+    if active:
+        types = {rule.get("type") for rule in active if isinstance(rule, dict)}
+        missing = [t for t in ("pull_request", "non_fast_forward", "deletion") if t not in types]
+        if not missing:
+            return []
+        return [Finding("github-protection", INFO,
+                        f"{default} ruleset lacks {', '.join(missing)}: the loop record's server barrier "
+                        "stays off, so the pass's own push and PR keep asking", where)]
+    prot = gh("api", "--include", f"repos/{{owner}}/{{repo}}/branches/{default}/protection")
+    if prot is None:
+        return []
+    status = next((m.group(1) for line in prot.stdout.splitlines()
+                   if (m := re.match(r"^HTTP/\S+ (\d{3})", line))), None)
+    if status == "404":
+        return [Finding("github-protection", INFO, f"{default} has no ruleset and no classic protection", where)]
+    if status == "403":
+        return [Finding("github-protection", INFO,
+                        f"{default} has no ruleset; classic protection not readable (HTTP 403, needs admin)",
+                        where)]
+    return []
+
+
 def check_shipped_paths() -> list[Finding]:
     """Every `.claude/**` path a doc names must exist. Paths under docs/ are not
     checked: `CLAUDE.md` declares them produced by the loop, so absent is normal."""
@@ -852,7 +1050,11 @@ def check_shipped_paths() -> list[Finding]:
         for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for raw in re.findall(r"\.claude/[A-Za-z0-9._/*-]+", line):
                 path = raw.rstrip("./`,;:)")
-                if path in RUNTIME_PATHS:
+                if path in RUNTIME_PATHS or path.startswith((".claude/worktrees/", ".claude/kit-backup/")):
+                    continue
+                if path in PROJECT_HOMES or path.startswith(tuple(h + "/" for h in PROJECT_HOMES)):
+                    continue
+                if path == ".claude/kit-manifest" and is_kit_source():
                     continue
                 # A glob is a legitimate way to name a family of files
                 # (`patterns/edge-function*.md`): one match is enough.
@@ -1017,18 +1219,52 @@ def check_agent_references() -> list[Finding]:
     return [Finding("agent-refs", OK, f"{len(known - {'general-purpose', 'explore', 'plan', 'claude'})} agents, every reference resolves")]
 
 
+PROMPT_DIRS = (".claude/agents", ".claude/commands", ".claude/skills", ".claude/guides")
+PROMPT_FILL = re.compile(r"<!-- FILL|— FILL>")
+
+
+def check_prompt_fill() -> list[Finding]:
+    """Kit source only: a kit prompt holds no project value, so no FILL marker, core or addon.
+    The values live in `.claude/overlays/` and `.claude/project.json`."""
+    if not is_kit_source():
+        return []
+    folders = [ROOT / d for d in PROMPT_DIRS]
+    folders += [a / d.split("/", 1)[1] for a in sorted((ROOT / "addons").glob("*")) for d in PROMPT_DIRS]
+    hits = []
+    for folder in folders:
+        for path in sorted(folder.rglob("*.md")) if folder.is_dir() else []:
+            if PROMPT_FILL.search(path.read_text(encoding="utf-8")):
+                hits.append(path.relative_to(ROOT).as_posix())
+    if not hits:
+        return [Finding("prompt-fill", OK, "no FILL marker in a kit prompt")]
+    return [Finding("prompt-fill", DIVERGENCE, "a kit prompt holds a FILL: move the value to an overlay", hits)]
+
+
+def check_kit_manifest() -> list[Finding]:
+    """Installed only: `.claude/kit-manifest` says which prompts are kit code; the hooks fail
+    closed without it, and an entry whose file is gone is a stale install."""
+    if is_kit_source():
+        return []
+    manifest = read(".claude/kit-manifest")
+    if manifest is None:
+        return [Finding("kit-manifest", MISSING, "no .claude/kit-manifest: every prompt counts as kit code",
+                        ["rerun install.sh from the LoopKit repo to write it"])]
+    entries = [ln for ln in manifest.splitlines() if ln.strip()]
+    gone = [e for e in entries if not (ROOT / e).is_file()]
+    if gone:
+        return [Finding("kit-manifest", MISSING, f"{len(gone)} listed prompt(s) absent from disk", gone)]
+    return [Finding("kit-manifest", OK, f"{len(entries)} kit prompt(s) listed")]
+
+
 def check_fill_markers() -> list[Finding]:
     targets = [ROOT / "CLAUDE.md"]
-    for folder in (".claude/rules", ".claude/commands", ".claude/skills/templates", ".claude/skills/patterns"):
+    overlays = "templates/overlays" if is_kit_source() else ".claude/overlays"
+    for folder in (".claude/rules", overlays):
         targets += sorted((ROOT / folder).rglob("*.md")) if (ROOT / folder).is_dir() else []
 
-    # The workflows are the only non-markdown thing shipped with a placeholder,
-    # and it is the one that fails closed: `deploy.yml`'s `Publish` step is an
-    # `exit 1` until a target is named. Scanning only `*.md` reported "no
-    # placeholder left" on a project whose CD could not deploy — the marker was
-    # there, in a file nothing looked at.
     for folder in ("templates/github", ".github/workflows"):
         targets += sorted((ROOT / folder).rglob("*.yml")) if (ROOT / folder).is_dir() else []
+    targets += [ROOT / "templates/github/CODEOWNERS", ROOT / ".github/CODEOWNERS"]
 
     counts: list[str] = []
     total = 0
@@ -1248,17 +1484,18 @@ def check_kit_health() -> list[Finding]:
 
 
 CHECKS = [
-    ("twins", [check_protected_dirs, check_data_client, check_client_copies, check_composition_roots,
-               check_shared_dirs,
+    ("twins", [check_protected_dirs, check_server_roots, check_data_client, check_client_copies, check_composition_roots,
+               check_shared_dirs, check_env_suffixes, check_test_command,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
-               check_ignored_loop_paths,
+               check_ignored_loop_paths, check_project_config,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
-    ("wiring", [check_hook_prerequisites, check_hook_wiring]),
+    ("wiring", [check_install_stamp, check_kit_backup, check_kit_manifest, check_hook_prerequisites,
+                check_hook_wiring, check_github_protection]),
     ("links", [check_shipped_paths, check_command_references,
                check_command_references_plain, check_agent_references]),
-    ("placeholders", [check_fill_markers]),
+    ("placeholders", [check_prompt_fill, check_fill_markers]),
     ("health", [check_kit_health]),
 ]
 
@@ -1270,7 +1507,7 @@ def main() -> int:
     if source_mode:
         try:
             tag = subprocess.run(
-                ["git", "-C", str(ROOT), "describe", "--tags", "--exact-match", "HEAD"],
+                ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "describe", "--tags", "--exact-match", "HEAD"],
                 check=True, capture_output=True, text=True,
             ).stdout.strip()
         except (FileNotFoundError, subprocess.CalledProcessError):

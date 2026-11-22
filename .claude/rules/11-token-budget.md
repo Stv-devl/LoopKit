@@ -15,7 +15,7 @@ gates always run: compute is not model context.
 
 | Tier | For | Effort | Agents |
 | --- | --- | --- | --- |
-| `inherit` | gates: judgement that can stop the loop | set at the call | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor` |
+| `inherit` | gates: judgement that can stop the loop | set at the call | `reviewer`, `verifier`, `story-critic`, `plan-critic`, `security-auditor`, `arbiter` |
 | `sonnet` | tests from a validated plan | `high` | `test-writer` |
 | `sonnet` | bounded production from a validated entry, and external-doc relevance | `medium` | `doc-researcher`, `story-writer`, `e2e-tester`, `designer`, `github`, `implementer` |
 | `haiku` | bounded extraction/transcription | default | `explorer` |

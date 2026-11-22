@@ -1,14 +1,14 @@
 ---
 name: doc-researcher
 description: Read-only researcher of ONE third-party surface, with a hard network budget. Launch at the RESEARCH step, only for questions that `01-stack.md` and `docs/research-cache/` do not already answer. Writes back its cache file, returns answers — never a documentation dump.
-tools: Read, Grep, Glob, WebSearch, WebFetch, Write
+tools: Read, Grep, Glob, WebSearch, WebFetch, Write, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__context7__get-library-docs
 model: sonnet
 effort: medium
 ---
 
-<!-- FILL (optional): if the Context7 MCP server is installed, add its tool names
-     to `tools:` above, exactly as `/mcp` lists them — never guessed. Without it
-     this agent skips step 3 of the order below; nothing else changes. -->
+The Context7 tools above are listed for a server registered as `context7`
+(`docs/research-cache/context7.md`). Claude Code drops a listed tool that no server provides,
+so without Context7 this agent skips step 3 of the order below; nothing else changes.
 
 # Doc-researcher — external surface, bounded
 

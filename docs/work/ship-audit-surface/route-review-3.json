@@ -1,0 +1,3 @@
+{"mode": "review", "round": 3, "findings": [
+  {"id": "N1", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": "CLAUDE.md", "line": 119, "problem": "the two-auditor contradiction is fixed (one security-auditor on the surfaces the diff touches), but the line omits '(none if none)'; ship.md 1bis step 4 states that no auditor runs when nothing is selected", "scenario": null, "regression": false, "status": "not-fixed", "closure": "CLAUDE.md:119 ends with '(none if none)'"}
+]}

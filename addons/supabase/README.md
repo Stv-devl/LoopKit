@@ -35,14 +35,13 @@ written in two files — and it reports the pair the day they drift.
 1. **`.claude/rules/02-architecture.md` → Backend section.** Replace
    "None — this repo is front-end only" with the block below, and point the
    Patterns list at `.claude/skills/patterns/edge-function*.md`.
-2. **`.claude/hooks/enforce-architecture.py`** → `DATA_CLIENT_MODULE = "lib/supabase"`,
-   `DATA_CLIENT_OWN_PATH = "lib/supabase.ts"`. Left at the default it guards a
-   door that does not exist. **Wired by `install.sh --supabase` on a fresh
-   install.**
-3. **`.claude/hooks/prevent-destructive-commands.sh`** → add `supabase` to
-   `PROTECTED_DIRS`, **and the same entry to the list in `CLAUDE.md`** — the
-   value is declared twice. **Both wired by `install.sh --supabase` on a fresh
-   install.**
+2. **`.claude/project.json`** → `data_client.module` `"lib/supabase"`,
+   `data_client.own_path` `"lib/supabase.ts"` (read by `enforce-architecture.py`).
+   Left at the default it guards a door that does not exist. **Wired by
+   `install.sh --supabase`.**
+3. **`.claude/project.json`** → add `supabase` to `protected_dirs`, **and the same
+   entry to the list in `CLAUDE.md`** — the value is declared twice. **Both wired
+   by `install.sh --supabase` on a fresh install.**
 4. **`.claude/rules/01-stack.md`** → fill the two `FILL` markers (generated-types
    path, which API key system).
 5. **`.claude/rules/00-project.md`** → add the edge-function gate
@@ -89,6 +88,9 @@ supabase/functions/
     ├── schema.ts            # specific Zod
     └── types.ts             # local types
 ```
+
+and replace `Server roots: none.` with ``Server roots: `supabase`.`` — the twin of
+`server_roots` in `.claude/project.json`, which `install.sh --supabase` wires.
 
 Rules: each function autonomous (no cross-function import) · `_shared/` = infra,
 never business logic · manual Zod `safeParse()` · auth/CORS/rate-limit called by

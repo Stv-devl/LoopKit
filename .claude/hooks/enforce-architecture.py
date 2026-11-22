@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: enforce-architecture
 # Event: PreToolUse (Write|Edit)
@@ -12,11 +13,6 @@
 #                               features/* (the arrow points one way). NOT
 #                               providers/ nor routes/: they are wiring, and
 #                               wiring may know what it composes (SHARED_DIRS).
-#
-# CONFIGURE: DATA_CLIENT_MODULE below must match the client declared in
-#            .claude/rules/01-stack.md. Set it to None to disable check 2.
-#            COMPOSITION_ROOTS must list the files that CREATE the client
-#            instance and inject it (router/provider context).
 #
 # Anything ambiguous (business logic in components, `as` casts, ...) is NOT
 # enforced here on purpose: that is what caused over-blocking before.
@@ -77,15 +73,16 @@ def _log_health_deny(reason: str, file_path: str = "") -> None:
         pass
 
 # --- configuration -----------------------------------------------------------
-# Import specifier of the data client, as it appears in `from "..."`.
-# Example: "lib/supabase", "lib/apiClient", "lib/db". None disables check 2.
-DATA_CLIENT_MODULE = "lib/client"
-# The client module itself, relative to src/.
-DATA_CLIENT_OWN_PATH = "lib/client.ts"
-# Composition root: the files that instantiate the client and inject it into the
-# router / provider context. They necessarily import it. Paths relative to src/.
-# Keep this list SHORT — every entry is a hole in the layering.
-COMPOSITION_ROOTS = ("main.tsx", "routes/__root.tsx")
+CLIENT = {}
+DEGRADED = []
+CONFIG_REASONS = {
+    3: ".claude/project.json is invalid or could not be read",
+    4: ".claude/project.json is missing",
+    5: ".claude/project.json cannot be found: CLAUDE_PROJECT_DIR is not an absolute path",
+    6: ".claude/project.json cannot be read: python3 or .claude/hooks/project_config.py is missing",
+}
+CONFIG_TAIL = (", so the hooks run on the kit defaults and ask instead of passing. Restore it: "
+               "rerun install.sh on this project, or /kit:init.")
 # Shared leaf directories that must never depend on a feature (check 3).
 # `providers/` and `routes/` are deliberately NOT here: they are wiring, and
 # wiring is allowed to know the features it composes.
@@ -97,8 +94,7 @@ COMPOSITION_ROOTS = ("main.tsx", "routes/__root.tsx")
 # listed while both import lists forgot it — so a config file naming a feature
 # passed without a word. Config is leaf code by definition: everything reads it,
 # it reads nothing back. Route *wiring* that needs a feature belongs in
-# src/routes/, which is deliberately not in this tuple.
-SHARED_DIRS = ("components/", "hooks/", "lib/", "types/", "stores/", "config/")
+# src/routes/, which is deliberately not in the `shared_dirs` list of .claude/project.json.
 # -----------------------------------------------------------------------------
 
 # Matches `from "x"`, `import "x"`, `import("x")` and `require("x")`.
@@ -107,15 +103,56 @@ SPECIFIER_RE = re.compile(
 )
 
 
-def deny(reason: str) -> None:
-    _log_health_deny(reason)
+def load_config() -> None:
+    """Fill CLIENT (`module`, `own_path`, `composition_roots`, `shared_dirs`) from
+    `.claude/project.json`, or from the reader's kit defaults when the file cannot be read;
+    the config reason then lands in DEGRADED. With no reader at all CLIENT stays empty, and
+    the hook asks."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import project_config
+    except ImportError:
+        DEGRADED.append(CONFIG_REASONS[6] + CONFIG_TAIL)
+        return
+    except Exception:
+        DEGRADED.append(CONFIG_REASONS[3] + CONFIG_TAIL)
+        return
+    try:
+        client = project_config.load_strict(os.environ.get("CLAUDE_PROJECT_DIR", "")).data_client
+    except project_config.ConfigError as error:
+        DEGRADED.append(CONFIG_REASONS.get(error.status, CONFIG_REASONS[3]) + CONFIG_TAIL)
+        client = project_config.DEFAULTS["data_client"]
+    except Exception:
+        DEGRADED.append(CONFIG_REASONS[3] + CONFIG_TAIL)
+        return
+    CLIENT.update(module=client["module"], own_path=client["own_path"],
+                  composition_roots=tuple(client["composition_roots"]),
+                  shared_dirs=tuple(client["shared_dirs"]))
+
+
+def decide(decision: str, reason: str) -> None:
+    if DEGRADED:
+        reason = f"{reason}\n\n{DEGRADED[0]}" if reason else DEGRADED[0]
+    if decision == "deny":
+        _log_health_deny(reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
+            "permissionDecision": decision,
             "permissionDecisionReason": reason,
         }
     }))
+    sys.exit(0)
+
+
+def deny(reason: str) -> None:
+    decide("deny", reason)
+
+
+def done() -> None:
+    """The end of a check that found nothing: a pass, or an ask when degraded."""
+    if DEGRADED:
+        decide("ask", "")
     sys.exit(0)
 
 
@@ -172,9 +209,10 @@ def main() -> None:
     if not re.search(r"\.(ts|tsx)$", rel) or re.search(r"\.test\.tsx?$", rel):
         sys.exit(0)
 
+    load_config()
     specs = [m.group(1) for m in SPECIFIER_RE.finditer(content)]
 
-    # --- Check 1: cross-feature import -------------------------------------
+    # --- Check 1: cross-feature import (needs no config, so it runs without a reader) ---
     feat = re.match(r"features/([^/]+)/", rel)
     if feat:
         current = feat.group(1)
@@ -188,8 +226,11 @@ def main() -> None:
                     "src/hooks/, src/types/ or src/providers/. See .claude/rules/02-architecture.md."
                 )
 
+    if not CLIENT:
+        done()
+
     # --- Check 3: shared code depending on a feature ------------------------
-    if rel.startswith(SHARED_DIRS):
+    if rel.startswith(CLIENT["shared_dirs"]):
         for spec in specs:
             other = feature_of(spec, rel)
             if other:
@@ -203,34 +244,32 @@ def main() -> None:
                 )
 
     # --- Check 2: data client outside gateway/services/composition root -----
-    if not DATA_CLIENT_MODULE:
-        sys.exit(0)
-
+    module = CLIENT["module"]
     base = rel.rsplit("/", 1)[-1]
     allowed = (
         base.endswith(".gateway.ts")
         or base == "services.ts"
-        or rel == DATA_CLIENT_OWN_PATH
-        or rel in COMPOSITION_ROOTS
+        or rel == CLIENT["own_path"]
+        or rel in CLIENT["composition_roots"]
     )
     if allowed:
-        sys.exit(0)
+        done()
 
     for spec in specs:
         target = target_path(spec, rel)
-        if target == DATA_CLIENT_MODULE or re.search(
-            r"(?:^|/)%s$" % re.escape(DATA_CLIENT_MODULE), spec
+        if target == module or re.search(
+            r"(?:^|/)%s$" % re.escape(module), spec
         ):
             deny(
                 f"Data client imported outside the data layer ({rel}).\n\n"
                 "DB/API calls belong in gateway.ts (or services.ts if the feature is not "
                 "split). hooks.ts calls the repository; providers, guards and route helpers "
                 "call a repository too — never the client.\n"
-                f"Only the composition root may hold the instance: {', '.join(COMPOSITION_ROOTS)}. "
+                f"Only the composition root may hold the instance: {', '.join(CLIENT['composition_roots'])}. "
                 "See .claude/rules/02-architecture.md."
             )
 
-    sys.exit(0)
+    done()
 
 
 if __name__ == "__main__":

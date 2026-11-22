@@ -172,7 +172,9 @@ Hard constraints on that file:
 ### mode `judge`
 
 **Not used in `bootstrap`** — a visual direction is the user's call, made against
-the rendered preview, and you have no eyes. This mode is for `/loop:interface` only.
+the rendered preview, and you have no eyes. This mode is for `/loop:interface` only;
+in auto mode on a `critical` profile your pick is final (no canvas, no user gate), so
+write the reasons it rests on: they go into `design.md`.
 
 You receive the three proposals verbatim + the entry artifact. Score each on:
 

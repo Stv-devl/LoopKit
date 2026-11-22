@@ -19,6 +19,19 @@ Callable alone at any time. `/bmad:flow` calls it before each story.
 
 ### 0. Inputs and state
 
+**Closing check first**, exactly as `/loop:orchestrate` Phase 0 step 0: for each
+`docs/work/*/handoff.md` with `phase: awaiting-merge` (main tree and worktrees), run
+`.claude/scripts/loop-pr-state.sh --chain <its branch>`; `closable` closes the pass: for the **main tree's** handoff whose HEAD
+is the pass's own branch, switch it to the default branch first
+(`gh repo view --json defaultBranchRef`) and sync it
+(`git switch <default branch>`, `git fetch origin`, `git merge --ff-only origin/<default branch>`;
+blocked or diverged → report, stop on this pass); a worktree handoff skips the switch and the sync
+(git refuses a branch checked out in the main tree). Then `/loop:ship` step 5: a worktree handoff's `/loop:ship` step 5 runs in the main tree, which must be on the synced default branch (else report and stop).
+`git branch -d feat/<slug>` comes last, after `python3 .claude/hooks/loop-record.py --clear` in the pass's tree, the handoff → `phase: shipped`, and the worktree removal;
+the count below is computed **after** it, since a
+merged prerequisite unblocks its dependants; `closed` → board `BLOCKED` "PR closed
+unmerged"; anything else, one line, nothing moved. A PR still open is not `Done`.
+
 Stories: the directory passed as argument, else the one named by
 `docs/product/backlog.md`. Read each story's **Status** and **Depends on** — those
 two fields, not the whole file.
@@ -30,7 +43,7 @@ passed its gate. Drop them before computing anything, and name what
 you dropped and why — the whole point of this command is that no two sessions
 receive the same story, and `Status` is the only place that fact is written down.
 A story being built shows `InProgress` whichever path drives it (`/loop:orchestrate`
-Phase 0 step 2bis, `/bmad:dev` step 2). One that does not is a bug in that path,
+Phase 0 step 4, `/bmad:dev` step 2). One that does not is a bug in that path,
 not a story you may fork.
 
 **And drop the `BLOCKED` ones.** A story handed back mid-loop returns to
@@ -128,7 +141,7 @@ missing, and say so.
 On go, per track:
 
 ```bash
-git worktree add .claude/worktrees/<track-slug> -b feat/<track-slug>
+git worktree add .claude/worktrees/<track-slug> -b feat/<track-slug> <base>
 ```
 
 **`<track-slug>` is not the slug in this command's argument.** Two different
@@ -142,8 +155,8 @@ ends up forking onto one branch:
 
 The derivation is `/loop:research`'s two-line rule (the only copy) and it is a pure
 function of the story's path, so you apply it here even though `/loop:research` has
-not run yet — it is what records the slug, not what invents it. The commit type
-prefixes the branch (`feat/`, `fix/`, `chore/`).
+not run yet — it is what records the slug, not what invents it. The branch is
+always `feat/<track-slug>`: the loop record and the closing check read that name.
 
 Forking under the feature slug is a **loud** failure and that is the good case:
 the second `git worktree add` refuses with "already exists". The bad case is
@@ -183,7 +196,10 @@ rebase, gates re-run in the worktree, go-ahead, merge, remove, then the next.
   lockfile. It is done first, in the main tree, and the tracks fork from that
   commit.
 - **Never fork a dirty tree.** Report it as a precondition failure, do not
-  stash it away yourself.
+  stash it away yourself. The small-ticket dirty-tree exception: `/loop:small`
+  forks with a main tree dirty outside `src/` (`small-dispatch-check.sh` checks
+  `src/` and the ticket's `Files` only, `10-worktrees.md`). Step 1 counts
+  unmerged `small-*` worktrees as tracks in flight.
 - Never drive more than one track from this session.
 - This command **reads and prepares**. It does not run a loop pass, does not
   merge, and does not commit — `/loop:orchestrate` and `/loop:ship` own those, inside each

@@ -1,0 +1,11 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "note": "pass 2 after the 2026-11-17 amendment; F1-F4 fixed and omitted",
+  "findings": [
+    {"id": "F9", "severity": "Minor", "claim": "G19.030 kit-repo control does not list checkout -f / switch --discard-changes in kitlike", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F10", "severity": "Minor", "claim": "Out-of-project last-component symlink to kit code returns at :712-713 before step 3's physical check", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F11", "severity": "Minor", "claim": "kit_rule subcommand list omits switch while the forced set covers checkout/switch", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F12", "severity": "Minor", "claim": "rm/unlink rows must use cwk_real_path (link itself), not cwk_real_rel which follows the link", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}

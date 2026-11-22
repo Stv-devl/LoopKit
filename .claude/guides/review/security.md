@@ -7,3 +7,6 @@ Read by a `reviewer` assigned `security` (`.claude/agents/reviewer.md`).
 - [ ] Privileged keys never exposed client-side; secrets via env, not hardcoded
 - [ ] Zod validation on all inputs; no unparameterized query
 - [ ] Auth/guards correct; no data leak between users
+
+**Project slot `extra-checks`** — `## extra-checks` in `.claude/overlays/guides/review/security.md`; absent → none.
+The section adds this project's own security checks (a backend's authorization and validation rules), read as part of the list above.

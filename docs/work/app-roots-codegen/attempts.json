@@ -1,0 +1,7 @@
+{
+  "plan-critic": {
+    "count": 3,
+    "last": "2026-11-10T15:27:18.630573Z",
+    "reason": "pass 3 90/58: CG20 command hard-denied before the ask order, CG21 shares the raw slot, Contracts still NUL, mapfile bash4 in sourced lib, PC11/AR25 one step early"
+  }
+}

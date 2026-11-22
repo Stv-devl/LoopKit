@@ -3,7 +3,7 @@
 # Hook: format-on-save
 # Event: PostToolUse (Write|Edit)
 # Purpose: Auto-format files with Prettier after modification
-# CONFIGURE: swap `prettier` for this repo's formatter (see cwk_bin in hook-lib.sh).
+# Configure: `formatter` in .claude/project.json (see cwk_bin in hook-lib.sh).
 #
 # Stays synchronous, unlike eslint-check.sh: the formatter REWRITES the file,
 # so anything reading it afterwards — the next hook, the next Edit, the model
@@ -13,6 +13,10 @@
 
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
+if ! declare -F cwk_config cwk_bin >/dev/null 2>&1; then
+    printf '%s\n' '{"systemMessage":"format-on-save: hook-lib.sh is older than this hook (no cwk_config/cwk_bin), so nothing was formatted. The user re-copies the kit hooks files from a terminal."}'
+    exit 0
+fi
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -47,8 +51,18 @@ fi
 # workspace before Prettier starts — 200-500ms paid on every single write, for
 # nothing. cwk_bin skips that preamble, and returns 1 when the repo has no
 # formatter installed (not an error: a repo may simply not use one).
-if PRETTIER=$(cwk_bin prettier); then
-    $PRETTIER --write "$FILE_PATH" 2>/dev/null || true
+#
+# The formatter is `.claude/project.json` `formatter`, an argv prefix: its first word
+# is resolved by cwk_bin, the rest is passed as is, the file comes last. `[]` formats
+# nothing. An unreadable config formats nothing and says why.
+cwk_config || true
+if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+    jq -n --arg m "format-on-save: $FILE_PATH was not formatted: $CWK_CFG_REASON" '{systemMessage: $m}'
+    exit 0
+fi
+FORMATTER=(${CWK_CFG_FORMATTER[@]+"${CWK_CFG_FORMATTER[@]}"})
+if [[ "${#FORMATTER[@]}" -gt 0 ]] && cwk_bin "${FORMATTER[0]}"; then
+    "${CWK_BIN[@]}" "${FORMATTER[@]:1}" "$FILE_PATH" 2>/dev/null || true
 fi
 
 exit 0

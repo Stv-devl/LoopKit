@@ -1,0 +1,1 @@
+{"tool_name":"Bash","cwd":"__FEAT_TREE__","tool_input":{"command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\""},"_expect_reason":"outside the project"}

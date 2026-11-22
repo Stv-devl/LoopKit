@@ -5,9 +5,22 @@
       # qui n'existe pas. C'est aussi ce qui rend le garde ci-dessous
       # obligatoire — voir « la destination » plus bas.
       #
-      # `StrictHostKeyChecking=accept-new` accepte une clé inconnue au premier
-      # contact mais refuse un CHANGEMENT de clé ensuite : le compromis
-      # utilisable en CI. `no` accepterait n'importe quoi, MITM compris.
+      # La clé de l'hôte est épinglée : `DEPLOY_KNOWN_HOSTS` la contient et
+      # `StrictHostKeyChecking=yes` refuse toute autre clé. Obtiens-la une fois
+      # avec la commande suivante, où <hote> est la partie hôte de DEPLOY_HOST :
+      #     ssh-keyscan -t ed25519 <hote> | ssh-keygen -lf -
+      # Compare sa valeur `SHA256:` avec celle de
+      #     ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+      # lancé sur le serveur (chemin OpenSSH standard ; sur Lightsail, depuis
+      # la console SSH du navigateur). Le secret reçoit la ligne de ssh-keyscan.
+      # La valeur doit être celle de `DEPLOY_HOST` ; un port SSH non standard
+      # n'est pas géré. Une instance remplacée change de clé : le déploiement
+      # refuse alors jusqu'à mise à jour du secret.
+      #
+      # `DEPLOY_HOST` doit être une IP statique ou un nom stable. Une entrée
+      # `known_hosts` est liée à cette valeur : l'IP par défaut d'une instance
+      # Lightsail change après un arrêt et redémarrage, et le déploiement refuse
+      # alors même si la clé n'a pas changé.
       #
       # LA DESTINATION. `DEPLOY_PATH` est une *variable* de dépôt, pas un
       # secret : si personne ne l'a créée, GitHub n'échoue pas, il interpole une
@@ -22,9 +35,12 @@
       # exécute ce qu'elle veut. Les guillemets ne protègent de rien quand
       # l'attaquant fournit aussi le guillemet.
       #
-      # À créer côté GitHub — Settings → Secrets and variables → Actions :
+      # Secrets : Settings → Environments → `production` → Environment secrets,
+      # pas la page du dépôt : seul l'environment les retient hors des branches non autorisées.
       #   secret  DEPLOY_KEY    (clé privée SANS passphrase, dédiée au déploiement)
-      #   secret  DEPLOY_HOST   (user@hote)
+      #   secret  DEPLOY_HOST   (user@hote sur IP statique ou nom stable)
+      #   secret  DEPLOY_KNOWN_HOSTS  (sortie de ssh-keyscan, vérifiée hors bande)
+      # Variables : Settings → Secrets and variables → Actions → Variables.
       #   var     DEPLOY_PATH   (chemin absolu servi par le serveur web)
       #   var     PRODUCTION_URL
       #
@@ -36,11 +52,13 @@
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
         run: |
           set -euo pipefail
           : "${DEPLOY_HOST:?secret DEPLOY_HOST manquant}"
           : "${DEPLOY_PATH:?variable DEPLOY_PATH manquante — refus de rsync --delete vers la racine}"
+          : "${DEPLOY_KNOWN_HOSTS:?secret DEPLOY_KNOWN_HOSTS manquant — refus de deployer sans cle d hote}"
           case "$DEPLOY_PATH" in
             /) echo "DEPLOY_PATH=/ interdit avec --delete." >&2; exit 1 ;;
             /*) : ;;
@@ -49,6 +67,8 @@
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"

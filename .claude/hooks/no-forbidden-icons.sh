@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cwk-guard-api: 1
 #
 # Hook: no-forbidden-icons
 # Event: PreToolUse (Write|Edit)
@@ -9,6 +10,12 @@
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 cwk_require_jq
+if ! declare -F cwk_config cwk_cfg_reason >/dev/null 2>&1; then
+    echo "BLOCKED: hook-lib.sh is older than this hook (no cwk_config/cwk_cfg_reason), so this guard refuses rather than passes. The user re-copies the kit's .claude/hooks/ files from a terminal." >&2
+    exit 2
+fi
+# shellcheck disable=SC2034  # read by hook-lib.sh's exit trap
+CWK_DEGRADED_ASK=1
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -31,7 +38,8 @@ fi
 # a forbidden icon written with no message at all.
 deny() {
     local reason
-    reason="${1//\\n/$'\n'}"
+    cwk_cfg_reason "${1//\\n/$'\n'}"
+    reason="$CWK_CFG_OUT"
     cwk_log_health_deny "$reason"
     jq -n --arg r "$reason" '{
       hookSpecificOutput: {
@@ -56,14 +64,17 @@ if echo "$CONTENT" | LC_ALL=C grep -qF \
     deny "Forbidden icon/emoji detected (star, rocket or lightning). See .claude/rules/09-icons.md.\n\nUse words for emphasis, not decorative emoji."
 fi
 
-# 2) Icon-component check — only in JS/TS source files
+# 2) Icon-component check — only in JS/TS source files. The component names come from
+#    `.claude/project.json` (`forbidden_icons`), read only for such a file.
 if [[ "$FILE_PATH" =~ \.(ts|tsx|js|jsx)$ ]]; then
+    cwk_config || true
+    ICONS="${CWK_CFG_ICONS_ERE:-$CWK_NEVER_RE}"
     # JSX usage: <Star ... />, <Zap>, </Rocket>
-    if echo "$CONTENT" | grep -qE '</?(Star|Stars|Sparkle|Sparkles|Rocket|RocketLaunch|Zap|Bolt|LightningBolt)\b'; then
+    if echo "$CONTENT" | grep -qE "</?(${ICONS})\\b"; then
         deny "Forbidden icon component used in JSX (star/rocket/lightning). See .claude/rules/09-icons.md.\n\nPick a neutral, descriptive icon from the lib already in use."
     fi
     # Named import of a forbidden icon (line mentioning lucide / heroicons)
-    if echo "$CONTENT" | grep -E '(lucide-react|heroicons)' | grep -qE '\b(Star|Stars|Sparkle|Sparkles|Rocket|RocketLaunch|Zap|Bolt|LightningBolt)\b'; then
+    if echo "$CONTENT" | grep -E '(lucide-react|heroicons)' | grep -qE "\\b(${ICONS})\\b"; then
         deny "Forbidden icon imported (star/rocket/lightning). See .claude/rules/09-icons.md.\n\nPick a neutral, descriptive icon from the lib already in use."
     fi
 fi

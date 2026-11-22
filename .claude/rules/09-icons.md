@@ -5,6 +5,7 @@
 imports (`lucide-react`, etc.), user-facing text, labels, toasts, logs,
 comments, commits, docs, chat. This covers their emoji glyphs and the lucide/
 heroicons names: `Star`, `Stars`, `Sparkle`, `Sparkles`, `Rocket`,
-`RocketLaunch`, `Zap`, `Bolt`, `LightningBolt`.
+`RocketLaunch`, `Zap`, `Bolt`, `LightningBolt` (enforced copy: `forbidden_icons`
+in `.claude/project.json`).
 
 Need an icon → pick a neutral one from the lib in use. Need emphasis → use words.

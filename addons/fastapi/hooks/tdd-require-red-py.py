@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cwk-guard-api: 1
 #
 # Hook: tdd-require-red-py
 # Event: PreToolUse (Write|Edit)
@@ -11,11 +12,24 @@
 # The marker it requires is written by tdd-prove-red-py.py and carries the digest
 # of the test file, so a marker cannot outlive the test that earned it.
 #
-# CONFIGURE: the layers and the module root live in tdd_py_lib.py.
 
+import json
 import os
 import sys
 
+
+def _ask_on_crash(kind, value, trace):
+    """Any uncaught error, a mismatched tdd_py_lib.py included, asks: exit 1 would let the write through."""
+    note = (f"{os.path.basename(sys.argv[0])} failed ({kind.__name__}: {value}); the hooks in .claude/hooks come "
+            "from two kit versions. Restore them: rerun install.sh on this project, or /kit:init.")
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                       "permissionDecision": "ask",
+                                                       "permissionDecisionReason": note}}))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+sys.excepthook = _ask_on_crash
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import tdd_py_lib as lib  # noqa: E402
@@ -26,7 +40,10 @@ lib.register_timing("tdd-require-red-py")
 def main() -> None:
     payload = lib.read_payload()
     file_path = (payload.get("tool_input") or {}).get("file_path") or ""
-    if not file_path:
+    if not file_path or not file_path.endswith(".py"):
+        sys.exit(0)
+    lib.configure(ask_on_pass=True)
+    if not lib.VALUES:
         sys.exit(0)
 
     # The test file itself is somebody else's business (tdd-freeze-tests-py.py).
@@ -58,7 +75,7 @@ def main() -> None:
             "module can be created.\n\n"
             "`tests/` mirrors `%s/` — that mapping is what makes this hook able to "
             "find the test at all (`.claude/rules/07-backend.md`)."
-            % (impl_rel, test_rel, lib.MODULE_ROOT)
+            % (impl_rel, test_rel, lib.VALUES["module_root"])
         )
 
     if not lib.marker_is_fresh(abs_test):

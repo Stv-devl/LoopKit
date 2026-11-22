@@ -3,7 +3,7 @@
 # Hook: eslint-batch
 # Event: Stop, SubagentStop
 # Purpose: lint everything written during the turn, in ONE ESLint process.
-# CONFIGURE: swap `eslint` for this repo's linter (see cwk_bin in hook-lib.sh).
+# Configure: `linter` in .claude/project.json (see cwk_bin in hook-lib.sh).
 #
 # The twin of eslint-check.sh: that one enqueues, this one lints. Non-blocking,
 # exactly as before — it emits a count and exits 0. It never returns
@@ -31,6 +31,20 @@ fi
 
 if [[ ! -s "$QUEUE" ]]; then exit 0; fi
 
+if ! declare -F cwk_config cwk_bin >/dev/null 2>&1; then
+    printf '%s\n' '{"systemMessage":"eslint-batch: hook-lib.sh is older than this hook (no cwk_config/cwk_bin), so nothing was linted and the queue is kept. The user re-copies the kit hooks files from a terminal."}'
+    exit 0
+fi
+
+# The linter is `.claude/project.json` `linter`, read before the queue is claimed: an
+# unreadable config lints nothing, says why, and leaves the queue for the next turn.
+cwk_config || true
+if [[ "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
+    jq -n --arg m "eslint-batch: the files written this turn were not linted: $CWK_CFG_REASON" '{systemMessage: $m}'
+    exit 0
+fi
+[[ -n "$CWK_CFG_LINTER" ]] || exit 0
+
 # Claim the queue atomically: several subagents can stop at the same instant,
 # and each must lint its own slice rather than all of them racing on one file.
 CLAIM="$QUEUE.$$"
@@ -43,7 +57,7 @@ rm -f "$CLAIM"
 
 if [[ ${#FILES[@]} -eq 0 ]]; then exit 0; fi
 
-ESLINT=$(cwk_bin eslint) || exit 0
+cwk_bin "$CWK_CFG_LINTER" || exit 0
 
 # --cache pays off here and only here: a batch re-lints files that other batches
 # already saw this session. Same reason the cache dir is under node_modules —
@@ -51,7 +65,7 @@ ESLINT=$(cwk_bin eslint) || exit 0
 CACHE_DIR="$ROOT/node_modules/.cache/eslint"
 mkdir -p "$CACHE_DIR" 2>/dev/null || true
 
-ESLINT_OUTPUT=$($ESLINT "${FILES[@]}" --format compact \
+ESLINT_OUTPUT=$("${CWK_BIN[@]}" "${FILES[@]}" --format compact \
     --cache --cache-location "$CACHE_DIR/.eslintcache" 2>/dev/null || true)
 
 if [[ -z "$ESLINT_OUTPUT" ]]; then exit 0; fi
