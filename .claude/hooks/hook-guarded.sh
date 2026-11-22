@@ -65,6 +65,7 @@ CWK_KIT_CODE=(
     '.claude/INSTALL_PROFILE'       # the install stamp
     '.claude/kit-manifest'          # the prompts install.sh shipped
 )
+# shellcheck disable=SC2034 # read by the hooks that source this file
 CWK_KIT_DENY='kit code changes in the LoopKit repo, then `install.sh`'
 
 # The four prompt dirs. In an installed project the prompts install.sh shipped there are
@@ -587,7 +588,7 @@ cwk_auto_class() {
 # file (no symlink), version 1, mode "auto", a contract_go object, and HEAD on its branch (never
 # on its base: an abandoned auto pass must not put the next pass in auto). Anything else: 1.
 cwk_auto_mode() {
-    local tree="$1" rec fields branch base sha head
+    local tree="$1" rec fields branch base head
     rec="$tree/.claude/.loop-record.json"
     [[ -n "$tree" && -f "$rec" && ! -L "$rec" ]] || return 1
     command -v jq >/dev/null 2>&1 || return 1
@@ -596,7 +597,7 @@ cwk_auto_mode() {
                      and (.base_sha | type) == "string")
                      | [.branch, .base, .base_sha] | join("\n")' "$rec" 2>/dev/null)" || return 1
     [[ -n "$fields" ]] || return 1
-    { IFS= read -r branch; IFS= read -r base; IFS= read -r sha; } <<<"$fields"
+    { IFS= read -r branch; IFS= read -r base; IFS= read -r _; } <<<"$fields"
     head="$(git -C "$tree" symbolic-ref -q --short HEAD 2>/dev/null)" || return 1
     [[ -n "$branch" && "$head" == "$branch" ]]
 }

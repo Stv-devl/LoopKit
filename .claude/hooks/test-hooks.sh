@@ -3199,7 +3199,7 @@ run_codegen_cases() {
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     for cmd in "exec 9<\"$c\"; echo x > /dev/fd/9/.claude/settings.json" \
         "exec 9<\"$c\"
@@ -3242,7 +3242,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /dev/null' \
         'echo x >&2' 'ls 2>&1' 'ls 2>/dev/fd/2' 'echo x >/dev/stderr' 'echo x | tee /dev/stderr' \
@@ -3286,7 +3286,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     if [[ "$hard" == 1 ]]; then
         out="$(pd_probe "$c" "echo x > $s/hard")"
@@ -3314,7 +3314,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     # CG83 (review 3/3): a find root inside the project that links into /tmp is still guarded as
     # written (`.claude` -> a /tmp folder), not only on its physical side.
@@ -3342,13 +3342,13 @@ tok_expect() {
     CASES=$((CASES + 1))
     if [[ "$want" == block ]]; then
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || { fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"; return 0; }
+            || { fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"; return 0; }
     elif [[ "$verdict" != "$want" ]]; then
-        fail prevent-destructive-commands.sh "$id[$cmd]" "expected $want, got $verdict '${out:0:200}'"
+        fail prevent-destructive-commands.sh "${id}[$cmd]" "expected $want, got $verdict '${out:0:200}'"
         return 0
     fi
     for needle in "$@"; do
-        [[ "$out" == *"$needle"* ]] || fail prevent-destructive-commands.sh "$id[$cmd]" "reason lacks '$needle': '${out:0:300}'"
+        [[ "$out" == *"$needle"* ]] || fail prevent-destructive-commands.sh "${id}[$cmd]" "reason lacks '$needle': '${out:0:300}'"
     done
     return 0
 }

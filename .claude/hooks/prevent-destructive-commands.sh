@@ -845,6 +845,7 @@ guard_classify() {
         globpat_l="$(printf '%s' "$globpat" | tr '[:upper:]' '[:lower:]')" || globpat_l=""
         ext="${globpat_l##*.}"
         shopt_chars='*[][*?{}()|!@+]*'
+        # shellcheck disable=SC2053 # $shopt_chars is a glob pattern on purpose
         if [[ -z "$globpat_l" || "$globpat" == *[][{}]* || "$globpat_l" != *.*|| "$ext" == *[\*\?]* || "$ext" == ts || "$ext" == tsx || "$ext" == py \
               || "$globpat_l" == *test* || "$globpat_l" == *spec* \
               || ( "$cmd_joined" == *shopt* && "$globpat" == $shopt_chars ) ]]; then
