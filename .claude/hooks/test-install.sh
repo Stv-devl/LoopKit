@@ -996,4 +996,20 @@ done
 grep -qxF '.claude/.loop-record.lock' "$IN63/.gitignore" || fail_in 'IN63: the record lock is not ignored'
 grep -qF '.claude/agents/arbiter.md' "$IN63/.claude/kit-manifest" || fail_in 'IN63: arbiter.md not in the manifest'
 
+# IN64 an update from a kit that wrote relative hook commands (`.claude/hooks/x`) keeps one entry per
+# hook, the kit's `$CLAUDE_PROJECT_DIR` form with its onFailure; a user's own relative hook survives.
+IN64="$SCRATCH/in64"
+mkdir -p "$IN64/.claude"
+printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/prevent-destructive-commands.sh","timeout":5}]},{"matcher":"Read","hooks":[{"type":"command","command":".claude/hooks/protect-files.sh","timeout":5},{"type":"command","command":".claude/hooks/my-own-check.sh","timeout":5}]}]}}' \
+    >"$IN64/.claude/settings.json"
+"$ROOT/install.sh" "$IN64" --react-ts --no-ci >/dev/null 2>&1
+jq -e '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command
+        | select(endswith("prevent-destructive-commands.sh"))] == ["$CLAUDE_PROJECT_DIR/.claude/hooks/prevent-destructive-commands.sh"]' \
+    "$IN64/.claude/settings.json" >/dev/null || fail_in 'IN64: prevent-destructive-commands.sh is not one kit-form entry'
+jq -e '[.hooks.PreToolUse[] | select(.matcher == "Read") | .hooks[] | select(.command | endswith("protect-files.sh"))]
+        == [{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-files.sh","timeout":5,"onFailure":"block"}]' \
+    "$IN64/.claude/settings.json" >/dev/null || fail_in 'IN64: protect-files.sh on Read is not the one kit entry with onFailure block'
+jq -e '[.hooks.PreToolUse[] | select(.matcher == "Read") | .hooks[].command] | index(".claude/hooks/my-own-check.sh") != null' \
+    "$IN64/.claude/settings.json" >/dev/null || fail_in "IN64: the user's own relative hook was dropped"
+
 echo 'install fixtures: green.'
