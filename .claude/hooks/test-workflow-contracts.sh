@@ -1333,7 +1333,7 @@ has() { grep -Fq -- "$2" "$1"; }
 lacks() { ! grep -Fq -- "$2" "$1"; }
 has_in() { grep -Fq -- "$2" <<<"$1"; }
 lacks_in() { ! grep -Fq -- "$2" <<<"$1"; }
-in_order() { local text="$1" pos=0 rest; shift; for n in "$@"; do rest="${text#*"$n"}"; [[ "$rest" != "$text" ]] || return 1; text="$rest"; done; }
+in_order() { local text="$1" rest; shift; for n in "$@"; do rest="${text#*"$n"}"; [[ "$rest" != "$text" ]] || return 1; text="$rest"; done; }
 pk_pr="$(section "$SHIP" '#### 4bis-PR' '#### 4bis-local' || true)"
 pk_local="$(section "$SHIP" '#### 4bis-local' '### 5.' || true)"
 pk_outside="$(awk '/^#### 4bis-local/{skip=1; next} /^### 5\./{skip=0} !skip' "$SHIP")"
@@ -1371,7 +1371,7 @@ for f in "$ORCH" "$TRACKS"; do
     pk "PK35.2 $(basename "$f")" has "$f" 'phase: awaiting-merge'
 done
 pk PK35.3 has_in "$(section "$SHIP" '### 5. Advance' '### 6.' || true)" '`closable`'
-for f in "$GITHUB_AGENT"; do pk PK36 has "$f" "$pk_push"; pk PK36.2 has "$f" "$pk_create"; done
+pk PK36 has "$GITHUB_AGENT" "$pk_push"; pk PK36.2 has "$GITHUB_AGENT" "$pk_create"
 pk PK36.3 has_in "$pk_pr" "$pk_push"
 pk PK36.4 has_in "$pk_pr" "$pk_create"
 pk PK36.5 bash -c '! grep "gh pr create" "$1" | grep -vq -- "--repo"' _ "$GITHUB_AGENT"

@@ -385,7 +385,8 @@ if os.environ.get("CWK_AUTO_VERDICTS") == "1":
     refused = {(v.get("path"), v.get("id")) for v in found if v.get("verdict") == "refuse"}
 line_re = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+(?:[ \t]*,[ \t]*[UMRB][0-9]+)*)[ \t]*:[ \t]*\S.*")
 test_re = re.compile(r"(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+\.test\.tsx?|"
-                     + re.escape(tests_root) + r"/(?:[A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_]*\.py")
+                     + r"(?:[A-Za-z0-9_.@-]+/)*" + re.escape(tests_root)
+                     + r"/(?:[A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_]*\.py")
 def file_lines(text):
     return [part[:-1] if part.endswith("\r") else part for part in text.split("\n")]
 pool = file_lines(current)

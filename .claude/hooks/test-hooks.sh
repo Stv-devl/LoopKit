@@ -1953,7 +1953,7 @@ run_project_values_cases() {
 $out" "" "test-first"
     out="$(cd "$p" && printf '%s' "$(jq -cn --arg cwd "$p" '{tool_name:"Bash",tool_input:{command:"python3 -I -c '"'"'x'"'"' > src/b.md"},cwd:$cwd}')" \
         | CLAUDE_PROJECT_DIR="$p" CWK_HOOK_TIMING=0 "$tmp/px13hooks/prevent-destructive-commands.sh" 2>/dev/null)"
-    pv_expect PX13 ask "$(semantic_verdict 0 <(printf '%s' "$out"))
+    pv_expect PX13 deny "$(semantic_verdict 0 <(printf '%s' "$out"))
 $out" "inline program" "test-first"
     rm -rf "$tmp"
 }
@@ -3058,7 +3058,7 @@ run_codegen_cases() {
         'sed -i s/a/b/ src/features/a/a.utils.t[s]' 'echo x | tee src/features/a/a.utils.t[s]' \
         'supabase gen types > src/types/d.t[s]'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG28[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG28[$cmd]" deny "$out" "unresolved write target"
     done
     for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log' 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md'; do
         out="$(pd_probe "$c" "$cmd")"
@@ -3085,16 +3085,16 @@ run_codegen_cases() {
         'echo x > src/*.spec.js' 'echo x > src/a.*' 'echo x > src/a.?s' 'echo x > src/*.ts' \
         'echo x > src/*.tsx' 'echo x > app/*.py' 'echo x > src/t[e]st.js'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG32[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG32[$cmd]" deny "$out" "unresolved write target"
     done
     for cmd in 'echo x > docs/*.md' 'echo x > docs/*.json' 'sed -i s/a/b/ docs/*.md' 'mv /tmp/x docs/*.md'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG33[$cmd]" pass "$out"
     done
     out="$(pd_probe "$c" 'supabase gen types > db[.]ts')"
-    g15_expect CG32r ask "$out"
+    g15_expect CG32r deny "$out"
     out="$(pd_probe "$c" 'echo x > src/*[.]ts')"
-    g15_expect CG34 ask "$out" "onto a glob that may match a source or test file" "src"
+    g15_expect CG34 deny "$out" "onto a glob that may match a source or test file" "src"
     CASES=$((CASES + 1))
     [[ "$out" != *"src/*[.]ts"* || "$out" == *"under src"* ]] || fail prevent-destructive-commands.sh CG34 "the glob ask names a wrong path: '${out:0:300}'"
     out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts && mv /tmp/x lib/b.ts')"
@@ -3112,25 +3112,25 @@ run_codegen_cases() {
     for cmd in 'echo x | tee src/{features/a/a.utils.t?,y.md}' 'tee src/{x/a.t*,y.json}' \
         'sed -i s/a/b/ src/{features/a/*,y.md}'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG37[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG37[$cmd]" deny "$out" "unresolved write target"
     done
     for cmd in $'shopt -s nocaseglob\necho x > src/*.TEST.TS' $'shopt -s nocaseglob\necho x > src/*.TS' \
         $'shopt -s nocaseglob\necho x > app/*.PY' 'shopt -s nocaseglob; echo x > src/*.TEST.TS' \
         'shopt -s nocaseglob; echo x > src/*.TS' 'shopt -s nocaseglob; echo x > app/*.PY'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG38[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG38[$cmd]" deny "$out" "unresolved write target"
     done
     for cmd in $'shopt -s extglob\necho x > src/!(*.md)' $'shopt -s extglob\necho x > src/a.!(md)' \
         $'shopt -s extglob\necho x > src/a.@(ts)' $'shopt -s extglob\necho x > src/a.+(t|s)' \
         $'shopt -s extglob\ncp /etc/hostname src/a.!(md)'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG39[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG39[$cmd]" deny "$out" "unresolved write target"
     done
     out="$(pd_probe "$c" 'echo x > src/*/Makefile')"
-    g15_expect CG40 ask "$out" "unresolved write target"
-    g15_expect CG41 ask "$(pd_probe "$c" 'supabase gen types > db[.]ts')" "guarded path"
+    g15_expect CG40 deny "$out" "unresolved write target"
+    g15_expect CG41 deny "$(pd_probe "$c" 'supabase gen types > db[.]ts')" "unresolved write target"
     out="$(pd_probe "$c" 'echo x > src/*/a.ts')"
-    g15_expect CG42 ask "$out" "a.ts under src"
+    g15_expect CG42 deny "$out" "a.ts under src"
     # CG43-CG49 (fix batch 4): extglob syntax asks without a literal `shopt` (the option is set by
     # a spelling the text never shows, or by a sourced file); the message names the syntax; a
     # glob without shopt, a failing lowercase step and a lone `]` still ask.
@@ -3138,9 +3138,9 @@ run_codegen_cases() {
         $'. f\necho x > src/a.utils.+(ts)' $'source f\necho x > src/a.@(ts)' $'s=sh; ${s}opt -s extglob; echo x > src/a.!(md)' \
         $'. f\ncp /etc/hostname src/a.!(md)' $'. f\necho x >> src/a.+(ts)'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG43[$cmd]" ask "$out" "unresolved write target" "extglob syntax"
+        g15_expect "CG43[$cmd]" deny "$out" "unresolved write target" "extglob syntax"
     done
-    g15_expect CG43mv ask "$(pd_probe "$c" $'. f\nmv /tmp/x src/a.!(md)')"
+    g15_expect CG43mv deny "$(pd_probe "$c" $'. f\nmv /tmp/x src/a.!(md)')"
     out="$(pd_probe "$c" $'sh\'\'opt -s extglob\necho x > src/a.!(md)')"
     CASES=$((CASES + 1))
     [[ "$out" != *"shopt is set"* && "$out" != *"src/a.!:"* && "$out" != *"src/a.!)"* ]] \
@@ -3151,24 +3151,24 @@ run_codegen_cases() {
     g15_expect CG44b pass "$out"
     for cmd in 'echo x > src/*.TS' 'echo x > src/*.Tsx' 'echo x > app/*.PY' 'echo x > src/*.TEST.js'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG45[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG45[$cmd]" deny "$out" "unresolved write target"
     done
     for cmd in $'sh\'\'opt -s nocaseglob\necho x > src/*.TS' $'shopt -u nocaseglob\necho x > src/*.TS'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG46[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG46[$cmd]" deny "$out" "unresolved write target"
     done
     mkdir -p "$tmp/trfail"
     printf '#!/bin/sh\ncase "$*" in *upper*) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v tr)" >"$tmp/trfail/tr"
     chmod +x "$tmp/trfail/tr"
     out="$(PATH="$tmp/trfail:$PATH" pd_probe "$c" 'echo x > docs/*.md')"
-    g15_expect CG47 ask "$out" "unresolved write target"
+    g15_expect CG47 deny "$out" "unresolved write target"
     out="$(pd_probe "$c" 'echo x > src/*/a.json]')"
-    g15_expect CG48 ask "$out" "unresolved write target" "may match a source or test file"
+    g15_expect CG48 deny "$out" "unresolved write target" "may match a source or test file"
     out="$(pd_probe "$c" $'shopt -s extglob\necho x > src/a.!(md)')"
-    g15_expect CG39b ask "$out" "uses extglob syntax"
+    g15_expect CG39b deny "$out" "uses extglob syntax"
     for cmd in 'echo x > src/a.?(ts)' 'echo x > src/a.*(ts)'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG49[$cmd]" ask "$out" "unresolved write target"
+        g15_expect "CG49[$cmd]" deny "$out" "unresolved write target"
     done
     out="$(pd_probe "$c" 'supabase gen types > src/types/db.ts && echo "a+(b)"')"
     g15_expect CG49c ask "$out" "codegen: src/types/db.ts"
@@ -3181,10 +3181,10 @@ run_codegen_cases() {
         $'. f\ncp /etc/hostname src/a.!\\\n(md)' $'. f\necho x | tee src/a.!\\\n(md)' \
         $'. f\nsed -i s/a/b/ src/a.!\\\n(md)' $'. f\nln -sf /tmp/x src/a.@\\\n(ts)'; do
         out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG51[$cmd]" ask "$out" "extglob syntax"
+        g15_expect "CG51[$cmd]" deny "$out" "extglob syntax"
     done
     out="$(pd_probe "$c" $'. f\nsupabase gen types > src/types/db.ts\necho x > src/a.!\\\n(md)')"
-    g15_expect CG52 ask "$out" "extglob syntax"
+    g15_expect CG52 deny "$out" "extglob syntax"
     out="$(pd_probe "$c" $'echo x \\\n> docs/a.md')"
     g15_expect CG53 pass "$out"
     # CG54-CG60 (tmp-glob-escape): a /tmp target holding `..` is not exempt (the glob segment walks
@@ -3199,7 +3199,7 @@ run_codegen_cases() {
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     for cmd in "exec 9<\"$c\"; echo x > /dev/fd/9/.claude/settings.json" \
         "exec 9<\"$c\"
@@ -3242,7 +3242,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     for cmd in 'echo x > /tmp/out.txt' 'echo x > /tmp/d/out.txt' 'echo x > /dev/null' \
         'echo x >&2' 'ls 2>&1' 'ls 2>/dev/fd/2' 'echo x >/dev/stderr' 'echo x | tee /dev/stderr' \
@@ -3255,7 +3255,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
     # asks on /proc, /dev or hard links (R3), any spelling of a link maker asks (R4); a link
     # removed, moved or re-pointed keeps its lexical target. CG60/CG70's `/tmp/*.log` now asks (R2).
     out="$(pd_probe "$c" 'echo x > /tmp/*.log')"
-    g15_expect "CG60-R2" ask "$out"
+    g15_expect "CG60-R2" deny "$out"
     mkdir -p "$s/s2" "$s/s3" "$c/docs"
     : >"$c/docs/n.md"
     for id in a b c d; do ln -s "$c/docs/n.md" "$s/s2/$id.log"; done
@@ -3286,7 +3286,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     if [[ "$hard" == 1 ]]; then
         out="$(pd_probe "$c" "echo x > $s/hard")"
@@ -3314,7 +3314,7 @@ echo x > /dev/fd/9/.claude/settings.json"; do
         verdict="${out%%$'\n'*}"
         CASES=$((CASES + 1))
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
+            || fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"
     done
     # CG83 (review 3/3): a find root inside the project that links into /tmp is still guarded as
     # written (`.claude` -> a /tmp folder), not only on its physical side.
@@ -3342,13 +3342,13 @@ tok_expect() {
     CASES=$((CASES + 1))
     if [[ "$want" == block ]]; then
         [[ "$verdict" == ask || "$verdict" == deny ]] \
-            || { fail prevent-destructive-commands.sh "$id[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"; return 0; }
+            || { fail prevent-destructive-commands.sh "${id}[$cmd]" "expected ask or deny, got $verdict '${out:0:200}'"; return 0; }
     elif [[ "$verdict" != "$want" ]]; then
-        fail prevent-destructive-commands.sh "$id[$cmd]" "expected $want, got $verdict '${out:0:200}'"
+        fail prevent-destructive-commands.sh "${id}[$cmd]" "expected $want, got $verdict '${out:0:200}'"
         return 0
     fi
     for needle in "$@"; do
-        [[ "$out" == *"$needle"* ]] || fail prevent-destructive-commands.sh "$id[$cmd]" "reason lacks '$needle': '${out:0:300}'"
+        [[ "$out" == *"$needle"* ]] || fail prevent-destructive-commands.sh "${id}[$cmd]" "reason lacks '$needle': '${out:0:300}'"
     done
     return 0
 }
@@ -3677,19 +3677,19 @@ run_shell_guard_budget_case() {
     tmp="$(mktemp -d)"
     operands="$(printf 'f%d ' $(seq 1 500))"
     jq -cn --arg command "rm ${operands}package.json" --arg cwd "__PROJECT_ROOT__" \
-        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}' > "$tmp/X14.01-ask.json"
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}' > "$tmp/X14.01-deny.json"
     operands="$(printf 'f%d ' $(seq 1 70))"
     jq -cn --arg command "rm ${operands}.claude/.tdd-red/m" --arg cwd "__PROJECT_ROOT__" --arg reason "is written only by tdd-prove-red.sh" \
         '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd, _expect_reason: $reason}' > "$tmp/X14.02-deny.json"
-    run_case prevent-destructive-commands.sh "$tmp/X14.01-ask.json" ask
+    run_case prevent-destructive-commands.sh "$tmp/X14.01-deny.json" deny
     start="$(date +%s%N)"
-    sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" "$tmp/X14.01-ask.json" \
+    sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" "$tmp/X14.01-deny.json" \
         | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 \
             "$HOOKS_DIR/prevent-destructive-commands.sh" >/dev/null 2>&1 || true
     end="$(date +%s%N)"
     elapsed_ms=$(((end - start) / 1000000))
     [[ "$elapsed_ms" -lt 2000 ]] \
-        || fail prevent-destructive-commands.sh X14.01-ask.json "500-operand rm took ${elapsed_ms} ms, bound is 2000"
+        || fail prevent-destructive-commands.sh X14.01-deny.json "500-operand rm took ${elapsed_ms} ms, bound is 2000"
     run_case prevent-destructive-commands.sh "$tmp/X14.02-deny.json" deny
     rm -r "$tmp"
 }
@@ -4215,7 +4215,7 @@ run_kit_boundary_review1_cases() {
             kb_pd KB22 deny "$tmp/$v" "$c" 'kit-apply.sh'
         done
         for c in 'bash .claude/scripts/kit-appl*' 'bash < .claude/scripts/kit-apply.sh'; do
-            kb_pd KB22 ask "$tmp/$v" "$c"
+            kb_pd KB22 deny "$tmp/$v" "$c" 'unresolved write target'
         done
         kb_pd KB22 deny "$tmp/$v" 'cat .claude/scripts/kit-apply.sh | bash' 'kit-apply.sh'
         kb_pd KB22 pass "$tmp/$v" 'cat .claude/scripts/kit-appl*'
@@ -4379,7 +4379,7 @@ run_kit_boundary_ship_cases() {
              'bash -o pipefail .claude/scripts/kit-apply.sh' '/bin/bash -o pipefail .claude/scripts/kit-apply.sh'; do
         kb_pd KB26 deny "$tmp/installed" "$c" 'kit-apply.sh'
     done
-    kb_pd KB26 ask "$tmp/installed" '/bin/bash < .claude/scripts/kit-apply.sh'
+    kb_pd KB26 deny "$tmp/installed" '/bin/bash < .claude/scripts/kit-apply.sh' 'unresolved write target'
     kb_pd KB26 deny "$tmp/kitlike" '/bin/bash .claude/scripts/kit-apply.sh' 'kit-apply.sh'
     kb_nokit_pd KB26 "$tmp/installed" '/bin/bash other.sh'
     kb_nokit_pd KB26 "$tmp/installed" '/usr/bin/env python3 x.py'
@@ -6168,6 +6168,15 @@ run_auto_mode_step3_cases() {
     out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
     g15_expect AM30 pass "$out"
     am_guarded "$t" '.guarded[-1].path' '".claude/.tdd-unfrozen"' AM30 'ledgered'
+    # AM30m a monorepo Python test (backend/tests/…) is a test path like tests/… (EcoCrew agent-ia-1.3);
+    # a test_*.py outside any tests root is not.
+    mkdir -p "$t/backend/tests/services/agent"; printf 'x\n' >"$t/backend/tests/services/agent/test_q.py"
+    printf 'x\n' >"$t/backend/test_q.py"
+    am_verdicts "$t" "[$(am_v backend/tests/services/agent/test_q.py B83 unfreeze),$(am_v backend/test_q.py B84 unfreeze)]"
+    out="$(am_unfrozen_edit "$t" 'backend/tests/services/agent/test_q.py  # B83: reason')"
+    g15_expect AM30m pass "$out"
+    out="$(am_unfrozen_edit "$t" 'backend/test_q.py  # B84: reason')"
+    g15_expect AM30m deny "$out" "auto mode — blocked stop:"
     am_verdicts "$t" '[]'
     out="$(am_unfrozen_edit "$t" 'src/a/x.utils.test.ts  # U2: reason')"
     g15_expect AM30 deny "$out" "auto mode — blocked stop:"
@@ -6200,11 +6209,16 @@ run_auto_mode_step3_cases() {
     out="$(pd_probe "$t" "printf 'src/a/x.utils.test.ts  # U2: r\n' >> .claude/.tdd-unfrozen")"
     g15_expect AM45 deny "$out" "auto mode — blocked stop:"
     am_guarded "$t" '[.guarded[] | select(.tool == "shell" and .path == ".claude/.tdd-unfrozen")] | length' 0 AM45 'no row'
-    # AM46 every other shell-guard ask becomes a blocked stop.
-    for rel in 'cp /tmp/a frontend' 'cp /tmp/a "$X"' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
+    # AM46 every other shell-guard ask becomes a blocked stop; an unresolved target is a plain
+    # deny in every mode, sent back to the agent, never a stop.
+    for rel in 'cp /tmp/a frontend' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
         out="$(pd_probe "$t" "$rel")"
         g15_expect AM46 deny "$out" "auto mode — blocked stop:"
     done
+    out="$(pd_probe "$t" 'cp /tmp/a "$X"')"
+    g15_expect AM46u deny "$out" "unresolved write target"
+    CASES=$((CASES + 1))
+    [[ "$out" != *"blocked stop"* ]] || fail prevent-destructive-commands.sh AM46u "an unresolved target must not end the auto run: '${out:0:200}'"
     # AM33 / moi: the same writes ask, no row; AM45, AM46 ask too.
     t="$tmp/m"; am_tree "$t" moi
     for rel in .claude/settings.json .github/CODEOWNERS vite.config.ts frontend; do
@@ -6219,10 +6233,11 @@ run_auto_mode_step3_cases() {
     g15_expect AM35 ask "$out" "guarded path"
     out="$(pd_probe "$t" "printf 'src/a/x.utils.test.ts  # U2: r\n' >> .claude/.tdd-unfrozen")"
     g15_expect AM45 ask "$out"
-    for rel in 'cp /tmp/a frontend' 'cp /tmp/a "$X"' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
+    for rel in 'cp /tmp/a frontend' 'rm -r src/a' 'mv src/a.ts /tmp/b' 'npx tsc --init'; do
         out="$(pd_probe "$t" "$rel")"
         g15_expect AM46 ask "$out"
     done
+    g15_expect AM46u deny "$(pd_probe "$t" 'cp /tmp/a "$X"')" "unresolved write target"
     # AM36 the guarded row cannot be written: deny, never a silent allow.
     t="$tmp/ro"; am_tree "$t" auto
     chmod 555 "$t/.claude"

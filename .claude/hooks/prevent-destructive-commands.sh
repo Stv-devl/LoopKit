@@ -845,6 +845,7 @@ guard_classify() {
         globpat_l="$(printf '%s' "$globpat" | tr '[:upper:]' '[:lower:]')" || globpat_l=""
         ext="${globpat_l##*.}"
         shopt_chars='*[][*?{}()|!@+]*'
+        # shellcheck disable=SC2053 # $shopt_chars is a glob pattern on purpose
         if [[ -z "$globpat_l" || "$globpat" == *[][{}]* || "$globpat_l" != *.*|| "$ext" == *[\*\?]* || "$ext" == ts || "$ext" == tsx || "$ext" == py \
               || "$globpat_l" == *test* || "$globpat_l" == *spec* \
               || ( "$cmd_joined" == *shopt* && "$globpat" == $shopt_chars ) ]]; then
@@ -995,6 +996,19 @@ if [[ -n "$GUARD_DENY_CG" ]]; then
     deny "BLOCKED: $GUARD_DENY_CG written by a redirect.\\n\\nThis writes a source from the shell, around every Write/Edit guardrail. Use Write/Edit; a generator listed in .claude/project.json codegen_commands may redirect with >."
 fi
 
+# Three shapes whose remedy is a rewrite by the agent, never a decision of the user: denied, so
+# the agent retries in the right form instead of handing the user a prompt (EcoCrew agent-ia-1.3,
+# 2026-11-22: 7 of 12 prompts). They come before every ask, so none hides behind one.
+if [[ -n "$GUARD_ASK_Q" ]]; then
+    deny "kit-cwd: this kit script ($GUARD_ASK_Q) is run by a relative path where the directory is not the project root or a registered worktree, or is not provably so: a nested copy of the kit script would run instead of the project's own.\\n\\nRun it alone, as the first command of its own Bash call, from the project root or a registered worktree, or right after a lone 'cd <absolute root> &&'. Pipe nothing into it and put no loop, ';' or other command before it."
+fi
+if [[ -n "$GUARD_ASK_T" ]]; then
+    deny "This write goes through a /tmp or fd path that may land inside the project ($GUARD_ASK_T).\\n\\nWrite files with the Write/Edit tool. To keep a command's output, read it directly. A /tmp write that must stay in the shell goes in its own Bash call, with no cp, mv, ln, tar or unknown program beside it."
+fi
+if [[ -n "$GUARD_ASK_U" ]]; then
+    deny "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked.\\n\\nWrite files with the Write/Edit tool, or spell the target as a literal path. No inline program (python3 -, python3 -c, node -e) and no no-op probe such as an empty heredoc: Read/Grep to read, Write/Edit to write."
+fi
+
 # The text fallback's ask half: a guarded name, a heredoc, a redirect or a writer verb.
 guard_text_writes() {
     local pattern prefix bare
@@ -1053,9 +1067,6 @@ fi
 if [[ -n "$GUARD_ASK_W" ]]; then
     ask "'${GUARD_ASK_W#* }' is not on the hook's safe-option list for ${GUARD_ASK_W%% *}: an unknown option or spelling may load a config, rewrite snapshots, or write or delete files. Spell it as listed, or let the user decide."
 fi
-if [[ -n "$GUARD_ASK_Q" ]]; then
-    ask "kit-cwd: this kit script ($GUARD_ASK_Q) is run by a relative path where the directory is not the project root or a registered worktree, or is not provably so: a nested copy of the kit script would run instead of the project's own.\\n\\nRun it as the first command, from the project root or a registered worktree (or after a lone 'cd <absolute root> &&'). Approve only if that copy is the one you mean."
-fi
 if [[ -n "$GUARD_ASK_P" ]]; then
     ask_or_block "recursive delete/move under a protected dir: $GUARD_ASK_P.\\n\\nProtected: $PROTECTED_TEXT. Approve only if this subtree is meant to go."
 fi
@@ -1065,14 +1076,8 @@ fi
 if [[ -n "$GUARD_ASK_F" ]]; then
     ask "A tool option targets $GUARD_ASK_F: flag-r empties or rewrites that folder, flag-w writes that file, cfg loads its config from there, a file the agent may have written. Approve only if that path is meant."
 fi
-if [[ -n "$GUARD_ASK_T" ]]; then
-    ask "This write goes through a /tmp or fd path that may land inside the project ($GUARD_ASK_T). Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
-fi
 if [[ -n "$GUARD_ASK_O" ]]; then
     ask "This writes outside the project ($GUARD_ASK_O): no guardrail of the kit covers that path. Say what it writes and why, then let the user decide."
-fi
-if [[ -n "$GUARD_ASK_U" ]]; then
-    ask_or_block "unresolved write target ($GUARD_ASK_U): a variable, a substitution, an unknown directory or an inline program decides where this writes, so the guarded set cannot be checked. Approve only if it writes nothing under the kit's guardrails.\\n\\nWrite files with the Write/Edit tool instead."
 fi
 if [[ -n "$GUARD_ASK_R" ]]; then
     ask "This rm deletes recursively ($GUARD_ASK_R). Say what it removes and why, then let the user decide."
