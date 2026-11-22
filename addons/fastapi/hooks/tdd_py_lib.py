@@ -40,7 +40,14 @@ def _crash_envelope(kind, value, trace) -> None:
     os._exit(0)
 
 
-if sys.excepthook is sys.__excepthook__:
+def _excepthook_replaceable() -> bool:
+    """The interpreter's default, or apport's crash reporter that Ubuntu's system Python
+    preinstalls: left in place, the hook would exit 1 there and let the write through."""
+    return (sys.excepthook is sys.__excepthook__
+            or getattr(sys.excepthook, "__module__", "") == "apport_python_hook")
+
+
+if _excepthook_replaceable():
     sys.excepthook = _crash_envelope
 
 # --- configuration -----------------------------------------------------------
