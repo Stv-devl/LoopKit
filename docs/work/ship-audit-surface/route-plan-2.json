@@ -1,0 +1,3 @@
+{"mode": "plan", "pass": 2, "findings": [
+  {"id": "F10", "severity": "Minor", "claim": "The sign-out context rule over-selects: `.clear(` matches any Set/Map clear, identifiers match as substrings (loginSchema, LoginForm), and comment lines in the 30-line window count; costs an auditor run, never a miss.", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+]}
