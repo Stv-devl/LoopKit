@@ -117,12 +117,27 @@ for ignored in .claude/.kit-health.jsonl .ruff_cache/ .pr-shots/ 'docs/work/*/pr
     [[ "$(grep -cxF "$ignored" "$PY_TARGET/.gitignore")" -eq 1 ]]
 done
 
+# IN65 Codex's last message (codex-handoff.sh) is ignored once on a fresh install and in the kit repo.
+CODEX_TARGET="$SCRATCH/codex-target"
+mkdir -p "$CODEX_TARGET"
+"$ROOT/install.sh" "$CODEX_TARGET" --no-ci >/dev/null 2>&1
+[[ "$(grep -cxF 'docs/work/*/codex-last-message.txt' "$CODEX_TARGET/.gitignore")" -eq 1 ]] \
+    || { echo "IN65: fresh install does not ignore docs/work/*/codex-last-message.txt once" >&2; exit 1; }
+git -C "$ROOT" check-ignore -q docs/work/x/codex-last-message.txt \
+    || { echo "IN65: the kit repo does not ignore docs/work/x/codex-last-message.txt" >&2; exit 1; }
+# IN66 an older block without that line gets it back-filled once on reinstall, not twice.
+sed -i '/^docs\/work\/\*\/codex-last-message\.txt$/d' "$CODEX_TARGET/.gitignore"
+"$ROOT/install.sh" "$CODEX_TARGET" --no-ci >/dev/null 2>&1
+"$ROOT/install.sh" "$CODEX_TARGET" --no-ci >/dev/null 2>&1
+[[ "$(grep -cxF 'docs/work/*/codex-last-message.txt' "$CODEX_TARGET/.gitignore")" -eq 1 ]] \
+    || { echo "IN66: the top-up does not back-fill codex-last-message.txt exactly once" >&2; exit 1; }
+
 # I1 key and credential files are ignored on a fresh install, counted in the
 # closing line, and back-filled once into an older kit's block.
 KEY_TARGET="$SCRATCH/key-target"
 mkdir -p "$KEY_TARGET"
 KEY_OUT="$("$ROOT/install.sh" "$KEY_TARGET" --no-ci 2>&1)"
-grep -Fq '20 chemins' <<<"$KEY_OUT"
+grep -Fq '26 chemins' <<<"$KEY_OUT"
 for ignored in '*.pem' '*.key' 'credentials.*'; do
     [[ "$(grep -cxF "$ignored" "$KEY_TARGET/.gitignore")" -eq 1 ]]
 done
@@ -930,7 +945,8 @@ IN55_BAD="$(grep -oE '[A-Za-z0-9./_-]*(agents|commands|skills|guides)/[A-Za-z0-9
 
 # IN59 (loop-to-pr) core and react installs keep the three loop-record.py handlers and the three
 # loop allows; install.sh's PROMPT_ALLOWS lists the allows too.
-IN59_ALLOWS=('Bash(python3 .claude/hooks/loop-record.py --clear)' 'Bash(.claude/scripts/loop-pr-state.sh *)'
+IN59_ALLOWS=('Bash(python3 .claude/hooks/loop-record.py --clear)' 'Bash(python3 .claude/hooks/loop-record.py --block)'
+    'Bash(.claude/scripts/loop-pr-state.sh *)'
     'Bash(.claude/scripts/case-hash.sh *)')
 for in59 in "$TARGET" "$REACT_TARGET"; do
     for pair in 'PreToolUse AskUserQuestion' 'PostToolUse AskUserQuestion' 'PostToolUse Bash'; do

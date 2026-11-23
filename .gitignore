@@ -118,6 +118,8 @@ docs/audits/
 # fresh worktree gets no untracked file (.claude/guides/10-worktrees.md).
 docs/work/*/handoff.md
 handoff-codex.md
+# Codex's last message (codex-handoff.sh): rewritten on every run, never versioned.
+docs/work/*/codex-last-message.txt
 
 # The PR body /loop:ship hands to `gh pr create --body-file`: written once per
 # ship, obsolete after the PR exists, and untracked it would block worktree removal.

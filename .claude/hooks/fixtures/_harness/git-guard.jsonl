@@ -539,6 +539,56 @@
 {"id":"G18.39","verdict":"deny","command":"gh pr comment 1 -b \"Claude-Session: x\"","reason":"attribution line in a gh body"}
 {"id":"G18.40","verdict":"deny","command":"gh pr comment 1 -b \"see claude.ai/code/session_x\"","reason":"attribution line in a gh body"}
 {"id":"G18.41","verdict":"pass","command":"gh pr view 1 --json body -q .body | grep Co-Authored-By"}
+{"id":"G18.42","verdict":"pass","command":"gh pr view 1"}
+{"id":"G18.42.2","verdict":"pass","command":"gh pr list"}
+{"id":"G18.42.3","verdict":"pass","command":"gh pr diff 1"}
+{"id":"G18.42.4","verdict":"pass","command":"gh pr checks 1"}
+{"id":"G18.43","verdict":"pass","command":"gh run view 5"}
+{"id":"G18.43.2","verdict":"pass","command":"gh run list"}
+{"id":"G18.43.3","verdict":"pass","command":"gh run view 5 -R o/r"}
+{"id":"G18.43.4","verdict":"pass","command":"gh -R o/r run list"}
+{"id":"G18.44","verdict":"pass","command":"gh pr view 1 --json title -R o/r"}
+{"id":"G18.45","verdict":"pass","command":"gh repo view"}
+{"id":"G18.45.2","verdict":"pass","command":"gh repo view o/r --json name"}
+{"id":"G18.46","verdict":"pass","command":"gh issue view 3"}
+{"id":"G18.46.2","verdict":"pass","command":"gh issue list"}
+{"id":"G18.46.3","verdict":"pass","command":"gh issue list -R o/r --json number"}
+{"id":"G18.47","verdict":"pass","command":"gh release view v1"}
+{"id":"G18.47.2","verdict":"pass","command":"gh release list"}
+{"id":"G18.47.3","verdict":"pass","command":"gh --repo o/r release list"}
+{"id":"G18.48","verdict":"ask","command":"gh api repos/o/r","reason":"writes to GitHub"}
+{"id":"G18.48.2","verdict":"ask","command":"gh api repos/o/r --jq .name","reason":"writes to GitHub"}
+{"id":"G18.49","verdict":"ask","command":"gh issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.49.2","verdict":"ask","command":"gh release create v1","reason":"writes to GitHub"}
+{"id":"G18.49.3","verdict":"ask","command":"gh repo create x","reason":"writes to GitHub"}
+{"id":"G18.49.4","verdict":"ask","command":"gh repo delete x","reason":"writes to GitHub"}
+{"id":"G18.49.5","verdict":"ask","command":"gh repo edit --description x","reason":"writes to GitHub"}
+{"id":"G18.50","verdict":"ask","command":"gh repo view --web","reason":"writes to GitHub"}
+{"id":"G18.50.2","verdict":"ask","command":"gh issue view 3 --web","reason":"writes to GitHub"}
+{"id":"G18.51","verdict":"ask","command":"gh repo view && gh repo delete o/r","reason":"writes to GitHub"}
+{"id":"G18.51.2","verdict":"ask","command":"gh issue list; gh issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.52","verdict":"ask","command":"gh pr view 1 && gh pr merge 1","reason":"acts on a pull request"}
+{"id":"G18.52.2","verdict":"ask","command":"gh -R o/r issue view 3 | gh issue edit 3 --add-label x","reason":"writes to GitHub"}
+{"id":"G18.53","verdict":"ask","command":"\\gh repo delete o/r","reason":"writes to GitHub"}
+{"id":"G18.53.2","verdict":"pass","command":"\\gh repo view"}
+{"id":"G18.54","verdict":"ask","command":"gh repo view\ngh repo delete o/r","reason":"writes to GitHub"}
+{"id":"G18.54.2","verdict":"pass","command":"gh repo view \\\n--json name"}
+{"id":"G18.55","verdict":"ask","command":"gh -R \"$(<.repo)\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.55.2","verdict":"ask","command":"gh -R \"$(gh repo view --json nameWithOwner -q .nameWithOwner)\" issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.55.3","verdict":"ask","command":"gh -R `cat .repo` repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.55.4","verdict":"ask","command":"gh -R \"$(cat .repo)\" repo view","reason":"writes to GitHub"}
+{"id":"G18.56","verdict":"ask","command":"gh -R \"$(gh repo view --json nameWithOwner --jq '(.nameWithOwner)')\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.56.2","verdict":"ask","command":"gh -R \"$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+)\\.git$#\\1#')\" issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.56.3","verdict":"ask","command":"gh -R \"$( (gh repo view --json nameWithOwner -q .nameWithOwner) )\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.56.4","verdict":"ask","command":"gh -R \"$(cat <(gh repo view --json nameWithOwner -q .nameWithOwner))\" issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.56.5","verdict":"ask","command":"gh -R \"o$((1))\" issue create -t x -b y","reason":"writes to GitHub"}
+{"id":"G18.56.6","verdict":"ask","command":"gh -R \"$(echo a\ncat .repo)\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.56.7","verdict":"ask","command":"gh -R \"$(echo $(cat .repo))\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.50.3","verdict":"ask","command":"gh repo view -w","reason":"writes to GitHub"}
+{"id":"G18.50.4","verdict":"ask","command":"gh issue view 3 -w","reason":"writes to GitHub"}
+{"id":"G18.50.5","verdict":"ask","command":"gh issue list -w","reason":"writes to GitHub"}
+{"id":"G18.50.6","verdict":"ask","command":"gh release view v1 -w","reason":"writes to GitHub"}
+{"id":"G18.50.7","verdict":"ask","command":"gh issue view 3 -cw","reason":"writes to GitHub"}
 {"id":"G14.143","verdict":"ask","setup":"proj","command":"git -C __OUT_TREE__ commit -m \"feat(x): one line\"","reason":"outside the project"}
 {"id":"G14.144","verdict":"ask","setup":"proj","cwd":"__FEAT_TREE__/src","command":"git -C .. commit -m x","reason":"not a plain git call"}
 {"id":"G14.145","verdict":"ask","setup":"proj","command":"git -C . commit -m x","reason":"not a plain git call"}
@@ -546,6 +596,8 @@
 {"id":"G20.002","verdict":"pass","command":"git merge --ff-only origin/main"}
 {"id":"G21.001","verdict":"allow","setup":"lp","command":"git push -u origin feat/s1","reason":"loop record"}
 {"id":"G21.002","verdict":"allow","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"loop record"}
+{"id":"G21.002b","verdict":"ask","setup":"lpblocked","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G21.002c","verdict":"ask","setup":"lpblocked","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
 {"id":"G21.003","verdict":"ask","setup":"lpnorec","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.004","verdict":"ask","setup":"lpnobar","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.005","verdict":"ask","setup":"lps2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}

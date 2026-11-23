@@ -160,6 +160,10 @@ ship commit, that range is empty.
 { git -c core.quotePath=false diff --name-only <base>; git ls-files --others --exclude-standard; } | python3 .claude/hooks/kit-pr-assets.py ui
 ```
 
+The script reads `app_roots` from `.claude/project.json`: `<root>/src/` counts as `src/`.
+- exit 2 (an invalid `.claude/project.json`) → report the refusal and stop this leg; in `auto`, a
+  blocked stop. Never guess `none`.
+- `none`, but the diff plainly holds `*.tsx` under `src/` or an app root's `src/` → decide `ui` anyway.
 - `none` → no capture, and no `Screenshots run:` line.
 - `ui` → launch the tester with `PR_SHOTS=after` and a fresh
   `PR_SHOTS_DIR=.pr-shots/<slug>/<run-id>/` (UTC `YYYYMMDDTHHMMSS`). Even when no

@@ -59,7 +59,10 @@ mocked. Read it before writing a line, and apply the matching rule:
    already covers better; say which ones you skipped and why.
 2. Write your spec at the given path, following the skill's naming convention
    (the suffix decides whether it needs a session).
-3. Run **only your file**: `pnpm exec playwright test <your file>`. Write files
+3. Run **only your file**: `pnpm exec playwright test <your file>`, with the project config and `--grep`
+   to narrow it; never an agent-written config, never `-c`/`--config` (it asks).
+   Read with `offset`/`limit`, never a `for … sed -n` loop (the guard cannot parse `${…}` in it); no `cd … && git apply --check` probe.
+   Write files
    with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
    `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer,
    never by switching tools. Also: no no-op probe (`python3 - <<EOF print("noop")`,
@@ -74,7 +77,7 @@ mocked. Read it before writing a line, and apply the matching rule:
 
 When `PR_SHOTS` is set, follow the skill's "PR screenshots" section in your own
 spec: an inline `shot()`, the names, the after/before timing, the variants and
-the dark mechanism. You write images only under `PR_SHOTS_DIR`. In before mode a
+the dark mechanism. You write images only under `PR_SHOTS_DIR`, never a fixed review folder. In before mode a
 failing run is expected and is not a finding. Never capture on real data.
 
 ## Output format (mandatory)

@@ -382,7 +382,7 @@ PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
-  "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
+  "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)", "Bash(python3 .claude/hooks/loop-record.py --block)",
   "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
   "Bash(python3 .claude/hooks/kit-gate-route.py *)", "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
@@ -638,7 +638,8 @@ ensure_gitignore() {
         local line
         for line in .claude/.restart-ready .claude/.token-delegate 'docs/work/*/handoff.md' handoff-codex.md \
             .claude/.kit-health.jsonl .claude/settings.local.json __pycache__/ .ruff_cache/ \
-            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/ .claude/.loop-record.json .claude/.loop-record.lock; do
+            '*.pem' '*.key' 'credentials.*' .pr-shots/ 'docs/work/*/pr-body.md' .claude/kit-backup/ .claude/.loop-record.json .claude/.loop-record.lock \
+            'docs/work/*/codex-last-message.txt'; do
             if ! grep -qxF "$line" "$gi"; then
                 printf '%s\n' "$line" >> "$gi"
                 GITIGNORE_FILLED=$((GITIGNORE_FILLED + 1))
@@ -675,6 +676,8 @@ __pycache__/
 # handoff-codex.md et .codex-ready sont les noms d'avant 0.2.
 docs/work/*/handoff.md
 handoff-codex.md
+# Le dernier message de Codex (codex-handoff.sh) : réécrit à chaque run, jamais versionné.
+docs/work/*/codex-last-message.txt
 # Captures d'écran de PR (e2e-tester) : publiées sur la branche pr-assets, jamais ici.
 .pr-shots/
 # Le corps de PR de /loop:ship : écrit une fois, périmé après la PR, et non suivi il bloque `git worktree remove`.
@@ -937,7 +940,7 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
 fi
 
 if [[ "$GITIGNORE_TOUCHED" -eq 1 ]]; then
-    echo "  .gitignore : bloc « état de session » ajouté (20 chemins : état écrit par les hooks, clés et identifiants)."
+    echo "  .gitignore : bloc « état de session » ajouté (26 chemins : état écrit par les hooks, clés et identifiants)."
     echo
 elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
     echo "  .gitignore : $GITIGNORE_FILLED chemins ajoutés au bloc existant."

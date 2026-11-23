@@ -959,14 +959,15 @@ if [[ "$GUARD_FAILED" == 1 && "$COMMAND" == *.claude/.loop-record* ]]; then
     deny "BLOCKED: shell guard unavailable and the command names .claude/.loop-record.json, which is written only by loop-record.py.\\n\\nshell_targets.py is missing, broken or python3 is absent, so this write cannot be resolved. Run /kit:doctor."
 fi
 # loop-record.py runs as a hook, on the user's own answer; run by hand it would write a record
-# from an input nobody answered. `--clear` only deletes the record, `--mode` and `--guarded-block`
-# only read it: those three exact forms stay allowed.
+# from an input nobody answered. `--clear` only deletes the record, `--block` only marks it blocked
+# (it removes the push/PR allow), `--mode` and `--guarded-block` only read it: those four exact forms
+# stay allowed.
 LOOP_RECORD_RUN_RE='(^|[^[:alnum:]_./-])(env[[:space:]]+)?([^[:space:]]*/)?python3?(\.[0-9]+)?[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*([^[:space:]]*/)?loop-record\.py([^[:alnum:]_.-]|$)'
 LOOP_RECORD_HEAD_RE='(^|[;&|(])[[:space:]]*([^[:space:]]*/)?loop-record\.py([^[:alnum:]_.-]|$)'
-LOOP_RECORD_CLEAR_RE='^[[:space:]]*python3[[:space:]]+\.claude/hooks/loop-record\.py[[:space:]]+(--clear|--mode|--guarded-block)[[:space:]]*$'
+LOOP_RECORD_CLEAR_RE='^[[:space:]]*python3[[:space:]]+\.claude/hooks/loop-record\.py[[:space:]]+(--clear|--block|--mode|--guarded-block)[[:space:]]*$'
 if [[ ( "$COMMAND" =~ $LOOP_RECORD_RUN_RE || "$COMMAND" =~ $LOOP_RECORD_HEAD_RE ) \
     && ! "$COMMAND" =~ $LOOP_RECORD_CLEAR_RE ]]; then
-    deny "BLOCKED: only Claude Code runs loop-record.py, as a hook on the user's plan-gate answer.\\n\\nRun by hand, it would write .claude/.loop-record.json from an answer the user never gave. The manual forms are: python3 .claude/hooks/loop-record.py --clear, --mode, --guarded-block"
+    deny "BLOCKED: only Claude Code runs loop-record.py, as a hook on the user's plan-gate answer.\\n\\nRun by hand, it would write .claude/.loop-record.json from an answer the user never gave. The manual forms are: python3 .claude/hooks/loop-record.py --clear, --block, --mode, --guarded-block"
 fi
 if [[ -n "$GUARD_INLINE_TDD" ]]; then
     deny "BLOCKED: an inline program names a test-first module or a test file ($GUARD_INLINE_TDD).\\n\\n$GUARD_TEST_WHY Write it with Write/Edit; to only read it, use the Read tool or cat."

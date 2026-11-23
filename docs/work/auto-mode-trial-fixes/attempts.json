@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 3,
+    "last": "2026-11-23T16:28:28.813749Z",
+    "reason": "R6 not fixed: no resume step reaches the blocked-record stop; R7: --clear drops the verdict/guarded ledger from the PR"
+  }
+}
