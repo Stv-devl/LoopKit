@@ -398,7 +398,9 @@ PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
 # install_settings <target settings> <react true|false>
 # settings.json is the one kit file that must merge on every update: a .new here
 # means newly added hooks stay mute. User keys win; selected hook groups merge by
-# event + matcher and commands remain unique. Re-running is byte-stable.
+# event + matcher and commands remain unique, a leading `$CLAUDE_PROJECT_DIR/` ignored:
+# an older kit's relative `.claude/hooks/x` and the current form are one hook, and the
+# kit's entry wins. Re-running is byte-stable.
 # permissions.deny is a union in order, never `unique`: the target's entries
 # first, then the kit's missing ones, so `Read(!.env.example)` stays after
 # `Read(.env.*)` (sorting would put the `!` first and carve nothing).
@@ -446,11 +448,13 @@ install_settings() {
     fi
 
     jq -s --argjson retired "$RETIRED_ALLOWS" '
+      def hook_key:
+        .command // "" | sub("^\"?\\$\\{?CLAUDE_PROJECT_DIR\\}?\"?/"; "");
       def merged_groups($groups):
         $groups
         | group_by(.matcher // "__all__")
         | map(.[0] as $base
-              | $base + {hooks: ([.[].hooks[]] | group_by(.command) | map(last))});
+              | $base + {hooks: ([.[].hooks[]] | group_by(hook_key) | map(last))});
       .[0] as $old | .[1] as $new
       | ($new * $old)
       | .permissions.allow = ((($old.permissions.allow // []) + ($new.permissions.allow // [])) | unique)
