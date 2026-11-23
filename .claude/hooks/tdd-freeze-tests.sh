@@ -223,6 +223,86 @@ start = current.find(old)
 if start < 0:
     refuse("the old_string does not appear in the file as it stands")
 result = current[:start] + new + current[start + len(old):]
+ID = r"[A-Za-z_$][A-Za-z0-9_$]*"
+SPEC = r"(?:type\s+)?%s(?:\s+as\s+%s)?" % (ID, ID)
+BRACES = r"\{\s*(?:%s(?:\s*,\s*%s)*\s*,?\s*)?\}" % (SPEC, SPEC)
+CLAUSE = r"(?:%s\s*,\s*%s|%s\s*,\s*\*\s+as\s+%s|\*\s+as\s+%s|%s|%s)" % (ID, BRACES, ID, ID, ID, BRACES, ID)
+DECL = re.compile(r"import[ \t]+(?:type[ \t]+)?(%s)\s+from[ \t]+([\x27\"])[A-Za-z0-9@._/-]+\2[ \t]*;?[ \t]*(?=\n|\Z)" % CLAUSE)
+TEST_GLOBALS = {"describe", "it", "test", "expect", "vi", "suite", "bench", "beforeEach", "afterEach", "beforeAll", "afterAll"}
+def head_split(s):
+    # The import head: whole blank lines, // or /* */ comment lines and static import declarations from
+    # offset 0; returns its items (kind, text) and the offset where the rest of the file starts.
+    items, pos, n = [], 0, len(s)
+    while pos < n:
+        nl = s.find("\n", pos)
+        end = n if nl < 0 else nl
+        line = s[pos:end]
+        if not line.strip():
+            items.append(("blank", line))
+        elif line.startswith("//"):
+            items.append(("comment", line))
+        elif line.startswith("/*"):
+            close = s.find("*/", pos + 2)
+            if close < 0:
+                break
+            nl = s.find("\n", close + 2)
+            end = n if nl < 0 else nl
+            if s[close + 2:end].strip():
+                break
+            items.append(("comment", s[pos:end]))
+        else:
+            m = DECL.match(s, pos)
+            if not m:
+                break
+            end = m.end()
+            items.append(("import", s[pos:end]))
+        pos = end + 1
+    return items, min(pos, n)
+def decl_names(text):
+    clause = DECL.match(text).group(1)
+    names = set()
+    for spec in re.finditer(r"(?:type\s+)?(%s)(?:\s+as\s+(%s))?" % (ID, ID), clause):
+        names.update(x for x in spec.groups() if x and x not in ("type", "as"))
+    return names
+def import_additions():
+    # None when the head changed in any other way than whole static import declarations (and blank
+    # lines) inserted; else the offset where the rest of the current file starts, and the rest of the result.
+    cur_items, cur_off = head_split(current)
+    res_items, res_off = head_split(result)
+    if current[:cur_off] == result[:res_off]:
+        return None
+    k, idents = 0, set(re.findall(ID, current))
+    for kind, text in res_items:
+        if k < len(cur_items) and (kind, text) == cur_items[k]:
+            k += 1
+            continue
+        if kind == "blank":
+            continue
+        if kind != "import":
+            return None
+        names = decl_names(text)
+        if names & TEST_GLOBALS or names & idents:
+            return None
+    if k != len(cur_items):
+        return None
+    return cur_off, result[res_off:]
+if auto and any(isinstance(v, dict) and v.get("kind") == "frozen-case" and v.get("path") == rel
+                and v.get("verdict") == "unfreeze" for v in rec.get("verdicts") or []):
+    added = import_additions()
+    if added is not None:
+        cur_off, rest = added
+        if rest == current[cur_off:]:
+            sys.exit(0)
+        body = current[:cur_off] + rest
+        p = 0
+        while p < min(len(current), len(body)) and current[p] == body[p]:
+            p += 1
+        q = 0
+        while q < min(len(current), len(body)) - p and current[-1 - q] == body[-1 - q]:
+            q += 1
+        if p == len(current) - q:
+            p -= 1
+        start, old, new, result = p, current[p:len(current) - q], body[p:len(body) - q], body
 CALL = re.compile(r"(?<![A-Za-z0-9_$.])(?:it|test)(?:(?:\.[A-Za-z]+)*[ \t]*\(|(?:\.[A-Za-z]+)+[ \t]*`)")
 def skip_string(s, i):
     q, i = s[i], i + 1
@@ -337,7 +417,7 @@ for found, edge in ((cur, start + len(old)), (res, start + len(new))):
         if case["amb"] and case["start"] < edge:
             if case["open"]:
                 refuse("case %s (offset %d) never closes, so its span cannot be told from the cases after it; correct it through the unfreeze queue" % (case["id"] or "<no id>", case["start"]))
-            refuse("case %s (offset %d) is ambiguous: its character span and its indentation span disagree, or a regex, a quote crossing a line, a stray backtick or a second call in its table could open something its closing line does not close, so it cannot be told from the cases after it; end the rows pass with python3 .claude/hooks/loop-record.py --clear, or correct it through the unfreeze queue" % (case["id"] or "<no id>", case["start"]))
+            refuse("case %s (offset %d) is ambiguous: its character span and its indentation span disagree, or a regex, a quote crossing a line, a stray backtick or a second call in its table could open something its closing line does not close, so it cannot be told from the cases after it; correct it through the unfreeze queue; in auto, if the queue cannot lift it, end the run with a blocked stop (record kept)" % (case["id"] or "<no id>", case["start"]))
 if not before:
     refuse("the edit touches no case; rows mode edits amended cases only")
 ids = set()
@@ -371,7 +451,7 @@ sys.exit(0)
 rows_verdict() {
     local why
     why="$(freeze_rows check)" && notice "TDD: amended case(s) of the frozen test '$FILE_PATH' edited as recorded at the plan gate (loop record rows, .tdd-unfrozen ids). The amended cases go in the PR body (Frozen cases)."
-    deny "Frozen test, rows mode: '$FILE_PATH' has amended cases recorded at the plan gate, and this edit is refused: ${why:-the rows check could not run}.\n\nEdit only the amended cases, one Edit per case, giving each the exact title the gate hashed. Any other correction is queued in docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk); the main thread stops once for the whole batch (orchestrate.md, Phase 4)."
+    deny "Frozen test, rows mode: '$FILE_PATH' has amended cases recorded at the plan gate, and this edit is refused: ${why:-the rows check could not run}.\n\nEdit only the amended cases, one Edit per case, giving each the exact title the gate hashed. In auto, imports a case needs go import-first (whole static declarations added to the top import block, before the case body) or in one Edit with it. Any other correction is queued in docs/work/<slug>/unfreeze-queue.md (case id, old and new line, reason, hunk); the main thread stops once for the whole batch (orchestrate.md, Phase 4)."
 }
 
 # Explicitly unfrozen? The whole-file exemption reads the project dir's list only. Rows mode (entry,

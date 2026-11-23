@@ -6,8 +6,8 @@ PostToolUse AskUserQuestion: a main-thread `Plan gate` answered exactly `go` wri
 (docs/specs/loop-to-pr.md); a main-thread `Contract gate` showing `Validation: auto`, answered
 exactly `as written`, writes it in auto mode (docs/specs/auto-mode.md). SubagentStop of the
 `arbiter` agent: its verdict block is ledgered in an auto record. PostToolUse Bash: the pass's
-exact `gh pr create` printing its PR URL deletes it. `--clear` deletes it, `--mode` prints the
-mode. A Post path never fails the tool call. Standard library only.
+exact `gh pr create` printing its PR URL deletes it. `--clear` deletes it, `--block` marks it
+blocked (kept, no push/PR allow), `--mode` prints the mode. A Post path never fails the tool call. Standard library only.
 """
 
 import fcntl
@@ -629,6 +629,21 @@ def clear() -> None:
     drop_record(tree)
 
 
+def mark_blocked() -> None:
+    """Marks the record of the tree holding the cwd `blocked`: it stays (auto is kept) but no longer
+    allows the pass's push or PR. A new gate go rebuilds the record without the mark. No record: no-op."""
+    tree = toplevel(os.getcwd())
+    if tree is None:
+        return
+    with locked(tree):
+        record = read_record(tree)
+        if record is None or record.get("version") != 1:
+            return
+        record["blocked"] = True
+        record["blocked_at"] = now()
+        write_record(tree, record)
+
+
 TEST_PATH_RE = re.compile(r"\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|/)test_[^/]*\.py$|_test\.py$")
 TS_CASE_RE = re.compile(r"""(?<![A-Za-z0-9_$.])(?:it|test)(?:\.[A-Za-z]+)*[ \t]*\([ \t]*['"`]([A-Za-z][0-9]+)\b""")
 PY_CASE_RE = re.compile(r"def[ \t]+test_([A-Za-z])([0-9]+)(?:_|[ \t]*\()")
@@ -710,10 +725,16 @@ def guarded_block(tree: str, fetch: bool) -> str | None:
 
 
 def main() -> int:
-    """Dispatches on --clear, then on the hook event and tool."""
+    """Dispatches on --clear, --block, then on the hook event and tool."""
     if sys.argv[1:] == ["--clear"]:
         try:
             clear()
+        except Exception:
+            pass
+        return 0
+    if sys.argv[1:] == ["--block"]:
+        try:
+            mark_blocked()
         except Exception:
             pass
         return 0

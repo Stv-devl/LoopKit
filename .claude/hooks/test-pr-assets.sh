@@ -148,6 +148,39 @@ done
 run_in "src/features/cart/cart.utils.ts" ui
 expect_out "K3 a .ts utils file alone prints none" "none"
 
+# K27-K30 (auto-mode-trial-fixes, fix 5): app_roots from .claude/project.json widen src/ to <root>/src/.
+roots_json() {
+    mkdir -p "$CASE_DIR/.claude"
+    printf '{"schema_version":1,"app_roots":%s,"codegen_commands":[]}\n' "$1" >"$CASE_DIR/.claude/project.json"
+}
+
+case_start
+roots_json '["frontend"]'
+run_in "frontend/src/X.tsx" ui
+expect_out "K27 app_roots [frontend]: frontend/src/X.tsx prints ui" "ui"
+
+case_start
+roots_json '[]'
+run_in "frontend/src/X.tsx" ui
+expect_out "K28 app_roots []: frontend/src/X.tsx prints none" "none"
+run_in "src/X.tsx" ui
+expect_out "K28 app_roots []: src/X.tsx prints ui" "ui"
+roots_json '["frontend"]'
+run_in "src/X.tsx" ui
+expect_out "K28 app_roots [frontend]: src/X.tsx still prints ui" "ui"
+
+case_start
+run_in "src/X.tsx" ui
+expect_out "K29 no project.json: src/X.tsx prints ui" "ui"
+run_in "frontend/src/X.tsx" ui
+expect_out "K29 no project.json: frontend/src/X.tsx prints none" "none"
+
+case_start
+mkdir -p "$CASE_DIR/.claude"
+printf 'not json\n' >"$CASE_DIR/.claude/project.json"
+run_in "frontend/src/X.tsx" ui
+expect_refused "K30 an invalid project.json refuses ui (exit 2, empty stdout)"
+
 case_start
 run_cmd path --branch feat/pr-shots --sha abc1234 --flow checkout --step 02-pay --theme dark --viewport mobile
 expect_out "K4 path joins branch, sha and the flow-step-theme-viewport name" \

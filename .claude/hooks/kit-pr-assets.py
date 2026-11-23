@@ -18,7 +18,11 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import project_config  # noqa: E402
 
 REF = "refs/heads/pr-assets"
 REMOTE_REF = "refs/remotes/origin/pr-assets"
@@ -57,11 +61,13 @@ class Shot:
     url: str
 
 
-def is_ui_path(path: str) -> bool:
-    """True when a changed path can change what a screen looks like."""
+def is_ui_path(path: str, roots: tuple = ()) -> bool:
+    """True when a changed path can change what a screen looks like; `roots` are the
+    project's app roots, whose `<root>/src/` counts as `src/` does."""
     p = path.strip().removeprefix("./")
     name = PurePosixPath(p).name
-    if p.startswith("src/") and (p.endswith(UI_SUFFIXES) or ".module." in name):
+    prefixes = ("src/",) + tuple(f"{root}/src/" for root in roots)
+    if p.startswith(prefixes) and (p.endswith(UI_SUFFIXES) or ".module." in name):
         return True
     if p.startswith("public/") or p == "index.html":
         return True
@@ -307,8 +313,12 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: list[str]) -> None:
     args = build_parser().parse_args(argv)
     if args.cmd == "ui":
+        try:
+            roots = project_config.load(os.getcwd()).app_roots
+        except project_config.ConfigError as error:
+            raise Refused(f"cannot read the app roots: {error}") from None
         paths = [line for line in sys.stdin.read().splitlines() if line.strip()]
-        print("ui" if any(is_ui_path(p) for p in paths) else "none")
+        print("ui" if any(is_ui_path(p, roots) for p in paths) else "none")
     elif args.cmd == "path":
         print(image_path(args.branch, args.sha, args.flow, args.step, args.theme, args.viewport, args.before))
     elif args.cmd == "plan":

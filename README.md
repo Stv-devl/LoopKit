@@ -116,7 +116,9 @@ an `unfreeze` verdict; a `refuse` is final. Settings, workflows, CODEOWNERS and 
 denied. The other guarded configs (`package.json`, `vite.config.*`, `tsconfig*`…) are written
 without a prompt but recorded, and the PR carries a `Guarded files touched` block that the git
 hook recomputes and checks byte for byte. Anything that would still ask becomes a **blocked
-stop**: commits stay local, no push, no PR, and you take over.
+stop**: commits stay local, no push, no PR, and you take over. The record is kept but marked
+`blocked`, so auto stays and its push and PR allow is off; you take over by running
+`python3 .claude/hooks/loop-record.py --clear`, then the pass resumes in `moi`.
 
 `/loop:spec` chains straight into the loop; its contract is validated at the
 first gate and its acceptance cases carry ids that frozen tests cite. After

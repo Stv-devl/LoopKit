@@ -305,6 +305,26 @@ add web/src/auth.ts 'localStorage.removeItem("t");'
 OUT="$(env -C "$REPO/web" python3 -I "$SURFACE" select --base "$BASE")"
 surfaces A42 '["session"]'
 
+# A43 (auto-mode-trial-fixes, fix 5, pin): a diff under frontend/src/ with app_roots ["frontend"] selects
+# the same surfaces as the same diff under src/ with no app root.
+new_repo
+add src/auth.ts 'export async function signOutAll() {' '  queryClient.clear();' '}'
+add src/app.tsx 'export const H = ({ html }) => <div dangerouslySetInnerHTML={{ __html: html }} />;'
+sel
+surfaces A43 '["session","input-output"]'
+new_repo
+jq '.app_roots = ["frontend"]' "$REPO/.claude/project.json" >"$REPO/.claude/project.json.tmp"
+mv "$REPO/.claude/project.json.tmp" "$REPO/.claude/project.json"
+put frontend/src/auth.ts 'export function signOut() {' '  api.logout();' '}'
+put frontend/src/app.tsx 'export const App = () => null;'
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm 'frontend root'
+BASE="$(git -C "$REPO" rev-parse HEAD)"
+add frontend/src/auth.ts 'export async function signOutAll() {' '  queryClient.clear();' '}'
+add frontend/src/app.tsx 'export const H = ({ html }) => <div dangerouslySetInnerHTML={{ __html: html }} />;'
+sel
+surfaces A43.2 '["session","input-output"]'
+
 # ---- Follow-ups ----
 
 T="docs/work/t"

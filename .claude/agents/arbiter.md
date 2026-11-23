@@ -40,7 +40,14 @@ lets it in. So read the **hunk itself**, never the requester's summary alone:
 2. Extract the case's fenced `diff` hunk from `unfreeze-queue.md` and run
    `git apply --check -` on it (stdin: it writes nothing). It must apply to the
    current file.
-3. It must touch only that case, and remove no assertion beyond the title's change.
+3. It must touch only that case, and remove no assertion beyond the title's change. One
+   addition outside the case is allowed: whole static import declarations added to the
+   top import block (`import { a } from './b'`, `import type …`, a multi-line `{ … }`). Not a
+   side-effect `import './x'`, not a dynamic `import(` or `import.meta`, no
+   text after the specifier on the same line, no binding named like a test global (`describe`, `it`, `test`,
+   `expect`, `vi`, hooks) nor like any identifier already in the file, and no existing import
+   removed or changed. The freeze hook accepts the same; the imports go import-first (their own
+   Edit before the case body) or in one Edit with it.
 4. Compute the new title's digest: `.claude/scripts/case-hash.sh '<new title>'`.
 
 A hunk that does not apply, touches another case, or weakens an assertion → `refuse`.

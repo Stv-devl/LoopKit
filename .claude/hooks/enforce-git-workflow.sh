@@ -2137,7 +2137,7 @@ record_allow() {
     tree="$(git -C "$BASE_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
     rec="$tree/.claude/.loop-record.json"
     [[ -f "$rec" && ! -L "$rec" ]] || return 0
-    fields="$(jq -r 'select(.version == 1
+    fields="$(jq -r 'select(.version == 1 and (.blocked // false) != true
             and ([.slug, .branch, .base, .base_sha, .repo] | all(type == "string"))
             and ([.barrier, .base_ok] | all(type == "boolean")))
         | [.version, .slug, .branch, .base, .base_sha, .repo, .barrier, .base_ok] | @tsv' "$rec" 2>/dev/null)" || return 0
@@ -2172,7 +2172,43 @@ if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=
     ask "This acts on a pull request. Show the title, body and target branch first, then let the user decide."
 fi
 
-if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*(issue|release|repo|api)\b'; then
+# gh issue|release|repo|api asks, judged per segment (continuations joined, then split on newline and
+# ; & | ( ) backtick, as gh_scan): a segment whose every such call is `repo view`, `issue view|list` or
+# `release view|list`, with no --web, falls through; `gh api` always asks (docs/specs/auto-mode-trial-fixes.md).
+gh_segments_write() {
+    local text="${1//[;&|()\`]/$'\n'}" seg call verb
+    local rf='((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*'
+    while IFS= read -r seg; do
+        echo "$seg" | grep -qE "\\bgh\\s+${rf}(issue|release|repo|api)\\b" || continue
+        [[ "$seg" == *--web* ]] && return 0
+        echo "$seg" | grep -qE '(^|\s)-[A-Za-z]*w[A-Za-z]*(\s|$)' && return 0
+        while IFS= read -r call; do
+            verb="$(echo "$call" | sed -E "s/^.*\\bgh\\s+${rf}//")"
+            case "$verb" in
+                "repo view" | "issue view" | "issue list" | "release view" | "release list") ;;
+                *) return 0 ;;
+            esac
+        done < <(echo "$seg" | grep -oE "\\bgh\\s+${rf}(issue|release|repo|api)\\b(\\s+[^ ]+)?")
+    done <<< "$text"
+    return 1
+}
+# Judged twice, any write anywhere asks: on the inner texts (substitutions split open) and on a copy
+# whose $(...) and backtick spans are one placeholder word, so a cut -R value cannot hide the verb.
+gh_write_ask() {
+    local text="${COMMAND//\\$'\n'/}" flat prev
+    # Fail closed: a -R/--repo value holding an unresolved substitution ($( ` <( $((, newline included)
+    # cannot be flattened, so any issue|release|repo|api after it asks.
+    printf '%s' "$text" | LC_ALL=C grep -zqE '\bgh\s+(-R|--repo)(\s+|=)?["'"'"']?[^[:space:]]*(\$\(|`|<\().*\b(issue|release|repo|api)\b' && return 0
+    gh_segments_write "$text" && return 0
+    flat="$text"
+    while :; do
+        prev="$flat"
+        flat="$(sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g' <<< "$flat")"
+        [[ "$flat" == "$prev" ]] && break
+    done
+    gh_segments_write "$flat"
+}
+if gh_write_ask; then
     ask "This writes to GitHub. Show exactly what will be sent, then let the user decide."
 fi
 

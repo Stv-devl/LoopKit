@@ -720,14 +720,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
   "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
   "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
-  "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
+  "Bash(python3 .claude/hooks/loop-record.py --block)", "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 34' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 35' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1456,7 +1456,7 @@ for n in '| Interface: pick a mock-up (UI only) |' '| Contract question at the f
          '| Frozen-test correction (plan or EXECUTE) |' '| Commit, push, PR |' '| Merge of the PR |'; do
     pk "AMC1 $n" has "$ORCH" "$n"
 done
-for n in 'blocked: <cause>' 'no push, no PR' 'python3 .claude/hooks/loop-record.py --clear' 'a remaining ask' \
+for n in 'blocked: <cause>' 'no push, no PR' 'a remaining ask' \
          'plan-critic `BLOCKED`' 'an attempts cap' 'a red gate after the fix budget' 'an undecidable case' \
          "changes an acceptance criterion's meaning"; do
     pk "AMC2 $n" has "$ORCH" "$n"
@@ -1516,5 +1516,46 @@ pk AMC18.2 has "$ORCH" 'one fresh `arbiter` per queued case id'
 pk AMC19 has "$ORCH" 'Do not enter Phase 4 on silence in `moi`'
 pk AMC19.2 has "$ORCH" 'do not enter Phase 3 on silence in `moi`'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC1-AMC19: failing, see above' >&2; exit 1; }
+
+# AMC2 (inverted), AMC20-AMC21, PK46-PK48 (docs/specs/auto-mode-trial-fixes.md): no self clear on a blocked
+# stop, imports under an unfreeze verdict, app roots in the ui decision and /kit:init, agent command shapes.
+amc_blocked="$(section "$ORCH" '**Blocked stop** (`auto` only).' '## Automatic checkpoints')"
+pk AMC2.inv lacks_in "$amc_blocked" 'python3 .claude/hooks/loop-record.py --clear'
+pk AMC20 has_in "$amc_blocked" 'the record kept'
+pk AMC20.2 has_in "$amc_blocked" 'never runs `loop-record.py --clear`'
+pk AMC20.3 has_in "$amc_blocked" 'the user clears it to resume in `moi`'
+pk AMC20.4 has "$SHIP" 'opens no PR; the commits stay local and the record is kept'
+pk AMC23 has "$ORCH" 'A blocked record stops a resume'
+pk AMC23.2 has "$ORCH" 'the only lift'
+pk AMC23.3 has_in "$amc_blocked" 'only the user'"'"'s'
+pk AMC23.4 has "$ORCH" 'never resumes a blocked record in `auto`'
+pk AMC23.5 has "$SHIP" 'The record allow does not hold on a blocked record'
+for f in "$ORCH" "$SHIP" "$ROOT/docs/specs/auto-mode.md" "$ROOT/README.md"; do
+    pk "AMC24 no gate-go lift $f" lacks "$f" 'gate go lifts the mark'
+    pk "AMC24.2 no new-gate-go lift $f" lacks "$f" 'a new gate go'
+done
+pk AMC24.3 has "$ROOT/README.md" 'you take over by running'
+pk AMC22 has_in "$amc_blocked" 'python3 .claude/hooks/loop-record.py --block'
+pk AMC22.2 has "$SHIP" 'python3 .claude/hooks/loop-record.py --block'
+for n in 'whole static import declarations' 'top import block' 'side-effect' 'dynamic `import(`' \
+         'text after the specifier' 'test global' 'import-first' 'remove no assertion'; do
+    pk "AMC21 $n" has "$ARBITER" "$n"
+done
+pk_ui="$(section "$REVIEW_CMD" 'kit-pr-assets.py ui' 'Screenshots run: <dir>')"
+pk PK46 has_in "$pk_ui" 'exit 2'
+pk PK46.2 has_in "$pk_ui" "an app root's \`src/\`"
+pk PK46.3 has_in "$pk_ui" 'decide `ui` anyway'
+E2E_AGENT="$ROOT/.claude/agents/e2e-tester.md"
+pk PK46.4 has "$E2E_AGENT" 'never a fixed review folder'
+INIT_CMD="$ROOT/.claude/commands/kit/init.md"
+pk PK47 has "$INIT_CMD" 'their own `package.json` plus either a `src/` directory or one root config'
+pk PK47.2 has "$INIT_CMD" 'the root itself is never an app root'
+for agent in "$TEST_WRITER" "$E2E_AGENT"; do
+    pk "PK48 offset $agent" has "$agent" 'Read with `offset`/`limit`, never a `for … sed -n` loop'
+    pk "PK48 apply $agent" has "$agent" 'no `cd … && git apply --check` probe'
+done
+pk PK48.2 has "$E2E_AGENT" 'the project config and `--grep`'
+pk PK48.3 has "$E2E_AGENT" 'never `-c`/`--config`'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC2.inv, AMC20-AMC21, PK46-PK48: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

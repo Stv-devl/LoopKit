@@ -4502,12 +4502,12 @@ run_kit_prompts_step4_cases() {
 # lp_git_setup <fixture repo> <variant>: the G21 git-guard setup. The feat tree switches to
 # feat/s1; a bare origin holds main and audit/x; docs/work/s1/pr-body.md and plan.md exist;
 # the record is valid (repo o/r, base audit/x, barrier and base_ok true) unless the variant
-# says otherwise: lpnorec none, lpnobar barrier false, lpnobaseok base_ok false, lps2 branch
+# says otherwise: lpnorec none, lpblocked marked blocked, lpnobar barrier false, lpnobaseok base_ok false, lps2 branch
 # feat/s2, lpother HEAD stays feat/x, lptag a tag feat/s1, lpremote feat/s1 already on origin,
 # lpcfg* one push-redirecting config, lpbody a Co-Authored-By body, lpnobody no body, lpslow an
 # origin that never answers (lpslowb: the same, the hook held to 7 s), lpbadjson / lpv2 an unreadable record, lpbasemain plan `Base: main`.
 lp_git_setup() {
-    local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1
+    local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1 blocked=false
     git init -q --bare -b main "$t/.origin.git"
     git -C "$t" remote add origin "$t/.origin.git"
     git -C "$t" branch audit/x
@@ -4519,6 +4519,7 @@ lp_git_setup() {
     case "$v" in
         lp | lpnorec | lpbadjson | lpother) ;;
         lpv2) version=2 ;;
+        lpblocked) blocked=true ;;
         lpnobar) barrier=false ;;
         lpnobaseok) base_ok=false ;;
         lps2) branch=feat/s2 ;;
@@ -4547,10 +4548,11 @@ lp_git_setup() {
         lpbadjson) printf '{"version":1,' >"$feat/.claude/.loop-record.json" ;;
         *)
             jq -n --arg branch "$branch" --arg sha "$(git -C "$t" rev-parse main)" --argjson barrier "$barrier" \
-                --argjson ok "$base_ok" --argjson v "$version" \
+                --argjson ok "$base_ok" --argjson v "$version" --argjson blk "$blocked" \
                 '{version: $v, slug: "s1", plan: "docs/work/s1/plan.md", branch: $branch, base: "audit/x",
                   base_sha: $sha, repo: "o/r", default_branch: "main", barrier: $barrier, base_ok: $ok,
-                  rows: [], at: "2026-11-19T00:00:00Z", tool_use_id: "toolu_lp"}' \
+                  rows: [], at: "2026-11-19T00:00:00Z", tool_use_id: "toolu_lp"}
+                 + (if $blk then {blocked: true, blocked_at: "2026-11-19T01:00:00Z"} else {} end)' \
                 >"$feat/.claude/.loop-record.json" ;;
     esac
 }
@@ -5364,7 +5366,7 @@ run_loop_to_pr_review3_cases() {
     # LP54-LP54.4 (LP54, LP54.2 amended round 6, U2 U3: the lift is removed): the deny names --clear; a
     # `U2!` line lifts nothing (a regex holding quotes); that line asks; a case that does not close stays refused.
     lp_c3b LP54 deny "$tmp/lift" U3 'U3 keeps three' "expect(f(0)).toThrow(/'x'/)" 'expect(f(3)).toBe(3)' - \
-        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)' 'loop-record.py --clear'
+        '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)' 'blocked stop (record kept)'
     p="$tmp/lift2"
     lp_freeze_project "$p" feat/s1 "$row3" "$x  # U3: r"$'\n'"$x  # U2!: the quotes of its regex are balanced"
     printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
@@ -5372,7 +5374,7 @@ run_loop_to_pr_review3_cases() {
         "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/'x'/)" '  })' '' \
         "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
     lp_freeze LP54.2 deny "$p" Edit "$(jq -cn --arg o '    expect(f(3)).toBe(3)' --arg n '    expect(f(3)).toBe(4)' \
-        '{old_string:$o, new_string:$n}')" 'loop-record.py --clear'
+        '{old_string:$o, new_string:$n}')" 'blocked stop (record kept)'
     p="$tmp/liftask"
     lp_unfrozen_repo "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$h3" '[{path: $p, id: "U2", sha256: $h}]')"
     printf '%s\n' "$x  # U2: r" >"$p/.claude/.tdd-unfrozen"
@@ -5643,13 +5645,13 @@ run_loop_to_pr_review5_cases() {
     lp5_edit LP62.6 pass "$p" "$x" "$o0" "$n0"
     lp5_fp LP62.7 "$xt" "$rowt" "$xt  # U2: r" 'U1 ok' '    render(<p>[beta</p>)'
     # LP62.8 (amended round 6, U4): a JSX `1)` in U1 ends its char span before its indentation span;
-    # the two-direction rule refuses it (accepted false positive, exit --clear).
+    # the two-direction rule refuses it (accepted false positive, exit: the unfreeze queue, or a blocked stop in auto).
     d="$tmp/LP62_8"
     lp_freeze_project "$d" feat/s1 "$rowt" "$xt  # U2: r"
     printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
         "  it('U1 ok', () => {" '    render(<li>1) Adresse</li>)' '  })' '' \
         "  it('U2 returns err', () => {" "$o0" '  })' '})' >"$d/$xt"
-    lp5_edit LP62.8 deny "$d" "$xt" "$o0" "$n0" 'loop-record.py --clear'
+    lp5_edit LP62.8 deny "$d" "$xt" "$o0" "$n0" 'blocked stop (record kept)'
 
     # LP63-LP63.3 (SC1): a stray quote or backtick opens a string that a later apostrophe closes; the character
     # span of the case runs past its indentation span, so no marker lifts it and the edit is refused.
@@ -5659,7 +5661,7 @@ run_loop_to_pr_review5_cases() {
     printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
         "  it('U2 returns err', () => {" "    const el = <p>L'adresse</p>" '    expect(f(el)).toBe(0)' '  })' '' \
         '  beforeEach(() => {' "    reset() // the user's input" '  })' '})' >"$p/$xt"
-    lp5_edit LP63 deny "$p" "$xt" '    reset() // the user' '    reset(99) // the user' 'loop-record.py --clear' 'lifts it with'
+    lp5_edit LP63 deny "$p" "$xt" '    reset() // the user' '    reset(99) // the user' 'blocked stop (record kept)' 'lifts it with'
     # LP63.2 (W_mid): lifted U2, the Edit appends a regex holding `'` plus a beforeEach.
     p="$tmp/scW"
     lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
@@ -5668,7 +5670,7 @@ run_loop_to_pr_review5_cases() {
         "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
     old="$o0"$'\n  })'
     new="    const re = /l'a/"$'\n'"$o0"$'\n  })\n\n  beforeEach(() => {\n'"    vi.spyOn(mod, 'f').mockReturnValue(1) // the user's stub"$'\n  })'
-    lp5_edit LP63.2 deny "$p" "$x" "$old" "$new" 'loop-record.py --clear' 'lifts it with'
+    lp5_edit LP63.2 deny "$p" "$x" "$old" "$new" 'blocked stop (record kept)' 'lifts it with'
     # LP63.3 (CW): .tsx, `# U2: r` only, the Edit adds <kbd>`</kbd> to U2 and a beforeEach holding a lone backtick.
     p="$tmp/scCW"
     lp_freeze_project "$p" feat/s1 "$rowt" "$xt  # U2: r"
@@ -5676,7 +5678,7 @@ run_loop_to_pr_review5_cases() {
         "  it('U2 returns err', () => {" "$o0" '  })' '' \
         "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$xt"
     new="    const k = <kbd>$bt</kbd>"$'\n'"$o0"$'\n  })\n\n  beforeEach(() => {\n'"    vi.spyOn(mod, 'f').mockReturnValue(3) // the $bt key"$'\n  })'
-    lp5_edit LP63.3 deny "$p" "$xt" "$old" "$new" 'loop-record.py --clear' 'lifts it with'
+    lp5_edit LP63.3 deny "$p" "$xt" "$old" "$new" 'blocked stop (record kept)' 'lifts it with'
 
     # LP64-LP64.5 (N1p): a member chain and a tagged table are call starts. LP64 (E): lifted U2 holding /it's/,
     # U3 an it.concurrent.each with an apostrophe comment; LP64.2: .tsx backtick U2 and the same U3, no lift;
@@ -5721,13 +5723,13 @@ run_loop_to_pr_review5_cases() {
     printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
         "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/it's/)" '  })' '' \
         "  it('U3 keeps three', () => {" "    // the user's input" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
-    lp5_edit LP65 deny "$p" "$x" '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' 'loop-record.py --clear' 'lifts it with'
+    lp5_edit LP65 deny "$p" "$x" '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(99)' 'blocked stop (record kept)' 'lifts it with'
     p="$tmp/b"
     lp_freeze_project "$p" feat/s1 "$row2" "$lift_x"
     printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
         "  it('U2 returns err', () => {" "$o0" '  })' '})' >"$p/$x"
     lp5_edit LP65.2 deny "$p" "$x" "$o0"$'\n  })' \
-        $'    expect(f(0)).toThrow(/\\(/)\n  })\n\n  beforeEach(() => {\n    reset()\n  })' 'loop-record.py --clear' 'lifts it with'
+        $'    expect(f(0)).toThrow(/\\(/)\n  })\n\n  beforeEach(() => {\n    reset()\n  })' 'blocked stop (record kept)' 'lifts it with'
     unset -f lp5_edit lp5_fp
     rm -rf "$tmp"
 }
@@ -5736,10 +5738,10 @@ run_loop_to_pr_review5_cases() {
 # indentation span: a de-indented or tab-indented call line is refused), NA (a .each case whose first call
 # holds another it/test call is ambiguous), TQE (NL/NL10 pin the end-line conditions, no lift), NB (a template
 # literal at or below the call indent is an accepted false positive, pinned as a deny), and the lift is gone:
-# `U2!` lifts nothing, every ambiguity names `loop-record.py --clear` and no marker.
+# `U2!` lifts nothing, every ambiguity names `blocked stop (record kept)` and no marker.
 run_loop_to_pr_review6_cases() {
     local tmp p x='src/a/x.utils.test.ts' xt='src/a/x.utils.test.tsx' out h2 row2 rowt bt='`' old new
-    local o0='    expect(f(0)).toBe(0)' n0='    expect(f(0)).toBe(1)' clr='loop-record.py --clear' nol='lifts it with'
+    local o0='    expect(f(0)).toBe(0)' n0='    expect(f(0)).toBe(1)' clr='blocked stop (record kept)' nol='lifts it with'
     tmp="$(mktemp -d)"
     h2="$(printf '%s' 'U2 returns err' | sha256sum | cut -c1-64)"
     row2="$(jq -cn --arg p "$x" --arg h "$h2" '[{path: $p, id: "U2", sha256: $h}]')"
@@ -5975,6 +5977,18 @@ run_auto_mode_step2_cases() {
     lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nsrc/a/x.utils.test.ts | U2 | '"$AM_SHA" go)" "$tmp/sh"
     lp_rec AM16 'same pass plan go' "$rec" '{mode, c: (.contract_go | type), rows: (.rows | length), v: (.verdicts | type), g: (.guarded | type)}' \
         '{"mode":"auto","c":"object","rows":1,"v":"array","g":"array"}'
+    # AM60 `--block` marks the record blocked and keeps the rest (auto included); a later plan go or contract
+    # go of the pass rebuilds it without the mark.
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    lp_rec AM60 '--block marks the record' "$rec" '{blocked, at: (.blocked_at | type), mode, rows: (.rows | length)}' \
+        '{"blocked":true,"at":"string","mode":"auto","rows":1}'
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == auto ]] || fail loop-record.py "AM60.2 --mode after --block" "expected auto, got '$out'"
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
+    lp_rec AM60.3 'plan go lifts the mark' "$rec" '{blocked, mode}' '{"blocked":null,"mode":"auto"}'
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    lp_rec AM60.4 'contract go lifts the mark' "$rec" '{blocked, mode}' '{"blocked":null,"mode":"auto"}'
     lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s2/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
     lp_rec AM16 'other pass plan go' "$rec" '{slug, mode, contract_go}' '{"slug":"s2","mode":null,"contract_go":null}'
 
@@ -6025,12 +6039,17 @@ run_auto_mode_step2_cases() {
     (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
     CASES=$((CASES + 1))
     [[ ! -e "$rec" && "$(am_mode_cli "$r")" == moi ]] || fail loop-record.py AM19 "the record survived --clear or --mode is not moi"
+    # AM60.5 `--block` with no record is a no-op, exit 0.
+    CASES=$((CASES + 1))
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block) \
+        && [[ ! -e "$rec" ]] || fail loop-record.py AM60.5 "--block without a record failed or created one"
 
     # AM18 the record stays agent-proof; the two read-only CLIs pass the shell guard.
     am_tree "$tmp/a18" auto
     out="$(pf_probe "$tmp/a18" Write .claude/.loop-record.json)"
     g15_expect AM18 deny "$out" "written only by loop-record.py"
-    for t in 'python3 .claude/hooks/loop-record.py --mode' 'python3 .claude/hooks/loop-record.py --guarded-block'; do
+    for t in 'python3 .claude/hooks/loop-record.py --mode' 'python3 .claude/hooks/loop-record.py --guarded-block' \
+             'python3 .claude/hooks/loop-record.py --block'; do
         out="$(pd_probe "$tmp/a18" "$t")"
         g15_expect AM18 pass "$out"
     done
@@ -6339,6 +6358,72 @@ run_auto_mode_step4_cases() {
     rm -rf "$tmp"
 }
 
+# AM48-AM58.5 (auto-mode-trial-fixes, fix 1): in auto, with an `unfreeze` verdict for the listed file,
+# whole static import declarations added to the import head pass, alone or with the verdict case's body;
+# every other head change, a Write, and the same Edits without a verdict stay refused.
+run_auto_mode_import_cases() {
+    local tmp p x='src/a/x.utils.test.ts' h3 imp u3 u3new head body3 body3new
+    tmp="$(mktemp -d)"
+    h3='1cfe4c2a210df3bd4c64546e6559ba3f73cdde543d48719e08e6488972e34697'
+    imp="import { f } from './x.utils'"
+    u3="  it('U3 keeps three', () => {"$'\n''    expect(f(3)).toBe(3)'
+    u3new="  it('U3 keeps three', () => {"$'\n''    expect(f(3)).toBe(4)'
+    head="$imp"$'\n\n'"describe('x', () => {"$'\n'"  it('U1 returns one', () => {"$'\n''    expect(f(1)).toBe(1)'$'\n''  })'$'\n\n'"  it('U2 returns err', () => {"$'\n''    expect(f(0)).toBe(0)'$'\n''  })'$'\n\n'
+    body3="$head$u3"
+    body3new="$imp"$'\n'"import { g } from './y.utils'${head#"$imp"}$u3new"
+    ai_v() { jq -cn --arg p "$x" --arg h "$h3" --arg v "$1" \
+        '[{kind: "frozen-case", path: $p, id: "U3", sha256: $h, verdict: $v, at: "2026-11-23T00:00:00Z"}]'; }
+    ai_edit() { jq -cn --arg o "$1" --arg n "$2" '{old_string:$o, new_string:$n}'; }
+    ai_add() { ai_edit "$imp" "$imp"$'\n'"$1"; }
+    ai_proj() { p="$tmp/$1"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U3: r"; am_freeze_rec "$p" auto "$2"; }
+
+    ai_proj core "$(ai_v unfreeze)"
+    lp_freeze AM48 pass "$p" Edit "$(ai_add "import { g } from './y.utils'")"
+    lp_freeze AM49 pass "$p" Edit "$(ai_edit "$body3" "$body3new")"
+    lp_freeze AM49.2 deny "$p" Write "$(jq -cn --arg c "$imp"$'\n'"import { g } from './y.utils'${head#"$imp"}$u3"$'\n''  })'$'\n''})' \
+        '{content:$c}')" "a Write replaces the whole frozen file"
+    lp_freeze AM51 deny "$p" Edit "$(ai_edit "$imp"$'\n\n' $'\n')"
+    lp_freeze AM52 deny "$p" Edit "$(ai_edit "$imp" "import { f, h } from './x.utils'")"
+    lp_freeze AM53 deny "$p" Edit "$(ai_add 'const k = 1')"
+    lp_freeze AM54 pass "$p" Edit "$(ai_add "import {"$'\n''  g,'$'\n''  h,'$'\n'"} from './y.utils'"$'\n'"import type { T } from './t'")"
+    lp_freeze AM55 deny "$p" Edit "$(ai_edit "describe('x', () => {" "describe('x', () => {"$'\n'"import { g } from './y.utils'")"
+    lp_freeze AM56 deny "$p" Edit "$(ai_add "import { g } from './y.utils'; vi.mock('./x.utils')")"
+    lp_freeze AM57 deny "$p" Edit "$(ai_add "import('./y.utils')")"
+    lp_freeze AM57.2 deny "$p" Edit "$(ai_add 'import.meta.x = 1')"
+    lp_freeze AM58 deny "$p" Edit "$(ai_add "import { expect } from './e'")"
+    lp_freeze AM58.2 deny "$p" Edit "$(ai_add "import { it as t } from './n'")"
+    lp_freeze AM58.3 deny "$p" Edit "$(ai_add "import './setup'")"
+    lp_freeze AM58.4 deny "$p" Edit "$(ai_add "import { f as g2, f2 as f } from './z'")"
+    lp_freeze AM58.5 deny "$p" Edit "$(ai_add "import { g } from \"./y'; vi.mock('x')\"")"
+    lp_freeze AM58.6 deny "$p" Edit "$(ai_add "import { vi } from './v'")"
+    lp_freeze AM58.7 deny "$p" Edit "$(ai_add "import { beforeAll } from './n'")"
+
+    ai_proj noverdict '[]'
+    lp_freeze AM50 deny "$p" Edit "$(ai_add "import { g } from './y.utils'")"
+    lp_freeze AM50.2 deny "$p" Edit "$(ai_edit "$body3" "$body3new")"
+
+    ai_proj refused "$(ai_v refuse)"
+    lp_freeze AM55.2 deny "$p" Edit "$(ai_add "import { g } from './y.utils'")"
+
+    # AM59 (fix 2): the ambiguity deny offers no self clear any more; it names the blocked stop.
+    grep -Fq 'end the run with a blocked stop (record kept)' "$HOOKS_DIR/tdd-freeze-tests.sh" \
+        || fail tdd-freeze-tests.sh AM59 "the ambiguity deny does not name the blocked stop"
+    ! grep -Fq 'loop-record.py --clear' "$HOOKS_DIR/tdd-freeze-tests.sh" \
+        || fail tdd-freeze-tests.sh AM59.2 "the hook source still names loop-record.py --clear"
+    # AM59.3: the LP54 shape (a U2 regex with quotes, an Edit of U3) denies as ambiguous, names the blocked
+    # stop and never offers the self clear.
+    p="$tmp/ambig"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$(printf '%s' 'U3 keeps three' | sha256sum | cut -c1-64)" \
+        '[{path: $p, id: "U3", sha256: $h}]')" "$x  # U3: r"$'\n'"$x  # U2!: the quotes of its regex are balanced"
+    printf '%s\n' "import { f } from './x.utils'" '' "describe('x', () => {" \
+        "  it('U1 returns one', () => {" '    expect(f(1)).toBe(1)' '  })' '' \
+        "  it('U2 returns err', () => {" "    expect(f(0)).toThrow(/'x'/)" '  })' '' \
+        "  it('U3 keeps three', () => {" '    expect(f(3)).toBe(3)' '  })' '})' >"$p/$x"
+    lp_freeze AM59.3 deny "$p" Edit "$(ai_edit '    expect(f(3)).toBe(3)' '    expect(f(3)).toBe(4)')" \
+        'blocked stop (record kept)' 'loop-record.py --clear'
+    rm -rf "$tmp"
+}
+
 # am_git <dir> <auto|moi> <origin>: an am_tree on feat/s1 whose base audit/x is pushed to the bare
 # <origin>; src/a/x.utils.test.ts (case U2) is committed on the base.
 am_git() {
@@ -6565,6 +6650,7 @@ if [[ "${1:-}" == --am-only ]]; then
     run_auto_mode_step2_cases
     run_auto_mode_step3_cases
     run_auto_mode_step4_cases
+    run_auto_mode_import_cases
     run_auto_mode_step5_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
@@ -6658,6 +6744,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_auto_mode_step2_cases
     run_auto_mode_step3_cases
     run_auto_mode_step4_cases
+    run_auto_mode_import_cases
     run_auto_mode_step5_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases

@@ -44,7 +44,8 @@ Build an evidence table with `value`, `evidence path`, and `confidence` for:
 7. installed addons and existing GitHub workflows;
 8. user-facing language and existing icon library/usage from authored code;
 9. app roots: directories at most 2 levels below the root (`node_modules`, `.git`,
-   `.claude` excluded) that hold their own `package.json` plus one root config
+   `.claude` excluded; the root itself is never an app root, so a root-level `src/` gives
+   `[]`) that hold their own `package.json` plus either a `src/` directory or one root config
    (`vite.config.*`, `vitest.config.*`, `eslint.config.*`, `playwright.config.*`,
    `tsconfig*.json`), or their own `pyproject.toml`; and codegen candidates:
    `package.json` scripts whose text holds `gen types`, `generate`, `codegen` or

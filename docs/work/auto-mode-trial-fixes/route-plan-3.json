@@ -1,0 +1,3 @@
+{"mode": "plan", "pass": 3, "findings": [
+  {"id": "G7", "severity": "Minor", "claim": "The identifier-collision rule checks the whole current file, so body-first order (edit C's body using g, then add import { g }) is refused; only import-first or the combined Edit pass.", "p1_class": null, "kind": "interpretation", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+]}

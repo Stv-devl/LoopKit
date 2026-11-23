@@ -42,7 +42,10 @@ handoff) only opens the `Contract gate` at the end of Phase 1 and grants nothing
 the contract go on, `python3 .claude/hooks/loop-record.py --mode` alone decides. A
 restart in phase `research` re-reads the spec line;
 a restart after `research` reads `--mode`, and `moi` there (no record, cleared,
-mismatched) continues in `moi`.
+mismatched) continues in `moi`. A blocked record stops a resume: a resumed run that reads
+`.claude/.loop-record.json` (Read only) with `"blocked": true` stops before any phase,
+writes nothing, and tells the user to run `python3 .claude/hooks/loop-record.py --clear`,
+the only lift, to resume in `moi`.
 
 | Gate after the contract | `moi` | `auto` |
 | --- | --- | --- |
@@ -75,9 +78,12 @@ written when something coherent can be built, and put the contradiction first in
 `auto mode — blocked stop:`), plan-critic `BLOCKED`, an attempts cap,
 a red gate after the fix budget, an undecidable case,
 a correction that changes an acceptance criterion's meaning (the `arbiter` answers `blocked`). It ends the run: handoff `blocked: <cause>`,
-board line `BLOCKED` (main tree), local commits kept, **no push, no PR**, then
-`python3 .claude/hooks/loop-record.py --clear`. `./workflow.sh` resumes it, in `moi`
-unless a new `Contract gate` is taken.
+board line `BLOCKED` (main tree), local commits kept, **no push, no PR**, the record kept
+and marked: the agent runs `python3 .claude/hooks/loop-record.py --block` (auto stays, the
+record's own push and PR allow turns off) and never runs `loop-record.py --clear` to get past a
+blocked stop (every later gate would become an ask nobody is there to answer). The run ends with
+the turn. `./workflow.sh` never resumes a blocked record in `auto`: only the user's
+`loop-record.py --clear` lifts it, and the user clears it to resume in `moi`.
 
 ## Automatic checkpoints
 

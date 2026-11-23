@@ -185,7 +185,7 @@ merges. Via the `github` agent, in this order:
 
 In `auto`, a red gate after its fix budget, or any other blocked-stop cause
 (`/loop:orchestrate`, "Validation mode"), ends here: a blocked stop pushes nothing and
-opens no PR; the commits stay local.
+opens no PR; the commits stay local and the record is kept, marked by `python3 .claude/hooks/loop-record.py --block` (`/loop:orchestrate`, "Blocked stop"). The record allow does not hold on a blocked record; only the user's `--clear` lifts it.
 
 With the tree's valid loop record (the user's plan-gate go) and the server barrier,
 1 and 3 run without a prompt and **without a chat confirmation**; otherwise each asks
