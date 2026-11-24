@@ -60,6 +60,7 @@ nothing here calls Impeccable directly, and a skipped step invokes neither.
    Keep rejected alternatives to one line each; do not paste full losing
    proposals into downstream prompts.
 
+   (`blocked` → stop: `/loop:orchestrate` Phase 0 step 2.)
    **In `auto`** (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) the pick is
    final here: the main thread's front-runner (economy, 2 alternatives), or the
    `designer` judge on a `critical` profile; write the reasons in `design.md`. Then

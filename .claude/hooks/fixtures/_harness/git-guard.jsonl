@@ -578,6 +578,8 @@
 {"id":"G18.55.3","verdict":"ask","command":"gh -R `cat .repo` repo delete --yes","reason":"writes to GitHub"}
 {"id":"G18.55.4","verdict":"ask","command":"gh -R \"$(cat .repo)\" repo view","reason":"writes to GitHub"}
 {"id":"G18.56","verdict":"ask","command":"gh -R \"$(gh repo view --json nameWithOwner --jq '(.nameWithOwner)')\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.57","verdict":"deny","setup":"ghbody","command":"gh pr create --repo o/r --base main --title \"fix(kit): x (R6/R7)\" --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.58","verdict":"deny","setup":"ghbody","command":"gh issue create -t 'a (b); c | d' -F docs/pr-sign.md","reason":"attribution line in a gh body"}
 {"id":"G18.56.2","verdict":"ask","command":"gh -R \"$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+)\\.git$#\\1#')\" issue create -t x -b y","reason":"writes to GitHub"}
 {"id":"G18.56.3","verdict":"ask","command":"gh -R \"$( (gh repo view --json nameWithOwner -q .nameWithOwner) )\" repo delete --yes","reason":"writes to GitHub"}
 {"id":"G18.56.4","verdict":"ask","command":"gh -R \"$(cat <(gh repo view --json nameWithOwner -q .nameWithOwner))\" issue create -t x -b y","reason":"writes to GitHub"}
@@ -598,6 +600,7 @@
 {"id":"G21.002","verdict":"allow","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"loop record"}
 {"id":"G21.002b","verdict":"ask","setup":"lpblocked","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.002c","verdict":"ask","setup":"lpblocked","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.043","verdict":"ask","setup":"lpreleased","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.003","verdict":"ask","setup":"lpnorec","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.004","verdict":"ask","setup":"lpnobar","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.005","verdict":"ask","setup":"lps2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}

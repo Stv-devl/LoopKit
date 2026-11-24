@@ -67,7 +67,7 @@ soup, no colon chains.
 ```markdown
 <One line: what this does. No preamble, no framing, no "this PR".>
 
-**Decided without you**: <auto mode only: one line per arbiter verdict from the record's ledger — question → verdict>
+**Decided without you**: <auto mode or a released record only: one line per arbiter verdict from the record's ledger — question → verdict>
 
 **Contract contradiction**: <auto mode only, when any: where the contract as written and the work disagreed, and what was built>
 
@@ -80,7 +80,7 @@ soup, no colon chains.
 
 **Screenshots** — <flow>  ← the section output as is, its own header; nothing added around it; only when the caller hands you a `Screenshots run:` dir
 
-**Guarded files touched**: <auto mode only: the block `python3 .claude/hooks/loop-record.py --guarded-block` prints, verbatim — the git hook checks it byte for byte>
+**Guarded files touched**: <auto mode or a released record only: the block `python3 .claude/hooks/loop-record.py --guarded-block` prints, verbatim — the git hook checks it byte for byte>
 
 **Frozen cases**: <each `amended` line of plan.md's `## Gate`, with its test hunk; an arbiter's amendment marked as such>
 
@@ -99,8 +99,10 @@ Write tool), `Screenshots` block included; and you are called again to send it w
 `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`,
 never an inline `--body`. Drop `Uncertain`, `Frozen cases` or `Open questions` when
 empty, and `Screenshots` when no run is recorded. `Decided without you`,
-`Contract contradiction` and `Guarded files touched` exist in auto mode only, the last
-always (its `- none` included). No harness attribution: the hook denies it.
+`Contract contradiction` and `Guarded files touched` exist in auto mode or a released record only, the last
+always (its `- none` included): a released record is a blocked auto pass the user lifted with
+`python3 .claude/hooks/loop-record.py --release`, which keeps the ledger;
+`--clear` deletes the record and its ledger, and the blocks with it. No harness attribution: the hook denies it.
 
 ### The rules that make it short
 

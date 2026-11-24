@@ -6,8 +6,10 @@ PostToolUse AskUserQuestion: a main-thread `Plan gate` answered exactly `go` wri
 (docs/specs/loop-to-pr.md); a main-thread `Contract gate` showing `Validation: auto`, answered
 exactly `as written`, writes it in auto mode (docs/specs/auto-mode.md). SubagentStop of the
 `arbiter` agent: its verdict block is ledgered in an auto record. PostToolUse Bash: the pass's
-exact `gh pr create` printing its PR URL deletes it. `--clear` deletes it, `--block` marks it
-blocked (kept, no push/PR allow), `--mode` prints the mode. A Post path never fails the tool call. Standard library only.
+exact `gh pr create` printing its PR URL deletes it. `--clear` deletes it and its ledger, `--block` marks it
+blocked (kept, no push/PR allow), `--release` (the user's lift) turns a blocked record into a released moi
+record that keeps its ledger, `--mode` prints `blocked`, `auto` or `moi`. A Post path never fails the tool
+call. Standard library only.
 """
 
 import fcntl
@@ -37,7 +39,7 @@ VERDICT_HEAD = "ARBITER VERDICT"
 FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 CASE_RE = re.compile(r"^[UMRB][0-9]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-KEPT_ON_PLAN_GO = ("mode", "contract_go", "verdicts", "guarded")
+KEPT_ON_PLAN_GO = ("mode", "contract_go", "verdicts", "guarded", "released_at")
 BLOCK_HEADER = "Frozen cases to amend:"
 ROW_RE = re.compile(r"^(\S+) \| ([UMRB][0-9]+) \| ([0-9a-f]{64})$")
 REPO_RE = r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
@@ -156,6 +158,19 @@ def auto_mode(tree: str, record: dict[str, object] | None) -> bool:
     if not record or record.get("version") != 1 or record.get("mode") != "auto":
         return False
     if not isinstance(record.get("contract_go"), dict):
+        return False
+    branch, base, sha = record.get("branch"), record.get("base"), record.get("base_sha")
+    if not (isinstance(branch, str) and isinstance(base, str) and isinstance(sha, str)):
+        return False
+    code, head = git(tree, "symbolic-ref", "-q", "--short", "HEAD")
+    head = head.strip()
+    return code == 0 and bool(head) and bool(branch) and head == branch
+
+
+def released_mode(tree: str, record: dict[str, object] | None) -> bool:
+    """True when `record` is a v1 record the user released with `--release` (a `released_at` string),
+    read on its own branch: the auto segment's ledger still goes into the PR."""
+    if not record or record.get("version") != 1 or not isinstance(record.get("released_at"), str):
         return False
     branch, base, sha = record.get("branch"), record.get("base"), record.get("base_sha")
     if not (isinstance(branch, str) and isinstance(base, str) and isinstance(sha, str)):
@@ -631,7 +646,7 @@ def clear() -> None:
 
 def mark_blocked() -> None:
     """Marks the record of the tree holding the cwd `blocked`: it stays (auto is kept) but no longer
-    allows the pass's push or PR. A new gate go rebuilds the record without the mark. No record: no-op."""
+    allows the pass's push or PR. The user lifts it with `--release`. No record: no-op."""
     tree = toplevel(os.getcwd())
     if tree is None:
         return
@@ -641,6 +656,35 @@ def mark_blocked() -> None:
             return
         record["blocked"] = True
         record["blocked_at"] = now()
+        write_record(tree, record)
+
+
+def release_record() -> None:
+    """The user's lift of a blocked record: mode `moi`, the mark dropped, `released_at` set, every other key
+    (verdicts, guarded, rows) kept so the pass's PR still shows what the auto segment decided. The
+    `.tdd-unfrozen` lines backed only by a frozen-case verdict are commented out, as `--clear` does, so a
+    moi record does not read them as an exemption; a line a plan row also backs stays. Unblocked, absent or
+    non-v1 record: no-op."""
+    tree = toplevel(os.getcwd())
+    if tree is None:
+        return
+    with locked(tree):
+        record = read_record(tree)
+        if record is None or record.get("version") != 1 or record.get("blocked") is not True:
+            return
+        rows = record.get("rows")
+        row_pairs = {(r.get("path"), r.get("id")) for r in rows if isinstance(r, dict)} if isinstance(rows, list) else set()
+        verdicts = record.get("verdicts")
+        only = [v for v in verdicts if isinstance(v, dict) and (v.get("path"), v.get("id")) not in row_pairs] \
+            if isinstance(verdicts, list) else []
+        try:
+            comment_row_lines(tree, [], only)
+        except OSError:
+            pass
+        record.pop("blocked", None)
+        record.pop("blocked_at", None)
+        record["mode"] = "moi"
+        record["released_at"] = now()
         write_record(tree, record)
 
 
@@ -683,7 +727,7 @@ def guarded_block(tree: str, fetch: bool) -> str | None:
     """The PR body's `Guarded files touched` block of an auto pass (docs/specs/auto-mode.md, step 5):
     "" outside auto mode, None when it cannot be computed (fetch or diff failed)."""
     record = read_record(tree)
-    if not auto_mode(tree, record):
+    if not (auto_mode(tree, record) or released_mode(tree, record)):
         return ""
     base = str(record["base"])
     if fetch and run(["git", "-C", tree, "fetch", "-q", "--no-tags", "origin", base], tree, FETCH_SECONDS)[0] != 0:
@@ -725,7 +769,7 @@ def guarded_block(tree: str, fetch: bool) -> str | None:
 
 
 def main() -> int:
-    """Dispatches on --clear, --block, then on the hook event and tool."""
+    """Dispatches on --clear, --block, --release, --mode, --guarded-block, then on the hook event and tool."""
     if sys.argv[1:] == ["--clear"]:
         try:
             clear()
@@ -738,11 +782,20 @@ def main() -> int:
         except Exception:
             pass
         return 0
+    if sys.argv[1:] == ["--release"]:
+        try:
+            release_record()
+        except Exception:
+            pass
+        return 0
     if sys.argv[1:] == ["--mode"]:
         mode = "moi"
         try:
             tree = toplevel(os.getcwd())
-            if tree is not None and auto_mode(tree, read_record(tree)):
+            record = read_record(tree) if tree is not None else None
+            if record is not None and record.get("version") == 1 and record.get("blocked") is True:
+                mode = "blocked"
+            elif tree is not None and auto_mode(tree, record):
                 mode = "auto"
         except Exception:
             mode = "moi"

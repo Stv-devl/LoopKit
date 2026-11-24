@@ -257,7 +257,8 @@ dimension.
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller
    (e.g. `/loop:orchestrate` Phase 5) already asked for it. In `auto`
-   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) the fix batch runs
+   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`; `blocked` → stop, `/loop:orchestrate`
+   Phase 0 step 2) the fix batch runs
    without asking; any choice the route leaves to the user (record the failure or fix, a fix's
    design, fix now or follow-up) goes to one fresh `arbiter`; two consecutive rounds each
    bringing a new confirmed fix-introduced Major in the same mechanism → blocked stop.

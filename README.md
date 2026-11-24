@@ -117,8 +117,9 @@ denied. The other guarded configs (`package.json`, `vite.config.*`, `tsconfig*`â
 without a prompt but recorded, and the PR carries a `Guarded files touched` block that the git
 hook recomputes and checks byte for byte. Anything that would still ask becomes a **blocked
 stop**: commits stay local, no push, no PR, and you take over. The record is kept but marked
-`blocked`, so auto stays and its push and PR allow is off; you take over by running
-`python3 .claude/hooks/loop-record.py --clear`, then the pass resumes in `moi`.
+`blocked`: `./workflow.sh` refuses to launch on it and its push and PR allow is off;
+you take over by running `python3 .claude/hooks/loop-record.py --release` in your own terminal, then the pass resumes in `moi` and its
+PR still shows what the auto segment decided. `--clear` deletes the record and its ledger: it ends a pass.
 
 `/loop:spec` chains straight into the loop; its contract is validated at the
 first gate and its acceptance cases carry ids that frozen tests cite. After
