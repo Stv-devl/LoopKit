@@ -69,18 +69,23 @@ def enclosing_case_indent(current: str, offset: int):
     """Indent of the `def test_…` whose body contains `offset`, or None.
 
     Python has no closing delimiter, so "inside a case" is decided by
-    indentation: the body of a `def test_…` runs until the first non-blank line
-    indented at or below the def's own column.
+    indentation once the def's header is closed (`lib.case_header_end`, a
+    header wrapped over several lines is one header): the body of a
+    `def test_…` runs until the first non-blank line indented at or below the
+    def's own column.
     """
     pos = 0
     case_indent = None
-    for line in current.split("\n"):
+    header_end = -1
+    lines = current.split("\n")
+    for index, line in enumerate(lines):
         end = pos + len(line)
-        if line.strip():
+        if line.strip() and index > header_end:
             if case_indent is not None and _indent(line) <= case_indent:
                 case_indent = None
-            if re.match(r"\s*(?:async\s+)?def\s+test_[A-Za-z0-9_]*\s*\(", line):
+            if lib.CASE_DEF_RE.match(line):
                 case_indent = _indent(line)
+                header_end = lib.case_header_end(lines, index)
         if pos <= offset <= end + 1:
             return case_indent
         pos = end + 1

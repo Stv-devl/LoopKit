@@ -60,7 +60,10 @@ mocked. Read it before writing a line, and apply the matching rule:
 2. Write your spec at the given path, following the skill's naming convention
    (the suffix decides whether it needs a session).
 3. Run **only your file**: `pnpm exec playwright test <your file>`, with the project config and `--grep`
-   to narrow it; never an agent-written config, never `-c`/`--config` (it asks).
+   to narrow it; never an agent-written config, never `-c`/`--config` (it asks). When the app
+   lives in a subfolder (an `app_roots` entry such as `frontend`), run it as
+   `pnpm --dir <app root> exec playwright test …`: the session cwd stays at the project root,
+   never a bare `cd <app root> && …` that leaves the caller and every agent after it there.
    Read with `offset`/`limit`, never a `for … sed -n` loop (the guard cannot parse `${…}` in it); no `cd … && git apply --check` probe.
    Write files
    with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,

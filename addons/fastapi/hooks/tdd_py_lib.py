@@ -564,22 +564,64 @@ def unfrozen_ids(path: str) -> set:
     return ids
 
 
+CASE_DEF_RE = re.compile(r"\s*(?:async\s+)?def\s+(test_[A-Za-z0-9_]*)\s*\(")
+
+
+def case_header_end(lines: list, start: int) -> int:
+    """Index of the line holding the `:` that closes the `def` header opened on lines[start]: the
+    first `:` at bracket depth 0, outside string literals and comments. A header wrapped over several
+    lines (`) -> None:` back at the def's column) is one header. Unterminated: the last line, so the
+    case never ends sooner than its text does."""
+    depth, quote = 0, ""
+    for index in range(start, len(lines)):
+        line, col = lines[index], 0
+        while col < len(line):
+            char = line[col]
+            if quote:
+                if char == "\\":
+                    col += 2
+                    continue
+                if line.startswith(quote, col):
+                    col += len(quote)
+                    quote = ""
+                    continue
+            elif char == "#":
+                break
+            elif char in "\"'":
+                quote = line[col:col + 3] if line.startswith(char * 3, col) else char
+                col += len(quote)
+                continue
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == ":" and depth == 0:
+                return index
+            col += 1
+        if quote and len(quote) == 1:
+            quote = ""
+    return len(lines) - 1
+
+
 def _py_cases(text: str) -> list:
-    """Each `def test_…` as {start, end, id, title}: the def line to the first non-blank line at or
-    below its column. The id is `test_<letter><digits>_…` upper-cased, the title the def name."""
-    found, pos, open_case = [], 0, None
-    for line in text.split("\n"):
-        if line.strip():
+    """Each `def test_…` as {start, end, id, title}: the def line through its whole header
+    (`case_header_end`), then to the first non-blank line at or below its column. The id is
+    `test_<letter><digits>_…` upper-cased, the title the def name."""
+    found, pos, open_case, header_end = [], 0, None, -1
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        if line.strip() and index > header_end:
             indent = len(line) - len(line.lstrip())
             if open_case is not None and indent <= open_case["indent"]:
                 open_case["end"] = pos
                 open_case = None
-            match = re.match(r"\s*(?:async\s+)?def\s+(test_[A-Za-z0-9_]*)\s*\(", line)
+            match = CASE_DEF_RE.match(line)
             if match:
                 ident = re.match(r"test_([A-Za-z])([0-9]+)(?:_|$)", match.group(1))
                 open_case = {"start": pos, "end": len(text), "indent": indent, "title": match.group(1),
                              "id": (ident.group(1).upper() + ident.group(2)) if ident else None}
                 found.append(open_case)
+                header_end = case_header_end(lines, index)
         pos += len(line) + 1
     return found
 

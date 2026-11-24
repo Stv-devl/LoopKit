@@ -689,6 +689,35 @@ def check_ignored_loop_paths() -> list[Finding]:
                      for folder in folders])]
 
 
+def check_worktree_kit() -> list[Finding]:
+    """A project that git-ignores `.claude/` itself cannot run loop tracks in worktrees.
+
+    A worktree checks out tracked files only, so `.claude/worktrees/<slug>` would hold no
+    hooks, no scripts and no rules (EcoCrew agent-ia-4.4). `/loop:tracks` and
+    `/loop:orchestrate` refuse to fork on the same probe, and the git hook denies the
+    `worktree add`; this names the `.gitignore` line to remove.
+    """
+    try:
+        git = ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT)]
+        result = subprocess.run([*git, "check-ignore", "-q", ".claude/hooks/probe"], capture_output=True, text=True)
+        if result.returncode == 0:
+            tracked = subprocess.run([*git, "ls-tree", "-r", "--name-only", "HEAD", "--", ".claude/hooks"],
+                                     capture_output=True, text=True)
+            if tracked.returncode == 0 and tracked.stdout.strip():
+                return [Finding("worktree-kit", OK, ".claude/hooks is tracked: a loop worktree carries the kit")]
+            named = subprocess.run([*git, "check-ignore", "-v", ".claude/hooks/probe"], capture_output=True, text=True)
+            rule = named.stdout.split("\t", 1)[0].strip() or "a .gitignore rule"
+    except FileNotFoundError:
+        return skip("worktree-kit", "git")
+    if result.returncode == 1:
+        return [Finding("worktree-kit", OK, ".claude/ is tracked: a loop worktree carries the kit")]
+    if result.returncode != 0:
+        return skip("worktree-kit", "a git repository")
+    return [Finding("worktree-kit", DIVERGENCE,
+                    ".claude/ is gitignored, so a worktree under .claude/worktrees/ holds no kit (no hooks, scripts or rules)",
+                    [f"{rule}  →  remove it and commit .claude/ (keep .claude/worktrees/ and the session files ignored)"])]
+
+
 def check_workflow_names() -> list[Finding]:
     """The CD names the CI workflow, and it must name the one that exists.
 
@@ -845,7 +874,7 @@ RUNTIME_PATHS = {
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
     ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
-    ".claude/.loop-record.json",
+    ".claude/.loop-record.json", ".claude/hooks/probe",
 }
 PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # In .claude/hooks/ but invoked by a human or by another script, never by
@@ -1488,7 +1517,7 @@ CHECKS = [
                check_shared_dirs, check_env_suffixes, check_test_command,
                check_coverage_floor, check_coverage_holes, check_token_thresholds,
                check_tdd_layers, check_gate_allowlist, check_ci_scripts, check_audit_flags,
-               check_ignored_loop_paths, check_project_config,
+               check_ignored_loop_paths, check_worktree_kit, check_project_config,
                check_workflow_names, check_agent_models, check_agent_efforts, check_settled_ledger]),
     ("budget", [check_rules_loaded, check_rules_budget]),
     ("wiring", [check_install_stamp, check_kit_backup, check_kit_manifest, check_hook_prerequisites,

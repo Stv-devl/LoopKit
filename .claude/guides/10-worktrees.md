@@ -138,10 +138,12 @@ git branch -d feat/<slug>
 
 ### Three things to know before the first fork
 
-- **The guardrails follow — if `.claude/` is versioned.** A worktree checkout
-  then carries its own hooks, rules and commands. A project that gitignores
-  `.claude/` (or `docs/work/`) gets an empty one, and `git worktree remove`
-  deletes ignored files on merge: `/kit:doctor`'s `ignored-loop-paths` says so.
+- **The guardrails follow because `.claude/` is versioned.** A worktree checkout
+  carries its own hooks, rules and commands. A project that gitignores `.claude/`
+  would get an empty one, so it never forks: `git check-ignore -q .claude/hooks/probe`
+  succeeding while HEAD tracks nothing under `.claude/hooks` makes `/loop:tracks` and `/loop:orchestrate` refuse, the git hook deny the
+  `worktree add`, and `/kit:doctor` report it. `git worktree remove` deletes ignored
+  files (an ignored `docs/work/` included): `/kit:doctor`'s `ignored-loop-paths` says so.
 - **Runtime files follow the session.** The ignored files follow
   `$CLAUDE_PROJECT_DIR`, so a `./workflow.sh` session started in the worktree
   keeps them there. `attempts.json` is versioned and travels with the branch.

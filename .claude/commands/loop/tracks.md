@@ -138,6 +138,16 @@ Before the first fork ever: `.claude/worktrees/` must be in `.gitignore` —
 `.claude/` is versioned, its worktrees are not. Check it, add the line if it is
 missing, and say so.
 
+Then `git check-ignore -q .claude/hooks/probe`: when it succeeds and
+`git ls-tree -r --name-only HEAD -- .claude/hooks` prints nothing, the project
+git-ignores `.claude/` itself without tracking it, so every worktree would check out
+with no hooks, no scripts and no rules (a tracked kit is carried whatever ignore rule
+also matches). **Refuse to fork**: name the ignoring line
+(`git check-ignore -v .claude/hooks/probe`), say that removing it and committing
+`.claude/` (worktrees and session files stay ignored) is the fix, and run the
+stories one at a time in the main tree. The git hook denies the `worktree add`
+anyway.
+
 On go, per track:
 
 ```bash

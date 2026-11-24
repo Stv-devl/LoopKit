@@ -647,3 +647,33 @@
 {"id":"G21.037.2","verdict":"ask","setup":"lpslowb","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.038","verdict":"ask","setup":"lpbadjson","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.038.2","verdict":"ask","setup":"lpv2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G22.101","verdict":"allow","setup":"lp","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"loop record"}
+{"id":"G22.102","verdict":"allow","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"git push -u origin feat/s1","reason":"loop record"}
+{"id":"G22.103","verdict":"allow","setup":"lpassets","command":"git push origin refs/heads/pr-assets","reason":"pr-assets"}
+{"id":"G22.104","verdict":"allow","setup":"lpassetsff","command":"git -C __FEAT_TREE__ push origin refs/heads/pr-assets","reason":"pr-assets"}
+{"id":"G22.105","verdict":"ask","setup":"lpout","command":"git -C __OUT_TREE__ push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G22.106","verdict":"ask","setup":"lpassetsdiv","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.107","verdict":"ask","setup":"lpassets","command":"git push --force origin refs/heads/pr-assets","reason":"FORCE push"}
+{"id":"G22.107.2","verdict":"ask","setup":"lpassets","command":"git push origin +refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.108","verdict":"ask","setup":"lpassetsblk","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.109","verdict":"pass","setup":"lp","command":"cd __FEAT_TREE__ && git fetch origin audit/x 2>&1 | tail -1"}
+{"id":"G22.109.2","verdict":"pass","setup":"lp","command":"cd __FEAT_TREE__ && git fetch -q --no-tags origin audit/x"}
+{"id":"G22.110","verdict":"ask","setup":"lp","command":"cd __FEAT_TREE__ && git fetch origin audit/x:refs/heads/audit/x","reason":"a local branch"}
+{"id":"G22.110.2","verdict":"ask","setup":"lp","command":"cd /tmp && git fetch origin","reason":"cd"}
+{"id":"G22.110.3","verdict":"ask","setup":"lp","command":"cd __FEAT_TREE__/docs && git fetch origin audit/x","reason":"cd"}
+{"id":"G22.111","verdict":"ask","setup":"lp","command":"git -C __MAIN_TREE__ push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G22.112","verdict":"ask","setup":"lp","command":"cd __MAIN_TREE__ && comm -12 <(git diff --name-only main HEAD | sort) <( (git -C .feat diff --name-only; git -C .feat ls-files --others --exclude-standard) | sort)","reason":"cd"}
+{"id":"G22.113","verdict":"ask","setup":"lpassets","command":"git push origin refs/heads/pr-assets:refs/heads/main","reason":"pushes to a remote"}
+{"id":"G22.114","verdict":"ask","setup":"lpassets","command":"git push origin refs/heads/pr-assets2","reason":"pushes to a remote"}
+{"id":"G22.115","verdict":"deny","setup":"lpwtignored","command":"git worktree add .claude/worktrees/x -b feat/x2 main","reason":".gitignore"}
+{"id":"G22.115.2","verdict":"ask","setup":"lp","command":"git worktree add .claude/worktrees/x -b feat/x2 main","reason":"not a plain git call"}
+{"id":"G22.116","verdict":"ask","setup":"lpwtignored","command":"git worktree add .claude/worktrees/x-base main","reason":"not a plain git call"}
+{"id":"G22.117","verdict":"ask","setup":"lpwttracked","command":"git worktree add .claude/worktrees/x -b feat/x2 main","reason":"not a plain git call"}
+{"id":"G22.118","verdict":"ask","setup":"lpassetsother","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.119","verdict":"ask","setup":"lpassetsrel","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.120","verdict":"ask","setup":"lpassetstag","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.121","verdict":"ask","setup":"lpassetscfg","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.111.2","verdict":"ask","setup":"lp","cwd":"__MAIN_TREE__","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"pushes to a remote"}
+{"id":"G22.101.2","verdict":"allow","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"loop record"}
+{"id":"G22.104.2","verdict":"allow","setup":"lpassetsff","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push origin refs/heads/pr-assets","reason":"pr-assets"}
+{"id":"G22.109.3","verdict":"pass","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"cd __FEAT_TREE__ && git fetch origin audit/x 2>&1 | tail -1"}

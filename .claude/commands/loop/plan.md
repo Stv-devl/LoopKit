@@ -111,7 +111,8 @@ You **do not write code here**.
    `attempt.reason`; `pass` records the pass; `none` records nothing. At the third
    failed pass, stop and apply the loop's `BLOCKED` contract; a fourth rewrite is
    never attempted. Persist the final two scores under `## Plan critic` in the
-   plan.
+   plan. After each pass, rewrite the handoff state line (`/loop:orchestrate`,
+   "Automatic checkpoints"); after the gate of step 7 too.
 7. **TEST PLAN GATE — stop and ask the user** (`moi`). **In `auto`**
    (`python3 .claude/hooks/loop-record.py --mode` prints `auto`; `blocked` → stop, `/loop:orchestrate`
    Phase 0 step 2) nobody is asked: one fresh

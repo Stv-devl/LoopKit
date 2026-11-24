@@ -132,6 +132,24 @@ sed -i '/^docs\/work\/\*\/codex-last-message\.txt$/d' "$CODEX_TARGET/.gitignore"
 [[ "$(grep -cxF 'docs/work/*/codex-last-message.txt' "$CODEX_TARGET/.gitignore")" -eq 1 ]] \
     || { echo "IN66: the top-up does not back-fill codex-last-message.txt exactly once" >&2; exit 1; }
 
+# IW1-IW2 (agent-ia-trial-fixes item 2) a target whose .gitignore ignores .claude/ itself is warned that loop
+# worktrees would hold no kit, and its line is left as the project wrote it; .claude/worktrees/ alone is quiet.
+for spelling in '.claude/' '.claude' '/.claude' '/.claude/'; do
+    IW_TARGET="$SCRATCH/iw-target"
+    mkdir -p "$IW_TARGET"
+    printf 'node_modules/\n%s\n' "$spelling" >"$IW_TARGET/.gitignore"
+    IW_OUT="$("$ROOT/install.sh" "$IW_TARGET" --no-ci 2>&1)"
+    grep -Fq 'ignore .claude/ lui-même' <<<"$IW_OUT" \
+        || { echo "IW1: no warning for '$spelling' in .gitignore" >&2; exit 1; }
+    grep -qxF -- "$spelling" "$IW_TARGET/.gitignore" || { echo "IW1: '$spelling' rewritten by the install" >&2; exit 1; }
+    rm -r "$IW_TARGET"
+done
+IW_TARGET="$SCRATCH/iw-quiet"
+mkdir -p "$IW_TARGET"
+printf '.claude/worktrees/\n' >"$IW_TARGET/.gitignore"
+IW_OUT="$("$ROOT/install.sh" "$IW_TARGET" --no-ci 2>&1)"
+if grep -Fq 'ignore .claude/ lui-même' <<<"$IW_OUT"; then echo 'IW2: warned on .claude/worktrees/ alone' >&2; exit 1; fi
+
 # I1 key and credential files are ignored on a fresh install, counted in the
 # closing line, and back-filled once into an older kit's block.
 KEY_TARGET="$SCRATCH/key-target"
