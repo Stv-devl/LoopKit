@@ -62,6 +62,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
 | `ignored-loop-paths` | `docs/work/` and the shipped `.claude/` folders are versioned | `git check-ignore` on one probe path per folder; only the per-session handoff may be ignored |
+| `worktree-kit` | `.claude/` itself is not gitignored, so a loop worktree carries the kit | `git check-ignore -v .claude/hooks/probe` (the probe `/loop:tracks`, `/loop:orchestrate` and the git hook share); names the ignoring line |
 | `audit-flags` | the `pnpm audit` line of `/loop:ship`'s gate fence | the same line in `00-project.md` and `ci.yml`, all `--prod --audit-level=high` (dev CVEs are reported apart) |
 | `workflow-names` | `ci.yml`'s `name:` | the `workflow_run` trigger and `--workflow=` of `deploy.yml` |
 | `agent-models` | `11-token-budget.md`, the model-tier table | the `model:` line of every `.claude/agents/*.md` |

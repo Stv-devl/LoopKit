@@ -1626,6 +1626,28 @@ for agent in "$TEST_WRITER" "$E2E_AGENT"; do
 done
 pk PK48.2 has "$E2E_AGENT" 'the project config and `--grep`'
 pk PK48.3 has "$E2E_AGENT" 'never `-c`/`--config`'
-[[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC2.inv, AMC20-AMC21, PK46-PK48: failing, see above' >&2; exit 1; }
+# CW1-CW6, WT1-WT3, HF1-HF3 (agent-ia-trial-fixes, items 2-4): the session cwd stays at the root, the
+# pr-assets image list in auto, the worktree refusal when .claude/ is ignored, the handoff state line.
+pk_cwd='the session cwd stays at the project root'
+pk CW1 has "$ORCHESTRATE" "$pk_cwd"
+pk CW1.2 has "$ORCHESTRATE" 'pnpm --dir'
+pk CW2 has "$GITHUB_AGENT" 'the bare exact form from the project root'
+pk CW3 has "$E2E_AGENT" 'pnpm --dir'
+pk CW3.2 has "$E2E_AGENT" "$pk_cwd"
+pk CW4 has "$GITHUB_AGENT" 'In `auto`, the image list is not asked'
+pk CW5 has "$SHIP" "$pk_cwd"
+pk CW6 has "$GITHUB_AGENT" "$pk_cwd"
+pk_probe='git check-ignore -q .claude/hooks/probe'
+pk WT1 has "$TRACKS" "$pk_probe"
+pk WT2 has "$ORCHESTRATE" "$pk_probe"
+pk WT2.2 lacks "$WORKTREES" 'if `.claude/` is versioned'
+pk WT2.3 has "$WORKTREES" "$pk_probe"
+pk WT3 has_in "$pk_local" 'git -C <tree> status --porcelain -- docs/'
+pk WT3.2 has_in "$pk_local" 'ignored files under `docs/work/<slug>/`'
+pk HF1 has "$ORCHESTRATE" 'rewrite its state line'
+for n in 'Contract gate' 'each plan-critic pass' 'the test-plan gate' 'each review round'; do pk "HF1 $n" has "$ORCHESTRATE" "$n"; done
+pk HF2 has "$PLAN" 'rewrite the handoff state line'
+pk HF3 has "$REVIEW" 'rewrite the handoff state line'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC2.inv, AMC20-AMC21, PK46-PK48, CW/WT/HF: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

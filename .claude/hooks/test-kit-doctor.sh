@@ -41,6 +41,30 @@ printf 'docs/work/*/handoff.md\n' > "$SCRATCH/.gitignore"
 IGNORED_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          ignored-loop-paths' <<<"$IGNORED_OUTPUT"
 
+# DW1-DW4 (agent-ia-trial-fixes item 2): a project that ignores .claude/ itself is told its worktrees hold
+# no kit; ignoring only .claude/worktrees/ is the intended layout.
+for spelling in '.claude/' '.claude' '/.claude' '/.claude/'; do
+    printf '%s\n' "$spelling" > "$SCRATCH/.gitignore"
+    WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+    grep -A3 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" | grep -q 'no kit' \
+        || { echo "DW1/DW3: '$spelling' in .gitignore not reported as worktree-kit" >&2; exit 1; }
+done
+printf '.claude/worktrees/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" || { echo 'DW2: .claude/worktrees/ alone must be ok' >&2; exit 1; }
+grep -q 'ok          worktree-kit' <<<"$SOURCE_OUTPUT" || { echo 'DW4: the kit source must be ok' >&2; exit 1; }
+# DW5: a project that tracks .claude/hooks stays ok under an ignore rule that does not reach its tracked kit.
+printf 'x\n' > "$SCRATCH/.claude/hooks/x"
+git -C "$SCRATCH" add -f .claude/hooks/x
+git -C "$SCRATCH" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q -m kit
+printf '.claude/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" || { echo 'DW5: a tracked .claude/hooks must be ok under an ignore rule' >&2; exit 1; }
+git -C "$SCRATCH" update-ref -d HEAD
+git -C "$SCRATCH" rm -q --cached -f .claude/hooks/x
+rm "$SCRATCH/.claude/hooks/x"
+printf 'docs/work/*/handoff.md\n' > "$SCRATCH/.gitignore"
+
 mkdir -p "$SCRATCH/.claude/skills/templates" "$SCRATCH/.claude/skills/patterns"
 # client-copies runs in the kit source only (kit-prompts 4b): the scratch wears the kit markers here.
 printf 'x\n' > "$SCRATCH/install.sh"; mkdir -p "$SCRATCH/addons"

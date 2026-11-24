@@ -143,6 +143,13 @@ record (the user's plan-gate go) with the server barrier, and asks once otherwis
 `<owner/repo>` and `<recorded base>` come from `.claude/.loop-record.json` (read it,
 never write it); report the PR URL the command prints.
 
+Run them in the bare exact form from the project root (or the track's worktree root),
+never prefixed by a `cd`: the session cwd stays at the project root for every command
+you run; another tree is `git -C <tree> …`, a subfolder tool `pnpm --dir <sub> …`; if
+you start in a subfolder (a `cd` the caller left behind), use `git -C <root>` rather
+than a `cd <root> && …` before git, which the hook cannot place. In `auto`, any form
+the hook does not allow is a blocked stop: report it, never retry around it.
+
 Anything else that **touches GitHub** — `gh pr merge`, `gh pr edit`, a force-push
 (`--force`, `--force-with-lease`), the `gh issue` commands, `gh … comment`, any other push —
 **and every local merge back of a track's branch into the base branch** requires
@@ -189,16 +196,21 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
 Images never land on the work branch. They go as blobs on the orphan branch
 `pr-assets`, under `<branch>/<sha7>/`, and only the `Screenshots run:` dir the
 caller hands you is published. `kit-pr-assets.py` writes only
-`refs/heads/pr-assets`, never pushes, and has no allow, so every call prompts.
+`refs/heads/pr-assets`, never pushes, and has no settings allow, so each call prompts
+unless the session allows it.
 
 **Publish**, after the ship commit (`--sha` is that commit's short sha):
 
 1. `git fetch origin`
 2. `python3 .claude/hooks/kit-pr-assets.py plan --dir <run dir> --branch <B> --sha <sha> --repo <owner/name>`
-3. Show the image list and its URLs. **Ask.** On a public repo the pushed images
-   are world-readable: test data only.
+3. Show the image list and its URLs. **Ask** (`moi`). On a public repo the pushed
+   images are world-readable: test data only. In `auto`, the image list is not asked:
+   the recorded run is published as-is and listed in the PR body, whose review is the
+   human control.
 4. `python3 .claude/hooks/kit-pr-assets.py commit` with the same args, then
-   `git push origin refs/heads/pr-assets` (asks).
+   `git push origin refs/heads/pr-assets` in that bare form: the git hook allows it on
+   the pass's valid loop record when it creates `pr-assets` or fast-forwards it, and
+   asks (`moi`) or stops the run (`auto`) otherwise.
 5. `python3 .claude/hooks/kit-pr-assets.py section` with the same args, and hand
    the output back for the `Screenshots` block of `pr-body.md`.
 
@@ -210,7 +222,8 @@ Exit 2 is a refusal with its reason on stderr: report it, never retry around it.
 2. `gh pr view <n> --json body --jq .body | python3 .claude/hooks/kit-pr-assets.py drop --branch <B>`.
    The folders it removes are the ones the merged PR's body published, so a rebase or a squash at merge changes nothing.
 3. Show the removed folders (`git show --stat refs/heads/pr-assets`). **Ask**, then
-   `git push origin refs/heads/pr-assets`, then Keeping local in sync.
+   `git push origin refs/heads/pr-assets`, then Keeping local in sync. This push asks:
+   by the merge the pass's record is cleared, so no record allows it.
 
 `drop` removes the images from the tip of `pr-assets` only: they stay in its git
 history. `nothing to clean` means there is nothing to push. Never put any other image

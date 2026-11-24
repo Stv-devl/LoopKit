@@ -946,6 +946,14 @@ elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
     echo "  .gitignore : $GITIGNORE_FILLED chemins ajoutés au bloc existant."
     echo
 fi
+# Un projet qui ignore `.claude/` entier n'a aucun kit dans ses worktrees : /loop:tracks refuse
+# alors de forker. Avertir seulement — le .gitignore appartient au projet.
+if [[ -f "$TARGET/.gitignore" ]] && grep -qE '^[[:space:]]*/?\.claude/?[[:space:]]*$' "$TARGET/.gitignore"; then
+    echo "  ATTENTION : le .gitignore ignore .claude/ lui-même. Un worktree de /loop:tracks n'aurait"
+    echo "  ni hooks, ni scripts, ni règles : le fork est refusé. Retire cette ligne et versionne .claude/"
+    echo "  (le bloc « état de session » garde .claude/worktrees/ et les fichiers de session ignorés)."
+    echo
+fi
 
 if $NO_CI; then
     cat <<'EOF'

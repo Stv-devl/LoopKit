@@ -125,7 +125,22 @@ decide() {
 }
 
 deny() { decide "deny" "$1"; }
-ask()  { decide "ask"  "$1"; }
+# In auto mode nobody answers an ask (docs/specs/agent-ia-trial-fixes.md, item 4): every ask of this hook
+# is a blocked stop there. Auto is read from the session's own tree (the hook input cwd, else the
+# project), never from a `-C` target: a `-C` into another repo or worktree must not escape it.
+ask() {
+    local tree="" base="${BASE_DIR:-$CWD}"
+    if [[ -n "$base" ]]; then
+        tree="$(git -c core.fsmonitor=false -C "$base" rev-parse --show-toplevel 2>/dev/null)" || tree=""
+    fi
+    if [[ -z "$tree" && -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+        tree="$(git -c core.fsmonitor=false -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null)" || tree=""
+    fi
+    if [[ -n "$tree" ]] && cwk_auto_mode "$tree"; then
+        decide "deny" "auto mode — blocked stop: $1"
+    fi
+    decide "ask" "$1"
+}
 
 PUSH_REASON="This pushes to a remote. Present the branch, the remote and what is being pushed, then let the user decide."
 FORCE_REASON="This is a FORCE push: it overwrites remote history and can destroy commits other people have. Say which branch and why a normal push will not do, then let the user decide."
@@ -538,6 +553,27 @@ def read_only_call(sub, args):
     if sub in READ_SUBS:
         return True
     return sub == "branch" and all(a in READ_BRANCH_FLAGS for a in args)
+
+
+FETCH_QUIET_FLAGS = {"-q", "--quiet", "--no-tags"}
+FETCH_NAME_RE = re.compile(r"[A-Za-z0-9._][A-Za-z0-9._/-]*")
+
+
+def root_fetch(sub, args, base):
+    """True for `git fetch [-q|--no-tags] <remote> [<branch>...]` (no refspec destination, no other
+    option) after cds that all land on the session tree's own root, literally: the fetch only moves
+    remote-tracking refs. A subfolder, a sibling worktree or a submodule keeps the cd ask."""
+    if sub != "fetch" or state["cd_unread"] or not state["cd_dirs"]:
+        return False
+    names = [a for a in args if a not in FETCH_QUIET_FLAGS]
+    if not names or not all(FETCH_NAME_RE.fullmatch(a) for a in names):
+        return False
+    res = quick_git(base, ["rev-parse", "--show-toplevel"])
+    if res is None or res.returncode != 0:
+        return False
+    root = os.path.realpath(res.stdout.decode(errors="replace").strip())
+    return bool(root) and project_repo(root) \
+        and all(os.path.realpath(d) == root for d in state["cd_dirs"])
 
 
 def cd_proven():
@@ -1671,7 +1707,7 @@ def parse_git(seg, start, base, assigns):
             "dir_unread": dir_unread, "moved": state["cd"] or state["prior"]})
     if sub != HIDDEN and sub not in ADD_SUBS and destr == "-":
         proven = state["cd"] and directory == base and not (git_dir or work_tree) \
-            and read_only_call(sub, args) and cd_proven()
+            and ((read_only_call(sub, args) and cd_proven()) or root_fetch(sub, args, base))
         destr = foreign_verdict(sub, directory, state["cd"] and not proven)
     if sub != HIDDEN:
         destr = kit_combine(destr, kit_verdict(sub, args, directory, {
@@ -2133,20 +2169,30 @@ guarded_block_check() {
 
 record_allow() {
     local LC_ALL=C text="$COMMAND" tree rec head fields version branch base repo barrier base_ok slug
-    local b="" ba="" r="" rslug cap rc released
-    local push_form='^git push -u origin ([A-Za-z0-9._/][A-Za-z0-9._/-]*)$'
+    local b="" ba="" r="" rslug cap rc released cdir="" assets="" remote_sha
+    # The pass's push, bare or as `git -C <abs dir>` (an agent whose cwd drifted into a subfolder), and
+    # the pr-assets publish push (kit-pr-assets.py commit, then github.md's push): same forms either way.
+    local push_form='^git (-C (/[A-Za-z0-9._/-]+) )?push -u origin ([A-Za-z0-9._/][A-Za-z0-9._/-]*)$'
+    local assets_form='^git (-C (/[A-Za-z0-9._/-]+) )?push origin refs/heads/pr-assets$'
     local pr_form='^gh pr create --repo ([A-Za-z0-9._-]+/[A-Za-z0-9._-]+) --base ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --head ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --title "[^"$`\\]*" --body-file docs/work/([a-z0-9][a-z0-9.-]*)/pr-body\.md$'
     text="${text#"${text%%[! $'\t']*}"}"
     text="${text%"${text##*[! $'\t']}"}"
     [[ "$text" =~ [[:cntrl:]] ]] && return 0
     if [[ "$text" =~ $push_form ]]; then
-        b="${BASH_REMATCH[1]}"
+        cdir="${BASH_REMATCH[2]}" b="${BASH_REMATCH[3]}"
+    elif [[ "$text" =~ $assets_form ]]; then
+        cdir="${BASH_REMATCH[2]}" assets=1
     elif [[ "$text" =~ $pr_form ]]; then
         r="${BASH_REMATCH[1]}" ba="${BASH_REMATCH[2]}" b="${BASH_REMATCH[3]}" slug="${BASH_REMATCH[4]}"
     else
         return 0
     fi
     tree="$(git -C "$BASE_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
+    # A `-C` names the session's own tree or nothing: another repository, or another worktree of this
+    # one, falls through to the asks.
+    if [[ -n "$cdir" ]]; then
+        [[ "$(git -C "$cdir" rev-parse --show-toplevel 2>/dev/null)" == "$tree" ]] || return 0
+    fi
     rec="$tree/.claude/.loop-record.json"
     [[ -f "$rec" && ! -L "$rec" ]] || return 0
     fields="$(jq -r 'select(.version == 1 and (.blocked // false) != true
@@ -2157,7 +2203,8 @@ record_allow() {
     IFS=$'\t' read -r version rslug branch base _ repo barrier base_ok released <<< "$fields"
     [[ "$version" == 1 && "$barrier" == true && -n "$branch" ]] || return 0
     head="$(git -C "$tree" symbolic-ref -q --short HEAD 2>/dev/null)" || return 0
-    [[ "$head" == "$branch" && "$b" == "$branch" ]] || return 0
+    [[ "$head" == "$branch" ]] || return 0
+    [[ -n "$assets" || "$b" == "$branch" ]] || return 0
     if [[ -n "$r" ]]; then
         [[ "$r" == "$repo" && "$ba" == "$base" && "$base_ok" == true && "$slug" == "$rslug" ]] || return 0
         [[ -f "$tree/docs/work/$slug/pr-body.md" && ! -L "$tree/docs/work/$slug/pr-body.md" ]] || return 0
@@ -2171,6 +2218,7 @@ record_allow() {
         decide allow "the pass's own PR, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
     fi
     [[ "$released" == 1 ]] && return 0
+    [[ -n "$assets" ]] && b=pr-assets
     git -C "$tree" show-ref --verify --quiet "refs/heads/$b" || return 0
     ! git -C "$tree" show-ref --verify --quiet "refs/tags/$b" || return 0
     compgen -e | grep -qE '^(GIT_DIR|GIT_WORK_TREE|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG.*)$' && return 0
@@ -2181,12 +2229,39 @@ record_allow() {
     [[ "$rc" -eq 1 ]] || return 0
     cap="$(command -v timeout || command -v gtimeout)" || return 0
     rc=0
-    GIT_TERMINAL_PROMPT=0 "$cap" -k 1 3 git -C "$tree" ls-remote --exit-code origin "refs/heads/$b" \
-        </dev/null >/dev/null 2>&1 || rc=$?
+    remote_sha="$(GIT_TERMINAL_PROMPT=0 "$cap" -k 1 3 git -C "$tree" ls-remote --exit-code origin "refs/heads/$b" \
+        </dev/null 2>/dev/null)" || rc=$?
+    if [[ -n "$assets" ]]; then
+        # pr-assets: created, or fast-forwarded from the remote tip the local branch already contains.
+        if [[ "$rc" -eq 0 ]]; then
+            remote_sha="${remote_sha%%[[:space:]]*}"
+            [[ "$remote_sha" =~ ^[0-9a-f]{40,64}$ ]] || return 0
+            git -C "$tree" merge-base --is-ancestor "$remote_sha" refs/heads/pr-assets 2>/dev/null || return 0
+        elif [[ "$rc" -ne 2 ]]; then
+            return 0
+        fi
+        decide allow "the pass's PR screenshots on pr-assets (created or fast-forwarded), from the loop record of the user's plan-gate go, with the server barrier on the default branch"
+    fi
     [[ "$rc" -eq 2 ]] || return 0
     decide allow "the pass's own first push of its branch, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
 }
 record_allow
+
+# A loop track forked into .claude/worktrees/ of a project that git-ignores .claude/ checks out with no
+# kit at all: no hooks, no scripts, no rules (EcoCrew agent-ia-4.4). Refuse it here, naming the line.
+worktree_kit_check() {
+    local tree line
+    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?([^[:space:]]*/)?\.claude/worktrees/ ]] || return 0
+    # Only the track fork (a branch created with -b/-B) needs the kit; a plain checkout of a base does not.
+    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?-[bB]([[:space:]]|$) ]] || return 0
+    tree="$(git -C "$BASE_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
+    git -C "$tree" check-ignore -q .claude/hooks/probe 2>/dev/null || return 0
+    # A tracked kit is carried by the worktree whatever ignore rule also matches the probe.
+    [[ -z "$(git -C "$tree" ls-tree -r --name-only HEAD -- .claude/hooks 2>/dev/null)" ]] || return 0
+    line="$(git -C "$tree" check-ignore -v .claude/hooks/probe 2>/dev/null | cut -f1)"
+    deny "BLOCKED: this project's .gitignore ignores .claude/ (${line:-a .gitignore rule}), so a worktree under .claude/worktrees/ would hold no kit: no hooks, no scripts, no rules. Version .claude/ (keep only .claude/worktrees/ and the session files ignored), commit, then fork; or run this story in the main tree. (.claude/guides/10-worktrees.md)"
+}
+worktree_kit_check
 
 if echo "$COMMAND" | grep -qE '\bgh\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*pr\s+((((-R|--repo)\s+[^ ]+)|(-R[^ ]+)|(--repo=[^ ]+))\s+)*(create|merge|edit|close|reopen|ready|review)\b'; then
     ask "This acts on a pull request. Show the title, body and target branch first, then let the user decide."

@@ -91,7 +91,10 @@ Maintain `docs/work/<slug>/handoff.md` inline, without a subagent, from the
 `/handoff:codex` template (its frontmatter `phase:` is what a restart resumes):
 create it once `docs/work/<slug>/` exists; refresh it after interface, plan, each
 RED→GREEN layer, review fixes and ship gates, and on a contract amendment
-re-entry; store only state, changed paths,
+re-entry. At every passed gate — the Contract gate, each plan-critic pass,
+the test-plan gate, each review round — rewrite its state line (`phase:` and the
+`## In progress` / `Next:` line), never append under a stale one: a resume reads
+it as the truth. Store only state, changed paths,
 decisions/traps and last deterministic results; link, never copy.
 
 Before launching any agent, check `.claude/.token-stop-agents`: if present,
@@ -125,6 +128,9 @@ A new session does not reset the counter; a successful gate does. (Small: exit 3
 
 Shell discipline for the whole pass:
 - kit scripts run from the project root by relative path, never behind `cd x;` (`cd <absolute root> && …` at most);
+- the session cwd stays at the project root: a subfolder tool runs as `pnpm --dir <sub> …`, `git -C <tree> …`
+  or one `(cd <sub> && …)` subshell, never a bare `cd <sub> && …`, which persists and leaves every later
+  command and agent in the subfolder (EcoCrew 2.2: the pass's push asked from `frontend/`);
 - work artifacts are written with Write/Edit, never from the shell (`plan.md`, `handoff.md`, `design.md`; appending `## Gate` is an Edit).
 
 0. **Closing check**, before anything else. For each `docs/work/*/handoff.md` with
@@ -222,7 +228,11 @@ Shell discipline for the whole pass:
 
 ## Phase 0.5 — Track isolation (worktree or not)
 
-Decide **once**, announce in one line, never revisit mid-loop. Fork only if all hold
+Decide **once**, announce in one line, never revisit mid-loop. Never fork when
+`git check-ignore -q .claude/hooks/probe` succeeds and `git ls-tree -r --name-only HEAD --
+.claude/hooks` prints nothing: the project git-ignores `.claude/` without tracking it, so a
+worktree would hold no kit (the git hook denies the `worktree add`); run the pass in the main
+tree and say which `.gitignore` line to remove. Fork only if all hold
 (`.claude/guides/10-worktrees.md` is the authority — read it before forking):
 another pass is in flight or the user asked for this one in the background; the
 file sets are disjoint; neither touches a shared foundation (migrations & DB,

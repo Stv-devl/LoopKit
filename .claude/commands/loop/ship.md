@@ -21,6 +21,12 @@ If this track runs in a worktree (`git worktree list`, and the plan's **Track
 isolation** section), everything below happens **there**: gates run on the code
 that is about to merge, not on the base branch. Announce the branch in one line.
 
+Through the whole ship the session cwd stays at the project root (or the track's
+worktree root): a subfolder gate runs as `pnpm --dir <sub> …`, `git -C <tree> …` or
+one `(cd <sub> && …)` subshell, never a bare `cd <sub> && …` that persists — the
+`github` agent launched after it inherits the subfolder and its push leaves the exact
+form the hook allows.
+
 ### 1. Gates (parallel)
 
 ONE message, the independent commands at once — they read the same tree and write
@@ -212,7 +218,14 @@ Via the `github` agent:
    as pushing. A refused amendment first re-adds its
    `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
-   Otherwise, **mind who is standing where**:
+   Otherwise, before any removal, check the track's `docs/`: `git -C <tree> status --porcelain -- docs/`
+   must print nothing (an untracked or modified file there never reached the merge: name each one,
+   stop, and route it through a commit on the branch); then list the
+   ignored files under `docs/work/<slug>/` (`git -C <tree> ls-files --others --ignored --exclude-standard -- docs/work/<slug>/`)
+   that the removal deletes — the handoff and `pr-body.md` are the pass's trace, the PR already
+   carries the body — so the user sees them before they go. Tracked `docs/` reach the main tree
+   only through the merge and the `--ff-only` sync, whose conflicts stop rather than overwrite.
+   Then **mind who is standing where**:
    - the session is **inside** the worktree → `ExitWorktree` with `keep`, then
      `git worktree remove .claude/worktrees/<slug>`, then `git branch -d feat/<slug>`
      (a `remove` exit would delete the tree around a record that stays valid in it).

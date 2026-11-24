@@ -1,0 +1,6 @@
+{
+  "findings": [
+    {"surface": "authz", "severity": "Major", "path": ".claude/hooks/enforce-git-workflow.sh", "line": 2234, "problem": "pr-assets allow checks only fast-forward, not content: commits between remote tip and local pr-assets that are not this pass's (a declined drop commit, another pass's unpushed images) go out unprompted under this pass's record; allow only when remote_sha..pr-assets touches paths under <record branch>/ only."},
+    {"surface": "authz", "severity": "Minor", "path": ".claude/agents/github.md", "line": 225, "problem": "github.md and ship.md:273 claim the pr-assets clean-up push always asks because the record is cleared; it is allowed without a prompt when a later pass's record is valid and HEAD is on its branch."}
+  ]
+}

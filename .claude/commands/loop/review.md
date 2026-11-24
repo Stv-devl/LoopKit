@@ -253,6 +253,9 @@ dimension.
      file, and rerun with the same round.
    - `fix-batch`: the `blocking` findings are the batch (`orchestrate.md` Phase 5).
    - `clear`: the gate clears. A Minor never starts a fix batch.
+
+   Whatever `next` is, rewrite the handoff state line for this round (`review_status`, the
+   round and its verdict: `/loop:orchestrate`, "Automatic checkpoints") before the next step.
 4. Report the refuted findings in one line each — they are the proof the gate
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller

@@ -1,0 +1,16 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "N2", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Write chain steps 2-4 and Files still list the pre-rewrite case ranges; setup wtignored missing; G22 ids contradict the Q3 vigilance line.", "closure": null},
+    {"id": "N1", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Step 2 accepts a -C toplevel equal to BASE_DIR's or CLAUDE_PROJECT_DIR's; vigilance Q2 says BASE_DIR only.", "closure": null},
+    {"id": "N3", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "The worktree-add deny does not cover native EnterWorktree; git check-ignore only on a project_repo directory.", "closure": null},
+    {"id": "N4", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "The fetch cd-target comparison is with the hook input cwd's toplevel, not CLAUDE_PROJECT_DIR (G22.9 cds into the feat tree).", "closure": null},
+    {"id": "N5", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "AM69/AM70 need an out-of-repo tree and a second worktree built by the test, __OUT_TREE__ is jsonl-only.", "closure": null}
+  ]
+}

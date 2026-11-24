@@ -4506,13 +4506,32 @@ run_kit_prompts_step4_cases() {
 # feat/s2, lpother HEAD stays feat/x, lptag a tag feat/s1, lpremote feat/s1 already on origin,
 # lpcfg* one push-redirecting config, lpbody a Co-Authored-By body, lpnobody no body, lpslow an
 # origin that never answers (lpslowb: the same, the hook held to 7 s), lpbadjson / lpv2 an unreadable record, lpbasemain plan `Base: main`.
+# lp_assets_setup <fixture repo> <variant>: a local refs/heads/pr-assets (the kit-pr-assets.py commit):
+# lpassets / lpassetsblk with no remote pr-assets, lpassetsff one commit ahead of origin's, lpassetsdiv
+# unrelated to origin's.
+lp_assets_setup() {
+    local t="$1" tree c1 c2
+    tree="$(git -C "$t" mktree </dev/null)"
+    c1="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -m shots1)"
+    case "$2" in
+        lpassetsff)
+            git -C "$t" push -q origin "$c1:refs/heads/pr-assets" 2>/dev/null
+            c2="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -p "$c1" -m shots2)" ;;
+        lpassetsdiv)
+            git -C "$t" push -q origin "$c1:refs/heads/pr-assets" 2>/dev/null
+            c2="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -m other)" ;;
+        *) c2="$c1" ;;
+    esac
+    git -C "$t" update-ref refs/heads/pr-assets "$c2"
+}
+
 lp_git_setup() {
     local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1 blocked=false released=false
     git init -q --bare -b main "$t/.origin.git"
     git -C "$t" remote add origin "$t/.origin.git"
     git -C "$t" branch audit/x
     git -C "$t" push -q origin main audit/x 2>/dev/null
-    [[ "$v" == lpother ]] || git -C "$feat" switch -q -c feat/s1
+    [[ "$v" == lpother || "$v" == lpassetsother ]] || git -C "$feat" switch -q -c feat/s1
     mkdir -p "$feat/docs/work/s1" "$feat/.claude" "$t/.home"
     printf 'Summary.\n' >"$feat/docs/work/s1/pr-body.md"
     printf 'Base: audit/x\n' >"$feat/docs/work/s1/plan.md"
@@ -4542,6 +4561,24 @@ lp_git_setup() {
             git -C "$t" config protocol.ext.allow always
             git -C "$t" remote set-url origin 'ext::sleep 30' ;;
         lpbasemain) printf 'Base: main\n' >"$feat/docs/work/s1/plan.md" ;;
+        lpassets | lpassetsff | lpassetsdiv | lpassetsblk) lp_assets_setup "$t" "$v"
+            [[ "$v" != lpassetsblk ]] || blocked=true ;;
+        lpout)
+            git init -q -b feat/s1 "$t/out"
+            git -C "$t/out" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --allow-empty -m seed ;;
+        lpassetsother | lpassetsrel | lpassetstag | lpassetscfg) lp_assets_setup "$t" lpassets
+            case "$v" in
+                lpassetsrel) released=true ;;
+                lpassetstag) git -C "$t" tag pr-assets ;;
+                lpassetscfg) git -C "$t" config remote.origin.push 'refs/heads/*:refs/heads/x/*' ;;
+            esac ;;
+        lpwtignored) printf '%s\n' '.claude/' >"$feat/.gitignore" ;;
+        lpwttracked)
+            mkdir -p "$feat/.claude/hooks"
+            printf 'x\n' >"$feat/.claude/hooks/x"
+            git -C "$feat" add -f .claude/hooks/x
+            git -C "$feat" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q -m kit
+            printf '%s\n' '.claude/' >"$feat/.gitignore" ;;
         *) return 1 ;;
     esac
     case "$v" in
@@ -5024,6 +5061,78 @@ lp_worktree() {
     mkdir -p "$w/.claude"
     mv "$m/.claude/.loop-record.json" "$w/.claude/.loop-record.json"
     [[ ! -f "$m/.claude/.tdd-unfrozen" ]] || mv "$m/.claude/.tdd-unfrozen" "$w/.claude/.tdd-unfrozen"
+}
+
+# PW1-PW9 (agent-ia-trial-fixes item 1): a Python case runs from its whole `def` header (wrapped over
+# several lines, closed by the `:` at bracket depth 0) through its body. EcoCrew 2.2 U1/B352: the
+# rows freeze ended the case at `) -> None:`, so a body edit under an unfreeze was "outside every case",
+# and the insertion path took the body for module level.
+run_pw_cases() {
+    local tmp p addon pw_body
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    pw() {
+        rv2_pair "$addon" tdd-freeze-tests-py.py "$1" "$(jq -cn --arg f "$1/tests/services/test_b.py" --arg c "$1" \
+            --arg o "$2" --arg n "$3" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')"
+    }
+    # pw_rows <dir> <listed ids|-> <file lines>...: lp_py_project (record row B2, moi) with test_b.py
+    # replaced by <file lines> and `.tdd-unfrozen` listing <listed ids> (none with -).
+    pw_rows() {
+        local d="$1" ids="$2"
+        shift 2
+        lp_py_project "$d"
+        printf '%s\n' "$@" >"$d/tests/services/test_b.py"
+        if [[ "$ids" == - ]]; then
+            rm -f "$d/.claude/.tdd-unfrozen"
+        else
+            printf '%s\n' "tests/services/test_b.py  # $ids: r" >"$d/.claude/.tdd-unfrozen"
+        fi
+    }
+    # pw_plain <dir> <file lines>...: the same file frozen whole (no record, no list): insertion rules.
+    pw_plain() {
+        local d="$1"
+        shift
+        lp_py_project "$d"
+        rm -f "$d/.claude/.loop-record.json" "$d/.claude/.tdd-unfrozen"
+        printf '%s\n' "$@" >"$d/tests/services/test_b.py"
+    }
+    local -a wrapped=('from app.services.b import g' '' '' 'async def test_b1_restores_all(' '    db: object,' \
+        ') -> None:' '    full = 12.5' '    assert g(full) == 1' '' '' 'def test_b2_returns_err():' '    assert g(0) == 0')
+    pw_body=$'    full = 12.5\n    assert g(full) == 1'
+
+    p="$tmp/pw1"; pw_rows "$p" B1 "${wrapped[@]}"
+    pv_expect PW1 pass "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    p="$tmp/pw2"; pw_plain "$p" "${wrapped[@]}"
+    pv_expect PW2 deny "$(pw "$p" '    assert g(full) == 1' $'    assert g(full) == 1\n    assert g(2) == 2')" "INSIDE a case"
+    p="$tmp/pw3"; pw_rows "$p" - "${wrapped[@]}"
+    pv_expect PW3 deny "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    p="$tmp/pw4"; pw_rows "$p" B1 "${wrapped[@]:0:8}" '' 'LIMIT = 3' '' "${wrapped[@]:10}"
+    pv_expect PW4 deny "$(pw "$p" 'LIMIT = 3' 'LIMIT = 4')" "outside every case"
+    p="$tmp/pw5"; pw_plain "$p" "${wrapped[@]}"
+    pv_expect PW5 pass "$(pw "$p" '    assert g(0) == 0' $'    assert g(0) == 0\n\n\ndef test_b3_keeps_three():\n    assert g(3) == 3')"
+    p="$tmp/pw6"; pw_rows "$p" B1 'from app.services.b import g' '' '' 'def test_b1_maps(' \
+        '    opts: dict = {"a": (1, 2)},' ') -> dict[str, int]:' '    full = 12.5' '    assert g(full) == 1'
+    pv_expect PW6 pass "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    p="$tmp/pw7"; pw_rows "$p" B1 'from app.services.b import g' '' '' 'def test_b1_parses(' \
+        '    sep: str = "):",  # closes ) here: not' ') -> None:' '    full = 12.5' '    assert g(full) == 1'
+    pv_expect PW7 pass "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    p="$tmp/pw8"; pw_rows "$p" B1 'import pytest' 'from app.services.b import g' '' '' '@pytest.mark.parametrize(' \
+        '    "v", [1, 2],' ')' 'def test_b1_each(' '    v: int,' ') -> None:' '    full = 12.5' '    assert g(full) == 1' \
+        '' '' 'class TestB:' '    def test_b3_returns_err(' '        self,' '    ) -> None:' '        assert g(0) == 0'
+    pv_expect PW8 pass "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    pv_expect PW8.2 deny "$(pw "$p" '    "v", [1, 2],' '    "v", [1, 3],')"
+    printf '%s\n' 'tests/services/test_b.py  # B3: r' >"$p/.claude/.tdd-unfrozen"
+    pv_expect PW8.3 pass "$(pw "$p" '        assert g(0) == 0' '        assert g(0) == -1')"
+    p="$tmp/pw9"; pw_rows "$p" B1 'from app.services.b import g' '' '' 'async def test_b1_one() -> None:' \
+        '    full = 12.5' '    assert g(full) == 1' '' '' 'class TestB:' '    def test_b2_returns_err(self) -> None:' \
+        '        assert g(0) == 0'
+    pv_expect PW9 pass "$(pw "$p" "$pw_body" $'    full = 0.0\n    assert g(full) == 1')"
+    pv_expect PW9.2 deny "$(pw "$p" '        assert g(0) == 0' '        assert g(0) == -1')" "B2"
+    p="$tmp/pw9u"; pw_rows "$p" B2 'from app.services.b import g' '' '' 'def test_b1_open(' '    v: int,' \
+        '    full = 12.5' '    assert g(full) == 1'
+    pv_expect PW9.3 deny "$(pw "$p" '    assert g(full) == 1' '    assert g(full) == 2')" "B1"
+    unset -f pw pw_rows pw_plain
+    rm -rf "$tmp"
 }
 
 # LP33-LP44, LP50 (loop-to-pr step 5): a path with rows in the tree's valid record is not exempted
@@ -6631,6 +6740,45 @@ am_push() {
     pv_expect "$1" "$2" "$(printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out")" "${4:-}"
 }
 
+# am_cmd <id> <want> <dir> <command> [needle]: enforce-git-workflow.sh on <command> run from <dir>, with the
+# am_push environment.
+am_cmd() {
+    local out code
+    mkdir -p "$3/.claude/.home"
+    set +e
+    out="$(jq -cn --arg c "$3" --arg x "$4" '{tool_name: "Bash", cwd: $c, tool_input: {command: $x}}' \
+        | env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_NOSYSTEM HOME="$3/.claude/.home" CLAUDE_PROJECT_DIR="$3" \
+            CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    pv_expect "$1" "$2" "$(printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out")" "${5:-}"
+}
+
+# AM65-AM70 (agent-ia-trial-fixes item 4): in auto, every enforce-git-workflow.sh ask is a blocked stop
+# (EcoCrew 2.2: four asks reached the user after the contract go); the pass's own push and PR still run;
+# moi keeps its asks. Auto is read from the session tree, never from a `-C` target.
+run_trial_auto_git_cases() {
+    local tmp t
+    tmp="$(mktemp -d)"
+    t="$tmp/auto"; am_git "$t" auto "$tmp/o1.git"
+    am_cmd AM65 deny "$t" 'git push --force origin feat/s1' 'auto mode — blocked stop:'
+    am_cmd AM66 deny "$t" 'gh pr merge 1' 'auto mode — blocked stop:'
+    am_push AM67 allow "$t"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_pr AM67.2 allow "$t"
+    git init -q -b feat/s1 "$tmp/out"
+    git -C "$tmp/out" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --allow-empty -m seed
+    am_cmd AM69 deny "$t" "git -C $tmp/out push -u origin feat/s1" 'auto mode — blocked stop:'
+    git -C "$t" worktree add -q "$tmp/wt2" -b feat/other audit/x
+    am_cmd AM70 deny "$t" "git -C $tmp/wt2 push -u origin feat/s1" 'auto mode — blocked stop:'
+    t="$tmp/moi"; am_git "$t" moi "$tmp/o2.git"
+    am_cmd AM68 ask "$t" 'git push --force origin feat/s1' 'FORCE push'
+    t="$tmp/none"; am_git "$t" moi "$tmp/o3.git"
+    rm -f "$t/.claude/.loop-record.json"
+    am_cmd AM68.2 ask "$t" 'git push --force origin feat/s1' 'FORCE push'
+    rm -rf "$tmp"
+}
+
 # G22.001-G22.009 (auto-mode step 5): in auto, the pass's PR is allowed only when its body carries,
 # byte for byte, the Guarded files touched block the hook recomputes; moi is unchanged.
 run_auto_mode_step5_cases() {
@@ -6882,6 +7030,14 @@ if [[ "${1:-}" == --lp3-only ]]; then
     printf 'Hook fixtures (loop-to-pr review 3 only): %d case(s), all green.\n' "$CASES"
     exit 0
 fi
+if [[ "${1:-}" == --trial-only ]]; then
+    run_pw_cases
+    run_git_guard_cases
+    run_trial_auto_git_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (agent-ia trial fixes only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --lp-only ]]; then
     run_loop_to_pr_hash_cases
     run_loop_to_pr_review3_cases
@@ -6949,6 +7105,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_released_record_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
+    run_trial_auto_git_cases
     run_harness_reproduction
     run_harness_edges
     run_missing_jq_cases
@@ -6983,6 +7140,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_project_values_step5_cases
     run_review1_cases
     run_review2_cases
+    run_pw_cases
     run_app_roots_cases
     run_app_roots_cfg_cases
     run_codegen_cases
