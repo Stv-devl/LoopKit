@@ -578,6 +578,8 @@
 {"id":"G18.55.3","verdict":"ask","command":"gh -R `cat .repo` repo delete --yes","reason":"writes to GitHub"}
 {"id":"G18.55.4","verdict":"ask","command":"gh -R \"$(cat .repo)\" repo view","reason":"writes to GitHub"}
 {"id":"G18.56","verdict":"ask","command":"gh -R \"$(gh repo view --json nameWithOwner --jq '(.nameWithOwner)')\" repo delete --yes","reason":"writes to GitHub"}
+{"id":"G18.57","verdict":"deny","setup":"ghbody","command":"gh pr create --repo o/r --base main --title \"fix(kit): x (R6/R7)\" --body-file docs/pr-sign.md","reason":"attribution line in a gh body"}
+{"id":"G18.58","verdict":"deny","setup":"ghbody","command":"gh issue create -t 'a (b); c | d' -F docs/pr-sign.md","reason":"attribution line in a gh body"}
 {"id":"G18.56.2","verdict":"ask","command":"gh -R \"$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+)\\.git$#\\1#')\" issue create -t x -b y","reason":"writes to GitHub"}
 {"id":"G18.56.3","verdict":"ask","command":"gh -R \"$( (gh repo view --json nameWithOwner -q .nameWithOwner) )\" repo delete --yes","reason":"writes to GitHub"}
 {"id":"G18.56.4","verdict":"ask","command":"gh -R \"$(cat <(gh repo view --json nameWithOwner -q .nameWithOwner))\" issue create -t x -b y","reason":"writes to GitHub"}

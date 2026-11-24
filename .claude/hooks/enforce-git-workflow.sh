@@ -1969,10 +1969,22 @@ gh_skip_repo() {
     done
 }
 gh_scan() {
-    local text="${COMMAND//\\$'\n'/}" j kind="" w v n
+    local text="${COMMAND//\\$'\n'/}" j kind="" w v n out="" q="" rest head inner
     local -a words
-    text="${text//[\"\']/}"
-    text="${text//[;&|()\`]/ ; }"
+    # A separator inside quotes is text (a `fix(kit): …` title), never the end of the gh call.
+    rest="$text"
+    while [[ -n "$rest" ]]; do
+        head="${rest%%[\"\']*}"
+        out+="${head//[;&|()\`]/ ; }"
+        [[ "$head" == "$rest" ]] && break
+        q="${rest:${#head}:1}"
+        rest="${rest:${#head}+1}"
+        inner="${rest%%"$q"*}"
+        out+="${inner//[;&|()\`]/ }"
+        [[ "$inner" == "$rest" ]] && break
+        rest="${rest:${#inner}+1}"
+    done
+    text="$out"
     read -ra words <<< "${text//$'\n'/ ; }"
     n=${#words[@]}
     for ((j = 0; j < n; j++)); do
