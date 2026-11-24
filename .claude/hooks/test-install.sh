@@ -958,7 +958,14 @@ for in59 in "$TARGET" "$REACT_TARGET"; do
         jq -e --arg a "$allow" '.permissions.allow | index($a)' "$in59/.claude/settings.json" >/dev/null \
             || fail_in "IN59: $in59 lacks the allow $allow"
     done
+    # IN67 (guard) `--release` is the user's lift of a blocked record: never an allow entry.
+    ! jq -e '.permissions.allow[]? | select(contains("loop-record.py --release"))' "$in59/.claude/settings.json" >/dev/null \
+        || fail_in "IN67: $in59 allows loop-record.py --release"
 done
+! grep -q 'loop-record.py --release' "$ROOT/.claude/settings.json" \
+    || fail_in "IN67: the kit's settings.json names loop-record.py --release"
+! grep -q 'loop-record.py --release' "$ROOT/install.sh" \
+    || fail_in "IN67: install.sh names loop-record.py --release"
 IN59_PROMPT="$(sed -n "/^PROMPT_ALLOWS='/,/'\$/p" "$ROOT/install.sh" | sed "1s/^PROMPT_ALLOWS='//; \$s/'\$//")"
 for allow in "${IN59_ALLOWS[@]}"; do
     jq -e --arg a "$allow" 'index($a)' <<<"$IN59_PROMPT" >/dev/null || fail_in "IN59: PROMPT_ALLOWS lacks $allow"

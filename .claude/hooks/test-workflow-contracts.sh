@@ -138,6 +138,7 @@ FAKE
 cat > "$WS/bin/claude" <<FAKE
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$WS/claude-calls"
+[[ -e "$WS/block-on-run" ]] && printf '{"version":1,"blocked":true,"blocked_at":"2026-11-23T00:00:00Z"}\n' > "$WS/.claude/.loop-record.json"
 [[ -e "$WS/say-limit" ]] && { echo "usage: 95%"; sleep 1; echo "usage limit reached"; touch "$WS/.claude/.restart-ready"; read -r -t 5 _ || true; exit 0; }
 if [[ ! -e "$WS/saturated-once" || -e "$WS/always-saturate" ]]; then
     touch "$WS/saturated-once" "$WS/.claude/.restart-ready"
@@ -146,7 +147,8 @@ fi
 exit 0
 FAKE
 chmod +x "$WS/bin/codex" "$WS/bin/claude"
-reset_ws() { rm -rf -- "$WS/docs" "$WS/codex-calls" "$WS/claude-calls" "$WS/saturated-once" "$WS/always-saturate" "$WS/say-limit"; mkdir -p "$WS/docs/work/feat"; }
+reset_ws() { rm -rf -- "$WS/docs" "$WS/codex-calls" "$WS/claude-calls" "$WS/saturated-once" "$WS/always-saturate" "$WS/say-limit" \
+    "$WS/block-on-run" "$WS/stderr" "$WS/.claude/.loop-record.json"; mkdir -p "$WS/docs/work/feat"; }
 cx() { rm -f "$WS/codex-calls"; PATH="$WS/bin:$PATH" "$WS/codex-handoff.sh" "$@" </dev/null >/dev/null 2>&1; }
 sup() { rm -f "$WS/claude-calls" "$WS/saturated-once"; PATH="$WS/bin:$PATH" CLAUDE_WORKFLOW_CLAUDE_BIN="$WS/bin/claude" python3 "$WS/workflow.py" </dev/null >/dev/null 2>&1; }
 H="$WS/docs/work/feat/handoff.md"
@@ -213,6 +215,45 @@ sup || true
 [[ ! -e "$WS/codex-calls" ]]
 grep -q '^restarts: 0$' "$H"
 [[ "$(stat -c %Y "$H")" -lt "$(stat -c %Y "$WS/docs/work/feat/plan.md")" ]]
+
+# WF-B1..B5 (blocked-record lifecycle): a blocked loop record stops the launcher before any session (the
+# first launch, a saturation restart, the Codex relay), exit 2, naming the user's lift on stderr.
+REC="$WS/.claude/.loop-record.json"
+sup_err() {
+    rm -f "$WS/claude-calls" "$WS/saturated-once"
+    set +e
+    PATH="$WS/bin:$PATH" CLAUDE_WORKFLOW_CLAUDE_BIN="$WS/bin/claude" python3 "$WS/workflow.py" </dev/null >/dev/null 2>"$WS/stderr"
+    WF_RC=$?
+    set -e
+}
+reset_ws
+printf '# plan\n' > "$WS/docs/work/feat/plan.md"
+printf '{"version":1,"blocked":true,"blocked_at":"2026-11-23T00:00:00Z"}\n' > "$REC"
+sup_err
+[[ "$WF_RC" -eq 2 && ! -e "$WS/claude-calls" ]]
+grep -q 'loop-record.py --release' "$WS/stderr"
+# WF-B3 (guard) an unreadable record refuses nothing (WF-B2, no record: every sup case above).
+printf '{"version":1,' > "$REC"
+sup
+[[ -e "$WS/claude-calls" ]]
+# WF-B4 marked blocked during the session: no restart, the handoff's restarts untouched.
+reset_ws
+printf '# plan\n' > "$WS/docs/work/feat/plan.md"
+printf -- '---\nphase: execute\nrestarts: 0\n---\n# Handoff\n' > "$H"
+touch "$WS/block-on-run"
+sup_err
+[[ "$WF_RC" -eq 2 && "$(wc -l < "$WS/claude-calls")" -eq 1 ]]
+grep -q '^restarts: 0$' "$H"
+grep -q 'loop-record.py --release' "$WS/stderr"
+# WF-B5 marked blocked, then a usage limit: no Codex relay.
+reset_ws
+printf '# plan\n' > "$WS/docs/work/feat/plan.md"; touch -d '1 hour ago' "$WS/docs/work/feat/plan.md"
+printf -- '---\nphase: execute\ncodex_safe: yes\n---\n# Handoff\n' > "$H"
+touch "$WS/block-on-run" "$WS/say-limit"
+sup_err
+[[ "$WF_RC" -eq 2 && ! -e "$WS/codex-calls" ]]
+grep -q 'loop-record.py --release' "$WS/stderr"
+reset_ws
 
 # Phase 0 resumes a handoff on every phase the template can write.
 for phase in research interface plan execute review ship; do
@@ -1523,7 +1564,7 @@ amc_blocked="$(section "$ORCH" '**Blocked stop** (`auto` only).' '## Automatic c
 pk AMC2.inv lacks_in "$amc_blocked" 'python3 .claude/hooks/loop-record.py --clear'
 pk AMC20 has_in "$amc_blocked" 'the record kept'
 pk AMC20.2 has_in "$amc_blocked" 'never runs `loop-record.py --clear`'
-pk AMC20.3 has_in "$amc_blocked" 'the user clears it to resume in `moi`'
+pk AMC20.3 has_in "$amc_blocked" 'only the user'"'"'s `loop-record.py --release` lifts it'
 pk AMC20.4 has "$SHIP" 'opens no PR; the commits stay local and the record is kept'
 pk AMC23 has "$ORCH" 'A blocked record stops a resume'
 pk AMC23.2 has "$ORCH" 'the only lift'
@@ -1534,7 +1575,36 @@ for f in "$ORCH" "$SHIP" "$ROOT/docs/specs/auto-mode.md" "$ROOT/README.md"; do
     pk "AMC24 no gate-go lift $f" lacks "$f" 'gate go lifts the mark'
     pk "AMC24.2 no new-gate-go lift $f" lacks "$f" 'a new gate go'
 done
-pk AMC24.3 has "$ROOT/README.md" 'you take over by running'
+pk AMC24.3 has "$ROOT/README.md" 'you take over by running `python3 .claude/hooks/loop-record.py --release`'
+# AMC25 (docs/specs/blocked-record-lifecycle.md): `--mode` prints `blocked`, Phase 0 step 2 stops on it, the user's
+# `--release` is the one lift and `--clear` deletes the ledger, a released record keeps its PR blocks.
+AUTO_SPEC="$ROOT/docs/specs/auto-mode.md"
+GITHUB_AGENT="$ROOT/.claude/agents/github.md"
+p0s2="$(section "$ORCH" '2. Parse the optional profile' '3. **FEATURE READY')"
+p0s3="$(section "$ORCH" '3. **FEATURE READY' '4. **Take the entry**')"
+orch_flat="$(tr -s ' \n' ' ' <"$ORCH")"
+pk AMC25 in_order "$p0s2" 'loop-record.py --mode' 'branch on `phase:`'
+pk AMC25.2 has_in "$p0s2" '`blocked` → stop before any phase'
+pk AMC25.3 has_in "$amc_blocked" 'loop-record.py --release'
+pk AMC25.3b has_in "$amc_blocked" 'deletes the record and its ledger'
+pk AMC25.4 has_in "$p0s3" 'unless the tree'"'"'s record is blocked'
+for f in "$SHIP" "$AUTO_SPEC" "$ROOT/README.md" "$GITHUB_AGENT"; do
+    pk "AMC25.5 release $f" has "$f" 'loop-record.py --release'
+    pk "AMC25.5 ledger $f" has "$f" 'deletes the record and its ledger'
+done
+pk AMC25.5b lacks "$SHIP" 'only the user'"'"'s `--clear` lifts it'
+pk AMC25.5b lacks "$AUTO_SPEC" 'only the user'"'"'s `loop-record.py --clear` lifts it'
+pk AMC25.5b lacks "$AUTO_SPEC" 'until the user'"'"'s `loop-record.py --clear` lifts it'
+pk AMC25.5b lacks "$ROOT/README.md" '`python3 .claude/hooks/loop-record.py --clear`, then the pass resumes in `moi`'
+pk AMC25.5b lacks "$ORCH" 'tells the user to run `python3 .claude/hooks/loop-record.py --clear`'
+pk AMC25.5b lacks_in "$orch_flat" 'only the user'"'"'s `loop-record.py --clear` lifts it'
+for f in plan interface review; do
+    pk "AMC25.6 $f" has "$ROOT/.claude/commands/loop/$f.md" '`blocked` → stop'
+done
+pk AMC25.9 has "$GITHUB_AGENT" 'auto mode or a released record'
+pk AMC25.10 has_in "$pk_pr" 'in `auto` or on a released record'
+pk AMC25.11 has "$AUTO_SPEC" 'except a blocked record'
+pk AMC25.11b lacks "$AUTO_SPEC" 'resumes in the recorded mode.'
 pk AMC22 has_in "$amc_blocked" 'python3 .claude/hooks/loop-record.py --block'
 pk AMC22.2 has "$SHIP" 'python3 .claude/hooks/loop-record.py --block'
 for n in 'whole static import declarations' 'top import block' 'side-effect' 'dynamic `import(`' \

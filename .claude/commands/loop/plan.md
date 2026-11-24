@@ -113,7 +113,8 @@ You **do not write code here**.
    never attempted. Persist the final two scores under `## Plan critic` in the
    plan.
 7. **TEST PLAN GATE — stop and ask the user** (`moi`). **In `auto`**
-   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`) nobody is asked: one fresh
+   (`python3 .claude/hooks/loop-record.py --mode` prints `auto`; `blocked` → stop, `/loop:orchestrate`
+   Phase 0 step 2) nobody is asked: one fresh
    `arbiter` takes the whole gate — the test plan against the spec's Acceptance criteria
    and Business logic, the expected values' sources and the order, the open questions
    with their proposed answers, and `Plan critic, open`. Its `go` or numbered corrections;

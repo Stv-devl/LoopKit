@@ -39,13 +39,12 @@ The framing asks `Validation : moi | auto` (`/loop:spec` step 1; a full/BMAD ent
 asked at Phase 0 step 2, `AskUserQuestion`), never again in the pass. Two sources, one
 job each: the spec's `Validation:` line (or that Phase 0 answer, copied into the
 handoff) only opens the `Contract gate` at the end of Phase 1 and grants nothing; from
-the contract go on, `python3 .claude/hooks/loop-record.py --mode` alone decides. A
+the contract go on, `python3 .claude/hooks/loop-record.py --mode` alone decides: `auto`, `moi`, or
+`blocked` (a blocked stop's record, on any branch). A
 restart in phase `research` re-reads the spec line;
-a restart after `research` reads `--mode`, and `moi` there (no record, cleared,
-mismatched) continues in `moi`. A blocked record stops a resume: a resumed run that reads
-`.claude/.loop-record.json` (Read only) with `"blocked": true` stops before any phase,
-writes nothing, and tells the user to run `python3 .claude/hooks/loop-record.py --clear`,
-the only lift, to resume in `moi`.
+a restart after `research` reads `--mode`, and `moi` there (no record, cleared, released,
+mismatched) continues in `moi`. A blocked record stops a resume (Phase 0 step 2): the user's
+`loop-record.py --release`, run in their own terminal, is the only lift, and the pass resumes in `moi`.
 
 | Gate after the contract | `moi` | `auto` |
 | --- | --- | --- |
@@ -82,8 +81,9 @@ board line `BLOCKED` (main tree), local commits kept, **no push, no PR**, the re
 and marked: the agent runs `python3 .claude/hooks/loop-record.py --block` (auto stays, the
 record's own push and PR allow turns off) and never runs `loop-record.py --clear` to get past a
 blocked stop (every later gate would become an ask nobody is there to answer). The run ends with
-the turn. `./workflow.sh` never resumes a blocked record in `auto`: only the user's
-`loop-record.py --clear` lifts it, and the user clears it to resume in `moi`.
+the turn. `./workflow.sh` never resumes a blocked record in `auto` (it refuses to launch):
+only the user's `loop-record.py --release` lifts it, keeping the verdicts and the guarded ledger for the
+PR, and the pass resumes in `moi`. `--clear` deletes the record and its ledger: it ends a pass, never lifts a stop.
 
 ## Automatic checkpoints
 
@@ -187,7 +187,10 @@ Shell discipline for the whole pass:
    entry in full. A spec or story without its `Token profile:` line: say so.
 
    **A `docs/work/<slug>/handoff.md`**
-   (outside the small pipeline above; or `handoff-codex.md`, its name before 0.2) is a resume: read its frontmatter, then the artifacts it links, and
+   (outside the small pipeline above; or `handoff-codex.md`, its name before 0.2) is a resume: first run
+   `python3 .claude/hooks/loop-record.py --mode` alone; `blocked` → stop before any phase, write nothing,
+   and tell the user to run `python3 .claude/hooks/loop-record.py --release` in their own terminal (the pass
+   then resumes in `moi`). Otherwise read its frontmatter, then the artifacts it links, and
    branch on `phase:`. `research` → Phase 1, keeping whatever `research.md`
    already holds (after a contract amendment the stale one was already deleted,
    "Contract amendment" below); `interface` → Phase 2;
@@ -207,7 +210,7 @@ Shell discipline for the whole pass:
    the line as `READY` **at the end** of the table (`Entry artifact` = the path,
    `Pipeline` = `light` for a spec, `full` for a story, `BUG` for `debug.md`) and
    say so. `DRAFT` → stop and ask. `BLOCKED` → name its reason, stop if it still
-   holds, else take it back. `DROPPED` or `SHIPPED` → stop. No board → skip in one
+   holds, else take it back, unless the tree's record is blocked (`--mode` prints `blocked`: stop, step 2). `DROPPED` or `SHIPPED` → stop. No board → skip in one
    line. States and transitions: `/loop:product`, "The board's state machine".
 4. **Take the entry**, in one line: a story's `Status` → `InProgress`, always; the
    board line → `IN LOOP`, **only from the main tree**. In a worktree, say so and

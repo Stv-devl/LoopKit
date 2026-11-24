@@ -598,6 +598,7 @@
 {"id":"G21.002","verdict":"allow","setup":"lp","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"loop record"}
 {"id":"G21.002b","verdict":"ask","setup":"lpblocked","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.002c","verdict":"ask","setup":"lpblocked","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md","reason":"acts on a pull request"}
+{"id":"G21.043","verdict":"ask","setup":"lpreleased","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.003","verdict":"ask","setup":"lpnorec","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.004","verdict":"ask","setup":"lpnobar","command":"git push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G21.005","verdict":"ask","setup":"lps2","command":"git push -u origin feat/s1","reason":"pushes to a remote"}

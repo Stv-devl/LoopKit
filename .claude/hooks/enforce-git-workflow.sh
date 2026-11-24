@@ -2102,7 +2102,7 @@ done <<< "$PARSED"
 # writes, run without a prompt when the tree's loop record (written by loop-record.py from the
 # user's plan-gate go) is valid and the default branch has a server barrier. Anything else
 # falls through to the asks below (docs/specs/loop-to-pr.md, V5).
-# guarded_block_check <tree> <base> <body file>: in auto mode the PR body must carry, byte for byte,
+# guarded_block_check <tree> <base> <body file>: in auto mode (and on a released record) the PR body must carry, byte for byte,
 # the Guarded files touched block recomputed here after one fetch of the base (docs/specs/auto-mode.md,
 # step 5); denies otherwise.
 guarded_block_check() {
@@ -2121,7 +2121,7 @@ guarded_block_check() {
 
 record_allow() {
     local LC_ALL=C text="$COMMAND" tree rec head fields version branch base repo barrier base_ok slug
-    local b="" ba="" r="" rslug cap rc
+    local b="" ba="" r="" rslug cap rc released
     local push_form='^git push -u origin ([A-Za-z0-9._/][A-Za-z0-9._/-]*)$'
     local pr_form='^gh pr create --repo ([A-Za-z0-9._-]+/[A-Za-z0-9._-]+) --base ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --head ([A-Za-z0-9._/][A-Za-z0-9._/-]*) --title "[^"$`\\]*" --body-file docs/work/([a-z0-9][a-z0-9.-]*)/pr-body\.md$'
     text="${text#"${text%%[! $'\t']*}"}"
@@ -2140,17 +2140,25 @@ record_allow() {
     fields="$(jq -r 'select(.version == 1 and (.blocked // false) != true
             and ([.slug, .branch, .base, .base_sha, .repo] | all(type == "string"))
             and ([.barrier, .base_ok] | all(type == "boolean")))
-        | [.version, .slug, .branch, .base, .base_sha, .repo, .barrier, .base_ok] | @tsv' "$rec" 2>/dev/null)" || return 0
-    IFS=$'\t' read -r version rslug branch base _ repo barrier base_ok <<< "$fields"
+        | [.version, .slug, .branch, .base, .base_sha, .repo, .barrier, .base_ok,
+           (if (.released_at | type) == "string" then 1 else 0 end)] | @tsv' "$rec" 2>/dev/null)" || return 0
+    IFS=$'\t' read -r version rslug branch base _ repo barrier base_ok released <<< "$fields"
     [[ "$version" == 1 && "$barrier" == true && -n "$branch" ]] || return 0
     head="$(git -C "$tree" symbolic-ref -q --short HEAD 2>/dev/null)" || return 0
     [[ "$head" == "$branch" && "$b" == "$branch" ]] || return 0
     if [[ -n "$r" ]]; then
         [[ "$r" == "$repo" && "$ba" == "$base" && "$base_ok" == true && "$slug" == "$rslug" ]] || return 0
         [[ -f "$tree/docs/work/$slug/pr-body.md" && ! -L "$tree/docs/work/$slug/pr-body.md" ]] || return 0
+        # A record the user released (`--release`) keeps its ledger in the PR (checked as in auto) but never
+        # allows: the PR asks.
+        if [[ "$released" == 1 ]]; then
+            guarded_block_check "$tree" "$base" "$tree/docs/work/$slug/pr-body.md"
+            return 0
+        fi
         cwk_auto_mode "$tree" && guarded_block_check "$tree" "$base" "$tree/docs/work/$slug/pr-body.md"
         decide allow "the pass's own PR, from the loop record of the user's plan-gate go, with the server barrier on the default branch"
     fi
+    [[ "$released" == 1 ]] && return 0
     git -C "$tree" show-ref --verify --quiet "refs/heads/$b" || return 0
     ! git -C "$tree" show-ref --verify --quiet "refs/tags/$b" || return 0
     compgen -e | grep -qE '^(GIT_DIR|GIT_WORK_TREE|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG.*)$' && return 0

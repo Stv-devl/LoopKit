@@ -4507,7 +4507,7 @@ run_kit_prompts_step4_cases() {
 # lpcfg* one push-redirecting config, lpbody a Co-Authored-By body, lpnobody no body, lpslow an
 # origin that never answers (lpslowb: the same, the hook held to 7 s), lpbadjson / lpv2 an unreadable record, lpbasemain plan `Base: main`.
 lp_git_setup() {
-    local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1 blocked=false
+    local t="$1" v="$2" feat="$1/.feat" branch=feat/s1 barrier=true base_ok=true version=1 blocked=false released=false
     git init -q --bare -b main "$t/.origin.git"
     git -C "$t" remote add origin "$t/.origin.git"
     git -C "$t" branch audit/x
@@ -4520,6 +4520,7 @@ lp_git_setup() {
         lp | lpnorec | lpbadjson | lpother) ;;
         lpv2) version=2 ;;
         lpblocked) blocked=true ;;
+        lpreleased) released=true ;;
         lpnobar) barrier=false ;;
         lpnobaseok) base_ok=false ;;
         lps2) branch=feat/s2 ;;
@@ -4548,11 +4549,12 @@ lp_git_setup() {
         lpbadjson) printf '{"version":1,' >"$feat/.claude/.loop-record.json" ;;
         *)
             jq -n --arg branch "$branch" --arg sha "$(git -C "$t" rev-parse main)" --argjson barrier "$barrier" \
-                --argjson ok "$base_ok" --argjson v "$version" --argjson blk "$blocked" \
+                --argjson ok "$base_ok" --argjson v "$version" --argjson blk "$blocked" --argjson rel "$released" \
                 '{version: $v, slug: "s1", plan: "docs/work/s1/plan.md", branch: $branch, base: "audit/x",
                   base_sha: $sha, repo: "o/r", default_branch: "main", barrier: $barrier, base_ok: $ok,
                   rows: [], at: "2026-11-19T00:00:00Z", tool_use_id: "toolu_lp"}
-                 + (if $blk then {blocked: true, blocked_at: "2026-11-19T01:00:00Z"} else {} end)' \
+                 + (if $blk then {blocked: true, blocked_at: "2026-11-19T01:00:00Z"} else {} end)
+                 + (if $rel then {mode: "moi", released_at: "2026-11-19T02:00:00Z"} else {} end)' \
                 >"$feat/.claude/.loop-record.json" ;;
     esac
 }
@@ -5983,12 +5985,86 @@ run_auto_mode_step2_cases() {
     lp_rec AM60 '--block marks the record' "$rec" '{blocked, at: (.blocked_at | type), mode, rows: (.rows | length)}' \
         '{"blocked":true,"at":"string","mode":"auto","rows":1}'
     CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
-    [[ "$out" == auto ]] || fail loop-record.py "AM60.2 --mode after --block" "expected auto, got '$out'"
+    [[ "$out" == blocked ]] || fail loop-record.py "AM60.2 --mode after --block" "expected blocked, got '$out'"
     lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
     lp_rec AM60.3 'plan go lifts the mark' "$rec" '{blocked, mode}' '{"blocked":null,"mode":"auto"}'
     (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
     lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
     lp_rec AM60.4 'contract go lifts the mark' "$rec" '{blocked, mode}' '{"blocked":null,"mode":"auto"}'
+    # AM62 --mode prints `blocked` for a marked record, on its branch and from another branch (AM12: unmarked → auto).
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == blocked ]] || fail loop-record.py "AM62 --mode blocked rec" "expected blocked, got '$out'"
+    git -C "$r" switch -q audit/x
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == blocked ]] || fail loop-record.py "AM62.2 --mode blocked rec, other branch" "expected blocked, got '$out'"
+    git -C "$r" switch -q feat/s1
+    # AM63 `--release` (the user's lift): mode moi, released_at, no mark; every other key unchanged; AM63.2 the
+    # verdict-only .tdd-unfrozen line is commented out, the row-backed one stays.
+    # The record holds a row (U2 of x.utils.test.ts, from AM16), a verdict and a guarded entry, all kept (R2).
+    jq --arg h "$AM_SHA" '.rows += [{path: "src/a/x.utils.test.ts", id: "U2", sha256: $h}]
+        | .verdicts += [{kind: "frozen-case", path: "src/a/y.utils.test.ts", id: "U7", sha256: $h,
+            verdict: "unfreeze", at: "2026-11-21T00:00:00Z"}]
+        | .guarded += [{path: "package.json", before: $h, after: $h, tool: "Write", at: "2026-11-21T00:00:00Z"}]' \
+        "$rec" >"$r/.claude/r.x"
+    mv "$r/.claude/r.x" "$rec"
+    # AM63.2 `--release` comments the line backed only by a verdict (U7) and keeps the row-backed one (U2).
+    printf 'src/a/x.utils.test.ts  # U2: kept by the release\nsrc/a/y.utils.test.ts  # U7: verdict only\n' >>"$r/.claude/.tdd-unfrozen"
+    jq -e '(.rows | length) >= 1 and (.verdicts | length) >= 1 and (.guarded | length) >= 1' "$rec" >/dev/null \
+        || fail loop-record.py AM63.2 "the seeded record misses a row, a verdict or a guarded entry"
+    before="$(jq -S 'del(.mode, .blocked, .blocked_at, .released_at)' "$rec")"
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    lp_rec AM63 '--release releases the record' "$rec" '{mode, blocked, blocked_at, r: (.released_at | type)}' \
+        '{"mode":"moi","blocked":null,"blocked_at":null,"r":"string"}'
+    CASES=$((CASES + 1))
+    [[ "$(jq -S 'del(.mode, .blocked, .blocked_at, .released_at)' "$rec" 2>/dev/null)" == "$before" ]] \
+        || fail loop-record.py AM63 "--release changed a key other than mode/blocked/blocked_at/released_at"
+    CASES=$((CASES + 1))
+    [[ "$(<"$r/.claude/.tdd-unfrozen")" == $'src/a/x.utils.test.ts  # U2: kept by the release\n# src/a/y.utils.test.ts  # U7: verdict only' ]] \
+        || fail loop-record.py AM63.2 ".tdd-unfrozen after --release: $(<"$r/.claude/.tdd-unfrozen")"
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == moi ]] || fail loop-record.py "AM63.3 --mode after --release" "expected moi, got '$out'"
+    # AM63.7 a second --release is a no-op.
+    jq '.released_at = "2026-11-19T02:00:00Z"' "$rec" >"$r/.claude/r.x"
+    mv "$r/.claude/r.x" "$rec"
+    before="$(sha256sum <"$rec")"
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    lp_same AM63.7 'second --release' "$rec" "$before"
+    # AM63.6 --clear deletes a released record; AM63.6b (guard) and a blocked one.
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
+    CASES=$((CASES + 1)); [[ ! -e "$rec" ]] || fail loop-record.py AM63.6 "--clear left a released record"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
+    CASES=$((CASES + 1))
+    [[ ! -e "$rec" && "$(am_mode_cli "$r")" == moi ]] || fail loop-record.py AM63.6b "--clear left a blocked record or --mode is not moi"
+    # AM63.4 (guard) --release on an unblocked auto record changes nothing.
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
+    before="$(sha256sum <"$rec")"
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    lp_same AM63.4 '--release on an unblocked record' "$rec" "$before"
+    # AM63.8 a same-pass plan go on a released record keeps it released: released_at, --mode moi, a non-empty
+    # --guarded-block, and the pass's first push still asks.
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
+    lp_rec AM63.8 'plan go keeps the release' "$rec" '{mode, r: (.released_at | type)}' '{"mode":"moi","r":"string"}'
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == moi ]] || fail loop-record.py "AM63.8 --mode after a plan go on a released record" "expected moi, got '$out'"
+    CASES=$((CASES + 1))
+    [[ -n "$(cd "$r" && python3 -I "$LP_HOOK" --guarded-block 2>/dev/null)" ]] \
+        || fail loop-record.py AM63.8 "--guarded-block is empty after a plan go on a released record"
+    am_push AM63.8 ask "$r" 'pushes to a remote'
+    printf 'Summary.\n' >"$r/docs/work/s1/pr-body.md"
+    am_pr AM63.8b deny "$r" '--guarded-block'
+    # The same legs on the plain plan-go record (released marks dropped) are the allow: the asks above
+    # are the release, not a missing barrier.
+    cp "$rec" "$r/.claude/r.rel"
+    jq 'del(.released_at, .mode)' "$r/.claude/r.rel" >"$rec"
+    am_push AM63.8c allow "$r"
+    am_pr AM63.8d allow "$r"
+    mv "$r/.claude/r.rel" "$rec"
+    lp_run "$(lp_ask "$r" 'Contract gate' "$q" 'as written')" "$tmp/sh"
     lp_run "$(lp_ask "$r" 'Plan gate' $'Plan go — docs/work/s2/plan.md\nFrozen cases to amend:\nnone' go)" "$tmp/sh"
     lp_rec AM16 'other pass plan go' "$rec" '{slug, mode, contract_go}' '{"slug":"s2","mode":null,"contract_go":null}'
 
@@ -6043,6 +6119,20 @@ run_auto_mode_step2_cases() {
     CASES=$((CASES + 1))
     (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block) \
         && [[ ! -e "$rec" ]] || fail loop-record.py AM60.5 "--block without a record failed or created one"
+    # AM63.5 (guard) `--release` with no record is a no-op, exit 0.
+    CASES=$((CASES + 1))
+    (cd "$r" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release) \
+        && [[ ! -e "$rec" ]] || fail loop-record.py AM63.5 "--release without a record failed or created one"
+    # AM62.4 (guard) a blocked record of another version reads moi.
+    jq -n '{version: 2, mode: "auto", blocked: true}' >"$rec"
+    CASES=$((CASES + 1)); out="$(am_mode_cli "$r")"
+    [[ "$out" == moi ]] || fail loop-record.py "AM62.4 --mode v2 blocked rec" "expected moi, got '$out'"
+    rm -f "$rec"
+    # AM63.9 `release_record` writes under the record lock, through write_record.
+    CASES=$((CASES + 1))
+    t="$(awk '/^def release_record/{f=1; print; next} f && /^def /{exit} f' "$LP_HOOK")"
+    [[ "$t" == *"with locked("* && "$t" == *"write_record("* ]] \
+        || fail loop-record.py AM63.9 "release_record does not write under locked() through write_record()"
 
     # AM18 the record stays agent-proof; the two read-only CLIs pass the shell guard.
     am_tree "$tmp/a18" auto
@@ -6055,6 +6145,21 @@ run_auto_mode_step2_cases() {
     done
     out="$(pd_probe "$tmp/a18" 'python3 .claude/hooks/loop-record.py < x.json')"
     g15_expect AM18 deny "$out"
+    # AM18.r `--release` is the user's lift: the agent's call is denied in auto (blocked record included),
+    # asks in moi, and only its exact form is let through to that decision.
+    out="$(pd_probe "$tmp/a18" 'python3 .claude/hooks/loop-record.py --release')"
+    g15_expect AM18.r deny "$out" "own terminal"
+    am_tree "$tmp/a18b" auto
+    (cd "$tmp/a18b" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    out="$(pd_probe "$tmp/a18b" 'python3 .claude/hooks/loop-record.py --release')"
+    g15_expect AM18.r1 deny "$out" "own terminal"
+    am_tree "$tmp/a18n" none
+    out="$(pd_probe "$tmp/a18n" 'python3 .claude/hooks/loop-record.py --release')"
+    g15_expect AM18.r2 ask "$out" "--release"
+    out="$(pd_probe "$tmp/a18" 'python3 .claude/hooks/loop-record.py --release; git push')"
+    g15_expect AM18.r3 deny "$out"
+    out="$(pd_probe "$tmp/a18n" 'python3 .claude/hooks/loop-record.py --release; git push')"
+    g15_expect AM18.r4 deny "$out"
 
     # ---- step 2b, the verdict ledger (SubagentStop).
     r="$tmp/r20"; lp_repo "$r"; rec="$r/.claude/.loop-record.json"
@@ -6346,6 +6451,35 @@ run_auto_mode_step4_cases() {
     am_freeze_rec "$p" moi '[]'
     lp_freeze AM47.4 pass "$p" Edit "$(am_edit "$u2" "$u2new")"
 
+    # AM63.10 `--release` comments the `.tdd-unfrozen` line backed only by a frozen-case verdict: the released
+    # (moi) record leaves U2 frozen. AM63.11 a line also backed by a plan row stays: rows hold in any mode.
+    p="$tmp/relverdict"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto "$(am_v "$x" U2 "$h" unfreeze)"
+    lp_freeze AM63.10 pass "$p" Edit "$(am_edit "$u2" "$u2new")"
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    CASES=$((CASES + 1))
+    [[ "$(<"$p/.claude/.tdd-unfrozen")" == "# $x  # U2: r" ]] \
+        || fail loop-record.py AM63.10 "--release did not comment the verdict-only line: $(<"$p/.claude/.tdd-unfrozen")"
+    lp_freeze AM63.10b deny "$p" Edit "$(am_edit "$u2" "$u2new")"
+    p="$tmp/relrow"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto "$(am_v "$x" U2 "$h" unfreeze)"
+    jq --arg p "$x" --arg h "$h" '.rows = [{path: $p, id: "U2", sha256: $h}]' "$p/.claude/.loop-record.json" >"$p/.claude/r.x"
+    mv "$p/.claude/r.x" "$p/.claude/.loop-record.json"
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    CASES=$((CASES + 1))
+    [[ "$(<"$p/.claude/.tdd-unfrozen")" == "$x  # U2: r" ]] \
+        || fail loop-record.py AM63.11 "--release commented a row-backed line: $(<"$p/.claude/.tdd-unfrozen")"
+    lp_freeze AM63.11b pass "$p" Edit "$(am_edit "$u2" "$u2new")"
+    p="$tmp/relnofile"; lp_freeze_project "$p" feat/s1 '[]' ""
+    am_freeze_rec "$p" auto "$(am_v "$x" U2 "$h" unfreeze)"
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    CASES=$((CASES + 1))
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release) \
+        && [[ "$(jq -r .mode "$p/.claude/.loop-record.json")" == moi ]] \
+        || fail loop-record.py AM63.12 "--release without a .tdd-unfrozen failed or left the record blocked"
+
     b2=$'def test_b2_returns_err():\n    assert g(0) == 0'
     b2new=$'def test_b2_returns_err_on_empty():\n    assert g(0) == -1'
     for v in unfreeze refuse; do
@@ -6355,6 +6489,14 @@ run_auto_mode_step4_cases() {
             "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
                 --arg o "$b2" --arg n "$b2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
     done
+    # AM63.13 the commented line keeps a pytest case frozen once the verdict-only record is released.
+    p="$tmp/py-released"; lp_py_project "$p"
+    am_freeze_rec "$p" auto "$(am_v tests/services/test_b.py B2 e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b unfreeze)"
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --block)
+    (cd "$p" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --release)
+    pv_expect AM63.13 deny \
+        "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
+            --arg o "$b2" --arg n "$b2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
     rm -rf "$tmp"
 }
 
@@ -6475,6 +6617,20 @@ am_pr() {
     pv_expect "$1" "$2" "$out" "${4:-}"
 }
 
+# am_push <id> <want> <dir> [needle]: enforce-git-workflow.sh on the pass's `git push -u origin feat/s1`, with
+# the G21 environment (an empty HOME, no GIT_CONFIG*: the record allow refuses a configured push).
+am_push() {
+    local out code
+    mkdir -p "$3/.claude/.home"
+    set +e
+    out="$(jq -cn --arg c "$3" '{tool_name: "Bash", cwd: $c, tool_input: {command: "git push -u origin feat/s1"}}' \
+        | env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_NOSYSTEM HOME="$3/.claude/.home" CLAUDE_PROJECT_DIR="$3" \
+            CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    pv_expect "$1" "$2" "$(printf '%s\n%s\n' "$(semantic_verdict "$code" <(printf '%s' "$out"))" "$out")" "${4:-}"
+}
+
 # G22.001-G22.009 (auto-mode step 5): in auto, the pass's PR is allowed only when its body carries,
 # byte for byte, the Guarded files touched block the hook recomputes; moi is unchanged.
 run_auto_mode_step5_cases() {
@@ -6545,6 +6701,49 @@ run_auto_mode_step5_cases() {
     am_pr G22.010b allow "$t"
     printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.010c deny "$t" '--guarded-block'
+    rm -rf "$tmp"
+}
+
+# am_released <dir>: turns the tree's auto record into a released one (what `--release` writes on a
+# blocked record): mode moi, released_at, no mark.
+am_released() {
+    jq '.mode = "moi" | .released_at = "2026-11-23T00:00:00Z" | del(.blocked, .blocked_at)' \
+        "$1/.claude/.loop-record.json" >"$1/.claude/r.x"
+    mv "$1/.claude/r.x" "$1/.claude/.loop-record.json"
+}
+
+# AM64, G21.043 (blocked-record lifecycle): a released record keeps its ledger in the PR body
+# (--guarded-block and the byte check, as in auto) and never allows the pass's push or PR.
+run_released_record_cases() {
+    local tmp t bs as block
+    tmp="$(mktemp -d)"
+    bs="$(printf '{}\n' | sha256sum | cut -c1-64)"
+    as="$(printf '{"name":"x"}\n' | sha256sum | cut -c1-64)"
+
+    # AM64 --guarded-block on a released record on its branch prints the block with its ledger rows.
+    t="$tmp/rel"; am_git "$t" auto "$tmp/o1.git"
+    am_commit "$t" package.json '{"name":"x"}'
+    am_row "$t" package.json "$bs" "$as" Write
+    am_released "$t"
+    block="$(am_expected_block '- `M package.json` (diff)' \
+        "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
+    CASES=$((CASES + 1))
+    [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
+        || fail loop-record.py AM64 "--guarded-block does not print a released record's block"
+    # G21.043.2 a released record's PR never gets the record allow: with the byte-exact block it asks;
+    # G21.043.3 without it it is denied, as in auto. (The push cases G21.043/G21.043.5 are in git-guard.jsonl,
+    # setup lpreleased; G21.001/G21.002 and G22.006 stay the plain-record allows.)
+    printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
+    am_pr G21.043.2 ask "$t" 'acts on a pull request'
+    printf 'Summary.\n' >"$t/docs/work/s1/pr-body.md"
+    am_pr G21.043.3 deny "$t" '--guarded-block'
+
+    # AM64.2 (guard) a moi plan-go record (no released_at) prints nothing.
+    t="$tmp/moi"; am_git "$t" moi "$tmp/o2.git"
+    am_row "$t" package.json "$bs" "$as" Write
+    CASES=$((CASES + 1))
+    [[ -z "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" ]] \
+        || fail loop-record.py AM64.2 "--guarded-block printed a block for a moi plan-go record"
     rm -rf "$tmp"
 }
 
@@ -6652,6 +6851,7 @@ if [[ "${1:-}" == --am-only ]]; then
     run_auto_mode_step4_cases
     run_auto_mode_import_cases
     run_auto_mode_step5_cases
+    run_released_record_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
     [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
@@ -6746,6 +6946,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_auto_mode_step4_cases
     run_auto_mode_import_cases
     run_auto_mode_step5_cases
+    run_released_record_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
     run_harness_reproduction

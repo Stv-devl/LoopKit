@@ -176,19 +176,19 @@ merges. Via the `github` agent, in this order:
 2. The main thread writes `docs/work/<slug>/pr-body.md` with Write, on `github.md`'s
    PR template: `Frozen cases` (every `amended` line with its test hunk), `Open
    questions` (answers taken), `Review` (surviving findings), `Gates`, and
-   `Screenshots` when a run is recorded (step 4's order). In `auto` it also carries
-   `Decided without you` (the record's arbiter verdicts) and `Contract contradiction`
-   (when any) after the summary, and `Guarded files touched`: run `git fetch origin <base>`, then
-   `python3 .claude/hooks/loop-record.py --guarded-block` and paste its output verbatim — the
-   git hook recomputes it and denies `gh pr create` unless the body holds it byte for byte.
+   `Screenshots` when a run is recorded (step 4's order). Run `git fetch origin <base>`, then
+   `python3 .claude/hooks/loop-record.py --guarded-block`: in `auto` or on a released record (it prints a
+   non-empty block) the body also carries `Decided without you` (the record's arbiter verdicts) and
+   `Contract contradiction` (when any) after the summary, and `Guarded files touched`: paste that output
+   verbatim — the git hook recomputes it and denies `gh pr create` unless the body holds it byte for byte.
 3. `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`.
 
 In `auto`, a red gate after its fix budget, or any other blocked-stop cause
 (`/loop:orchestrate`, "Validation mode"), ends here: a blocked stop pushes nothing and
-opens no PR; the commits stay local and the record is kept, marked by `python3 .claude/hooks/loop-record.py --block` (`/loop:orchestrate`, "Blocked stop"). The record allow does not hold on a blocked record; only the user's `--clear` lifts it.
+opens no PR; the commits stay local and the record is kept, marked by `python3 .claude/hooks/loop-record.py --block` (`/loop:orchestrate`, "Blocked stop"). The record allow does not hold on a blocked record; only the user's `python3 .claude/hooks/loop-record.py --release` lifts it (the pass resumes in `moi`); `--clear` deletes the record and its ledger.
 
 With the tree's valid loop record (the user's plan-gate go) and the server barrier,
-1 and 3 run without a prompt and **without a chat confirmation**; otherwise each asks
+and unless the record is released (then each asks), 1 and 3 run without a prompt and **without a chat confirmation**; otherwise each asks
 once, through the hook. Report the PR URL, and for a stacked pass the merge order
 (its base's PR first). Write the handoff with `phase: awaiting-merge` and
 `pr: <url>`; the main tree stays on `feat/<slug>` (the board line and story status

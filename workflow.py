@@ -2,6 +2,7 @@
 """Interactive Claude supervisor: restarts on a saturated context, Codex on a usage limit."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import pty
@@ -407,10 +408,44 @@ def restart_after_saturation() -> Path | None:
     return handoff
 
 
+LOOP_RECORD = PROJECT / ".claude" / ".loop-record.json"
+BLOCKED_EXIT = 2
+
+
+def blocked_record() -> str | None:
+    """The `blocked_at` of this tree's loop record when an auto pass ended in a blocked stop, else None.
+    Read straight from the file (no git, no loop-record.py): absent, unreadable or invalid → None."""
+    try:
+        record = json.loads(LOOP_RECORD.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record.get("version") != 1 or record.get("blocked") is not True:
+        return None
+    at = record.get("blocked_at")
+    return at if isinstance(at, str) else "unknown time"
+
+
+def refuse_if_blocked() -> bool:
+    """Prints the refusal and returns True when the loop record is blocked: no session may start on it."""
+    at = blocked_record()
+    if at is None:
+        return False
+    print(
+        f"\n[workflow] loop record blocked ({at}): an auto pass ended in a blocked stop. "
+        "Run python3 .claude/hooks/loop-record.py --release to resume in moi.\n",
+        file=sys.stderr,
+    )
+    return True
+
+
 def main() -> int:
+    if refuse_if_blocked():
+        return BLOCKED_EXIT
     arguments = session_arguments(sys.argv[1:])
     status, threshold, quota, error = run_claude(arguments)
     while threshold and not (quota or error):
+        if refuse_if_blocked():
+            return BLOCKED_EXIT
         handoff = restart_after_saturation()
         if handoff is None:
             return status or 1
@@ -419,6 +454,8 @@ def main() -> int:
         arguments = restart_arguments(arguments, handoff)
         status, threshold, quota, error = run_claude(arguments)
     if quota or error:
+        if refuse_if_blocked():
+            return BLOCKED_EXIT
         try:
             artifact = fallback_artifact()
         except RuntimeError as exc:
