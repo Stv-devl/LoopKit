@@ -8,6 +8,7 @@ FIXTURES_DIR="${FIXTURES_DIR:-$HOOKS_DIR/fixtures}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$HOOKS_DIR/../.." && pwd)}"
 FAILURES=0
 CASES=0
+SG_FILTER=""
 # The git fixtures must not depend on this machine's git config (a global
 # excludesFile ignoring *.pem would turn a deny into a pass).
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
@@ -975,6 +976,7 @@ run_shell_guard_cases() {
             continue
         fi
         id="$(jq -r '.id' <<<"$line")"
+        [[ -z "${SG_FILTER:-}" || "$id" =~ $SG_FILTER ]] || continue
         verdict="$(jq -r '.verdict' <<<"$line")"
         command="$(jq -r '.command' <<<"$line")"
         cwd="$(jq -r '.cwd // "__PROJECT_ROOT__"' <<<"$line")"
@@ -2988,7 +2990,7 @@ run_codegen_cases() {
     out="$(pd_probe "$c" 'supabase gen types > vite.config.ts')"
     g15_expect CG12 deny "$out" "Use Write/Edit"
     out="$(pd_probe "$c" 'echo x > docs/a.md')"
-    g15_expect CG13 pass "$out"
+    g15_expect CG13 deny "$out" "shell write into the project"
     out="$(pd_probe "$c" 'echo x > /tmp/a.py')"
     g15_expect CG13 pass "$out"
     out="$(pd_probe "$c" 'echo x >/dev/null')"
@@ -3060,9 +3062,13 @@ run_codegen_cases() {
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG28[$cmd]" deny "$out" "unresolved write target"
     done
-    for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log' 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md'; do
+    for cmd in 'cat src/*.ts > /tmp/out.txt' 'ls src/*.ts' 'rm src/*.log'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG29[$cmd]" pass "$out"
+    done
+    for cmd in 'sed -i s/a/b/ docs/*.md' 'echo x > docs/*.md'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG29[$cmd]" deny "$out" "shell write into the project"
     done
     out="$(pd_probe "$c" 'supabase gen types > src/a.spec.ts')"
     g15_expect CG26 deny "$out" "A test-first module or a test file is written only with Write/Edit"
@@ -3087,9 +3093,13 @@ run_codegen_cases() {
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG32[$cmd]" deny "$out" "unresolved write target"
     done
-    for cmd in 'echo x > docs/*.md' 'echo x > docs/*.json' 'sed -i s/a/b/ docs/*.md' 'mv /tmp/x docs/*.md'; do
+    for cmd in 'mv /tmp/x docs/*.md'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG33[$cmd]" pass "$out"
+    done
+    for cmd in 'echo x > docs/*.md' 'echo x > docs/*.json' 'sed -i s/a/b/ docs/*.md'; do
+        out="$(pd_probe "$c" "$cmd")"
+        g15_expect "CG33[$cmd]" deny "$out" "shell write into the project"
     done
     out="$(pd_probe "$c" 'supabase gen types > db[.]ts')"
     g15_expect CG32r deny "$out"
@@ -3146,9 +3156,9 @@ run_codegen_cases() {
     [[ "$out" != *"shopt is set"* && "$out" != *"src/a.!:"* && "$out" != *"src/a.!)"* ]] \
         || fail prevent-destructive-commands.sh CG43m "the extglob ask claims shopt or names a cut path: '${out:0:300}'"
     out="$(pd_probe "$c" 'echo x > docs/a.md')"
-    g15_expect CG44 pass "$out"
+    g15_expect CG44 deny "$out" "shell write into the project"
     out="$(pd_probe "$c" 'echo x > docs/a.md; echo "ok"')"
-    g15_expect CG44b pass "$out"
+    g15_expect CG44b deny "$out" "shell write into the project"
     for cmd in 'echo x > src/*.TS' 'echo x > src/*.Tsx' 'echo x > app/*.PY' 'echo x > src/*.TEST.js'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG45[$cmd]" deny "$out" "unresolved write target"
@@ -3186,7 +3196,7 @@ run_codegen_cases() {
     out="$(pd_probe "$c" $'. f\nsupabase gen types > src/types/db.ts\necho x > src/a.!\\\n(md)')"
     g15_expect CG52 deny "$out" "extglob syntax"
     out="$(pd_probe "$c" $'echo x \\\n> docs/a.md')"
-    g15_expect CG53 pass "$out"
+    g15_expect CG53 deny "$out" "shell write into the project"
     # CG54-CG60 (tmp-glob-escape): a /tmp target holding `..` is not exempt (the glob segment walks
     # back up to /, then down to the project); /dev/fd/N past 0-2 asks; plain /tmp, /dev/null and
     # /dev/fd/0-2 keep passing. "not pass" = ask or deny.
@@ -3431,9 +3441,10 @@ run_tokenizer_cases() {
                "cd $s/clsub/.. && echo x > $s/ok/f" "cd $c && pnpm build > /tmp/out.txt 2>&1" \
                "export X=1; echo x > /tmp/o.txt" "cat <<<hi > /dev/stdout" "exec 3>&1; echo x >/dev/stdout" \
                "sort < in.txt > /dev/stdout" "awk '\$1<10' f > /dev/stdout" \
-               "pnpm test:run 2>&1 | tee /tmp/x.log" "ls /tmp && echo x > /tmp/out.txt" "echo x > docs/a.md"; do
+               "pnpm test:run 2>&1 | tee /tmp/x.log" "ls /tmp && echo x > /tmp/out.txt"; do
         tok_expect CG93 pass "$c" "" "$cmd"
     done
+    tok_expect CG93 deny "$c" "" "echo x > docs/a.md" "shell write into the project"
     tok_expect CG94 deny "$c" "" "echo x > $s/x.log" "src/a.py written by a redirect"
     tok_expect CG94 ask "$c" "" "echo x | tee $s/pkg" "guarded path: package.json"
     for cmd in "truncate -s0 $s/pkg" "mv /tmp/f $s/srcl" "cd $s/cl && echo x > settings.json"; do
@@ -3911,17 +3922,17 @@ run_kit_boundary_step3_cases() {
     kb_pd KB17 deny "$tmp/installed" 'echo x > d/y' "$deny_text"
     kb_pd KB17 deny "$tmp/installed" 'echo x > b' "$deny_text"
     kb_pd KB18 ask "$tmp/installed" 'cp /tmp/notes.txt .'
-    kb_pd KB18 pass "$tmp/installed" 'echo x > docs/a.md'
+    kb_pd KB18 deny "$tmp/installed" 'echo x > docs/a.md' 'shell write into the project'
     for c in 'echo x > .claude/hooks/x' 'ln -s x install.sh'; do
         out="$(pd_probe "$tmp/kitlike" "$c")"
         kb_verdict KB19 ask "'$c' in kitlike" "$out" 'guarded path:'
         CASES=$((CASES + 1))
         [[ "$out" != *'kit code:'* ]] || fail kit-boundary "KB19 '$c' in kitlike" "reason holds 'kit code:'"
     done
-    kb_pd KB19 pass "$tmp/kitlike" 'echo x > .claude/INSTALL_PROFILE'
+    kb_pd KB19 deny "$tmp/kitlike" 'echo x > .claude/INSTALL_PROFILE' 'shell write into the project'
     kb_pd KB19 pass "$tmp/kitlike" 'cp /tmp/a .claude/INSTALL_PROFILE'
     ln -s .claude/hooks/x "$tmp/kitlike/a"
-    kb_pd KB19 pass "$tmp/kitlike" 'echo x >> a'
+    kb_pd KB19 deny "$tmp/kitlike" 'echo x >> a' 'shell write into the project'
     for v in installed kitlike; do
         for c in 'bash .claude/scripts/kit-apply.sh' './.claude/scripts/kit-apply.sh' \
                  'sh .claude/scripts/kit-apply.sh x.json' "$tmp/$v/.claude/scripts/kit-apply.sh" \
@@ -6710,12 +6721,14 @@ am_row() {
     mv "$1/.claude/r.x" "$1/.claude/.loop-record.json"
 }
 
-# am_expected_block <line>...: the Guarded files touched block holding <line>s, its digest computed here.
+# am_expected_block <tree> <line>...: the Guarded files touched block holding <line>s, its digest computed here,
+# then the head line of <tree>'s HEAD (the tree after its last am_commit).
 am_expected_block() {
-    local body
+    local tree="$1" body
+    shift
     body="$(printf '%s\n' "$@")"
-    printf '### Guarded files touched\n<!-- guarded-files sha256:%s -->\n%s\n' \
-        "$(printf '%s\n' "$body" | sha256sum | cut -c1-64)" "$body"
+    printf '### Guarded files touched\n<!-- guarded-files sha256:%s -->\n%s\n<!-- guarded-files head:%s -->\n' \
+        "$(printf '%s\n' "$body" | sha256sum | cut -c1-64)" "$body" "$(git -C "$tree" rev-parse HEAD)"
 }
 
 # am_pr <id> <want> <dir> [needle]: enforce-git-workflow.sh on the pass's exact `gh pr create`.
@@ -6764,7 +6777,7 @@ run_trial_auto_git_cases() {
     am_cmd AM65 deny "$t" 'git push --force origin feat/s1' 'auto mode — blocked stop:'
     am_cmd AM66 deny "$t" 'gh pr merge 1' 'auto mode — blocked stop:'
     am_push AM67 allow "$t"
-    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
     am_pr AM67.2 allow "$t"
     git init -q -b feat/s1 "$tmp/out"
     git -C "$tmp/out" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit -q --allow-empty -m seed
@@ -6790,7 +6803,7 @@ run_auto_mode_step5_cases() {
     t="$tmp/allow"; am_git "$t" auto "$tmp/o1.git"
     am_commit "$t" package.json '{"name":"x"}'
     am_row "$t" package.json "$bs" "$as" Write
-    block="$(am_expected_block '- `M package.json` (diff)' \
+    block="$(am_expected_block "$t" '- `M package.json` (diff)' \
         "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
     printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.001 allow "$t"
@@ -6804,9 +6817,9 @@ run_auto_mode_step5_cases() {
 
     t="$tmp/revert"; am_git "$t" auto "$tmp/o2.git"
     am_row "$t" package.json "$bs" "$as" Write
-    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.004 deny "$t" '--guarded-block'
-    block="$(am_expected_block "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
+    block="$(am_expected_block "$t" "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
     CASES=$((CASES + 1))
     [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
         || fail loop-record.py G22.004b "--guarded-block does not print the reverted row's ledger line"
@@ -6819,7 +6832,7 @@ run_auto_mode_step5_cases() {
     expect(f(0)).toBe(-1)
   })
 })"
-    printf 'Summary.\n\n%s\n' "$(am_expected_block "- GUARD FAILURE: $x U2 changed with no ledger row" \
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" "- GUARD FAILURE: $x U2 changed with no ledger row" \
         "- \`M $x\` (diff)")" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.005 allow "$t"
 
@@ -6829,26 +6842,64 @@ run_auto_mode_step5_cases() {
     am_pr G22.006 allow "$t"
 
     t="$tmp/nofetch"; am_git "$t" auto "$tmp/o5.git"
-    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
     git -C "$t" remote set-url origin "$tmp/missing.git"
     am_pr G22.007 deny "$t" 'Guarded files touched'
 
     t="$tmp/none"; am_git "$t" auto "$tmp/o6.git"
     am_commit "$t" src/b.ts 'export const b = 1'
-    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.008 allow "$t"
 
     t="$tmp/deleted"; am_git "$t" auto "$tmp/o7.git"
     git -C "$t" rm -q "$x"
     git -C "$t" commit -q -m "drop $x"
-    block="$(am_expected_block "- GUARD FAILURE: $x U2 changed with no ledger row" "- \`D $x\` (diff)")"
+    block="$(am_expected_block "$t" "- GUARD FAILURE: $x U2 changed with no ledger row" "- \`D $x\` (diff)")"
     CASES=$((CASES + 1))
     [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
         || fail loop-record.py G22.010 "--guarded-block does not list the deleted test file as a U2 failure and a D diff line"
     printf 'Summary.\n\n%s\n' "$block" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.010b allow "$t"
-    printf 'Summary.\n\n%s\n' "$(am_expected_block '- none')" >"$t/docs/work/s1/pr-body.md"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
     am_pr G22.010c deny "$t" '--guarded-block'
+
+    # AM71-AM74 (auto-mode-2.5-fixes item 3): the block ends on a head line naming the HEAD it ran on; the hook
+    # compares the block without it, and a mismatch against an older head line says HEAD moved.
+    local out last rest body digest old new
+    t="$tmp/head"; am_git "$t" auto "$tmp/o8.git"
+    am_commit "$t" package.json '{"name":"x"}'
+    out="$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)"
+    last="${out##*$'\n'}"
+    rest="${out%$'\n'"$last"}"
+    digest="${rest#*sha256:}"
+    digest="${digest%% *}"
+    body="${rest#*$'\n'*$'\n'}"
+    CASES=$((CASES + 1))
+    [[ "$last" == "<!-- guarded-files head:$(git -C "$t" rev-parse HEAD) -->" ]] \
+        || fail loop-record.py AM71 "--guarded-block does not end on the head line: '$last'"
+    CASES=$((CASES + 1))
+    [[ "$digest" == "$(printf '%s\n' "$body" | sha256sum | cut -c1-64)" ]] \
+        || fail loop-record.py AM71.2 "the digest does not cover the body without the head line"
+    # AM72 a body holding the current block and head line passes.
+    printf 'Summary.\n\n%s\n' "$out" >"$t/docs/work/s1/pr-body.md"
+    am_pr AM72 allow "$t"
+    # AM73 a block printed before a new test-file commit is denied, naming both shas.
+    t="$tmp/stale"; am_git "$t" auto "$tmp/o9.git"
+    old="$(git -C "$t" rev-parse HEAD)"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_commit "$t" "$x" "describe('x', () => {
+  it('U2 returns err on empty input', () => {
+    expect(f(0)).toBe(-1)
+  })
+})"
+    new="$(git -C "$t" rev-parse HEAD)"
+    am_pr AM73 deny "$t" "computed on ${old:0:7}, HEAD is now ${new:0:7}"
+    am_pr AM73.2 deny "$t" 'rerun'
+    # AM74 a block that still matches passes though its head line names an older sha.
+    t="$tmp/older"; am_git "$t" auto "$tmp/o10.git"
+    printf 'Summary.\n\n%s\n' "$(am_expected_block "$t" '- none')" >"$t/docs/work/s1/pr-body.md"
+    am_commit "$t" src/b.ts 'export const b = 1'
+    am_pr AM74 allow "$t"
     rm -rf "$tmp"
 }
 
@@ -6873,7 +6924,7 @@ run_released_record_cases() {
     am_commit "$t" package.json '{"name":"x"}'
     am_row "$t" package.json "$bs" "$as" Write
     am_released "$t"
-    block="$(am_expected_block '- `M package.json` (diff)' \
+    block="$(am_expected_block "$t" '- `M package.json` (diff)' \
         "- \`package.json\` before \`${bs:0:12}\` after \`${as:0:12}\` (ledger, Write)")"
     CASES=$((CASES + 1))
     [[ "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" == "$block" ]] \
@@ -6892,6 +6943,162 @@ run_released_record_cases() {
     CASES=$((CASES + 1))
     [[ -z "$(cd "$t" && python3 -I "$LP_HOOK" --guarded-block)" ]] \
         || fail loop-record.py AM64.2 "--guarded-block printed a block for a moi plan-go record"
+    rm -rf "$tmp"
+}
+
+# gb_repo <dir> <origin> <path> <base content> <head content>: an am_git auto tree whose base audit/x holds
+# <path> as <base content> and whose feat/s1 commits <head content> over it.
+gb_repo() {
+    am_git "$1" auto "$2"
+    git -C "$1" switch -q audit/x
+    mkdir -p "$(dirname "$1/$3")"
+    printf '%s\n' "$4" >"$1/$3"
+    git -C "$1" add "$3"
+    git -C "$1" commit -q -m "base $3"
+    git -C "$1" push -q origin audit/x 2>/dev/null
+    git -C "$1" switch -q feat/s1
+    git -C "$1" merge -q --ff-only audit/x
+    am_commit "$1" "$3" "$5"
+}
+
+# gb_expect <id> <tree> <needle> <yes|no>: the tree's --guarded-block output holds (yes) or lacks (no) <needle>.
+gb_expect() {
+    local out
+    CASES=$((CASES + 1))
+    out="$(cd "$2" && python3 -I "$LP_HOOK" --guarded-block)"
+    if [[ "$4" == yes ]]; then
+        [[ "$out" == *"$3"* ]] || fail loop-record.py "$1" "block lacks '$3': ${out:0:400}"
+    else
+        [[ "$out" != *"$3"* ]] || fail loop-record.py "$1" "block holds '$3': ${out:0:400}"
+    fi
+}
+
+# gb_block <path> <case> <sha> <verdict> [kind]: a fenced arbiter block, `declared-rewrite` unless <kind> is given.
+gb_block() {
+    printf '```\nARBITER VERDICT\nkind: %s\npath: %s\ncase: %s\nsha256: %s\nverdict: %s\n```\n' "${5:-declared-rewrite}" "$1" "$2" "$3" "$4"
+}
+
+# GB1-GB11 (auto-mode-2.5-fixes items 4, 5): the guarded block names a Python case by its full function
+# name when its `test_<letter><digits>` id is shared, a declared rewrite (arbiter verdict or plan-gate row)
+# lifts only its own case, and a declared rewrite never unfreezes a frozen file.
+run_guarded_block_cases() {
+    local tmp t p rec out x='src/a/x.utils.test.ts' h u2 u2new f='tests/test_s27.py' g='tests/test_b.py' base head
+    tmp="$(mktemp -d)"
+    h="$AM_SHA"
+    lp_shim "$tmp/sh"
+
+    # GB1 two renamed cases sharing the id S27 are each named; GB3 an untouched sibling and a case added in HEAD are not.
+    base=$'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_ac7_c():\n    assert f(2) == 2'
+    head=$'def test_s27_ac5_a_renamed():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b_renamed():\n    assert f(1) == 1\n\n\ndef test_s27_ac7_c():\n    assert f(2) == 2\n\n\ndef test_s27_ac8_d():\n    assert f(3) == 3'
+    t="$tmp/gb1"; gb_repo "$t" "$tmp/o1.git" "$f" "$base" "$head"
+    gb_expect GB1 "$t" "- GUARD FAILURE: $f test_s27_ac5_a changed with no ledger row" yes
+    gb_expect GB1.2 "$t" "- GUARD FAILURE: $f test_s27_ac6_b changed with no ledger row" yes
+    gb_expect GB1.3 "$t" "GUARD FAILURE: $f S27 changed" no
+    gb_expect GB3 "$t" "test_s27_ac7_c" no
+    gb_expect GB3.2 "$t" "test_s27_ac8_d" no
+    # GB3.3 (Q11) an id that collides only in HEAD: the changed base case is reported by its base name.
+    t="$tmp/gb3"; gb_repo "$t" "$tmp/o3.git" "$f" $'def test_s27_a():\n    assert f(0) == 0' \
+        $'def test_s27_a_new():\n    assert f(0) == 0\n\n\ndef test_s27_b():\n    assert f(1) == 1'
+    gb_expect GB3.3 "$t" "- GUARD FAILURE: $f test_s27_a changed with no ledger row" yes
+    gb_expect GB3.4 "$t" "test_s27_b" no
+
+    # GB2 unique ids keep their short form.
+    t="$tmp/gb2"; gb_repo "$t" "$tmp/o2.git" "$g" $'def test_b517_x():\n    assert f(0) == 0\n\n\ndef test_b521_y():\n    assert f(1) == 1' \
+        $'def test_b517_x_new():\n    assert f(0) == 0\n\n\ndef test_b521_y_new():\n    assert f(1) == 1'
+    gb_expect GB2 "$t" "- GUARD FAILURE: $g B517 changed with no ledger row" yes
+    gb_expect GB2.2 "$t" "- GUARD FAILURE: $g B521 changed with no ledger row" yes
+    # GB7 a row naming a full function name never silences a unique-id case of the file.
+    jq --arg p "$g" --arg h "$h" '.rows = [{path: $p, id: "test_s27_ac5_a", sha256: $h}]' "$t/.claude/.loop-record.json" >"$t/.claude/r.x"
+    mv "$t/.claude/r.x" "$t/.claude/.loop-record.json"
+    gb_expect GB7 "$t" "- GUARD FAILURE: $g B517 changed with no ledger row" yes
+
+    # GB5 a TS test file is reported as today: U2 by its id, a shared id by the id.
+    t="$tmp/gb5"; gb_repo "$t" "$tmp/o5.git" src/a/y.utils.test.ts $'it(\'S27 a\', () => {})\nit(\'S27 b\', () => {})' \
+        $'it(\'S27 a2\', () => {})\nit(\'S27 b2\', () => {})'
+    gb_expect GB5 "$t" "- GUARD FAILURE: src/a/y.utils.test.ts S27 changed with no ledger row" yes
+    gb_expect GB5.2 "$t" "src/a/y.utils.test.ts S27a" no
+    gb_expect GB5.3 "$t" "- GUARD FAILURE: $x U2 changed with no ledger row" no
+    am_commit "$t" "$x" $'describe(\'x\', () => {\n  it(\'U2 returns err on empty input\', () => {\n    expect(f(0)).toBe(-1)\n  })\n})'
+    gb_expect GB5.4 "$t" "- GUARD FAILURE: $x U2 changed with no ledger row" yes
+
+    # GB4 declared-rewrite/accept verdicts ledgered through the hook lift their case only.
+    t="$tmp/gb4"; gb_repo "$t" "$tmp/o4.git" "$f" "$base" "$head"
+    rec="$t/.claude/.loop-record.json"
+    lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" test_s27_ac5_a "$h" accept)" a4)" "$tmp/sh"
+    lp_rec GB4 'ledgered' "$rec" '[.verdicts[] | {kind, id, verdict}]' '[{"kind":"declared-rewrite","id":"test_s27_ac5_a","verdict":"accept"}]'
+    gb_expect GB4.2 "$t" "$f test_s27_ac5_a changed" no
+    gb_expect GB4.3 "$t" "$f test_s27_ac6_b changed" yes
+    lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" test_s27_ac6_b "$h" refuse)" a4b)" "$tmp/sh"
+    gb_expect GB4.4 "$t" "$f test_s27_ac6_b changed" yes
+
+    # GB9 a plan-gate row on a full name (a released record) lifts that case only.
+    t="$tmp/gb9"; gb_repo "$t" "$tmp/o9.git" "$f" "$base" "$head"
+    jq --arg p "$f" --arg h "$h" '.rows = [{path: $p, id: "test_s27_ac5_a", sha256: $h}]' "$t/.claude/.loop-record.json" >"$t/.claude/r.x"
+    mv "$t/.claude/r.x" "$t/.claude/.loop-record.json"
+    am_released "$t"
+    gb_expect GB9 "$t" "$f test_s27_ac5_a changed" no
+    gb_expect GB9.2 "$t" "$f test_s27_ac6_b changed" yes
+
+    # GB6 a row id outside `test_[A-Za-z0-9_]+` makes the plan-gate rows invalid; a valid one is recorded.
+    t="$tmp/gb6"; lp_repo "$t"; rec="$t/.claude/.loop-record.json"
+    lp_run "$(lp_ask "$t" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\n'"$f | test_x-y | $h" go)" "$tmp/sh"
+    lp_none GB6 'row test_x-y' "$rec"
+    lp_run "$(lp_ask "$t" 'Plan gate' $'Plan go — docs/work/s1/plan.md\nFrozen cases to amend:\n'"$f | test_s27_ac5_a | $h" go)" "$tmp/sh"
+    lp_rec GB6.2 'row test_s27_ac5_a' "$rec" '.rows | map(.id)' '["test_s27_ac5_a"]'
+
+    # GB10 a declared-rewrite/accept verdict never unfreezes: the freeze hook still denies U2, protect-files still blocks the line.
+    u2="  it('U2 returns err', () => {"$'\n''    expect(f(0)).toBe(0)'$'\n''  })'
+    u2new="  it('U2 returns err on empty input', () => {"$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    p="$tmp/gb10"; lp_freeze_project "$p" feat/s1 '[]' "$x  # U2: r"
+    am_freeze_rec "$p" auto "$(jq -cn --arg p "$x" --arg h "$h" \
+        '[{kind: "declared-rewrite", path: $p, id: "U2", sha256: $h, verdict: "accept", at: "2026-11-21T00:00:00Z"}]')"
+    lp_freeze GB10 deny "$p" Edit "$(jq -cn --arg o "$u2" --arg n "$u2new" '{old_string:$o, new_string:$n}')"
+    t="$tmp/gb10b"; am_tree "$t" auto
+    am_verdicts "$t" "$(jq -cn --arg p "$x" --arg h "$h" \
+        '[{kind: "declared-rewrite", path: $p, id: "U3", sha256: $h, verdict: "accept", agent_id: "a", at: "t"}]')"
+    mkdir -p "$t/src/a"; printf 'x\n' >"$t/$x"
+    out="$(am_unfrozen_edit "$t" "$x  # U3: reason")"
+    g15_expect GB10.2 deny "$out" "auto mode — blocked stop:"
+
+    # GB11 a declared-rewrite block with a frozen-case id, a malformed full name or an unfreeze verdict is not ledgered;
+    # the first verdict per (path, id) is final.
+    t="$tmp/gb11"; am_tree "$t" auto; rec="$t/.claude/.loop-record.json"
+    for out in "S27 $h accept declared-rewrite" "test_x-y $h accept declared-rewrite" "test_s27_ac5_a $h unfreeze declared-rewrite" \
+               "test_s27_ac5_a ${h:1} accept declared-rewrite" "test_s27_ac5_a $h accept frozen-case"; do
+        # shellcheck disable=SC2086
+        set -- $out
+        lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" "$1" "$2" "$3" "$4")")" "$tmp/sh"
+        lp_rec GB11 "block '$out'" "$rec" '.verdicts | length' 0
+    done
+    lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" test_s27_ac5_a "$h" accept)")" "$tmp/sh"
+    lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" test_s27_ac5_a "$h" refuse)")" "$tmp/sh"
+    lp_rec GB11.2 'first verdict final' "$rec" '[.verdicts[] | .verdict]' '["accept"]'
+    lp_run "$(am_stop "$t" arbiter "$(gb_block "$f" U3 "$h" accept)")" "$tmp/sh"
+    lp_rec GB11.3 'UMRB id ledgered' "$rec" '[.verdicts[] | .id]' '["test_s27_ac5_a","U3"]'
+
+    # GB12 a changed case the full-name parser cannot read (non-ASCII tail) in a collided id falls back to the short id.
+    t="$tmp/gb12"; gb_repo "$t" "$tmp/o12.git" "$f" \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_créé():\n    assert f(2) == 2' \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_créé_v2():\n    assert f(2) == 2'
+    gb_expect GB12 "$t" "- GUARD FAILURE: $f S27 changed with no ledger row" yes
+    # GB13 (Q11) an added case the full-name parser cannot read is never reported: only a base def can fall back.
+    t="$tmp/gb13"; gb_repo "$t" "$tmp/o13.git" "$f" \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1' \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_créé():\n    assert f(2) == 2'
+    gb_expect GB13 "$t" "- GUARD FAILURE: $f S27 changed with no ledger row" no
+    # GB14 an unreadable rewrite beside a ledgered parsed rewrite is still reported by the short id.
+    t="$tmp/gb14"; gb_repo "$t" "$tmp/o14.git" "$f" \
+        $'def test_s27_a():\n    assert f(0) == 0\n\n\ndef test_s27_b():\n    assert f(1) == 1\n\n\ndef test_s27_créé():\n    assert f(2) == 2' \
+        $'def test_s27_a_v2():\n    assert f(0) == 0\n\n\ndef test_s27_b():\n    assert f(1) == 1\n\n\ndef test_s27_créé_v2():\n    assert f(2) == 2'
+    jq --arg p "$f" --arg h "$h" '.rows = [{path: $p, id: "test_s27_a", sha256: $h}]' "$t/.claude/.loop-record.json" >"$t/.claude/r.x"
+    mv "$t/.claude/r.x" "$t/.claude/.loop-record.json"
+    am_released "$t"
+    gb_expect GB14 "$t" "- GUARD FAILURE: $f S27 changed with no ledger row" yes
+    # GB15 a PEP 695 def (`[T]` before the parenthesis) renamed in a collided id falls back to the short id.
+    t="$tmp/gb15"; gb_repo "$t" "$tmp/o15.git" "$f" \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_c[T]():\n    assert f(2) == 2' \
+        $'def test_s27_ac5_a():\n    assert f(0) == 0\n\n\ndef test_s27_ac6_b():\n    assert f(1) == 1\n\n\ndef test_s27_d[T]():\n    assert f(2) == 2'
+    gb_expect GB15 "$t" "- GUARD FAILURE: $f S27 changed with no ledger row" yes
     rm -rf "$tmp"
 }
 
@@ -6984,7 +7191,66 @@ run_auto_mode_review2_cases() {
     rm -rf "$tmp"
 }
 
+# KH1-KH3 of docs/work/auto-mode-2.5-fixes/plan.md: kit-health.py, the review's health probe, run in
+# a scratch project root (its cwd).
+run_kit_health_cases() {
+    local tmp out err code lines
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/.claude"
+    CASES=$((CASES + 1))
+    set +e
+    (cd "$tmp" && python3 -I -B "$HOOKS_DIR/kit-health.py" finding --dim tests --verdict confirmed --summary "a b") >/dev/null 2>&1
+    code=$?
+    set -e
+    lines=0
+    out=""
+    if [[ -f "$tmp/.claude/.kit-health.jsonl" ]]; then
+        lines="$(wc -l <"$tmp/.claude/.kit-health.jsonl")"
+        out="$(jq -r 'select(.source == "review:tests" and .event == "finding" and .verdict == "confirmed" and .summary == "a b"
+                      and (.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))) | "ok"' \
+            "$tmp/.claude/.kit-health.jsonl")"
+    fi
+    [[ "$code" -eq 0 && "${lines// /}" == 1 && "$out" == ok ]] \
+        || fail kit-health.py KH1 "expected one well-formed line, exit 0, got exit $code, $lines line(s), '$out'"
+    rm -f "$tmp/.claude/.kit-health.jsonl"
+    CASES=$((CASES + 1))
+    set +e
+    err="$(cd "$tmp" && python3 -I -B "$HOOKS_DIR/kit-health.py" finding --dim tests --verdict maybe --summary "x" 2>&1 >/dev/null)"
+    code=$?
+    set -e
+    [[ "$code" -eq 2 && "$err" == *verdict* && ! -e "$tmp/.claude/.kit-health.jsonl" ]] \
+        || fail kit-health.py KH2 "expected exit 2 naming the verdict and no file, got exit $code '${err:0:120}'"
+    mkdir "$tmp/.claude/.kit-health.jsonl"
+    CASES=$((CASES + 1))
+    set +e
+    err="$(cd "$tmp" && python3 -I -B "$HOOKS_DIR/kit-health.py" finding --dim tests --verdict refuted --summary "x" 2>&1 >/dev/null)"
+    code=$?
+    set -e
+    [[ "$code" -eq 0 && "$err" == kit-health:* && "$(printf '%s\n' "$err" | wc -l)" -eq 1 ]] \
+        || fail kit-health.py KH3 "expected exit 0 and one stderr line, got exit $code '${err:0:120}'"
+    rm -r "$tmp"
+}
+
 set -e
+if [[ "${1:-}" == --kh-only ]]; then
+    run_kit_health_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (kit-health only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --gb-only ]]; then
+    run_guarded_block_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (guarded block only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
+if [[ "${1:-}" == --sg-only ]]; then
+    SG_FILTER="${2:-.}"
+    run_shell_guard_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (shell guard, ids matching %s): %d case(s), all green.\n' "$SG_FILTER" "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --guard-only ]]; then
     run_shell_guard_cases
     run_git_foreign_repo_cases
@@ -7000,6 +7266,7 @@ if [[ "${1:-}" == --am-only ]]; then
     run_auto_mode_import_cases
     run_auto_mode_step5_cases
     run_released_record_cases
+    run_guarded_block_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
     [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
@@ -7087,6 +7354,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_kit_prompts_step1_cases
     run_kit_prompts_step23_cases
     run_kit_prompts_step4_cases
+    run_kit_health_cases
     run_loop_to_pr_step2_cases
     run_loop_to_pr_step4_cases
     run_loop_to_pr_step5_cases
@@ -7103,6 +7371,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_auto_mode_import_cases
     run_auto_mode_step5_cases
     run_released_record_cases
+    run_guarded_block_cases
     run_auto_mode_review1_cases
     run_auto_mode_review2_cases
     run_trial_auto_git_cases

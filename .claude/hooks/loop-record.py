@@ -41,7 +41,8 @@ CASE_RE = re.compile(r"^[UMRB][0-9]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 KEPT_ON_PLAN_GO = ("mode", "contract_go", "verdicts", "guarded", "released_at")
 BLOCK_HEADER = "Frozen cases to amend:"
-ROW_RE = re.compile(r"^(\S+) \| ([UMRB][0-9]+) \| ([0-9a-f]{64})$")
+REWRITE_CASE_RE = re.compile(r"^(?:[UMRB][0-9]+|test_[A-Za-z0-9_]+)$")
+ROW_RE = re.compile(r"^(\S+) \| ([UMRB][0-9]+|test_[A-Za-z0-9_]+) \| ([0-9a-f]{64})$")
 REPO_RE = r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
 BRANCH_RE = r"[A-Za-z0-9._/][A-Za-z0-9._/-]*"
 PR_FORM_RE = re.compile(
@@ -448,13 +449,14 @@ def transcript_texts(path: object) -> list[str]:
 def ledger_entry(fields: dict[str, str], agent_id: str) -> dict[str, str] | None:
     """A verdict ledger entry from one block, or None when the block is malformed."""
     kind, verdict = fields.get("kind"), fields.get("verdict", "")
-    if kind == "frozen-case":
+    if kind in ("frozen-case", "declared-rewrite"):
         path, case, sha = fields.get("path", ""), fields.get("case", ""), fields.get("sha256", "")
-        if not path or " " in path or not CASE_RE.match(case) or not SHA_RE.match(sha):
+        case_re = CASE_RE if kind == "frozen-case" else REWRITE_CASE_RE
+        if not path or " " in path or not case_re.match(case) or not SHA_RE.match(sha):
             return None
         if os.path.isabs(path) or path != os.path.normpath(path) or "//" in path or path.startswith("../"):
             return None
-        if verdict not in ("unfreeze", "refuse"):
+        if verdict not in (("unfreeze", "refuse") if kind == "frozen-case" else ("accept", "refuse")):
             return None
         return {"kind": kind, "path": path, "id": case, "sha256": sha, "verdict": verdict,
                 "agent_id": agent_id, "at": now()}
@@ -546,8 +548,8 @@ def subagent_stop(data: dict[str, object]) -> None:
             return
         verdicts = record.get("verdicts")
         verdicts = verdicts if isinstance(verdicts, list) else []
-        if entry["kind"] == "frozen-case" and any(
-                isinstance(v, dict) and v.get("kind") == "frozen-case"
+        if entry["kind"] in ("frozen-case", "declared-rewrite") and any(
+                isinstance(v, dict) and v.get("kind") == entry["kind"]
                 and v.get("path") == entry["path"] and v.get("id") == entry["id"] for v in verdicts):
             return
         record["verdicts"] = verdicts + [entry]
@@ -701,6 +703,45 @@ def case_ids(text: str) -> set[str]:
     return ids | {(m.group(1) + m.group(2)).upper() for m in PY_CASE_RE.finditer(text)}
 
 
+PY_DEF_RE = re.compile(r"def[ \t]+(test_([A-Za-z])([0-9]+)(?:_[A-Za-z0-9_]*)?)[ \t]*\(")
+
+
+def py_defs(text: str) -> list[tuple[str, str]]:
+    """(id, full function name) of each `def test_<letter><digits>…` of `text`, in order."""
+    return [((m.group(2) + m.group(3)).upper(), m.group(1)) for m in PY_DEF_RE.finditer(text)]
+
+
+def changed_case_names(path: str, changed: str, before: str, head: str) -> set[str]:
+    """What the guard reports for one changed test file: the case ids named by the changed lines and the
+    base. In a Python file an id shared by two `def test_` in the base or in HEAD is reported by the full
+    function name found in the base (an added case is never reported); a changed base def the parser cannot read adds the short id; other ids keep their short form."""
+    ids = case_ids(changed) & case_ids(before)
+    if not path.endswith(".py"):
+        return ids
+    counts: dict[str, int] = {}
+    for scope in (before, head):
+        seen: dict[str, int] = {}
+        for cid, _ in py_defs(scope):
+            seen[cid] = seen.get(cid, 0) + 1
+        for cid, n in seen.items():
+            counts[cid] = max(counts.get(cid, 0), n)
+    base_names = {name for _, name in py_defs(before)}
+    base_lines = set(before.splitlines())
+    reported: set[str] = set()
+    for cid in ids:
+        if counts.get(cid, 0) < 2:
+            reported.add(cid)
+            continue
+        names = {name for i, name in py_defs(changed) if i == cid and name in base_names}
+        unread = any(
+            line in base_lines and not PY_DEF_RE.search(line)
+            and any((m.group(1) + m.group(2)).upper() == cid for m in PY_CASE_RE.finditer(line))
+            for line in changed.splitlines()
+        )
+        reported |= names | ({cid} if unread else set())
+    return reported
+
+
 def auto_classes(tree: str, paths: list[str]) -> dict[str, str]:
     """{path: denied | ledgered | none}, from hook-guarded.sh cwk_auto_class in one shell."""
     if not paths:
@@ -742,8 +783,10 @@ def guarded_block(tree: str, fetch: bool) -> str | None:
     classes = auto_classes(tree, [path for _, path in entries])
     allowed: dict[str, set[str]] = {}
     for item in list(record.get("rows") or []) + list(record.get("verdicts") or []):
-        if isinstance(item, dict) and item.get("kind", "frozen-case") == "frozen-case" \
-                and item.get("verdict", "unfreeze") == "unfreeze":
+        if not isinstance(item, dict):
+            continue
+        kind, verdict = item.get("kind", "frozen-case"), item.get("verdict", "unfreeze")
+        if (kind == "frozen-case" and verdict == "unfreeze") or (kind == "declared-rewrite" and verdict == "accept"):
             allowed.setdefault(str(item.get("path")), set()).add(str(item.get("id")))
     failures, listed = [], []
     for status, path in entries:
@@ -758,14 +801,19 @@ def guarded_block(tree: str, fetch: bool) -> str | None:
             return None
         changed = "\n".join(line[1:] for line in patch.splitlines()
                             if line[:1] in "+-" and not line.startswith(("+++", "---")))
-        for cid in sorted((case_ids(changed) & case_ids(before)) - allowed.get(path, set())):
+        head_code, head_text = git(tree, "show", "HEAD:" + path) if path.endswith(".py") else (1, "")
+        reported = changed_case_names(path, changed, before, head_text if head_code == 0 else "")
+        for cid in sorted(set(reported) - allowed.get(path, set())):
             failures.append("- GUARD FAILURE: %s %s changed with no ledger row" % (path, cid))
     ledger = ["- `%s` before `%s` after `%s` (ledger, %s)" % (g.get("path"), short_sha(g.get("before")),
                                                               short_sha(g.get("after")), g.get("tool"))
               for g in record.get("guarded") or [] if isinstance(g, dict)]
     body = "\n".join(failures + listed + ledger or ["- none"]) + "\n"
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    return "%s\n<!-- guarded-files sha256:%s -->\n%s" % (GUARDED_HEADER, digest, body)
+    head = git(tree, "rev-parse", "HEAD")[1].strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        return None
+    return "%s\n<!-- guarded-files sha256:%s -->\n%s<!-- guarded-files head:%s -->\n" % (GUARDED_HEADER, digest, body, head)
 
 
 def main() -> int:

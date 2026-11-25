@@ -556,6 +556,7 @@ fi
 # One verdict per row, D > G > P > U > R; the reason shown is the first row of
 # the strongest verdict over the whole command. R: acceptEdits auto-approves
 # `rm`, so any other recursive delete inside the project asks.
+GUARD_SHELL_WRITE=""
 GUARD_DENY="" GUARD_DENY_WHY="" GUARD_ASK_G="" GUARD_ASK_P="" GUARD_ASK_U="" GUARD_ASK_R=""
 GUARD_DENY_CG="" GUARD_ASK_CG=""
 GUARD_ASK_F="" GUARD_ASK_T="" GUARD_ASK_O="" GUARD_ASK_M="" GUARD_INLINE_TDD="" GUARD_ASK_S="" GUARD_ASK_C="" GUARD_ASK_K="" GUARD_ASK_W="" GUARD_ASK_Q=""
@@ -634,6 +635,7 @@ guard_show() {
     if [[ "$1" == . ]]; then printf '%s' 'the project root'; else printf '%s' "$1"; fi
 }
 
+GUARD_RECORD_READ="The record is read with Read, or python3 .claude/hooks/loop-record.py --mode, never by an inline program."
 guard_note_deny() {
     [[ -n "$GUARD_DENY" ]] && return 0
     GUARD_DENY="$1"
@@ -788,6 +790,7 @@ guard_classify() {
                         GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.tdd-red)"
                     else
                         GUARD_DENY_WHY="$(cwk_guard_denied_why .claude/.loop-record.json)"
+                        [[ "$target" == '?inline:'* ]] && GUARD_DENY_WHY+="\\n\\n$GUARD_RECORD_READ"
                     fi
                 fi
             elif [[ "$target" == '?inline:'* ]] \
@@ -865,6 +868,8 @@ guard_classify() {
         # `.git/worktrees/<name>/index.lock`) is removed with a plain `rm`; a recursive
         # delete, a move or any other path under .git stays denied.
         return 0
+    elif [[ "$verb" == inline-path && "$rel" == .claude/.loop-record.json ]]; then
+        guard_note_deny "inline programs are not used here: $rel" "$(cwk_guard_denied_why "$rel")\\n\\n$GUARD_RECORD_READ"
     elif cwk_is_guard_denied "$rel"; then
         guard_note_deny "$rel written by $verb" "$(cwk_guard_denied_why "$rel")"
     elif [[ "$verb" == inline-path ]]; then
@@ -891,6 +896,8 @@ guard_classify() {
             fi
         elif cwk_is_guarded "$rel"; then
             guard_guarded "$rel" "$verb"
+        elif [[ "$codegen" != 1 ]]; then
+            [[ -n "$GUARD_SHELL_WRITE" ]] || GUARD_SHELL_WRITE="$rel written by $verb"
         fi
     elif [[ "$GUARD_SOURCE_WRITERS" == *" $verb "* && "$rel" =~ \.(tsx?|py)$ ]]; then
         # An in-place or copy write of a source goes around every Write/Edit guardrail:
@@ -911,6 +918,8 @@ guard_classify() {
         [[ -n "$GUARD_ASK_P" ]] || GUARD_ASK_P="$rel"
     elif [[ "$verb" == rm-r ]]; then
         [[ -n "$GUARD_ASK_R" ]] || GUARD_ASK_R="$rel"
+    elif [[ "$verb" == tee || "$verb" == sed || "$verb" == perl ]]; then
+        [[ -n "$GUARD_SHELL_WRITE" ]] || GUARD_SHELL_WRITE="$rel written by $verb"
     fi
     return 0
 }
@@ -974,6 +983,19 @@ LOOP_RECORD_HEAD_RE='(^|[;&|(])[[:space:]]*([^[:space:]]*/)?loop-record\.py([^[:
 LOOP_RECORD_CLEAR_RE='^[[:space:]]*python3[[:space:]]+\.claude/hooks/loop-record\.py[[:space:]]+(--clear|--block|--mode|--guarded-block)[[:space:]]*$'
 if [[ ( "$COMMAND" =~ $LOOP_RECORD_RUN_RE || "$COMMAND" =~ $LOOP_RECORD_HEAD_RE ) \
     && ! "$COMMAND" =~ $LOOP_RECORD_CLEAR_RE ]]; then
+    # Text only: a command with one segment that is exactly a manual form (`cat x; … --mode`) is told to run
+    # that form alone; the deny condition above is unchanged.
+    LOOP_RECORD_SEGS="${COMMAND//&&/$'\n'}"
+    LOOP_RECORD_SEGS="${LOOP_RECORD_SEGS//||/$'\n'}"
+    LOOP_RECORD_SEGS="${LOOP_RECORD_SEGS//;/$'\n'}"
+    LOOP_RECORD_SEGS="${LOOP_RECORD_SEGS//|/$'\n'}"
+    while IFS= read -r LOOP_RECORD_SEG; do
+        if [[ "$LOOP_RECORD_SEG" =~ $LOOP_RECORD_CLEAR_RE ]]; then
+            LOOP_RECORD_SEG="${LOOP_RECORD_SEG#"${LOOP_RECORD_SEG%%[![:space:]]*}"}"
+            LOOP_RECORD_SEG="${LOOP_RECORD_SEG%"${LOOP_RECORD_SEG##*[![:space:]]}"}"
+            deny "BLOCKED: this command chains loop-record.py with other commands.\\n\\nRun \`$LOOP_RECORD_SEG\` alone, in its own Bash call: no chain, no pipe, nothing before or after it. Any other form is run only by Claude Code, as a hook on the user's plan-gate answer."
+        fi
+    done <<<"$LOOP_RECORD_SEGS"
     deny "BLOCKED: only Claude Code runs loop-record.py, as a hook on the user's plan-gate answer.\\n\\nRun by hand, it would write .claude/.loop-record.json from an answer the user never gave. The manual forms are: python3 .claude/hooks/loop-record.py --clear, --block, --mode, --guarded-block; --release is the user's own lift of a blocked record."
 fi
 if [[ -n "$GUARD_INLINE_TDD" ]]; then
@@ -1182,6 +1204,13 @@ fi
 
 if [[ "$SRC_WRITE_SEEN" == "1" ]]; then
     ask "This writes a TypeScript source from the shell, so no PreToolUse guardrail sees it (no-any, forbidden icons, architecture layering all run on Write|Edit only).\\n\\nIf this is authored code, write it with the Write/Edit tool instead. If it is genuine codegen (generated DB types), say what it generates and where — then let the user decide.\\n\\nWrite files with the Write/Edit tool instead."
+fi
+
+# A shell write onto a path inside the project (or a kit worktree) that nothing above denied or asked:
+# last, so every existing deny, ask and codegen pass keeps its verdict and text. A degraded config
+# (no readable project.json) keeps its ask in place of a pass, as before.
+if [[ -n "$GUARD_SHELL_WRITE" && "${CWK_CFG_DEGRADED:-0}" != 1 ]]; then
+    deny "BLOCKED: shell write into the project: $GUARD_SHELL_WRITE. Write files with the Write/Edit tool."
 fi
 
 exit 0

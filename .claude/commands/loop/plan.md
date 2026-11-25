@@ -122,7 +122,9 @@ You **do not write code here**.
    **2 rounds** at most (rewrite, a second fresh `arbiter`), then a blocked stop.
    `## Gate` records `arbiter go`, never a user go: the record keeps no plan rows from it,
    and each frozen case the plan amends needs its own `kind: frozen-case` verdict
-   (`/loop:orchestrate` Phase 4, auto mode) before its `.tdd-unfrozen` line. The rest of
+   (`/loop:orchestrate` Phase 4, auto mode) before its `.tdd-unfrozen` line. Each declared
+   rewrite of a test-after file (below) goes to one fresh `arbiter` per declared rewrite, its
+   verdict `kind: declared-rewrite` (`accept` or `refuse`; it never unfreezes anything). The rest of
    this step is the `moi` gate. Print the `Test plan` section in
    full and wait for an explicit go.
 
@@ -145,6 +147,13 @@ You **do not write code here**.
    `'`, an escape or a template literal is refused by the freeze hook). On the go,
    each row's `.tdd-unfrozen` line is written with no second ask, and an `amended`
    line goes to `## Gate`.
+
+   A plan that rewrites existing cases of a test-after file (one the freeze does not cover,
+   hooks and components) lists each one in the same `Frozen cases to amend:` block, so the PR's
+   guarded block does not report it as an undeclared rewrite. The id is the case id (`U2`) or,
+   in a Python file where several `def test_` share an id, the full function name the guarded
+   block reports (`test_s27_ac5_a`); the hash is that of the new title.
+   Such a row writes no `.tdd-unfrozen` line: the file is not frozen.
 
    **First, clear research's `Open questions`.** That section holds what no probe
    could settle, and this gate is the last moment it is free to settle them: after

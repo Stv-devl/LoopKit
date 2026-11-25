@@ -882,7 +882,7 @@ PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # one per language.
 NON_HOOKS = {
     "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
-    "kit-attempts.py", "kit-audit-surface.py", "kit-gate-route.py", "kit-measure.py", "kit-pr-assets.py",
+    "kit-attempts.py", "kit-audit-surface.py", "kit-gate-route.py", "kit-health.py", "kit-measure.py", "kit-pr-assets.py",
     "project_config.py", "test-attempts.sh", "test-audit-surface.sh", "test-gate-route.sh",
     "test-hooks.sh", "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-pr-assets.sh",
     "test-rules-floor.sh",

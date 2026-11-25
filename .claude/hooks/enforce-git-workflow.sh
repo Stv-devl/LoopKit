@@ -2162,7 +2162,18 @@ guarded_block_check() {
     block="$(cd "$1" && python3 -I "$(dirname "${BASH_SOURCE[0]}")/loop-record.py" --guarded-block --no-fetch 2>/dev/null)" \
         && [[ -n "$block" ]] \
         || deny "auto mode: cannot compute Guarded files touched (loop-record.py --guarded-block failed), so the pass's PR is not opened."
+    local head_re='^<!-- guarded-files head:([0-9a-f]{40}) -->$' last stale="" line cur
+    last="${block##*$'\n'}"
+    [[ "$last" =~ $head_re ]] && block="${block%$'\n'"$last"}"
     body="$(cat "$3" 2>/dev/null)" || body=""
+    if [[ "$body" != *"$block"* ]]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ $head_re ]] && stale="${BASH_REMATCH[1]}"
+        done <<< "$body"
+        cur="$(git -C "$1" rev-parse HEAD 2>/dev/null)"
+        [[ -z "$stale" || -z "$cur" || "$stale" == "$cur" ]] \
+            || deny "auto mode: the block in the body was computed on ${stale:0:7}, HEAD is now ${cur:0:7}: rerun \`python3 .claude/hooks/loop-record.py --guarded-block\` after the push and paste it into docs/work/<slug>/pr-body.md."
+    fi
     [[ "$body" == *"$block"* ]] \
         || deny "auto mode: the PR body must carry the hook's Guarded files touched block, byte for byte: run \`python3 .claude/hooks/loop-record.py --guarded-block\` and paste its output into docs/work/<slug>/pr-body.md unchanged."
 }

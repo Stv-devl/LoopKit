@@ -1,0 +1,12 @@
+{
+  "mode": "review",
+  "round": 3,
+  "findings": [
+    {"id": "p1", "severity": "Minor", "dimension": "correctness", "class": "correctness", "path": ".claude/hooks/loop-record.py", "line": 737,
+     "problem": "an added method whose def line is byte-identical to a base line (same name in another class) is reported, as the parsed path already does", "scenario": null, "regression": false, "status": "new", "closure": null},
+    {"id": "p2", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-hooks.sh", "line": 7088,
+     "problem": "GB13 is a 'no' assertion with no positive check on the same tree (a crash would pass it)", "scenario": null, "regression": false, "status": "new", "closure": null},
+    {"id": "p3", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": ".claude/hooks/loop-record.py", "line": 717,
+     "problem": "the new docstring line is ~150 chars, out of step with the wrapped lines around it", "scenario": null, "regression": false, "status": "new", "closure": null}
+  ]
+}

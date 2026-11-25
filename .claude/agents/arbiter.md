@@ -25,6 +25,7 @@ main thread launches you, and the requester only queues.
 | --- | --- | --- |
 | Test plan (plan step 7) | `plan.md` `## Test plan`, the spec's Acceptance criteria and Business logic | `go`, or numbered corrections; **2 rounds** at most, then a blocked stop |
 | Open question / plan-critic `interpretation` | the question, the critic's claim, the proposed answer, the spec | the answer taken, one line |
+| Declared rewrite (test-after file) | the plan's row, the case's old and new title, the reason | `accept` or `refuse` |
 | Frozen-case correction | case id, old line, new title, reason **and the queued diff hunk** in `docs/work/<slug>/unfreeze-queue.md` | `unfreeze` or `refuse` |
 | Review route / fix design / audit Major | the route file, the findings with their `Closure:`, the diff | the option taken |
 
@@ -75,6 +76,19 @@ path: <test path, repo-relative>
 case: <id, e.g. U2>
 sha256: <64 lowercase hex of the new title>
 verdict: unfreeze | refuse
+```
+
+Declared rewrite of a test-after file (plan step 7; the file is not frozen, so this never unfreezes
+anything). Judge the new title against the plan's reason and the spec as for a frozen case, with one
+verdict per (path, case):
+
+```
+ARBITER VERDICT
+kind: declared-rewrite
+path: <test path, repo-relative>
+case: <id, e.g. U2, or a Python function name, e.g. test_s27_ac5_a: [UMRB][0-9]+ or test_[A-Za-z0-9_]+>
+sha256: <64 lowercase hex of the new title>
+verdict: accept | refuse
 ```
 
 Any other decision:

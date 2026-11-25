@@ -84,7 +84,7 @@
 {"id":"X6.13","verdict":"deny","command":"sed -i 's/a/b/' ~/x/package.json","reason":"unresolved write target"}
 {"id":"X6.14","verdict":"deny","command":"for f in package.json tsconfig.json; do sed -i 's/a/b/' \"$f\"; done","reason":"unresolved write target"}
 {"id":"X6.15","verdict":"deny","command":"find .claude/hooks -name '*.sh' | xargs sed -i 's/x/y/'","reason":"unresolved write target"}
-{"id":"X6.16","verdict":"pass","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' a.sh"}
+{"id":"X6.16","verdict":"deny","command":"pushd .claude/hooks; popd; sed -i 's/a/b/' a.sh","reason":"shell write into the project"}
 {"id":"X7.01","verdict":"ask","command":"env sed -i 's/a/b/' package.json","reason":"guarded path:"}
 {"id":"X7.02","verdict":"ask","command":"nice -n 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
 {"id":"X7.03","verdict":"ask","command":"timeout -k 1 5 sed -i 's/a/b/' package.json","reason":"guarded path:"}
@@ -118,7 +118,7 @@
 {"id":"X9.08","verdict":"pass","command":"git commit -m \"$(cat <<'EOF'\nit's fine\nEOF\n)\""}
 {"id":"X9.09","verdict":"pass","command":"rm /tmp/x-*"}
 {"id":"X9.10","verdict":"pass","command":"rm 'a[1].txt'"}
-{"id":"X9.11","verdict":"pass","command":"sed -i 's/a/b/' docs/*.md"}
+{"id":"X9.11","verdict":"deny","command":"sed -i 's/a/b/' docs/*.md","reason":"shell write into the project"}
 {"id":"X9.12","verdict":"pass","command":"echo x 2>&1"}
 {"id":"X9.13","verdict":"pass","command":"python3 .claude/hooks/kit-doctor.py"}
 {"id":"X9.14","verdict":"pass","command":".claude/hooks/test-hooks.sh 2>&1 | tail -1"}
@@ -841,7 +841,7 @@
 {"id":"X32.06","verdict":"deny","command":"node -e \"1\"","reason":"unresolved write target"}
 {"id":"X32.07","verdict":"deny","command":"echo x > src/a.ts","reason":"Use Write/Edit"}
 {"id":"X32.08","verdict":"deny","command":"cat >> src/a.ts <<'EOF'\nx\nEOF","reason":"Use Write/Edit"}
-{"id":"X32.09","verdict":"pass","command":"cat >> docs/work/x/plan.md <<'EOF'\nx\nEOF"}
+{"id":"X32.09","verdict":"deny","command":"cat >> docs/work/x/plan.md <<'EOF'\nx\nEOF","reason":"shell write into the project"}
 {"id":"X33.01","verdict":"ask","command":"mv src/features/x/a.ts /tmp/","reason":"moves a path under a protected dir"}
 {"id":"X33.02","verdict":"ask","command":"mv src/a.ts src/b.ts","reason":"moves a path under a protected dir"}
 {"id":"X33.03","verdict":"ask","command":"rm -rf src/features/x","reason":"recursive delete/move under a protected dir"}
@@ -910,3 +910,33 @@
 {"id":"LP4.01","verdict":"deny","command":"echo x > .claude/.loop-record.json $'a\\'b'","reason":"could not parse"}
 {"id":"G21.043","verdict":"pass","command":"git push -u origin feat/s1"}
 {"id":"G21.043.2","verdict":"pass","command":"gh pr create --repo o/r --base audit/x --head feat/s1 --title \"t\" --body-file docs/work/s1/pr-body.md"}
+{"id":"X44.01","verdict":"deny","command":"cat x; python3 .claude/hooks/loop-record.py --mode","reason":"alone, in its own Bash call"}
+{"id":"X44.02","verdict":"deny","command":"grep -n x a.md && python3 .claude/hooks/loop-record.py --guarded-block","reason":"alone, in its own Bash call"}
+{"id":"X44.03","verdict":"deny","command":"cat x; python3 .claude/hooks/loop-record.py","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.04","verdict":"pass","command":"python3 .claude/hooks/loop-record.py --mode"}
+{"id":"X44.05","verdict":"deny","command":"grep -rn \"python3 .claude/hooks/loop-record.py --mode\" .claude/commands","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.06","verdict":"deny","command":"env python3 .claude/hooks/loop-record.py --mode","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.07","verdict":"deny","command":"timeout 5 python3 .claude/hooks/loop-record.py","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.08","verdict":"deny","command":".claude/hooks/loop-record.py < x.json","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.09","verdict":"deny","command":"x=$(python3 .claude/hooks/loop-record.py --mode)","reason":"only Claude Code runs loop-record.py"}
+{"id":"X44.10","verdict":"deny","command":"echo x | xargs python3 .claude/hooks/loop-record.py","reason":"only Claude Code runs loop-record.py"}
+{"id":"X43.01","verdict":"deny","command":"sed -i 's/a/b/' docs/work/x/plan.md","reason":"shell write into the project"}
+{"id":"X43.02","verdict":"deny","command":"echo x > docs/work/x/a.md","reason":"shell write into the project"}
+{"id":"X43.03","verdict":"deny","command":"echo x >> docs/notes.md","reason":"shell write into the project"}
+{"id":"X43.04","verdict":"deny","command":"printf x | tee docs/work/x/a.md","reason":"shell write into the project"}
+{"id":"X43.04.2","verdict":"deny","command":"printf x | tee -a README.md","reason":"shell write into the project"}
+{"id":"X43.04.3","verdict":"deny","command":"printf x | tee src/a.ts","reason":"src/a.ts written by tee"}
+{"id":"X43.05","verdict":"deny","command":"perl -i -pe 's/a/b/' docs/x.md","reason":"unresolved write target (perl s/a/b/)"}
+{"id":"X43.06","verdict":"deny","command":"cmd &> build.log","reason":"shell write into the project"}
+{"id":"X43.08","verdict":"pass","command":"cmd > /dev/null 2>&1"}
+{"id":"X43.08.2","verdict":"pass","command":"cmd 2>/dev/null"}
+{"id":"X43.09","verdict":"pass","command":"cmd > /tmp/claude-1000/x/scratchpad/out.txt"}
+{"id":"X43.10","verdict":"deny","command":"echo x > src/a.ts","reason":"Use Write/Edit"}
+{"id":"X43.10.2","verdict":"ask","command":"echo x >> .claude/.size-exempt","reason":"guarded path:"}
+{"id":"X43.11","verdict":"deny","command":"sed -i.bak 's/a/b/' docs/x.md","reason":"shell write into the project"}
+{"id":"X43.11.2","verdict":"deny","command":"sed --in-place 's/a/b/' docs/x.md","reason":"shell write into the project"}
+{"id":"X43.12","verdict":"pass","command":"sed -n '1,5p' docs/x.md"}
+{"id":"X43.12.2","verdict":"pass","command":"grep x docs/x.md > /dev/null"}
+{"id":"X43.13","verdict":"deny","command":"sed -i 's/a/b/' .claude/worktrees/t1/docs/x.md","reason":"shell write into the project"}
+{"id":"X43.13.2","verdict":"deny","command":"echo x > .claude/worktrees/t1/a.md","reason":"shell write into the project"}
+{"id":"X43.07","verdict":"deny","command":"python3 -c \"import json;d=json.load(open('.claude/.loop-record.json'));print(d)\"","reason":"read with Read, or python3 .claude/hooks/loop-record.py --mode"}

@@ -182,12 +182,19 @@ merges. Via the `github` agent, in this order:
 2. The main thread writes `docs/work/<slug>/pr-body.md` with Write, on `github.md`'s
    PR template: `Frozen cases` (every `amended` line with its test hunk), `Open
    questions` (answers taken), `Review` (surviving findings), `Gates`, and
-   `Screenshots` when a run is recorded (step 4's order). Run `git fetch origin <base>`, then
+   `Screenshots` when a run is recorded (step 4's order). The block comes only after the `github` agent
+   reported the commit and the push (never in parallel with them: it is computed on the
+   shipped HEAD and ends on a `head:` line naming it): run `git fetch origin <base>`, then
    `python3 .claude/hooks/loop-record.py --guarded-block`: in `auto` or on a released record (it prints a
    non-empty block) the body also carries `Decided without you` (the record's arbiter verdicts) and
    `Contract contradiction` (when any) after the summary, and `Guarded files touched`: paste that output
    verbatim — the git hook recomputes it and denies `gh pr create` unless the body holds it byte for byte.
 3. `gh pr create --repo <owner/repo> --base <recorded base> --head <branch> --title "<title>" --body-file docs/work/<slug>/pr-body.md`.
+4. After `gh pr create` returns its URL, and only when a `Screenshots run:` is recorded in `plan.md`'s
+   `## Gate`: the main thread runs `python3 .claude/hooks/kit-pr-assets.py prune-local --slug <slug> --keep <the
+   plan's Screenshots run: dir>`, alone in its own Bash call. It deletes the PNGs of the slug's older
+   run dirs under `.pr-shots/<slug>/` and their emptied dirs, keeps the shipped run, and refuses a
+   `--keep` that is not a run dir of that slug (exit 2: report it, delete nothing by hand).
 
 In `auto`, a red gate after its fix budget, or any other blocked-stop cause
 (`/loop:orchestrate`, "Validation mode"), ends here: a blocked stop pushes nothing and

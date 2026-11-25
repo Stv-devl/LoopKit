@@ -157,10 +157,13 @@ the working tree, untracked files included, never `<base>...HEAD`: before the
 ship commit, that range is empty.
 
 ```bash
-{ git -c core.quotePath=false diff --name-only <base>; git ls-files --others --exclude-standard; } | python3 .claude/hooks/kit-pr-assets.py ui
+python3 .claude/hooks/kit-pr-assets.py ui --base <base>
 ```
 
-The script reads `app_roots` from `.claude/project.json`: `<root>/src/` counts as `src/`.
+Run it alone, in its own Bash call, from the project root: the shell guard refuses a pipe or a
+chain around a kit script. The script lists the changes itself (`git diff --name-only <base>`
+plus `git ls-files --others --exclude-standard`, so untracked files count) and reads `app_roots`
+from `.claude/project.json`: `<root>/src/` counts as `src/`.
 - exit 2 (an invalid `.claude/project.json`) → report the refusal and stop this leg; in `auto`, a
   blocked stop. Never guess `none`.
 - `none`, but the diff plainly holds `*.tsx` under `src/` or an app root's `src/` → decide `ui` anyway.
@@ -208,6 +211,8 @@ supersession, or caller the main dimensions did not inspect.
 
 Return at most **3** items ordered by plausible user impact. Each needs
 `path:line`, the changed dependency it shadows and a concrete failure scenario.
+Each item carries the `dimension` of the surface the shadowed dependency belongs
+to, one of `correctness, tests, db, security, ui`, never `shadow`.
 Omit anything already covered by a normal finding. Refute Critical/Major items
 with `verifier`; report Minors. Zero items is `Shadow areas: none found.` This
 belongs to the same `review` attempt and never creates a sixth permanent review
@@ -220,22 +225,20 @@ dimension.
    `.claude/.kit-health.jsonl` (gitignored, local-only —
    its reader is `kit-doctor.py` `check_kit_health`). `reviewer`/`verifier`
    are read-only, so this runs here, on the main thread, once their verdicts are
-   in — not inside either agent:
+   in — not inside either agent, and never a shell write into the project:
    ```bash
-   jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg dim "<dimension>" \
-          --arg verdict "confirmed|refuted|minor" --arg summary "<one line>" \
-          '{ts: $ts, source: ("review:" + $dim), event: "finding", verdict: $verdict, summary: $summary}' \
-     >> .claude/.kit-health.jsonl
+   python3 .claude/hooks/kit-health.py finding --dim <dimension> --verdict confirmed|refuted|minor --summary "<one line>"
    ```
-   One call per finding. A missing `.claude/` write permission is not a review
+   Run it alone, in its own Bash call (no pipe, no chain). One call per finding. A missing `.claude/` write permission is not a review
    failure — best-effort, same as every other emitter of this probe.
 2. Walk the acceptance criteria — an uncovered criterion is a Critical regardless
    of what the reviewers said.
 3. Global verdict: **FAIL** if ≥1 Critical or an uncovered criterion, **CONCERNS**
    if only Major/Minor, else **PASS**.
 3bis. **Route the survivors.** Write them with Write to
-   `docs/work/<slug>/route-review-<round>.json`. Each one carries `id`, `severity`, `dimension`,
-   `class`, `path`, `line`, `problem`, `scenario`, `regression`, `status` and `closure`.
+   `docs/work/<slug>/route-review-<round>.json`. Each one carries `id`, `severity`, `dimension`
+   (one of `correctness, tests, db, security, ui`; a Stage 2.5 item takes the dimension of the
+   dependency it shadows), `class`, `path`, `line`, `problem`, `scenario`, `regression`, `status` and `closure`.
    Round 1 is the first review: a fresh `/loop:review` is round 1, and only
    `orchestrate.md` Phase 5 step 3 increments the round. A prior finding the re-review
    answered `not fixed` enters the file again with `status: not-fixed`. The findings the

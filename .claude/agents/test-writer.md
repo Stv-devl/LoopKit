@@ -136,6 +136,13 @@ pytest file no hook will ever prove.
   Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
 - Read with `offset`/`limit`, never a `for … sed -n` loop (the guard cannot parse `${…}` in it), and
   no `cd … && git apply --check` probe: both ask the user you never wait for.
+- Refused shapes (each asks a user you never wait for):
+  - never `cd <dir> && git …`: git in another directory is `git -C <abs> …`;
+  - no heredoc or redirection into any file, tests included: Write/Edit;
+  - no `python3 -`/`-c`: Read/Grep, or a kit script;
+  - no `sed -i`/`perl -i`: Edit;
+  - no `Any` in tests (Python `typing.Any`): a real type or `object`;
+  - a new import a frozen test case needs goes inside the case body (the freeze hook refuses an import-only insertion).
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**

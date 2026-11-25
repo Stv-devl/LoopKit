@@ -307,4 +307,18 @@ refused G29 '' diff docs/work/w/plan.md fix
 refused G29 '' route docs/work/w/r.json
 [[ ! -e "$REPO/y" && ! -e "$W/y" ]] || fail G29 "fix-base wrote a file"
 
+# G30 (docs/specs/auto-mode-2.5-fixes.md item 9) a shadow item with dimension "shadow" is refused, and the
+# reason names the five dimensions and the Stage 2.5 rule
+rm -f "$T/follow-ups.md"
+review_in "$T" bad.json 2 "$(rf F1 Major architecture a.ts 5 '' false new 'case X passes' shadow)"
+refused G30 'Stage 2.5' route docs/work/t/bad.json
+refused G30 'correctness, tests, db, security, ui' route docs/work/t/bad.json
+[[ ! -e "$T/follow-ups.md" ]] || fail G30 "follow-ups written"
+
+# G31 a Stage 2.5 item written as review.md tells (the dimension of the shadowed dependency) routes
+rm -f "$T/follow-ups.md"
+route_review 2 "$(rf F1 Minor correctness c.ts 2 'caller y, gets z' false new '' correctness)"
+ok G31 '.findings[0].route == "follow-up" and .attempt.action == "pass" and .next == "clear"'
+grep -Fxq -- "- [correctness] c.ts:2 — problem F1 (minor)" "$T/follow-ups.md" || fail G31 "follow-up line"
+
 echo 'gate route fixtures: green.'
