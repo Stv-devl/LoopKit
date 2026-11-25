@@ -3093,10 +3093,8 @@ run_codegen_cases() {
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG32[$cmd]" deny "$out" "unresolved write target"
     done
-    for cmd in 'mv /tmp/x docs/*.md'; do
-        out="$(pd_probe "$c" "$cmd")"
-        g15_expect "CG33[$cmd]" pass "$out"
-    done
+    out="$(pd_probe "$c" 'mv /tmp/x docs/*.md')"
+    g15_expect "CG33[mv /tmp/x docs/*.md]" pass "$out"
     for cmd in 'echo x > docs/*.md' 'echo x > docs/*.json' 'sed -i s/a/b/ docs/*.md'; do
         out="$(pd_probe "$c" "$cmd")"
         g15_expect "CG33[$cmd]" deny "$out" "shell write into the project"
