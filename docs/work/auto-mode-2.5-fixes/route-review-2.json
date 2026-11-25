@@ -1,0 +1,18 @@
+{
+  "mode": "review",
+  "round": 2,
+  "findings": [
+    {"id": "N1", "severity": "Major", "dimension": "correctness", "class": "correctness", "path": ".claude/hooks/loop-record.py", "line": 736,
+     "problem": "the C1 short-id fallback counts any unread PY_CASE_RE def in the changed text, including a def only added in HEAD, so an added case is reported (breaks Vigilance Q11)",
+     "scenario": "base holds test_s27_a and test_s27_b unchanged; HEAD only adds def test_s27_créé(): — the block prints GUARD FAILURE S27 for an added case",
+     "regression": true, "status": "new",
+     "closure": "Closure: the fallback counts only an unread def whose line exists in the base text; a GB case (two parsed S27 siblings in base, one non-ASCII S27 def added) prints no S27 failure, GB12 still passes."},
+    {"id": "N2", "severity": "Major", "dimension": "correctness", "class": "correctness", "path": ".claude/hooks/loop-record.py", "line": 737,
+     "problem": "names or fallback: a parsed changed sibling hides the unread fallback, so an unreadable rewrite beside a ledgered parsed rewrite is reported nowhere",
+     "scenario": "base holds test_s27_a and test_s27_créé; HEAD renames both; ledger unfreezes test_s27_a; no GUARD FAILURE for the créé rewrite",
+     "regression": false, "status": "new",
+     "closure": "Closure: the unread fallback is unioned with the parsed names; a GB case with that scenario prints the S27 GUARD FAILURE line."},
+    {"id": "n3", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-hooks.sh", "line": 7079,
+     "problem": "no case pins the PEP 695 def test_s27_a[T]() form through the fallback", "scenario": null, "regression": false, "status": "new", "closure": null}
+  ]
+}

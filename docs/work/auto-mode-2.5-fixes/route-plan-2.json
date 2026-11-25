@@ -1,0 +1,19 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "F3", "severity": "Major", "p1_class": "b", "kind": "interpretation", "status": "not-fixed", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "The TS half of item 4 is dropped (spec names the TS twin and TS title); closes on the user's answer at the gate.",
+     "closure": "Closure: either the user accepts the Python-only scope at the gate (recorded in ## Gate as an entry amendment), or a TS collision case reports both full titles."},
+    {"id": "F6", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Answer 7 cites 10-worktrees.md without its guides/ path.", "closure": null},
+    {"id": "Q8", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "am_expected_block needs a tree argument; callers must pass the tree after their last commit.", "closure": null},
+    {"id": "Q9", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "PK55 must not flag the refused-shapes blocks PK50 requires (prohibitions vs prescriptions).", "closure": null},
+    {"id": "Q10", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "X43.04 tee src/a.ts reason is conditional; pin it to the observed reason.", "closure": null},
+    {"id": "Q11", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "An id colliding only in HEAD has no defined reported name.", "closure": null}
+  ]
+}

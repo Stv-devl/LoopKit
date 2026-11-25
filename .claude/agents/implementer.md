@@ -53,6 +53,13 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
 - Write files with Write/Edit only, never from the shell (`python3 -`/`-c`, `node -e`,
   `perl -i`, heredocs, redirection): a guarded-path ask is the user's to answer, never by switching tools.
   Also: no no-op probe (`python3 - <<EOF print("noop")`, an empty `cat >> x <<EOF`), and never redirect gate output to a file: run the exact gate command and read its output.
+- Refused shapes (each asks a user you never wait for):
+  - never `cd <dir> && git …`: git in another directory is `git -C <abs> …`;
+  - no heredoc or redirection into any file, tests included: Write/Edit;
+  - no `python3 -`/`-c`: Read/Grep, or a kit script;
+  - no `sed -i`/`perl -i`: Edit;
+  - no `Any` in tests (Python `typing.Any`): a real type or `object`;
+  - a new import a frozen test case needs goes inside the case body (the freeze hook refuses an import-only insertion).
 - No refactor beyond the batch, no new behaviour the plan does not name.
 
 ## Return

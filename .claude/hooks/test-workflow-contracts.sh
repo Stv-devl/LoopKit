@@ -935,7 +935,7 @@ for pr_needle in PR_SHOTS PR_SHOTS_DIR .pr-shots/ emulateMedia PW_BASE_URL; do
     grep -Fq -- "$pr_needle" "$ROOT/.claude/skills/e2e-playwright/SKILL.md"
 done
 grep -Fq 'Screenshots:' "$ROOT/.claude/agents/e2e-tester.md"
-for pr_needle in 'kit-pr-assets.py ui' 'ls-files --others --exclude-standard' 'PR_SHOTS=before'; do
+for pr_needle in 'kit-pr-assets.py ui --base' 'ls-files --others --exclude-standard' 'PR_SHOTS=before'; do
     grep -Fq -- "$pr_needle" "$REVIEW"
 done
 grep -Fq 'kit-pr-assets.py drop' "$SHIP"
@@ -1649,5 +1649,100 @@ for n in 'Contract gate' 'each plan-critic pass' 'the test-plan gate' 'each revi
 pk HF2 has "$PLAN" 'rewrite the handoff state line'
 pk HF3 has "$REVIEW" 'rewrite the handoff state line'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'AMC2.inv, AMC20-AMC21, PK46-PK48, CW/WT/HF: failing, see above' >&2; exit 1; }
+
+# PK49-PK50 (docs/specs/auto-mode-2.5-fixes.md items 9 and 6): a Stage 2.5 shadow item carries one of the five
+# dimensions, and review.md's list equals DIMENSIONS; the agents' refused shapes and Phase 0's shell discipline.
+pk_dims_py="$(sed -n 's/^DIMENSIONS = (\(.*\))$/\1/p' "$ROOT/.claude/hooks/kit-gate-route.py" | tr -d '" ')"
+pk_s25="$(section "$REVIEW" '### Stage 2.5' '### Stage 3 ' | tr -s ' \n' ' ')"
+pk_s3bis="$(section "$REVIEW" '3bis. **Route the survivors.**' '4. Report the refuted findings' | tr -s ' \n' ' ')"
+pk_dims_md="$({ grep -o 'one of `[a-z, ]*`' <<<"$pk_s25" || true; } | sed 's/^one of `//; s/`$//' | tr -d ' ')"
+pk PK49 test -n "$pk_dims_py"
+pk PK49.2 test "$pk_dims_md" = "$pk_dims_py"
+pk PK49.3 has_in "$pk_s25" 'the `dimension` of the surface the shadowed dependency belongs to'
+pk PK49.4 has_in "$pk_s25" 'never creates a sixth permanent review dimension'
+pk PK49.5 has_in "$pk_s3bis" "one of \`${pk_dims_py//,/, }\`"
+pk_p0="$(section "$ORCHESTRATE" 'Shell discipline for the whole pass:' '0. **Closing check**')"
+for agent in "$ROOT/.claude/agents/implementer.md" "$TEST_WRITER"; do
+    for n in '`git -C' 'sed -i' 'heredoc' 'python3 -' '`Any`' 'import a frozen test case needs'; do
+        pk "PK50 $n $agent" has "$agent" "$n"
+    done
+done
+for n in '`git -C' 'sed -i' 'python3 -'; do pk "PK50 phase 0 $n" has_in "$pk_p0" "$n"; done
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK49-PK50: failing, see above' >&2; exit 1; }
+
+# PK51-PK53 (item 1 and item 8): no prompt pipes into a kit script (kit-cwd refuses it), the prompts that ran
+# a pipe use the alone forms, and ship.md prunes the shipped run's older siblings after `gh pr create`.
+pk_pipe_re='\|\s*((python3?|bash|sh)(\s+-\S+)*\s+)?\.claude/(hooks|scripts)/'
+pk51_scan() {
+    grep -rEn -- "$pk_pipe_re" "$ROOT/.claude/commands" "$ROOT/.claude/agents" "$ROOT/.claude/skills" \
+        "$ROOT/.claude/guides" "$ROOT/docs/Claude_Workflows.md"
+}
+pk51_clean() { ! pk51_scan >&2; }
+pk PK51 pk51_clean
+for pk51_line in '| python3 .claude/hooks/x.py' '| python3 -I .claude/hooks/x.py' '| bash .claude/scripts/x.sh' '| .claude/hooks/x.py'; do
+    pk "PK51 self-test [$pk51_line]" grep -Eq -- "$pk_pipe_re" <<<"git diff $pk51_line"
+done
+pk_clean="$(section "$GITHUB_AGENT" '**Clean up** when the PR is' 'drop` removes the images' || true)"
+pk PK52 has "$REVIEW" 'kit-pr-assets.py ui --base'
+pk PK52.2 has_in "$pk_clean" 'kit-pr-assets.py drop --branch <B> --body-file'
+pk PK52.3 has_in "$pk_clean" 'gh pr view <n> --json body'
+pk PK53 in_order "$pk_pr" 'gh pr create' 'kit-pr-assets.py prune-local'
+pk PK53.2 has_in "$pk_pr" 'prune-local --slug <slug> --keep'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK51-PK53: failing, see above' >&2; exit 1; }
+
+# PK54-PK55 (item 7): the review's health probe goes through kit-health.py, and no kit prompt prescribes a shell
+# write into the project (`>`, `>>`, `&>`, `tee`, `sed -i`, `perl -i` onto a relative path). Only code (a fence or a
+# backtick span) is read, and a line starting with `no `/`never` is a prohibition, not a prescription (`/dev/null`,
+# an absolute path and `<scratchpad>` never match: the target must start with a letter, `.`, `_` or `<`).
+pk55_re='(^|[[:space:]])(&>|>>?)[[:space:]]*[A-Za-z._<][^[:space:]]*[/.]|(^|[[:space:]|;&])tee[[:space:]]+(-a[[:space:]]+)?[A-Za-z._<][^[:space:]]*[/.]|(^|[[:space:]])(sed|perl)[[:space:]]+(-[A-Za-z]*i[A-Za-z.]*|--in-place[^[:space:]]*)([[:space:]].*)?[[:space:]][A-Za-z._<][^[:space:]]*[/.]'
+pk55_code() {
+    find "$ROOT/.claude/commands" "$ROOT/.claude/agents" "$ROOT/.claude/skills" "$ROOT/.claude/guides" -name '*.md' | sort | while read -r f; do
+        awk -v F="$f" '
+            /^[[:space:]]*```/ { fence = !fence; next }
+            fence { print F ":" NR ": " $0; next }
+            /^[ \t>*-]*([0-9]+\.)?[ \t]*([Nn]o|[Nn]ever) / { next }
+            { l = $0; while (match(l, /`[^`]+`/)) { print F ":" NR ": " substr(l, RSTART + 1, RLENGTH - 2); l = substr(l, RSTART + RLENGTH) } }' "$f"
+    done
+}
+pk55_scan() { pk55_code | grep -E -- "$pk55_re" | grep -v -- '<scratchpad>'; }
+pk55_clean() { ! pk55_scan >&2; }
+pk PK54 has "$REVIEW" 'kit-health.py finding'
+pk PK54.2 lacks "$REVIEW" '>> .claude/.kit-health.jsonl'
+pk PK55 pk55_clean
+for pk55_line in "echo x > docs/work/a/plan.md" "printf x >> docs/notes.md" "cmd &> build.log" "printf x | tee -a docs/x.md" \
+    "sed -i 's/a/b/' docs/x.md" "perl -i -pe 's/a/b/' docs/x.md" "sed --in-place 's/a/b/' src/a.md"; do
+    pk "PK55 self-test [$pk55_line]" grep -Eq -- "$pk55_re" <<<"$pk55_line"
+done
+for pk55_line in "cmd > /dev/null 2>&1" "cmd > /tmp/x/out.txt" "sed -i" "perl -i" "cat >> x <<EOF" "Result<T> | null" "a => b.c" \
+    "gh pr view 1 > <scratchpad>/body.md"; do
+    pk "PK55 self-test clean [$pk55_line]" bash -c '! grep -E -- "$1" <<<"$2" | grep -v -- "<scratchpad>" | grep -q .' _ "$pk55_re" "$pk55_line"
+done
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK54-PK55: failing, see above' >&2; exit 1; }
+
+# PK56, PK58 (item 5): a plan that rewrites cases of a test-after file lists them in `Frozen cases to amend:` with
+# no `.tdd-unfrozen` line, and in `auto` one arbiter per declared rewrite ledgers `kind: declared-rewrite`.
+pk_s7="$(section "$PLAN" '7. **TEST PLAN GATE' '**First, clear research' || true)"
+pk_p4="$(section "$ORCHESTRATE" 'Once green, adding a case to a frozen file' 'Load what you need from `.claude/skills/patterns/`' || true)"
+pk PK56 has_in "$pk_s7" 'test-after file'
+pk PK56.2 has_in "$pk_s7" 'Frozen cases to amend:'
+pk PK56.3 has_in "$pk_s7" 'writes no `.tdd-unfrozen` line'
+pk PK56.4 has_in "$pk_p4" 'test-after file'
+pk PK56.5 has_in "$pk_p4" 'writes no `.tdd-unfrozen` line'
+pk PK58 has "$ARBITER" 'kind: declared-rewrite'
+pk PK58.2 has "$ARBITER" 'verdict: accept | refuse'
+pk PK58.3 has "$ARBITER" 'test_[A-Za-z0-9_]+'
+pk PK58.4 has_in "$pk_s7" 'one fresh `arbiter` per declared rewrite'
+pk PK58.5 has_in "$pk_s7" 'kind: declared-rewrite'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK56, PK58: failing, see above' >&2; exit 1; }
+
+# PK57 (item 3): the guarded block is printed after the commit and the push are reported, never beside them.
+pk_ship2="$(section "$SHIP" '2. The main thread writes `docs/work/<slug>/pr-body.md`' '3. `gh pr create --repo' | tr -s ' \n' ' ' || true)"
+pk_gh5="$(section "$GITHUB_AGENT" '5. For a PR, in this order:' '### PR screenshots on `pr-assets`' | tr -s ' \n' ' ' || true)"
+pk PK57 has_in "$pk_ship2" 'only after the `github` agent reported the commit and the push'
+pk PK57.2 has_in "$pk_ship2" 'never in parallel'
+pk PK57.3 has_in "$pk_ship2" '--guarded-block'
+pk PK57.4 has_in "$pk_gh5" '--guarded-block'
+pk PK57.5 has_in "$pk_gh5" 'never in parallel'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK57: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

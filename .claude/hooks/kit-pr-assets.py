@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """PR screenshots on the orphan `pr-assets` branch.
 
-Subcommands: ui, path, plan, section, commit, drop (docs/specs/pr-screenshots.md).
+Subcommands: ui, path, plan, section, commit, drop, prune-local (docs/specs/pr-screenshots.md).
 Exit 0 ok, 2 refused with a one-line English reason on stderr and nothing on
-stdout. Only `commit` and `drop` write, and only `refs/heads/pr-assets`, through
-a temporary index and a compare-and-swap update-ref. Nothing is pushed or fetched.
+stdout. Only `commit` and `drop` write the repository, and only `refs/heads/pr-assets`,
+through a temporary index and a compare-and-swap update-ref. `prune-local` writes
+only under `.pr-shots/<slug>/`: it deletes `*.png` files and empty dirs of the
+slug's other run dirs. Nothing is pushed or fetched.
+
+`ui --base <ref>` lists the changes itself (`git diff --name-only <ref>` plus the
+untracked files); `drop --body-file <path>` reads the PR body from a file. Stdin
+stays accepted for both when the option is absent.
 """
 
 from __future__ import annotations
@@ -265,9 +271,81 @@ def published_folders(body: str, branch: str) -> set[str]:
     return folders
 
 
+def changed_paths(base: str) -> list[str]:
+    """Paths changed in the working tree since `base`, untracked files included (cwd's git tree)."""
+    if base.startswith("-"):
+        raise Refused(f"invalid base ref: {base!r}")
+    paths: list[str] = []
+    for args in (("diff", "--name-only", base, "--"), ("ls-files", "--others", "--exclude-standard")):
+        result = subprocess.run(["git", "-c", "core.quotePath=false", *args], capture_output=True, text=True)
+        if result.returncode != 0:
+            reason = (result.stderr.strip().splitlines() or ["no output"])[-1]
+            raise Refused(f"git {args[0]} failed: {reason}")
+        paths.extend(line for line in result.stdout.splitlines() if line.strip())
+    return paths
+
+
+def read_body(args: argparse.Namespace) -> str:
+    """The PR body: the `--body-file` when given, else stdin."""
+    if args.body_file is None:
+        return sys.stdin.read()
+    try:
+        with open(args.body_file, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError as error:
+        raise Refused(f"cannot read the body file: {error.strerror or error}") from None
+
+
+SLUG_RE = re.compile(r"[a-z0-9.-]+")
+SHOTS_ROOT = ".pr-shots"
+
+
+def cmd_prune_local(args: argparse.Namespace) -> None:
+    """Delete the PNGs of the slug's other run dirs, then each emptied dir; the kept run is untouched."""
+    if not SLUG_RE.fullmatch(args.slug) or not args.slug.strip("."):
+        raise Refused(f"invalid slug: {args.slug!r}")
+    slug_dir = os.path.join(SHOTS_ROOT, args.slug)
+    if not os.path.lexists(slug_dir):
+        print("none")
+        return
+    for link in (SHOTS_ROOT, slug_dir):
+        if os.path.islink(link):
+            raise Refused(f"symlink in the screenshots tree: {link}")
+    if not os.path.isdir(slug_dir):
+        raise Refused(f"not a directory: {slug_dir}")
+    keep = os.path.realpath(args.keep)
+    if os.path.dirname(keep) != os.path.realpath(slug_dir) or not os.path.isdir(keep):
+        raise Refused(f"--keep is not an existing run dir directly under {slug_dir}/: {args.keep!r}")
+    for root, dirs, files in os.walk(slug_dir):
+        for name in dirs + files:
+            if os.path.islink(os.path.join(root, name)):
+                raise Refused(f"symlink under {slug_dir}: {os.path.join(root, name)}")
+    pruned: list[str] = []
+    for name in sorted(os.listdir(slug_dir)):
+        run_dir = os.path.join(slug_dir, name)
+        if not os.path.isdir(run_dir) or os.path.realpath(run_dir) == keep:
+            continue
+        for root, dirs, files in os.walk(run_dir, topdown=False):
+            for file_name in files:
+                full = os.path.join(root, file_name)
+                if file_name.endswith(".png") and stat.S_ISREG(os.lstat(full).st_mode):
+                    os.remove(full)
+            for dir_name in dirs:
+                try:
+                    os.rmdir(os.path.join(root, dir_name))
+                except OSError:
+                    pass
+        try:
+            os.rmdir(run_dir)
+        except OSError:
+            continue
+        pruned.append(run_dir)
+    print("\n".join(pruned) if pruned else "none")
+
+
 def cmd_drop(args: argparse.Namespace) -> None:
     branch = check_branch(args.branch)
-    folders = published_folders(sys.stdin.read(), branch)
+    folders = published_folders(read_body(args), branch)
     parent, old = pick_parent()
     doomed = [p for p in tree_paths(parent) if p.rpartition("/")[0] in folders]
     if not doomed:
@@ -290,7 +368,8 @@ class Parser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     parser = Parser(prog="kit-pr-assets")
     sub = parser.add_subparsers(dest="cmd", required=True, parser_class=Parser)
-    sub.add_parser("ui")
+    ui = sub.add_parser("ui")
+    ui.add_argument("--base")
     path = sub.add_parser("path")
     path.add_argument("--branch", required=True)
     path.add_argument("--sha", required=True)
@@ -307,6 +386,10 @@ def build_parser() -> argparse.ArgumentParser:
         run.add_argument("--repo", required=True)
     drop = sub.add_parser("drop")
     drop.add_argument("--branch", required=True)
+    drop.add_argument("--body-file")
+    prune = sub.add_parser("prune-local")
+    prune.add_argument("--slug", required=True)
+    prune.add_argument("--keep", required=True)
     return parser
 
 
@@ -317,7 +400,10 @@ def run(argv: list[str]) -> None:
             roots = project_config.load(os.getcwd()).app_roots
         except project_config.ConfigError as error:
             raise Refused(f"cannot read the app roots: {error}") from None
-        paths = [line for line in sys.stdin.read().splitlines() if line.strip()]
+        if args.base is not None:
+            paths = changed_paths(args.base)
+        else:
+            paths = [line for line in sys.stdin.read().splitlines() if line.strip()]
         print("ui" if any(is_ui_path(p, roots) for p in paths) else "none")
     elif args.cmd == "path":
         print(image_path(args.branch, args.sha, args.flow, args.step, args.theme, args.viewport, args.before))
@@ -330,6 +416,8 @@ def run(argv: list[str]) -> None:
             print(text)
     elif args.cmd == "commit":
         cmd_commit(args)
+    elif args.cmd == "prune-local":
+        cmd_prune_local(args)
     else:
         cmd_drop(args)
 

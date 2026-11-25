@@ -131,7 +131,9 @@ Shell discipline for the whole pass:
 - the session cwd stays at the project root: a subfolder tool runs as `pnpm --dir <sub> …`, `git -C <tree> …`
   or one `(cd <sub> && …)` subshell, never a bare `cd <sub> && …`, which persists and leaves every later
   command and agent in the subfolder (EcoCrew 2.2: the pass's push asked from `frontend/`);
-- work artifacts are written with Write/Edit, never from the shell (`plan.md`, `handoff.md`, `design.md`; appending `## Gate` is an Edit).
+- work artifacts are written with Write/Edit, never from the shell (`plan.md`, `handoff.md`, `design.md`; appending `## Gate` is an Edit);
+- git in another directory is `git -C <abs> …`, never `cd … && git …`;
+- no `sed -i`/`perl -i` (Edit instead), no `python3 -`/`-c` (Read/Grep or a kit script instead).
 
 0. **Closing check**, before anything else. For each `docs/work/*/handoff.md` with
    `phase: awaiting-merge` (main tree and every `.claude/worktrees/*`), run
@@ -378,7 +380,9 @@ insertion (say what it covers) with the next free id of its letter; whoever wrot
 it, you append its plan line — an `implementer` reproduction case included, from
 the id it reports. A case the plan gate recorded as a row (`Frozen cases to
 amend:`) is not a correction: its `.tdd-unfrozen` line is written with no prompt and
-the freeze hook checks each edited case against its row. Any other correction is
+the freeze hook checks each edited case against its row. A row for a test-after file (a declared
+rewrite, not frozen) writes no `.tdd-unfrozen` line at all: it only lifts the PR's guarded-block
+report for that case. Any other correction is
 the one step of EXECUTE that waits for the user:
 the `.tdd-unfrozen` write asks the user (a guarded path), and a headless run cannot answer. The agent that hits the
 freeze stops and reports; you **queue** it in `docs/work/<slug>/unfreeze-queue.md`

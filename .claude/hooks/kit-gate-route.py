@@ -387,6 +387,12 @@ def parse_review_finding(raw: dict[str, object], index: int) -> ReviewFinding:
     finding_id = text_field(raw, "id", where)
     where = f"finding {finding_id}"
     severity = enum_field(raw, "severity", SEVERITIES, where)
+    check(
+        raw.get("dimension") in DIMENSIONS,
+        where,
+        f"dimension must be one of {', '.join(DIMENSIONS)}; a Stage 2.5 shadow item carries "
+        "the dimension of the dependency it shadows",
+    )
     dimension = enum_field(raw, "dimension", DIMENSIONS, where)
     klass = enum_field(raw, "class", CLASSES, where)
     status = enum_field(raw, "status", STATUSES, where)

@@ -465,6 +465,172 @@ else
     [[ "$(tree_of "$CWD")" == "feat/x/abc1234/1234567/n.png" ]] || fail "$K26" "tree was [$(tree_of "$CWD")]"
 fi
 
+# ---------------------------------------------------------------- auto-mode-2.5-fixes (items 1 and 8)
+
+# mkui: a repo whose base commit holds a tracked src/X.tsx and docs/x.md, with src/Ignored.tsx git-ignored.
+mkui() {
+    mkrepo "$CASE_DIR"
+    CWD="$CASE_DIR/work"
+    mkdir -p "$CWD/src" "$CWD/docs"
+    printf 'x\n' >"$CWD/src/X.tsx"
+    printf 'x\n' >"$CWD/docs/x.md"
+    printf 'src/Ignored.tsx\n' >"$CWD/.gitignore"
+    git -C "$CWD" add -A
+    git -C "$CWD" commit -q -m base
+    BASE="$(git -C "$CWD" rev-parse HEAD)"
+}
+
+case_start
+mkui
+printf 'changed\n' >"$CWD/src/X.tsx"
+run_cmd ui --base "$BASE"
+expect_out "K31 ui --base with a tracked change to src/X.tsx prints ui, nothing on stdin" "ui"
+
+case_start
+mkui
+printf 'new\n' >"$CWD/src/New.tsx"
+run_cmd ui --base "$BASE"
+expect_out "K32 ui --base with only an untracked src/New.tsx prints ui" "ui"
+
+case_start
+mkui
+printf 'changed\n' >"$CWD/docs/x.md"
+run_cmd ui --base "$BASE"
+expect_out "K33 ui --base with only a change to docs/x.md prints none" "none"
+
+case_start
+mkui
+printf 'ignored\n' >"$CWD/src/Ignored.tsx"
+run_cmd ui --base "$BASE"
+expect_out "K34 ui --base with only an ignored src/Ignored.tsx prints none" "none"
+
+case_start
+mkui
+printf 'changed\n' >"$CWD/src/X.tsx"
+run_cmd ui --base no-such-ref
+expect_refused "K35 ui --base with an unknown ref exits 2, nothing on stdout"
+mkdir -p "$CWD/.claude"
+printf 'not json\n' >"$CWD/.claude/project.json"
+run_cmd ui --base "$BASE"
+expect_refused "K35 ui --base with an invalid project.json exits 2"
+case_start
+run_cmd ui --base HEAD
+expect_refused "K35 ui --base outside a git tree exits 2"
+
+case_start
+mkrepo "$CASE_DIR"
+CWD="$CASE_DIR/work"
+seed "$CWD" refs/heads/pr-assets - other/keep/x.png feat/x/abc1234/a.png feat/x/9999999/b.png feat/x-y/abc1234/c.png >/dev/null
+printf 'body with https://github.com/o/r/blob/pr-assets/feat/x/abc1234/checkout-01-cart-light-desktop.png?raw=true\n' >"$CASE_DIR/body.md"
+run_in "" drop --branch feat/x --body-file "$CASE_DIR/body.md"
+K36="K36 drop --body-file gives the tree of the stdin form"
+if [[ "$RC" -ne 0 ]]; then
+    fail "$K36" "exit $RC (stderr: $ERR)"
+else
+    WANT="$(printf '%s\n' feat/x-y/abc1234/c.png feat/x/9999999/b.png other/keep/x.png)"
+    [[ "$(tree_of "$CWD")" == "$WANT" ]] || fail "$K36" "tree was [$(tree_of "$CWD")]"
+fi
+run_in "" drop --branch feat/x --body-file "$CASE_DIR/missing.md"
+expect_refused "K36 drop --body-file with a missing file exits 2"
+
+# prune fixtures: tree_snap lists every entry and the digest of every regular file.
+tree_snap() {
+    (cd "$1" && find . | sort && find . -type f -exec sha256sum {} + | sort)
+}
+
+case_start
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r1/checkout/01-a-dark-desktop.png \
+    r2/checkout/01-a-light-desktop.png r3/checkout/01-a-light-desktop.png
+SNAP_R2="$(tree_snap "$CASE_DIR/.pr-shots/s/r2")"
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+K37="K37 prune-local deletes the PNGs and dirs of the other runs and leaves the kept run byte-identical"
+if [[ "$RC" -ne 0 ]]; then
+    fail "$K37" "exit $RC (stderr: $ERR)"
+else
+    [[ "$(ls "$CASE_DIR/.pr-shots/s")" == "r2" ]] || fail "$K37" "slug dir holds [$(ls "$CASE_DIR/.pr-shots/s")]"
+    [[ "$(tree_snap "$CASE_DIR/.pr-shots/s/r2")" == "$SNAP_R2" ]] || fail "$K37" "the kept run changed"
+    [[ "$OUT" == "$(printf '%s\n' .pr-shots/s/r1 .pr-shots/s/r3)" ]] || fail "$K37" "stdout was [$OUT]"
+fi
+
+case_start
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r1/notes.txt r2/checkout/01-a-light-desktop.png
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+K38="K38 a run dir holding a non-PNG file keeps that file and its dir, its PNGs go"
+if [[ "$RC" -ne 0 ]]; then
+    fail "$K38" "exit $RC (stderr: $ERR)"
+else
+    [[ -f "$CASE_DIR/.pr-shots/s/r1/notes.txt" ]] || fail "$K38" "notes.txt was deleted"
+    [[ ! -e "$CASE_DIR/.pr-shots/s/r1/checkout/01-a-light-desktop.png" ]] || fail "$K38" "the PNG is still there"
+fi
+
+case_start
+mkshots "$CASE_DIR/.pr-shots" s/r1/checkout/01-a-light-desktop.png s/r2/checkout/01-a-light-desktop.png \
+    t/r1/checkout/01-a-light-desktop.png
+SNAP_T="$(tree_snap "$CASE_DIR/.pr-shots/t")"
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+K39="K39 another slug's dir is untouched"
+if [[ "$RC" -ne 0 ]]; then
+    fail "$K39" "exit $RC (stderr: $ERR)"
+else
+    [[ "$(tree_snap "$CASE_DIR/.pr-shots/t")" == "$SNAP_T" ]] || fail "$K39" "slug t changed"
+    [[ ! -e "$CASE_DIR/.pr-shots/s/r1" ]] || fail "$K39" "s/r1 was not pruned"
+fi
+
+case_start
+mkshots "$CASE_DIR/.pr-shots" s/r1/checkout/01-a-light-desktop.png s/r2/checkout/01-a-light-desktop.png \
+    t/r1/checkout/01-a-light-desktop.png
+mkshots "$CASE_DIR/elsewhere" r1/checkout/01-a-light-desktop.png
+SNAP_ALL="$(tree_snap "$CASE_DIR")"
+for KEEP in .pr-shots/t/r1 ../x "$CASE_DIR/elsewhere/r1"; do
+    run_cmd prune-local --slug s --keep "$KEEP"
+    expect_refused "K40 --keep [$KEEP] outside .pr-shots/s/ exits 2"
+    [[ "$(tree_snap "$CASE_DIR")" == "$SNAP_ALL" ]] || fail "K40 --keep [$KEEP] deleted something" "tree changed"
+done
+run_cmd prune-local --slug 'S/..' --keep .pr-shots/s/r2
+expect_refused "K40 a slug outside [a-z0-9.-]+ exits 2"
+[[ "$(tree_snap "$CASE_DIR")" == "$SNAP_ALL" ]] || fail "K40 a bad slug deleted something" "tree changed"
+
+case_start
+mkshots "$CASE_DIR/outside" x/01-a-light-desktop.png
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r2/checkout/01-a-light-desktop.png
+ln -s "$CASE_DIR/outside" "$CASE_DIR/.pr-shots/s/r3"
+SNAP_ALL="$(tree_snap "$CASE_DIR")"
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+expect_refused "K41 a symlinked run dir exits 2"
+[[ "$(tree_snap "$CASE_DIR")" == "$SNAP_ALL" ]] || fail "K41 a symlinked run dir: something was deleted" "tree changed"
+case_start
+printf 'secret' >"$CASE_DIR/secret.txt"
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r2/checkout/01-a-light-desktop.png
+ln -s "$CASE_DIR/secret.txt" "$CASE_DIR/.pr-shots/s/r1/checkout/02-b-light-desktop.png"
+SNAP_ALL="$(tree_snap "$CASE_DIR")"
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+expect_refused "K41 a symlinked PNG exits 2"
+[[ "$(tree_snap "$CASE_DIR")" == "$SNAP_ALL" ]] || fail "K41 a symlinked PNG: something was deleted" "tree changed"
+
+case_start
+run_cmd prune-local --slug s --keep .pr-shots/s/r1
+expect_out "K42 no .pr-shots/s dir prints none" "none"
+
+case_start
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r2/checkout/01-a-light-desktop.png
+SNAP_ALL="$(tree_snap "$CASE_DIR")"
+for KEEP in .pr-shots/s .pr-shots/s/r9; do
+    run_cmd prune-local --slug s --keep "$KEEP"
+    expect_refused "K43 --keep [$KEEP] exits 2"
+    [[ "$(tree_snap "$CASE_DIR")" == "$SNAP_ALL" ]] || fail "K43 --keep [$KEEP] deleted something" "tree changed"
+done
+
+case_start
+mkshots "$CASE_DIR/.pr-shots/s" r1/checkout/01-a-light-desktop.png r1/notes.txt r2/checkout/01-a-light-desktop.png r3/checkout/01-a-light-desktop.png
+run_cmd prune-local --slug s --keep .pr-shots/s/r2
+K44="K44 a run dir that could not be removed is not printed as pruned, a removed one is"
+if [[ "$RC" -ne 0 ]]; then
+    fail "$K44" "exit $RC (stderr: $ERR)"
+else
+    [[ ! -e "$CASE_DIR/.pr-shots/s/r1/checkout/01-a-light-desktop.png" ]] || fail "$K44" "the PNG is still there"
+    [[ "$OUT" == ".pr-shots/s/r3" ]] || fail "$K44" "stdout was [$OUT]"
+fi
+
 if [[ "$FAILURES" -gt 0 ]]; then
     printf '%d failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2
     exit 1

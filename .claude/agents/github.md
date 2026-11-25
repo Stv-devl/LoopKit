@@ -189,7 +189,9 @@ Never push or open a PR "to be helpful" if the user only asked to commit.
 5. For a PR, in this order: commit (step 3); on a recorded run, Publish steps 1-5
    below and return the `section` text; the main thread writes
    `docs/work/<slug>/pr-body.md`; then, called again, the exact PR form of the
-   gate above (`--repo`, the recorded base, `--body-file`).
+   gate above (`--repo`, the recorded base, `--body-file`). The main thread runs
+   `python3 .claude/hooks/loop-record.py --guarded-block` only after you reported the commit and
+   the push, never in parallel with them; a body whose block was computed on an older HEAD is denied.
 
 ### PR screenshots on `pr-assets`
 
@@ -219,7 +221,9 @@ Exit 2 is a refusal with its reason on stderr: report it, never retry around it.
 **Clean up** when the PR is `MERGED`:
 
 1. `git fetch origin`
-2. `gh pr view <n> --json body --jq .body | python3 .claude/hooks/kit-pr-assets.py drop --branch <B>`.
+2. `gh pr view <n> --json body -q .body > <scratchpad>/pr-<n>-body.md` (`<scratchpad>` is the
+   session scratchpad dir, outside the project), then, alone in its own Bash call,
+   `python3 .claude/hooks/kit-pr-assets.py drop --branch <B> --body-file <scratchpad>/pr-<n>-body.md`.
    The folders it removes are the ones the merged PR's body published, so a rebase or a squash at merge changes nothing.
 3. Show the removed folders (`git show --stat refs/heads/pr-assets`). **Ask**, then
    `git push origin refs/heads/pr-assets`, then Keeping local in sync. This push asks:
