@@ -2444,7 +2444,7 @@ rp_case() {
     printf '%s' "$src" >"$p/$rel"
     printf '%s\n' "$text" >"$p/pytest-out"
     out="$(RP_OUT="$p/pytest-out" CWK_PYTEST="$RP_STUB" pv_addon tdd-prove-red-py.py "$p" Write "$rel")"
-    marker="$(ls -A "$p/.claude/.tdd-red" 2>/dev/null | grep -v '^\.gitignore$' || true)"
+    marker="$(find "$p/.claude/.tdd-red" -mindepth 1 -maxdepth 1 ! -name .gitignore -printf '%f\n' 2>/dev/null || true)"
     CASES=$((CASES + 1))
     if [[ "$want" == marker && -z "$marker" ]]; then
         fail tdd-prove-red-py "$id" "expected a RED marker, got none: '${out:0:400}'"
