@@ -2338,6 +2338,202 @@ run_project_values_step5_cases() {
     rm -rf "$tmp"
 }
 
+# Fails <id> unless `project_config.py check` on a v3 file whose server_roots is <json>
+# exits <code>, with <needle> on stderr when given.
+sr_check_expect() {
+    local id="$1" dir="$2" roots="$3" code="$4" needle="${5:-}" err rc
+    mkdir -p "$dir/.claude"
+    python3 -I -B "$HOOKS_DIR/project_config.py" defaults | jq --argjson r "$roots" '.server_roots = $r' >"$dir/.claude/project.json"
+    CASES=$((CASES + 1))
+    set +e
+    err="$(python3 -I -B "$HOOKS_DIR/project_config.py" check "$dir" 2>&1 >/dev/null)"
+    rc=$?
+    set -e
+    [[ "$rc" == "$code" ]] || { fail project_config.py "$id" "server_roots $roots: expected exit $code, got $rc ($err)"; return 0; }
+    [[ -z "$needle" || "$err" == *"$needle"* ]] || fail project_config.py "$id" "stderr lacks $needle: '$err'"
+    return 0
+}
+
+# Fails <id> unless `project_config.py detect-server-roots <dir>` prints exactly the JSON array <want>.
+sr_detect_expect() {
+    local id="$1" dir="$2" want="$3" out
+    CASES=$((CASES + 1))
+    out="$(python3 -I -B "$HOOKS_DIR/project_config.py" detect-server-roots "$dir" 2>&1)" \
+        || { fail project_config.py "$id" "detect-server-roots exited non-zero: '$out'"; return 0; }
+    jq -e --argjson w "$want" '. == $w' <<<"$out" >/dev/null 2>&1 \
+        || fail project_config.py "$id" "expected $want, got '$out'"
+    return 0
+}
+
+# PC36-PC40 (python-red-import item 2): a server root is a canonical relative path of one or
+# more segments; every other refusal holds and names the entry.
+run_server_roots_cases() {
+    local tmp bad
+    tmp="$(mktemp -d)"
+    sr_check_expect PC36 "$tmp/pc36" '["backend/app"]' 0
+    for bad in '../x' '/abs' 'a//b' '.'; do
+        sr_check_expect "PC37[$bad]" "$tmp/pc37" "$(jq -cn --arg b "$bad" '[$b]')" 3 "'$bad'"
+    done
+    sr_check_expect PC38 "$tmp/pc38" '["backend/app","backend/alembic"]' 0
+    sr_check_expect PC39 "$tmp/pc39" '["app"]' 0
+    sr_check_expect PC40 "$tmp/pc40" '["backend/app","backend/app"]' 3 "lists a server root twice"
+    rm -rf "$tmp"
+}
+
+# SR1-SR7 (python-red-import item 2): /kit:init's server_roots proposal. The addon server
+# folders at the root or one folder down, root first, then parents sorted, `app`, `alembic`,
+# `supabase` within a parent; a front `app/`, reserved or hidden parents and symlinks are not.
+run_detect_server_roots_cases() {
+    local tmp p err rc letter
+    tmp="$(mktemp -d)"
+
+    p="$tmp/sr1"; mkdir -p "$p/backend/app" "$p/backend/alembic"; : >"$p/backend/app/main.py"
+    sr_detect_expect SR1 "$p" '["backend/app","backend/alembic"]'
+
+    p="$tmp/sr2"; mkdir -p "$p/app" "$p/alembic"; : >"$p/app/__init__.py"
+    sr_detect_expect SR2 "$p" '["app","alembic"]'
+
+    p="$tmp/sr3"; mkdir -p "$p/frontend/app" "$p/node_modules/app"
+    : >"$p/frontend/app/page.tsx"; : >"$p/node_modules/app/main.py"
+    sr_detect_expect SR3 "$p" '[]'
+
+    p="$tmp/sr4"; mkdir -p "$p/supabase"
+    sr_detect_expect SR4 "$p" '["supabase"]'
+
+    p="$tmp/sr5"; mkdir -p "$p/.hidden/app"; : >"$p/.hidden/app/main.py"
+    sr_detect_expect SR5 "$p" '[]'
+
+    p="$tmp/sr6"; mkdir -p "$p/backend" "$tmp/sr6-real"; : >"$tmp/sr6-real/main.py"
+    ln -s "$tmp/sr6-real" "$p/backend/app"
+    sr_detect_expect SR6 "$p" '[]'
+
+    p="$tmp/sr8"; mkdir -p "$p/app" "$p/zz/alembic" "$p/aa/app" "$p/aa/supabase"
+    : >"$p/app/__init__.py"; : >"$p/aa/app/main.py"
+    sr_detect_expect SR8 "$p" '["app","aa/app","aa/supabase","zz/alembic"]'
+
+    p="$tmp/sr9"; mkdir -p "$p"
+    for letter in l k j i h g f e d c b a; do mkdir -p "$p/$letter/alembic"; done
+    sr_detect_expect SR9 "$p" '["a/alembic","b/alembic","c/alembic","d/alembic","e/alembic","f/alembic","g/alembic","h/alembic","i/alembic","j/alembic","k/alembic","l/alembic"]'
+
+    CASES=$((CASES + 1))
+    set +e
+    err="$(python3 -I -B "$HOOKS_DIR/project_config.py" detect-server-roots "$tmp/absent" 2>&1 >/dev/null)"
+    rc=$?
+    set -e
+    [[ "$rc" == 2 && "$err" == *usage:* && "$err" == *detect-server-roots* ]] \
+        || fail project_config.py SR7 "expected exit 2 and a usage naming detect-server-roots, got $rc '$err'"
+    rm -rf "$tmp"
+}
+
+# A fastapi project for the package-import cases: the `app.services.agent` package
+# exists, its `choice` module does not. <prefix> places it under a monorepo folder.
+rp_project() {
+    local p="$1" pre="${2:-}"
+    pv_addon_project "$p"
+    mkdir -p "$p/${pre}app/services/agent" "$p/${pre}tests/services/agent"
+    : >"$p/${pre}app/__init__.py"
+    : >"$p/${pre}app/services/__init__.py"
+    : >"$p/${pre}app/services/agent/__init__.py"
+}
+
+# The prover on <rel> holding <src>, pytest replaced by a stub printing <pytest text>
+# and exiting 2; <want> is `marker` or `none`, and the message holds every <needle>.
+rp_case() {
+    local id="$1" p="$2" rel="$3" src="$4" text="$5" want="$6" out marker needle
+    shift 6
+    printf '%s' "$src" >"$p/$rel"
+    printf '%s\n' "$text" >"$p/pytest-out"
+    out="$(RP_OUT="$p/pytest-out" CWK_PYTEST="$RP_STUB" pv_addon tdd-prove-red-py.py "$p" Write "$rel")"
+    marker="$(ls -A "$p/.claude/.tdd-red" 2>/dev/null | grep -v '^\.gitignore$' || true)"
+    CASES=$((CASES + 1))
+    if [[ "$want" == marker && -z "$marker" ]]; then
+        fail tdd-prove-red-py "$id" "expected a RED marker, got none: '${out:0:400}'"
+        return 0
+    elif [[ "$want" == none && -n "$marker" ]]; then
+        fail tdd-prove-red-py "$id" "expected no marker, got '$marker': '${out:0:400}'"
+        return 0
+    fi
+    for needle in "$@"; do
+        [[ "$out" == *"$needle"* ]] || { fail tdd-prove-red-py "$id" "message lacks '$needle': '${out:0:400}'"; return 0; }
+    done
+}
+
+# RP1-RP11 (python-red-import item 1): `cannot import name '<n>' from '<p>'` whose
+# `<p>.<n>` is exactly the module under test is the module itself missing, a RED; any
+# other unresolved name keeps today's class. The pytest texts are CPython's own forms.
+run_prove_red_package_cases() {
+    local tmp p choice exact partial
+    tmp="$(mktemp -d)"
+    RP_STUB="$tmp/pytest-stub"
+    printf '%s\n' '#!/usr/bin/env bash' 'cat "$RP_OUT"' 'exit 2' >"$RP_STUB"
+    chmod +x "$RP_STUB"
+    choice=$'from app.services.agent import choice\n\n\ndef test_pick():\n    assert choice.pick() == 1\n'
+    exact="E   ImportError: cannot import name 'choice' from 'app.services.agent' (/x/app/services/agent/__init__.py)"
+    partial="E   ImportError: cannot import name 'choice' from partially initialized module 'app.services.agent' (most likely due to a circular import) (/x/app/services/agent/__init__.py)"
+
+    p="$tmp/rp1"; rp_project "$p"
+    rp_case RP1 "$p" tests/services/agent/test_choice.py "$choice" "$exact" marker "RED confirmed" "does not exist yet"
+    pv_expect RP1 pass "$(pv_addon tdd-require-red-py.py "$p" Write app/services/agent/choice.py 'def pick():\n    return 1\n')"
+
+    p="$tmp/rp2"; rp_project "$p"
+    rp_case RP2 "$p" tests/services/agent/test_choice.py "$choice" "$partial" marker "RED confirmed"
+
+    p="$tmp/rp3"; rp_project "$p"
+    rp_case RP3 "$p" tests/services/agent/test_choice.py \
+        $'from app.services.agent import helpers\n\n\ndef test_h():\n    assert helpers.x() == 1\n' \
+        "E   ImportError: cannot import name 'helpers' from 'app.services.agent' (/x/app/services/agent/__init__.py)" \
+        none "failed at COLLECTION on" '`helpers` from `app.services.agent`'
+
+    p="$tmp/rp4"; rp_project "$p"
+    printf 'def other():\n    return 0\n' >"$p/app/services/agent/choice.py"
+    rp_case RP4 "$p" tests/services/agent/test_choice.py \
+        $'from app.services.agent.choice import missing_fn\n\n\ndef test_m():\n    assert missing_fn() == 1\n' \
+        "E   ImportError: cannot import name 'missing_fn' from 'app.services.agent.choice' (/x/app/services/agent/choice.py)" \
+        marker "RED confirmed" "not yet in" "missing_fn"
+
+    p="$tmp/rp5"; rp_project "$p"
+    rp_case RP5 "$p" tests/services/agent/test_choice.py \
+        $'from app.lib import x\nfrom app.services.agent import choice\n\n\ndef test_pick():\n    assert choice.pick() == x\n' \
+        "$exact"$'\n'"E   ImportError: cannot import name 'x' from 'app.lib' (/x/app/lib/__init__.py)" \
+        none "failed at COLLECTION on" '`x` from `app.lib`'
+
+    p="$tmp/rp6"; rp_project "$p"
+    rp_case RP6 "$p" tests/services/agent/test_choice.py \
+        $'from app.services import agent\n\n\ndef test_pick():\n    assert agent.choice.pick() == 1\n' \
+        "E   ImportError: cannot import name 'agent' from 'app.services' (/x/app/services/__init__.py)" \
+        none "failed at COLLECTION on" '`agent` from `app.services`'
+
+    p="$tmp/rp7"; rp_project "$p"
+    rp_case RP7 "$p" tests/services/agent/test_choice.py \
+        $'from app.services.agent.choice import pick\n\n\ndef test_pick():\n    assert pick() == 1\n' \
+        "E   ModuleNotFoundError: No module named 'app.services.agent.choice'" \
+        marker "RED confirmed" "does not exist yet"
+
+    p="$tmp/rp8"; rp_project "$p"
+    rp_case RP8 "$p" tests/services/agent/test_choice.py \
+        $'import pytest\n\nfrom app.services.agent import choice\n\n\n@pytest.mark.skip\ndef test_pick():\n    assert choice.pick() == 1\n' \
+        "$exact" none 'carries `@pytest.mark.skip`'
+
+    p="$tmp/rp9"; rp_project "$p"
+    rp_case RP9 "$p" tests/services/agent/test_choice.py \
+        $'from app.services.agent import choice\n\n\ndef test_pick():\n    choice.pick()\n' \
+        "$exact" none "contains no assertion"
+
+    p="$tmp/rp10"; rp_project "$p"
+    rp_case RP10 "$p" tests/services/agent/test_choice.py "$choice" \
+        "async def functions are not natively supported." none "no async plugin claimed"
+
+    p="$tmp/rp11"; rp_project "$p" backend/
+    rp_case RP11 "$p" backend/tests/services/agent/test_choice.py "$choice" "$exact" marker "RED confirmed" "does not exist yet"
+
+    p="$tmp/rp12"; rp_project "$p"
+    rp_case RP12 "$p" tests/services/agent/test_choice.py \
+        $'from app.lib import choice as c\nfrom app.services.agent import choice\n\n\ndef test_pick():\n    assert choice.pick() == c.pick()\n' \
+        "E   ImportError: cannot import name 'choice' from 'app.lib' (/x/app/lib/__init__.py)" \
+        none "failed at COLLECTION on" '`choice` from `app.lib`'
+    rm -rf "$tmp"
+}
+
 # Fails <id> unless the stdout part of a probe's <out> is exactly one JSON object.
 rv_one_json() {
     local id="$1" out="$2"
@@ -7405,6 +7601,9 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_project_values_step3_cases
     run_project_values_step4_cases
     run_project_values_step5_cases
+    run_prove_red_package_cases
+    run_server_roots_cases
+    run_detect_server_roots_cases
     run_review1_cases
     run_review2_cases
     run_pw_cases

@@ -45,6 +45,7 @@
       "Bash(pnpm exec tsc --noEmit)",
       "Bash(python3 .claude/hooks/kit-attempts.py *)",
       "Bash(python3 .claude/hooks/kit-gate-route.py *)",
+      "Bash(python3 .claude/hooks/kit-health.py *)",
       "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
       "Bash(python3 .claude/hooks/kit-doctor.py)",
       "Bash(python3 .claude/hooks/kit-doctor.py *)",

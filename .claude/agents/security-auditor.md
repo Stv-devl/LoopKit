@@ -20,6 +20,7 @@ named **surfaces** and cover each exhaustively, with separate report headings. Y
 > contract is **yours to keep**, not the harness's to enforce. If you find
 > yourself needing to change a file to prove a point, that *is* the finding:
 > report it, do not perform it.
+> Never run an inline program: no `python3 -`/`-c`, `node -e` or heredoc program — Read/Grep, `git -C`, or a kit script instead.
 
 > The `reviewer` agent's `security` dimension asks "does this diff break
 > something?". You ask "what is exposed today, including code nobody has touched

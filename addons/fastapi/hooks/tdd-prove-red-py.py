@@ -209,7 +209,9 @@ def main() -> None:
         r"\s+['\"]([^'\"]+)['\"]",
         output,
     )
-    other_bad_names = [(n, m) for n, m in bad_names if m != dotted]
+    other_bad_names = [
+        (n, m) for n, m in bad_names if m != dotted and f"{m}.{n}" != dotted
+    ]
 
     failure_kind = "assertion"
     if exit_code == 5:

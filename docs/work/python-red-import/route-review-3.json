@@ -1,0 +1,9 @@
+{
+  "mode": "review",
+  "round": 3,
+  "fixed": ["T2"],
+  "findings": [
+    {"id": "m17", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-hooks.sh", "line": 2415,
+     "problem": "SR9 misses the dropped sorted() on tmpfs before kernel 6.6 (newest-first listing returns l..a created entries as a..l); fine on ext4 and creation-order filesystems", "scenario": null, "regression": false, "status": "new", "closure": null}
+  ]
+}

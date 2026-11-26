@@ -21,6 +21,7 @@ main thread.
 > contract is **yours to keep**, not the harness's to enforce. If you find
 > yourself needing to change a file to prove a point, that *is* the finding:
 > report it, do not perform it.
+> Never run an inline program: no `python3 -`/`-c`, `node -e` or heredoc program — Read/Grep, `git -C`, or a kit script instead.
 
 ## Project context (load it yourself — you inherit nothing)
 

@@ -26,6 +26,7 @@ Branch: one, off `main` once `auto-mode-2.5-fixes` is merged. Both touch kit hoo
      - Single-segment roots behave exactly as today.
      - `/kit:init` (and `kit-doctor` if it checks the key) detects a backend app nested in a subdirectory (`backend/app`, `backend/alembic`) and proposes the prefixed form.
   3. **Read-only agents never run inline programs.** `reviewer.md`, `verifier.md`, `plan-critic.md`, `story-critic.md`, `explorer.md` and `security-auditor.md` each carry one line: no `python3 -`/`-c`, `node -e` or heredoc program; Read/Grep, `git -C`, or a kit script instead. Same wording style as the "Refused shapes" block of `implementer.md` (pass auto-mode-2.5-fixes, item 6).
+  4. **`kit-health.py` runs without a prompt.** `review.md` step 1bis calls `python3 .claude/hooks/kit-health.py finding …` once per finding (pass auto-mode-2.5-fixes, item 7), but the script is missing from the allow lists, so each call prompts in `moi` and cannot be answered in `auto`. Add `"Bash(python3 .claude/hooks/kit-health.py *)"` to `.claude/settings.json` and to the allow list `install.sh` writes (next to `kit-attempts.py`, :382). Nothing else is widened. Source: follow-up m6 of `docs/work/auto-mode-2.5-fixes/follow-ups.md`.
 - OUT :
   - EcoCrew's own `server_roots` value (`["app","alembic"]` → `["backend/app","backend/alembic"]`): EcoCrew config, the user's, applied in that repo after this pass ships.
   - Header edits in a frozen test file without a RED marker (the 4.1 catch-22 itself), and import-only insertions in frozen files: they loosen the freeze and go to their own `critical` pass. Item 1 removes the trigger seen in 4.1.
@@ -49,9 +50,11 @@ none
 - [ ] `kit-audit-surface.py select --base <rev>` on a diff touching `backend/app/api/routes/account.py` with `server_roots: ["backend/app"]` prints `authz` with its reason; with `["app"]` on the same diff it prints no `authz` (today's behaviour, unchanged).
 - [ ] `/kit:init` on a fixture repo with `backend/app/main.py` and `backend/alembic/` proposes `["backend/app","backend/alembic"]`.
 - [ ] The six read-only agent files carry the inline-program line, and a contract test checks it.
+- [ ] `.claude/settings.json` and the settings `install.sh` installs both allow `python3 .claude/hooks/kit-health.py *`, exactly that form, and a contract test checks that every kit script `review.md` prescribes on its own (`kit-health.py`, `kit-gate-route.py`, `kit-attempts.py`) is in both lists.
 - [ ] All kit suites pass (`test-hooks.sh`, `test-workflow-contracts.sh`, `test-install.sh`, `test-kit-doctor.sh`, the addon's Python hook tests) and `/kit:doctor` passes.
 
 ## Business logic to cover
 - Prover classification: exact `<package>.<name> == module under test` → RED recorded; any other unresolved name → no marker, same text as today; existing missing-module, missing-symbol, async-not-configured and skip branches unchanged.
 - Server-root parsing (accept and refuse rules) and prefix matching in the audit surface selection, including the unchanged single-segment behaviour.
 - `/kit:init` nested-backend detection.
+- Allow-list agreement between `settings.json`, `install.sh` and the kit scripts `review.md` prescribes.

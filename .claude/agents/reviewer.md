@@ -23,6 +23,7 @@ research step — treat each one as a criterion you must explicitly clear.
 > contract is **yours to keep**, not the harness's to enforce. If you find
 > yourself needing to change a file to prove a point, that *is* the finding:
 > report it, do not perform it.
+> Never run an inline program: no `python3 -`/`-c`, `node -e` or heredoc program — Read/Grep, `git -C`, or a kit script instead.
 
 > Your Critical/Major findings are handed to a `verifier` agent that will try to
 > **refute** them. So: cite `path:line`, and state the concrete input or state that

@@ -299,12 +299,12 @@ HP_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(git fetch)", "Bash(git fetch *)",
   "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
-  "Bash(python3 .claude/hooks/kit-audit-surface.py *)"]'
+  "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/kit-health.py *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_ALLOWS="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_ALLOWS")"
 done
-jq -e 'length == 29' <<<"$HP_ALLOWS" >/dev/null
+jq -e 'length == 30' <<<"$HP_ALLOWS" >/dev/null
 hp_all() {
     jq -e --argjson want "$HP_ALLOWS" '(.permissions.allow // []) as $a | all($want[]; . as $w | $a | index($w))' \
         "$1/.claude/settings.json" >/dev/null

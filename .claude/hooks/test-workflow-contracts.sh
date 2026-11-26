@@ -762,13 +762,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(git stash list)", "Bash(python3 .claude/hooks/kit-gate-route.py *)",
   "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
   "Bash(python3 .claude/hooks/loop-record.py --block)", "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
-  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)"]'
+  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)",
+  "Bash(python3 .claude/hooks/kit-health.py *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 35' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 36' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1744,5 +1745,27 @@ pk PK57.3 has_in "$pk_ship2" '--guarded-block'
 pk PK57.4 has_in "$pk_gh5" '--guarded-block'
 pk PK57.5 has_in "$pk_gh5" 'never in parallel'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'PK57: failing, see above' >&2; exit 1; }
+
+# PK59-PK61 (python-red-import): the read-only agents refuse inline programs; kit-health and the
+# kit scripts review.md prescribes are allowed, exactly, in settings.json and in install.sh, with
+# no wider kit glob; /kit:init proposes server_roots from project_config.py detect-server-roots.
+pk_jq() { jq "$@" >/dev/null; }
+for pk_agent in reviewer verifier plan-critic story-critic explorer security-auditor; do
+    for pk_needle in 'Never run an inline program' 'python3 -' 'node -e' 'heredoc'; do
+        pk "PK59 [$pk_agent: $pk_needle]" has "$ROOT/.claude/agents/$pk_agent.md" "$pk_needle"
+    done
+done
+pk_prompt_allows="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
+for pk_script in kit-health kit-gate-route kit-attempts; do
+    pk_allow="Bash(python3 .claude/hooks/$pk_script.py *)"
+    pk "PK60 [$pk_script named by review.md]" has "$REVIEW" "$pk_script.py"
+    pk "PK60 [$pk_script in settings.json]" pk_jq -e --arg a "$pk_allow" '.permissions.allow | index($a)' "$SETTINGS"
+    pk "PK60 [$pk_script in install.sh]" pk_jq -en --arg a "$pk_allow" --argjson l "$pk_prompt_allows" '$l | index($a)'
+done
+pk "PK60 [no wide kit glob in settings.json]" pk_jq -e '[.permissions.allow[] | select(test("kit-[*]|hooks/[*]"))] | length == 0' "$SETTINGS"
+pk "PK60 [no wide kit glob in install.sh]" pk_jq -en --argjson l "$pk_prompt_allows" '[$l[] | select(test("kit-[*]|hooks/[*]"))] | length == 0'
+pk_init14="$(section "$KIT_INIT" '14. The project values' 'Probe, once applied:' | tr -s ' \n' ' ' || true)"
+pk PK61 has_in "$pk_init14" 'project_config.py detect-server-roots'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK59-PK61: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

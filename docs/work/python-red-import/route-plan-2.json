@@ -1,0 +1,16 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "fixed": ["F1", "F2", "F3", "F4", "F5", "F6", "F7"],
+  "findings": [
+    {"id": "F9", "severity": "Major", "p1_class": "c", "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "SR7 (missing dir -> exit 2, stderr usage:) is green on HEAD: project_config.py main() :752-755 already prints usage and returns 2 for an unknown subcommand, so step 4's 'every SR case fails on HEAD' cannot hold.",
+     "closure": "Closure: SR7 also asserts the usage line names `detect-server-roots` (absent from :753 on HEAD, so red), pinning the Files-table usage-line write."},
+    {"id": "F10", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "The ordering rule calls app, alembic, supabase 'ADDON_DIRS order', but ADDON_DIRS iterates supabase first.", "closure": null},
+    {"id": "F11", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "RP11 wording suggests module_root = backend/app; module_root is one segment and the prefix comes from _split_root.", "closure": null},
+    {"id": "F12", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Files table still lists RP1-RP7 and SR1-SR4.", "closure": null}
+  ]
+}
