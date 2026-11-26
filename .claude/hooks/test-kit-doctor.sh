@@ -332,6 +332,12 @@ grep -Eq 'MISSING +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: missing 
 printf '# Arch\n\n## Router\n' > "$KD_ARCH"
 grep -Eq 'ok +server-roots' <<<"$(kd_roots '[]')" || { echo 'KD11: deleted section with no root not ok' >&2; exit 1; }
 grep -Eq 'MISSING +server-roots' <<<"$(kd_roots '["app"]')" || { echo 'KD11: deleted section with roots not red' >&2; exit 1; }
+# KD28 (python-red-import) a multi-segment root is compared whole: `backend/app` agrees with
+# itself and diverges from `app`.
+printf '# Arch\n\n## Backend\n\nServer roots: `backend/app`.\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'ok +server-roots' <<<"$(kd_roots '["backend/app"]')" || { echo 'KD28: backend/app pair not ok' >&2; exit 1; }
+printf '# Arch\n\n## Backend\n\nServer roots: `app`.\n\n## Router\n' > "$KD_ARCH"
+grep -Eq 'DIVERGENCE +server-roots' <<<"$(kd_roots '["backend/app"]')" || { echo 'KD28: backend/app against app not red' >&2; exit 1; }
 rm "$KD_ARCH" "$SCRATCH/.claude/project.json"
 
 # kp_tree <dir> <installed|source>: a tmp root holding the kit's own copies of the prompts the

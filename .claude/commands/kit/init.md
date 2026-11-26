@@ -115,7 +115,9 @@ For every section, re-read that section immediately before editing it:
     command the TDD hook runs on one test file), `formatter`, `linter`,
     `env_template_suffixes`, `forbidden_icons`, `tdd_layers`, `fastapi` when that
     addon is installed, and `server_roots` (the server folders, the twin of
-    `02-architecture.md`'s `Server roots:` line).
+    `02-architecture.md`'s `Server roots:` line): propose what
+    `python3 .claude/hooks/project_config.py detect-server-roots .` prints, a nested
+    backend in its prefixed form (`backend/app`).
     - In an installed project (`.claude/INSTALL_PROFILE` present, or `install.sh` and
       `addons/` not both at the root), `.claude/project.json` is kit code and every tool
       write to it is denied. Write the whole proposed file to

@@ -1,0 +1,14 @@
+{
+  "mode": "review",
+  "round": 2,
+  "fixed": ["T1"],
+  "findings": [
+    {"id": "T2", "severity": "Major", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-hooks.sh", "line": 2410,
+     "problem": "SR8 catches root-last and the sequence reorder, not the dropped sorted(): on ext4 hash order the unsorted listing of aa/zz already comes out sorted (measured on this machine)",
+     "scenario": "project_config.py:138 with `for parent in os.listdir(project_dir):` on this ext4 /tmp: SR8 stays green, the full suite passes, and /kit:init proposes server_roots in filesystem order",
+     "regression": false, "status": "not-fixed",
+     "closure": "Closure: an SR case creating 12 one-letter parents in reverse order (l down to a), each holding alembic/, asserting exactly [\"a/alembic\",...,\"l/alembic\"]; red under the dropped-sort variant on a scratch copy, green on the current code."},
+    {"id": "m16", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": "docs/work/python-red-import/plan.md", "line": 140,
+     "problem": "the SR8 plan line claims it pins parent sort; it does not on ext4 — move that claim to the new case", "scenario": null, "regression": false, "status": "new", "closure": null}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "findings": [
+    {"surface": "authz", "severity": "Major", "path": ".claude/hooks/project_config.py", "line": 132,
+     "problem": "detect-server-roots searches the root and one level down and needs main.py/__init__.py in app/, while the fastapi TDD side finds app at any depth (_split_root): a backend at services/api/app/ or a marker-less app is proposed nothing, check accepts [], and ships under it never arm authz; detect from fastapi.module_root at any depth, or warn when a module_root occurrence in git ls-files sits under no declared root"},
+    {"surface": "authz", "severity": "Minor", "path": ".claude/hooks/kit-audit-surface.py", "line": 168,
+     "problem": "a gitlink (submodule backend) shows in the diff as the bare path `backend`, which never matches root `backend/app`: a submodule pointer move never arms authz"},
+    {"surface": "authz", "severity": "Minor", "path": ".claude/hooks/project_config.py", "line": 147,
+     "problem": "root case is never compared with git's: on a case-insensitive fs `Backend/app` passes check but never matches git's `backend/app/...`; a doctor check that some git ls-files path equals or sits under each root (byte compare) would close this, m6 and m9's symlink case"},
+    {"surface": "authz", "severity": "Minor", "path": ".claude/hooks/kit-audit-surface.py", "line": 88,
+     "problem": "roots are project-dir relative but git diff --name-only paths are toplevel relative: a kit installed in a subfolder of its repo never matches a root (pre-existing, more exposed by multi-segment roots); refuse unless show-toplevel is the project dir, or use --relative"}
+  ]
+}

@@ -379,7 +379,8 @@ RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:
                  "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
 # shellcheck disable=SC2034  # read by the suites, not by install.sh
 PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
-  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-doctor.py)",
+  "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-health.py *)",
+  "Bash(python3 .claude/hooks/kit-doctor.py)",
   "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)", "Bash(python3 .claude/hooks/loop-record.py --block)",

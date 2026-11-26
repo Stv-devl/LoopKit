@@ -165,9 +165,9 @@ def select(base: str) -> dict[str, object]:
     paths, added, removed = changed(base)
     reasons: dict[str, str] = {}
     for path in paths:
-        first = PurePosixPath(path).parts[0]
-        if first in roots:
-            reasons.setdefault("authz", f"server root `{first}`: {path}")
+        root = next((r for r in roots if path == r or path.startswith(r + "/")), None)
+        if root is not None:
+            reasons.setdefault("authz", f"server root `{root}`: {path}")
             break
     for path in paths:
         if skipped(path):

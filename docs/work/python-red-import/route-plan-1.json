@@ -1,0 +1,26 @@
+{
+  "mode": "plan",
+  "pass": 1,
+  "findings": [
+    {"id": "F1", "severity": "Major", "p1_class": "b", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "spec:22,57 require the skip, no-assert and async branches unchanged on the new exact-package-pair path; RP1-RP7 hold no such case, so an early marker write beside :212 passes them.",
+     "closure": "Closure: cases (i) exact pair + @pytest.mark.skip -> no marker, skip text; (ii) exact pair, no assert -> no marker, no-assertion text; (iii) pin: stub prints 'async def functions are not natively supported' -> no marker, async text; each mapped to spec:57."},
+    {"id": "F2", "severity": "Major", "p1_class": "b", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "detect-server-roots contract clauses (missing dir exit 2, symlink skip, hidden dirs, RESERVED parents) have no case; SR3's node_modules/x/app is two levels deep and cannot catch a missing RESERVED filter.",
+     "closure": "Closure: SR3 fixture becomes node_modules/app/main.py (one level) -> []; new cases .hidden/app/main.py -> []; symlinked backend/app -> not proposed; missing dir -> exit 2 with usage."},
+    {"id": "F3", "severity": "Major", "p1_class": "c", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "SR1 [backend/app, backend/alembic] and SR2 [alembic, app] cannot both hold under the 'sorted' contract.",
+     "closure": "Closure: one ordering rule (parents sorted, ADDON_DIRS order within a parent), SR1 [backend/app, backend/alembic] (AC6 literal) and SR2 [app, alembic]."},
+    {"id": "F4", "severity": "Major", "p1_class": "c", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": ".claude/hooks/test-hooks.sh",
+     "claim": "RP3, RP5, RP6 and A45 already pass on HEAD but are not marked pin, so 'observe red' cannot be met.",
+     "closure": "Closure: RP3, RP5, RP6, A45 marked pin; steps 1 and 3 say 'observe the non-pin cases red'."},
+    {"id": "F5", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "PC38's round-trip seam `project_config.py shell` carries no server_roots line.", "closure": null},
+    {"id": "F6", "severity": "Minor", "p1_class": null, "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "PK60 extracting `python3 .claude/hooks/<x>.py` from review.md misses kit-attempts.py, named bare there.", "closure": null},
+    {"id": "F7", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "No RP case pins the monorepo layout (backend/tests/...), where dotted strips the prefix.", "closure": null},
+    {"id": "F8", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "project_config.py wire fastapi re-adds app/alembic to a monorepo's [backend/app, backend/alembic] on reinstall; follow-up, not in this entry.", "closure": null}
+  ]
+}

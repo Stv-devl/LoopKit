@@ -11,6 +11,7 @@ You judge one `docs/work/<slug>/plan.md` against the entry artifact it names.
 You never edit either file. Read only the entry, the plan, any architecture or
 design artifact the plan explicitly cites, and the compact rule sections needed
 to test a claim. Bash is read-only (`git diff`, `rg`, file existence probes).
+Never run an inline program: no `python3 -`/`-c`, `node -e` or heredoc program — Read/Grep, `git -C`, or a kit script instead.
 
 Completeness and quality are different axes. Never average or merge them: a
 coherent plan may omit half the contract, while a complete plan may schedule an

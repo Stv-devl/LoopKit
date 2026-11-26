@@ -240,10 +240,33 @@ add 'src/we"ird.tsx' 'export const F = () => <input type="file" />;'
 sel
 surfaces A35 '["input-output"]'
 
-# A36 a server root is one path segment: apps/api would never match the first segment of a path.
+# A36 a multi-segment server root is accepted and arms authz on a path under it.
 new_repo '["apps/api"]'
-add src/app.tsx 'export const Title = "Hi";'
-refused A36 server_roots select --base "$BASE"
+put apps/api/routes/x.py 'def x():' '    pass'
+sel
+surfaces A36 '["authz"]'
+ok A36 '.surfaces[0].reason == "server root `apps/api`: apps/api/routes/x.py"'
+
+# A44 a monorepo backend root arms authz, its reason naming the whole root.
+new_repo '["backend/app"]'
+put backend/app/api/routes/account.py 'def account():' '    pass'
+sel
+surfaces A44 '["authz"]'
+ok A44 '.surfaces[0].reason == "server root `backend/app`: backend/app/api/routes/account.py"'
+
+# A45 a single-segment root matches the first segment only, as before: `app` is not `backend/app`.
+new_repo '["app"]'
+put backend/app/api/routes/account.py 'def account():' '    pass'
+sel
+surfaces A45 '[]'
+ok A45 '.reason | startswith("no server root touched")'
+
+# A46 a sibling sharing the root's spelling is not under it.
+new_repo '["backend/app"]'
+put backend/appx/main.py 'def main():' '    pass'
+sel
+surfaces A46 '[]'
+ok A46 '.reason | startswith("no server root touched")'
 
 # A37 a reader without server_roots refuses (exit 2), never crashes with another code.
 new_repo

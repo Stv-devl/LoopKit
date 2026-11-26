@@ -113,12 +113,35 @@ def _server_roots(path, value):
     if not isinstance(value, list):
         raise ConfigError(f"{path} server_roots must be a list")
     roots = tuple(_root(item) for item in value)
-    for item in roots:
-        if "/" in item:
-            raise ConfigError(f"{path} server_roots: {item!r} is not one path segment")
     if len(set(roots)) != len(roots):
         raise ConfigError(f"{path} lists a server root twice")
     return roots
+
+
+SERVER_DIR_SEQUENCE = ("app", "alembic", "supabase")
+
+
+def _is_server_dir(path, name):
+    if os.path.islink(path) or not os.path.isdir(path):
+        return False
+    if name == "app":
+        return any(os.path.isfile(os.path.join(path, entry)) for entry in ("main.py", "__init__.py"))
+    return True
+
+
+def detect_server_roots(project_dir):
+    """The `server_roots` /kit:init proposes: each addon server folder (`app` holding
+    `main.py` or `__init__.py`, `alembic`, `supabase`) at the root or one folder down, the
+    root's first, then the parents sorted, `app`, `alembic`, `supabase` within a parent.
+    Reserved and hidden parents and symlinks are never searched or proposed."""
+    found = [name for name in SERVER_DIR_SEQUENCE if _is_server_dir(os.path.join(project_dir, name), name)]
+    for parent in sorted(os.listdir(project_dir)):
+        base = os.path.join(project_dir, parent)
+        if parent in RESERVED or parent.startswith(".") or os.path.islink(base) or not os.path.isdir(base):
+            continue
+        found += [f"{parent}/{name}" for name in SERVER_DIR_SEQUENCE
+                  if _is_server_dir(os.path.join(base, name), name)]
+    return found
 
 
 def _root(value):
@@ -743,6 +766,9 @@ def main(argv):
         return _wire(argv[2], argv[3])
     if len(argv) in (3, 4) and argv[1] == "migrate" and argv[3:] in ([], ["--existing"]):
         return _migrate(argv[2], bool(argv[3:]))
+    if len(argv) == 3 and argv[1] == "detect-server-roots" and os.path.isdir(argv[2]):
+        print(json.dumps(detect_server_roots(argv[2])))
+        return 0
     if argv[1:] == ["defaults"]:
         sys.stdout.write(serialise(DEFAULTS))
         return 0
@@ -750,8 +776,8 @@ def main(argv):
         sys.stdout.write(framed(records(_parse("/", "defaults", json.loads(serialise(DEFAULTS)))), "\n"))
         return 0
     if len(argv) != 3 or argv[1] not in ("roots", "check"):
-        print("usage: project_config.py roots|check|shell|migrate <project dir> | wire <project dir> supabase|fastapi"
-              " | defaults [--shell]", file=sys.stderr)
+        print("usage: project_config.py roots|check|shell|migrate|detect-server-roots <project dir>"
+              " | wire <project dir> supabase|fastapi | defaults [--shell]", file=sys.stderr)
         return 2
     try:
         config = load(argv[2])
