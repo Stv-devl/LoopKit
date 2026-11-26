@@ -54,6 +54,7 @@
       "Bash(python3 .claude/hooks/loop-record.py --mode)",
       "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
       "Bash(.claude/scripts/loop-pr-state.sh *)",
+      "Bash(python3 .claude/scripts/kit-track.py fork *)",
       "Bash(.claude/scripts/case-hash.sh *)",
       "Bash(.claude/scripts/small-dispatch-check.sh *)",
       "Bash(.claude/scripts/small-paths.sh *)",

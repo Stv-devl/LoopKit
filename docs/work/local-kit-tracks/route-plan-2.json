@@ -1,0 +1,14 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "F7", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "not-fixed", "in_rewritten_section": false, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Contracts copy-set line still cited cwk_is_guarded (fixed in place: now the protect-files secret/env patterns).", "closure": null},
+    {"id": "F14", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "Files table kept G22.118-119 and WT4-WT11 (fixed in place).", "closure": null},
+    {"id": "F15", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "ship.md:256 step-5 preamble not in the write list; KT24 partial copies vs 'nothing created on refusal' (fixed in place).", "closure": null},
+    {"id": "F16", "severity": "Minor", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "hook": null, "leg": "claude", "test_path": null,
+     "claim": "ruff on scripts, shell-guard row, tracked-destination refusal only in Vigilance (now scheduled: Files rows, step 3, KT25).", "closure": null}
+  ]
+}

@@ -140,9 +140,10 @@ git branch -d feat/<slug>
 
 - **The guardrails follow because `.claude/` is versioned.** A worktree checkout
   carries its own hooks, rules and commands. A project that gitignores `.claude/`
-  would get an empty one, so it never forks: `git check-ignore -q .claude/hooks/probe`
-  succeeding while HEAD tracks nothing under `.claude/hooks` makes `/loop:tracks` and `/loop:orchestrate` refuse, the git hook deny the
-  `worktree add`, and `/kit:doctor` report it. `git worktree remove` deletes ignored
+  would get an empty one from a bare `git worktree add`: `git check-ignore -q .claude/hooks/probe`
+  succeeding while HEAD tracks nothing under `.claude/hooks` makes the git hook deny that
+  `worktree add` and `/kit:doctor` report it; `/loop:tracks` and `/loop:orchestrate` fork it
+  with the kit script instead ("Kit-local projects" below). `git worktree remove` deletes ignored
   files (an ignored `docs/work/` included): `/kit:doctor`'s `ignored-loop-paths` says so.
 - **Runtime files follow the session.** The ignored files follow
   `$CLAUDE_PROJECT_DIR`, so a `./workflow.sh` session started in the worktree
@@ -172,6 +173,53 @@ git branch -d feat/<slug>
   (`CLAUDE.md`, Security); ask the user to copy it, never work around it. Two
   tracks that would each pay this for ten minutes of work are not worth forking:
   say so instead.
+
+## Kit-local projects
+
+A project may keep the kit out of git on purpose: `.claude/`, the root kit files
+(`CLAUDE.md`, `AGENTS.md`, `workflow.*`, `codex-handoff.sh`) and the loop `docs/`
+folders all ignored. A bare `git worktree add` then checks out no kit, and the git
+hook denies it. Such a project forks and closes each track with one script, run alone
+from the main tree's root:
+
+```bash
+python3 .claude/scripts/kit-track.py fork <slug>            # worktree + branch + kit copy
+python3 .claude/scripts/kit-track.py close <slug> [--merged] # docs back, drift report, remove
+```
+
+- **`fork`** creates `.claude/worktrees/<slug>` on `feat/<slug>` from the current
+  branch, then copies every git-ignored kit file into it as regular files: `.claude/`
+  without its worktrees, runtime and session files, the root kit files, and the loop
+  `docs/` folders. It never copies an env file, a key or a credential, and refuses a
+  symlink. It writes `.claude/.kit-snapshot` (a hash per copied file) and prints the
+  hand-over, this project's `local-kit-env` lines included.
+- **The track's session is the worktree's own**:
+  `cd .claude/worktrees/<slug> && ./workflow.sh "/loop:orchestrate <entry>"`, so hooks,
+  markers and the loop record resolve in the worktree. The main tree's session never
+  drives a kit-local track, and never `EnterWorktree` into it: that session keeps the
+  main tree's `$CLAUDE_PROJECT_DIR`, hooks and state.
+- **Who writes what in a track.** The track owns `docs/work/<slug>/` (handoff included)
+  and its own story file; `docs/research-cache/` is shared, append-only; the board, the
+  brief, the design system and every other story are a read-only snapshot there.
+- **`close`**, from a main-tree session once the branch is merged (`--merged` after the
+  closing check read `closable`), copies the owned files and the new research-cache
+  files back, never over a main-tree file changed since the fork (the track's copy lands
+  beside it as `<file>.from-<slug>`), reports kit drift both ways, verifies each copy,
+  and only then runs `git worktree remove` without `--force`. A dirty worktree, an
+  unmerged branch or a failed copy stops it with nothing removed. The closing order is
+  `orchestrate.md` Phase 0 step 0's: `close`, then `/loop:ship` step 5, then the
+  main-tree handoff → `shipped`, then `git branch -d`. With no remote, the track session
+  writes `phase: awaiting-merge`, `pr: none`, prints the `close <slug>` command and stops;
+  the closing check closes it, no `--merged`, once `feat/<slug>` is an ancestor of the main tree's HEAD.
+- **Limits.** A worktree isolates files, not the database: a track carrying a
+  migration needs its own test database (or does not run in parallel), and an unmerged
+  migration breaks the other tracks' tests on a shared one. Kit changes made in a
+  track are reported by `close`, not merged; a newer main-tree kit does not reach a
+  live track.
+
+**Project slot `local-kit-env`** — `## local-kit-env` in `.claude/overlays/guides/10-worktrees.md`; absent → `fork` prints none.
+The section holds the env lines a kit-local track needs (tool paths, a per-track
+`COMPOSE_PROJECT_NAME`, its own test database); `fork` prints it verbatim, the user applies it.
 
 ## Working remotely (Remote Control)
 

@@ -655,6 +655,14 @@ PY
         RUN_RC=$?
         expect clear "N2 ${slug%%=*}" "${slug#*=}" 0
     done
+
+    local track="$SCRATCH/clear-track/.claude/worktrees/inbox-1.3"
+    write_board "$track" docs/specs/x.md READY
+    mkdir -p "$track/.claude"
+    printf '{}\n' >"$track/.claude/.kit-snapshot"
+    RUN_OUT="$(printf '{"source":"clear"}' | CLAUDE_PROJECT_DIR="$track" python3 "$hook" 2>/dev/null)"
+    RUN_RC=$?
+    expect clear "N3 kit-local track worktree silent" "" 0
 }
 
 group_paths

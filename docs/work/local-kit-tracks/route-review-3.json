@@ -1,0 +1,8 @@
+{
+  "mode": "review",
+  "round": 3,
+  "findings": [
+    {"id": "R3M1", "severity": "Minor", "dimension": "correctness", "class": "correctness", "path": ".claude/scripts/kit-track.py", "line": 352, "problem": "close's printed next: line invites git branch -d before the closing check; once the ref is gone the main-tree pr: none rule's is-ancestor test fails and the handoff stays awaiting-merge.", "scenario": "User runs close then git branch -d by hand; story stays InProgress, board IN LOOP.", "regression": false, "status": "new", "closure": null},
+    {"id": "R3M2", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": ".claude/commands/loop/orchestrate.md", "line": 162, "problem": "The main-tree pr: none rule does not say kit-local in its wording (verifier note on refuted C3: no documented path reaches that state otherwise).", "scenario": "A mis-written 4bis-PR handoff with pr: none on feat/<slug> would match a trivially true is-ancestor.", "regression": false, "status": "new", "closure": null}
+  ]
+}

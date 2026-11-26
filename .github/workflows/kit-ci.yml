@@ -40,7 +40,7 @@ jobs:
           version: 0.17.4
           checksum: 3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
           args: check --select E4,E7,E9,F
-          src: .claude/hooks
+          src: .claude/hooks .claude/scripts
       - name: Lint kit workflows
         run: actionlint .github/workflows/*.yml
       - name: Lint assembled target workflows
@@ -64,6 +64,8 @@ jobs:
         run: .claude/hooks/test-attempts.sh
       - name: Test ship audit surface
         run: .claude/hooks/test-audit-surface.sh
+      - name: Test kit-local tracks
+        run: .claude/hooks/test-kit-track.sh
       - name: Test gate routing
         run: .claude/hooks/test-gate-route.sh
       - name: Test PR screenshot assets

@@ -142,6 +142,8 @@ for spelling in '.claude/' '.claude' '/.claude' '/.claude/'; do
     grep -Fq 'ignore .claude/ lui-même' <<<"$IW_OUT" \
         || { echo "IW1: no warning for '$spelling' in .gitignore" >&2; exit 1; }
     grep -qxF -- "$spelling" "$IW_TARGET/.gitignore" || { echo "IW1: '$spelling' rewritten by the install" >&2; exit 1; }
+    # IW3 (local-kit-tracks): the warning names the supported kit-local fork.
+    grep -Fq 'kit-track.py fork' <<<"$IW_OUT" || { echo "IW3: warning for '$spelling' does not name kit-track.py fork" >&2; exit 1; }
     rm -r "$IW_TARGET"
 done
 IW_TARGET="$SCRATCH/iw-quiet"
