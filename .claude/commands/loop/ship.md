@@ -208,7 +208,8 @@ once, through the hook. Report the PR URL, and for a stacked pass the merge orde
 committed with the pass stay visible). Closing belongs to the **closing check**
 (`orchestrate.md` Phase 0 step 0, `tracks.md`): `.claude/scripts/loop-pr-state.sh --chain feat/<slug>`
 reads the PR's `MERGED` state and `baseRefName`; `closable` runs step 5, then
-`4bis-local` item 3's clean-up.
+`4bis-local` item 3's clean-up — except a kit-local worktree, which runs
+`kit-track.py close <slug> --merged` first, then step 5 (`orchestrate.md` Phase 0 step 0).
 
 #### 4bis-local (no remote)
 
@@ -225,6 +226,13 @@ Via the `github` agent:
    as pushing. A refused amendment first re-adds its
    `.tdd-unfrozen` entry (`<path>  # <id>: <reason>`), then goes back to EXECUTE and `/loop:review`.
 3. After the merge, clean up. No worktree → `git branch -d feat/<slug>`, done.
+   A **kit-local** worktree (its `.claude/.kit-snapshot` exists) → from a main-tree session, never the
+   track's own: `python3 .claude/scripts/kit-track.py close <slug>` copies the track's docs back, reports kit
+   drift and removes the tree, before step 5; then the main-tree handoff → `phase: shipped` and
+   `git branch -d feat/<slug>`. The track session (it stands in the worktree) writes its handoff
+   `phase: awaiting-merge` with `pr: none`, prints the exact main-tree command
+   `python3 .claude/scripts/kit-track.py close <slug>` and stops: the closing check picks it up
+   once `feat/<slug>` is an ancestor of the main tree's HEAD. It replaces everything below; never a bare `git worktree remove`.
    Otherwise, before any removal, check the track's `docs/`: `git -C <tree> status --porcelain -- docs/`
    must print nothing (an untracked or modified file there never reached the merge: name each one,
    stop, and route it through a commit on the branch); then list the
@@ -253,7 +261,7 @@ line → `BLOCKED` with its reason, from the main tree, story `Status` →
 ### 5. Advance the state
 
 In the main tree, after 4bis — the product files never change in a worktree.
-`4bis-local` runs this step right after the merge. On `4bis-PR` the story stays
+`4bis-local` runs this step right after the merge (after `kit-track.py close` for a kit-local worktree). On `4bis-PR` the story stays
 `InProgress` and the board line `IN LOOP` until the closing check prints
 `closable`; then it runs (a `closed` PR → board `BLOCKED` "PR closed unmerged",
 story `Approved`).

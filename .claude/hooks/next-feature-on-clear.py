@@ -121,6 +121,8 @@ def main() -> int:
         return 0
     if project.name.startswith("small-") and project.parent.parts[-2:] == (".claude", "worktrees"):
         return 0
+    if project.parent.parts[-2:] == (".claude", "worktrees") and (project / ".claude" / ".kit-snapshot").is_file():
+        return 0
     context = ("Fresh session after /clear. " + next_feature(project)
                + " Wait for the user's `go` before starting.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",

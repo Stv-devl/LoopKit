@@ -125,6 +125,7 @@
 {"id":"X9.15","verdict":"pass","command":"bash .claude/hooks/test-small-lane.sh"}
 {"id":"X9.16","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py fail docs/work/x/plan.md test \"expected > in vite.config.ts\""}
 {"id":"X9.17","verdict":"pass","command":"python3 .claude/hooks/kit-attempts.py pass docs/work/x/plan.md test"}
+{"id":"X45.01","verdict":"pass","command":"python3 .claude/scripts/kit-track.py fork demo-1.1"}
 {"id":"X15.01","verdict":"deny","command":"cp /tmp/m \\\n  .claude/.tdd-red/m","reason":"is written only by tdd-prove-red.sh"}
 {"id":"X15.02","verdict":"ask","command":"mv /tmp/a \\\n  .claude/hooks/a.sh","reason":"guarded path:"}
 {"id":"X15.03","verdict":"ask","command":"rm -rf \\\n  src/features/x","reason":"under a protected dir"}

@@ -385,7 +385,7 @@ PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)", "Bash(python3 .claude/hooks/loop-record.py --block)",
   "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
-  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
+  "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(python3 .claude/scripts/kit-track.py fork *)", "Bash(.claude/scripts/case-hash.sh *)", "Bash(git fetch)", "Bash(git fetch *)", "Bash(git stash list)",
   "Bash(python3 .claude/hooks/kit-gate-route.py *)", "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
   "Bash(bash .claude/hooks/test-attempts.sh)", "Bash(bash .claude/hooks/test-attempts.sh *)",
   "Bash(bash .claude/hooks/test-audit-surface.sh)", "Bash(bash .claude/hooks/test-audit-surface.sh *)",
@@ -947,12 +947,13 @@ elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
     echo "  .gitignore : $GITIGNORE_FILLED chemins ajoutés au bloc existant."
     echo
 fi
-# Un projet qui ignore `.claude/` entier n'a aucun kit dans ses worktrees : /loop:tracks refuse
-# alors de forker. Avertir seulement — le .gitignore appartient au projet.
+# Un projet qui ignore `.claude/` entier n'a aucun kit dans une worktree nue : /loop:tracks forke
+# alors par kit-track.py, qui y copie le kit. Avertir seulement — le .gitignore appartient au projet.
 if [[ -f "$TARGET/.gitignore" ]] && grep -qE '^[[:space:]]*/?\.claude/?[[:space:]]*$' "$TARGET/.gitignore"; then
-    echo "  ATTENTION : le .gitignore ignore .claude/ lui-même. Un worktree de /loop:tracks n'aurait"
-    echo "  ni hooks, ni scripts, ni règles : le fork est refusé. Retire cette ligne et versionne .claude/"
-    echo "  (le bloc « état de session » garde .claude/worktrees/ et les fichiers de session ignorés)."
+    echo "  ATTENTION : le .gitignore ignore .claude/ lui-même. Un git worktree add nu n'aurait ni hooks,"
+    echo "  ni scripts, ni règles : il est refusé. Mode kit local : chaque piste se forke par"
+    echo "  python3 .claude/scripts/kit-track.py fork <slug> (copie le kit, .claude/guides/10-worktrees.md)."
+    echo "  Ou versionne .claude/ (le bloc « état de session » garde .claude/worktrees/ et les fichiers de session ignorés)."
     echo
 fi
 

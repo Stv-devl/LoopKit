@@ -28,6 +28,12 @@ is the pass's own branch, switch it to the default branch first
 blocked or diverged → report, stop on this pass); a worktree handoff skips the switch and the sync
 (git refuses a branch checked out in the main tree). Then `/loop:ship` step 5: a worktree handoff's `/loop:ship` step 5 runs in the main tree, which must be on the synced default branch (else report and stop).
 `git branch -d feat/<slug>` comes last, after `python3 .claude/hooks/loop-record.py --clear` in the pass's tree, the handoff → `phase: shipped`, and the worktree removal;
+a **kit-local** worktree (its `.claude/.kit-snapshot` exists) closes in `/loop:orchestrate`'s order instead,
+from the main tree: `python3 .claude/scripts/kit-track.py close <slug> --merged`, then `/loop:ship` step 5, then the
+main-tree handoff → `phase: shipped`, then `git branch -d feat/<slug>`;
+a kit-local worktree handoff at `awaiting-merge` with `pr: none` is closable when
+`git merge-base --is-ancestor feat/<slug> HEAD` succeeds in the main tree (no `loop-pr-state.sh`), in the same order with `close <slug>`, no `--merged`;
+a main-tree handoff at `awaiting-merge` with `pr: none` and no `.claude/worktrees/<slug>` left (close already ran) is closable without `loop-pr-state.sh` or the default-branch sync when that same `merge-base --is-ancestor` succeeds: `/loop:ship` step 5, the handoff → `phase: shipped`, then `git branch -d feat/<slug>` (no `close`);
 the count below is computed **after** it, since a
 merged prerequisite unblocks its dependants; `closed` → board `BLOCKED` "PR closed
 unmerged"; anything else, one line, nothing moved. A PR still open is not `Done`.
@@ -140,15 +146,23 @@ missing, and say so.
 
 Then `git check-ignore -q .claude/hooks/probe`: when it succeeds and
 `git ls-tree -r --name-only HEAD -- .claude/hooks` prints nothing, the project
-git-ignores `.claude/` itself without tracking it, so every worktree would check out
-with no hooks, no scripts and no rules (a tracked kit is carried whatever ignore rule
-also matches). **Refuse to fork**: name the ignoring line
-(`git check-ignore -v .claude/hooks/probe`), say that removing it and committing
-`.claude/` (worktrees and session files stay ignored) is the fix, and run the
-stories one at a time in the main tree. The git hook denies the `worktree add`
-anyway.
+git-ignores `.claude/` itself without tracking it (a tracked kit is carried whatever
+ignore rule also matches): the project is **kit-local**, and a bare `git worktree add`
+would check out with no hooks, no scripts and no rules — the git hook denies it. Fork
+each track with the kit script instead, which creates the same worktree and branch and
+copies the kit into it (`10-worktrees.md`, "Kit-local projects"):
 
-On go, per track:
+```bash
+python3 .claude/scripts/kit-track.py fork <track-slug>
+```
+
+Alone in its own Bash call, from the project root. A kit-local track is never entered
+with `EnterWorktree`: every track, this session's included, is handed over as
+`cd .claude/worktrees/<track-slug> && ./workflow.sh "/loop:orchestrate <entry>"`, so the
+session runs the worktree's own kit. The script prints the `local-kit-env` lines the
+hand-over block carries.
+
+Otherwise, on go, per track:
 
 ```bash
 git worktree add .claude/worktrees/<track-slug> -b feat/<track-slug> <base>

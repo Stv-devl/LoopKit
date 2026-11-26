@@ -49,6 +49,9 @@ for spelling in '.claude/' '.claude' '/.claude' '/.claude/'; do
     grep -A3 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" | grep -q 'no kit' \
         || { echo "DW1/DW3: '$spelling' in .gitignore not reported as worktree-kit" >&2; exit 1; }
 done
+# DW6 (local-kit-tracks): the worktree-kit divergence names the supported kit-local fork.
+grep -A3 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" | grep -Fq 'kit-track.py fork' \
+    || { echo 'DW6: worktree-kit divergence does not name kit-track.py fork' >&2; exit 1; }
 printf '.claude/worktrees/\n' > "$SCRATCH/.gitignore"
 WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" || { echo 'DW2: .claude/worktrees/ alone must be ok' >&2; exit 1; }

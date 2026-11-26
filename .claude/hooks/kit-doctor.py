@@ -690,12 +690,12 @@ def check_ignored_loop_paths() -> list[Finding]:
 
 
 def check_worktree_kit() -> list[Finding]:
-    """A project that git-ignores `.claude/` itself cannot run loop tracks in worktrees.
+    """A project that git-ignores `.claude/` itself gets no kit from a bare worktree.
 
     A worktree checks out tracked files only, so `.claude/worktrees/<slug>` would hold no
-    hooks, no scripts and no rules (EcoCrew agent-ia-4.4). `/loop:tracks` and
-    `/loop:orchestrate` refuse to fork on the same probe, and the git hook denies the
-    `worktree add`; this names the `.gitignore` line to remove.
+    hooks, no scripts and no rules (EcoCrew agent-ia-4.4). The git hook denies that
+    `worktree add`; `/loop:tracks` and `/loop:orchestrate` fork with `kit-track.py`
+    instead. This names the `.gitignore` line and the kit-local fork.
     """
     try:
         git = ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT)]
@@ -715,7 +715,8 @@ def check_worktree_kit() -> list[Finding]:
         return skip("worktree-kit", "a git repository")
     return [Finding("worktree-kit", DIVERGENCE,
                     ".claude/ is gitignored, so a worktree under .claude/worktrees/ holds no kit (no hooks, scripts or rules)",
-                    [f"{rule}  →  remove it and commit .claude/ (keep .claude/worktrees/ and the session files ignored)"])]
+                    [f"{rule}  →  remove it and commit .claude/ (keep .claude/worktrees/ and the session files ignored)",
+                     "or keep the kit local: fork each track with python3 .claude/scripts/kit-track.py fork <slug>"])]
 
 
 def check_workflow_names() -> list[Finding]:
@@ -874,7 +875,7 @@ RUNTIME_PATHS = {
     ".claude/.hook-timings.log", ".claude/.kit-health.jsonl",
     ".claude/settings.local.json", ".claude/worktrees", ".claude/project.snapshot.json",
     ".claude/INSTALL_PROFILE", ".claude/kit-backup", ".claude/project.proposed.json",
-    ".claude/.loop-record.json", ".claude/hooks/probe",
+    ".claude/.loop-record.json", ".claude/hooks/probe", ".claude/.kit-snapshot",
 }
 PROJECT_HOMES = (".claude/overlays", ".claude/recipes")
 # In .claude/hooks/ but invoked by a human or by another script, never by
@@ -884,7 +885,7 @@ NON_HOOKS = {
     "hook-lib.sh", "hook-guarded.sh", "shell_targets.py", "tdd_py_lib.py", "hook-timings-report.sh", "kit-doctor.py",
     "kit-attempts.py", "kit-audit-surface.py", "kit-gate-route.py", "kit-health.py", "kit-measure.py", "kit-pr-assets.py",
     "project_config.py", "test-attempts.sh", "test-audit-surface.sh", "test-gate-route.sh",
-    "test-hooks.sh", "test-install.sh", "test-kit-doctor.sh", "test-measure.sh", "test-pr-assets.sh",
+    "test-hooks.sh", "test-install.sh", "test-kit-doctor.sh", "test-kit-track.sh", "test-measure.sh", "test-pr-assets.sh",
     "test-rules-floor.sh",
     "test-small-lane.sh", "test-workflow-contracts.sh",
 }

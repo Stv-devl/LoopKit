@@ -2259,7 +2259,8 @@ record_allow() {
 record_allow
 
 # A loop track forked into .claude/worktrees/ of a project that git-ignores .claude/ checks out with no
-# kit at all: no hooks, no scripts, no rules (EcoCrew agent-ia-4.4). Refuse it here, naming the line.
+# kit at all: no hooks, no scripts, no rules (EcoCrew agent-ia-4.4). Refuse it here, naming the line and
+# the supported kit-local fork (kit-track.py, which copies the kit; its own git calls never reach this hook).
 worktree_kit_check() {
     local tree line
     [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?([^[:space:]]*/)?\.claude/worktrees/ ]] || return 0
@@ -2270,7 +2271,7 @@ worktree_kit_check() {
     # A tracked kit is carried by the worktree whatever ignore rule also matches the probe.
     [[ -z "$(git -C "$tree" ls-tree -r --name-only HEAD -- .claude/hooks 2>/dev/null)" ]] || return 0
     line="$(git -C "$tree" check-ignore -v .claude/hooks/probe 2>/dev/null | cut -f1)"
-    deny "BLOCKED: this project's .gitignore ignores .claude/ (${line:-a .gitignore rule}), so a worktree under .claude/worktrees/ would hold no kit: no hooks, no scripts, no rules. Version .claude/ (keep only .claude/worktrees/ and the session files ignored), commit, then fork; or run this story in the main tree. (.claude/guides/10-worktrees.md)"
+    deny "BLOCKED: this project's .gitignore ignores .claude/ (${line:-a .gitignore rule}), so a bare worktree under .claude/worktrees/ would hold no kit: no hooks, no scripts, no rules. Kit-local fork: run python3 .claude/scripts/kit-track.py fork <slug> alone from the project root (it creates the worktree and copies the kit); or version .claude/ (keep only .claude/worktrees/ and the session files ignored), commit, then fork. (.claude/guides/10-worktrees.md, \"Kit-local projects\")"
 }
 worktree_kit_check
 

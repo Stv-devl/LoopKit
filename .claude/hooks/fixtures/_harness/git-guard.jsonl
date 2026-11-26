@@ -673,6 +673,8 @@
 {"id":"G22.119","verdict":"ask","setup":"lpassetsrel","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
 {"id":"G22.120","verdict":"ask","setup":"lpassetstag","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
 {"id":"G22.121","verdict":"ask","setup":"lpassetscfg","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.122","verdict":"deny","setup":"lpwtignored","command":"git worktree add .claude/worktrees/x -b feat/x2 main","reason":"kit-track.py fork"}
+{"id":"G22.123","verdict":"pass","setup":"lpwtignored","command":"python3 .claude/scripts/kit-track.py fork x"}
 {"id":"G22.111.2","verdict":"ask","setup":"lp","cwd":"__MAIN_TREE__","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"pushes to a remote"}
 {"id":"G22.101.2","verdict":"allow","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"loop record"}
 {"id":"G22.104.2","verdict":"allow","setup":"lpassetsff","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push origin refs/heads/pr-assets","reason":"pr-assets"}

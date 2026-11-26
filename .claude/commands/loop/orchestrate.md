@@ -151,6 +151,18 @@ Shell discipline for the whole pass:
      Then `python3 .claude/hooks/loop-record.py --clear` in the pass's tree and the
      handoff → `phase: shipped`, and only then `4bis-local` item 3's clean-up (the worktree removal,
      then `git branch -d feat/<slug>`), so neither targets a removed tree. Say so.
+     A **kit-local** worktree (its `.claude/.kit-snapshot` exists) closes in another order, from
+     the main tree: `python3 .claude/scripts/kit-track.py close <slug> --merged` first (copies the
+     track's docs back, reports kit drift, removes the tree; no `loop-record.py --clear`, the
+     record is an ignored file that goes with the tree), then `/loop:ship` step 5, then the
+     main-tree handoff → `phase: shipped`, then `git branch -d feat/<slug>`.
+     A kit-local worktree handoff at `awaiting-merge` with `pr: none` (no remote) is closable, without
+     `loop-pr-state.sh`, when `git merge-base --is-ancestor feat/<slug> HEAD` succeeds in the main tree:
+     the same order with `close <slug>` and no `--merged`.
+     A main-tree handoff at `awaiting-merge` with `pr: none` and no `.claude/worktrees/<slug>` left
+     (`kit-track close` already ran) is closable without `loop-pr-state.sh` or the default-branch
+     switch/sync when `git merge-base --is-ancestor feat/<slug> HEAD` succeeds: `/loop:ship` step 5,
+     the handoff → `phase: shipped`, then `git branch -d feat/<slug>` (no `close`).
    - `closed` → board `BLOCKED` "PR closed unmerged", story `Approved`.
    - `orphaned:<b>` → say the commits never reached the default branch, and stop on it.
    - `open`, `stacked:<b>`, `unknown`, `none` → one line each, nothing moved.
@@ -230,11 +242,13 @@ Shell discipline for the whole pass:
 
 ## Phase 0.5 — Track isolation (worktree or not)
 
-Decide **once**, announce in one line, never revisit mid-loop. Never fork when
+Decide **once**, announce in one line, never revisit mid-loop. When
 `git check-ignore -q .claude/hooks/probe` succeeds and `git ls-tree -r --name-only HEAD --
-.claude/hooks` prints nothing: the project git-ignores `.claude/` without tracking it, so a
-worktree would hold no kit (the git hook denies the `worktree add`); run the pass in the main
-tree and say which `.gitignore` line to remove. Fork only if all hold
+.claude/hooks` prints nothing, the project is **kit-local** (it git-ignores `.claude/`): a bare
+`worktree add` would hold no kit and the git hook denies it. Fork such a track with
+`python3 .claude/scripts/kit-track.py fork <slug>` (alone, from the project root) and hand it
+over as `cd .claude/worktrees/<slug> && ./workflow.sh "/loop:orchestrate <entry>"`, never `EnterWorktree`:
+the session must run the worktree's own kit (`10-worktrees.md`, "Kit-local projects"). Fork only if all hold
 (`.claude/guides/10-worktrees.md` is the authority — read it before forking):
 another pass is in flight or the user asked for this one in the background; the
 file sets are disjoint; neither touches a shared foundation (migrations & DB,

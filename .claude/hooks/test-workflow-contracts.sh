@@ -763,13 +763,13 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
   "Bash(python3 .claude/hooks/loop-record.py --block)", "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)",
-  "Bash(python3 .claude/hooks/kit-health.py *)"]'
+  "Bash(python3 .claude/hooks/kit-health.py *)", "Bash(python3 .claude/scripts/kit-track.py fork *)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 36' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 37' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1645,6 +1645,41 @@ pk WT2.2 lacks "$WORKTREES" 'if `.claude/` is versioned'
 pk WT2.3 has "$WORKTREES" "$pk_probe"
 pk WT3 has_in "$pk_local" 'git -C <tree> status --porcelain -- docs/'
 pk WT3.2 has_in "$pk_local" 'ignored files under `docs/work/<slug>/`'
+# WT4-WT12 (local-kit-tracks): a kit-local project forks and closes through kit-track.py, one closing order.
+pk_kl_order() { in_order "$1" 'kit-track.py close <slug> --merged' '`/loop:ship` step 5' 'main-tree handoff → `phase: shipped`' 'git branch -d feat/<slug>'; }
+pk_tr4="$(section "$TRACKS" '### 4. Prepare' '### 5. Hand over' || true)"
+pk WT4 has_in "$pk_tr4" 'python3 .claude/scripts/kit-track.py fork <track-slug>'
+pk WT4.2 lacks_in "$pk_tr4" 'Refuse to fork'
+pk_o05="$(section "$ORCHESTRATE" '## Phase 0.5 —' '## Phase 1 —' || true)"
+pk WT5 has_in "$pk_o05" 'python3 .claude/scripts/kit-track.py fork <slug>'
+pk WT5.2 has_in "$pk_o05" 'never `EnterWorktree`'
+pk_o0="$(section "$ORCHESTRATE" '0. **Closing check**' '1. **Small pipeline**' || true)"
+pk WT5.3 pk_kl_order "$pk_o0"
+pk WT5.4 has_in "$pk_o0" 'no `loop-record.py --clear`'
+pk WT6 has_in "$pk_pr" 'kit-track.py close <slug> --merged'
+pk WT6.2 has_in "$pk_local" 'python3 .claude/scripts/kit-track.py close <slug>'
+pk WT6.3 has_in "$pk_local" 'main-tree session'
+pk_wtk="$(section "$WORKTREES" '## Kit-local projects' '## Working remotely' || true)"
+for n in 'kit-track.py fork <slug>' 'kit-track.py close <slug>' './workflow.sh' 'never `EnterWorktree`' 'own test database'; do
+    pk "WT7 $n" has_in "$pk_wtk" "$n"
+done
+pk WT7.2 lacks "$WORKTREES" 'so it never forks'
+pk WT8 has "$WORKTREES" '**Project slot `local-kit-env`**'
+pk WT8.2 has "$ROOT/templates/overlays/guides/10-worktrees.md" '## local-kit-env'
+pk WT9 has "$ROOT/.claude/settings.json" 'python3 .claude/scripts/kit-track.py fork *'
+pk WT9.2 lacks "$ROOT/.claude/settings.json" 'kit-track.py close'
+pk WT9.3 has "$ROOT/install.sh" 'python3 .claude/scripts/kit-track.py fork *'
+pk WT10 has "$ROOT/.github/workflows/kit-ci.yml" 'run: .claude/hooks/test-kit-track.sh'
+pk WT10.2 has "$ROOT/.github/workflows/kit-ci.yml" 'src: .claude/hooks .claude/scripts'
+pk WT11 has "$ROOT/.claude/commands/kit/doctor.md" 'kit-track.py fork'
+pk_tr0="$(section "$TRACKS" '### 0. Inputs and state' 'Stories: the directory passed' || true)"
+pk WT12 pk_kl_order "$pk_tr0"
+pk WT13 has_in "$pk_local" 'phase: awaiting-merge'
+pk WT13.2 has_in "$pk_local" 'prints the exact main-tree command'
+pk WT14 has_in "$pk_o0" 'merge-base --is-ancestor feat/<slug>'
+pk WT14.2 has_in "$pk_tr0" 'merge-base --is-ancestor feat/<slug>'
+pk WT15 has_in "$pk_o0" 'main-tree handoff at `awaiting-merge` with `pr: none`'
+pk WT15.2 has_in "$pk_tr0" 'main-tree handoff at `awaiting-merge` with `pr: none`'
 pk HF1 has "$ORCHESTRATE" 'rewrite its state line'
 for n in 'Contract gate' 'each plan-critic pass' 'the test-plan gate' 'each review round'; do pk "HF1 $n" has "$ORCHESTRATE" "$n"; done
 pk HF2 has "$PLAN" 'rewrite the handoff state line'
