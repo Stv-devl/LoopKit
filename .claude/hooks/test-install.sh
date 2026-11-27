@@ -1055,4 +1055,28 @@ jq -e '[.hooks.PreToolUse[] | select(.matcher == "Read") | .hooks[] | select(.co
 jq -e '[.hooks.PreToolUse[] | select(.matcher == "Read") | .hooks[].command] | index(".claude/hooks/my-own-check.sh") != null' \
     "$IN64/.claude/settings.json" >/dev/null || fail_in "IN64: the user's own relative hook was dropped"
 
+# IN70 kit-ship-lint: a fresh install gets the seeded overlay template, never the kit repo's own
+# ship overlay (its extra-gates runs kit-lint.sh), not even as a .new.
+IN70="$SCRATCH/in70"
+mkdir -p "$IN70"
+"$ROOT/install.sh" "$IN70" --no-ci </dev/null >/dev/null 2>&1
+cmp -s "$IN70/.claude/overlays/commands/loop/ship.md" "$ROOT/templates/overlays/commands/loop/ship.md" \
+    || fail_in 'IN70: the target ship overlay is not the seeded template'
+if grep -rlF 'kit-lint.sh' "$IN70/.claude/overlays" >/dev/null; then
+    fail_in 'IN70: a target overlay names kit-lint.sh'
+fi
+# IN71 a re-install over an overlay equal to the template leaks nothing and keeps it byte-identical.
+cp "$IN70/.claude/overlays/commands/loop/ship.md" "$SCRATCH/in71-overlay.md"
+"$ROOT/install.sh" "$IN70" --no-ci </dev/null >/dev/null 2>&1
+if grep -rlF 'kit-lint.sh' "$IN70/.claude/overlays" >/dev/null; then
+    fail_in 'IN71: a re-install leaked kit-lint.sh into the overlays'
+fi
+cmp -s "$IN70/.claude/overlays/commands/loop/ship.md" "$SCRATCH/in71-overlay.md" \
+    || fail_in 'IN71: the ship overlay changed on re-install'
+# IN72 the kit repo's kit-lint allows never ride to a target.
+if jq -e '[.permissions.allow[] | select(contains("kit-lint"))] | length > 0' \
+    "$IN70/.claude/settings.json" >/dev/null; then
+    fail_in 'IN72: a target settings.json allows kit-lint'
+fi
+
 echo 'install fixtures: green.'

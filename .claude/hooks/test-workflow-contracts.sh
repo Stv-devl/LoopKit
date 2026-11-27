@@ -864,6 +864,44 @@ if grep -Eq '\|\| true|continue-on-error' "$K2_CI"; then exit 1; fi
 # K2e ruff is the pinned version, checked against a literal digest.
 grep -Eq '^[[:space:]]+version: 0\.17\.4$' "$K2_CI"
 grep -Eq '^[[:space:]]+checksum: [0-9a-f]{64}$' "$K2_CI"
+# K4a kit-ship-lint: kit-lint.sh runs the same tool versions as kit-ci.yml; a bump on one
+# side alone goes red here, not in CI.
+K4_GATE="$ROOT/.claude/scripts/kit-lint.sh"
+k4_ci_sc="$(sed -nE 's#^.*shellcheck/releases/download/v([0-9.]+)/.*$#\1#p' "$K2_CI")"
+k4_gate_sc="$(sed -nE 's#^.*shellcheck-py==([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+.*$#\1#p' "$K4_GATE")"
+[[ -n "$k4_ci_sc" && "$k4_ci_sc" == "$k4_gate_sc" ]]
+k4_ci_ruff="$(sed -nE 's#^[[:space:]]+version: ([0-9.]+)$#\1#p' "$K2_CI")"
+k4_gate_ruff="$(sed -nE 's#^.*ruff@([0-9.]+)\).*$#\1#p' "$K4_GATE")"
+[[ -n "$k4_ci_ruff" && "$k4_ci_ruff" == "$k4_gate_ruff" ]]
+k4_ci_al="$(sed -nE 's#^.*actionlint/releases/download/v([0-9.]+)/.*$#\1#p' "$K2_CI")"
+k4_gate_al="$(sed -nE 's#^.*actionlint-py==([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+.*$#\1#p' "$K4_GATE")"
+[[ -n "$k4_ci_al" && "$k4_ci_al" == "$k4_gate_al" ]]
+# K4b the same arguments and paths on both sides.
+for k4_arg in '-S warning .claude/hooks/*.sh .claude/scripts/*.sh' 'check --select E4,E7,E9,F' \
+    '.github/workflows/*.yml' 'for f in templates/github/publish/*.yml; do' '--deploy="$t" </dev/null' \
+    '"$d"/.github/workflows/*.yml'; do
+    grep -Fq -- "$k4_arg" "$K2_CI"
+    grep -Fq -- "$k4_arg" "$K4_GATE"
+done
+grep -Fq 'src: .claude/hooks .claude/scripts' "$K2_CI"
+grep -Fq 'check --select E4,E7,E9,F .claude/hooks .claude/scripts' "$K4_GATE"
+# K4c the kit repo's ship overlay puts the gate in its extra-gates section.
+K4_OVERLAY="$ROOT/.claude/overlays/commands/loop/ship.md"
+sed -n '/^## extra-gates$/,/^## /p' "$K4_OVERLAY" | grep -Fq '.claude/scripts/kit-lint.sh'
+# K4d the kit allows the gate without a prompt.
+jq -e '.permissions.allow | index("Bash(.claude/scripts/kit-lint.sh)")' "$SETTINGS" >/dev/null
+# K4e install.sh never copies the kit's own overlays; CI runs the gate's fixtures.
+grep -Fq -- '-path "$src/overlays"' "$ROOT/install.sh"
+grep -Eq '^[[:space:]]+run: \.claude/hooks/test-kit-lint\.sh$' "$K2_CI"
+# K4f the gate and its suite are kit-development allows (C2's class): in the kit's settings,
+# retired from targets, never in the prompt allows.
+K4_RETIRED="$(sed -n "/^RETIRED_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^RETIRED_ALLOWS='//; s/'\$//")"
+for k4_form in 'Bash(.claude/scripts/kit-lint.sh)' 'Bash(.claude/scripts/kit-lint.sh *)' \
+    'Bash(bash .claude/hooks/test-kit-lint.sh)' 'Bash(bash .claude/hooks/test-kit-lint.sh *)'; do
+    jq -e --arg a "$k4_form" '.permissions.allow | index($a)' "$SETTINGS" >/dev/null
+    jq -en --argjson r "$K4_RETIRED" --arg a "$k4_form" '$r | index($a)' >/dev/null
+    if jq -en --argjson kit "$HP_KIT" --arg a "$k4_form" '$kit | index($a)' >/dev/null; then exit 1; fi
+done
 
 # C1-C9 fewer-asks: the prompt half of the pass. Each needle is the rule an agent
 # reads; the hooks enforce what they can, these lines say the rest.

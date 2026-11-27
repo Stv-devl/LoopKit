@@ -337,7 +337,8 @@ copy_tree() {
             *) copy_file "$f" "$dst/$rel" ;;
         esac
     done < <(find "$src" \
-        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' -o -name 'kit-backup' \) -prune -o \
+        \( -name '__pycache__' -o -name '.tdd-red' -o -name 'worktrees' -o -name 'kit-backup' \
+           -o -path "$src/overlays" \) -prune -o \
         -type f ! -name '*.pyc' ! -name '.DS_Store' ! -name 'settings.json' \
                  ! -name '.loop-record.json' ! -name '.loop-record.lock' \
                  ! -path "$src/project.json" \
@@ -376,7 +377,9 @@ RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:
                  "Bash(pnpm exec playwright test *)",
                  "Bash(bash .claude/hooks/test-install.sh)", "Bash(bash .claude/hooks/test-install.sh *)",
                  "Bash(bash .claude/hooks/test-workflow-contracts.sh)",
-                 "Bash(bash .claude/hooks/test-workflow-contracts.sh *)"]'
+                 "Bash(bash .claude/hooks/test-workflow-contracts.sh *)",
+                 "Bash(.claude/scripts/kit-lint.sh)", "Bash(.claude/scripts/kit-lint.sh *)",
+                 "Bash(bash .claude/hooks/test-kit-lint.sh)", "Bash(bash .claude/hooks/test-kit-lint.sh *)"]'
 # shellcheck disable=SC2034  # read by the suites, not by install.sh
 PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-health.py *)",
