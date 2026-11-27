@@ -68,6 +68,8 @@ jobs:
         run: .claude/hooks/test-kit-track.sh
       - name: Test gate routing
         run: .claude/hooks/test-gate-route.sh
+      - name: Test kit lint gate
+        run: .claude/hooks/test-kit-lint.sh
       - name: Test PR screenshot assets
         run: .claude/hooks/test-pr-assets.sh
       - name: Pin workflow contracts

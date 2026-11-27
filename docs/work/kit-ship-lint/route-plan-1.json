@@ -1,0 +1,14 @@
+{
+  "mode": "plan",
+  "pass": 1,
+  "findings": [
+    {"id": "F1", "severity": "Minor", "claim": "no case checks that the failing file path is surfaced (AC1)", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F2", "severity": "Minor", "claim": "AC5 gate batch in a repo with no package.json is unmapped", "p1_class": null, "kind": "interpretation", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F3", "severity": "Major", "claim": "IN2 cannot go green after the prune (seed_overlays writes ship.md.new for an edited overlay, IN48) and does not reproduce the leak", "p1_class": "c", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "closure": "IN2 re-installs over a project whose .claude/overlays/commands/loop/ship.md equals the seeded template, asserts no file under .claude/overlays/ (incl. *.new) contains kit-lint.sh and the project's ship.md is byte-identical; observed red before the prune, green after; IN48 stays green", "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F4", "severity": "Major", "claim": "kit-lint and test-kit-lint allows ride to every target, against the RETIRED_ALLOWS / C2 kit-dev invariant", "p1_class": "d", "kind": "demonstrated", "status": "new", "in_rewritten_section": false, "closure": "both forms of the kit-lint.sh and test-kit-lint.sh allows are in install.sh RETIRED_ALLOWS, the C2 loop covers kit-lint and test-kit-lint, and a new install case shows a fresh install's settings.json holds no kit-lint allow", "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F5", "severity": "Minor", "claim": "test-kit-lint.sh missing from kit-doctor NON_HOOKS", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F6", "severity": "Minor", "claim": "MISSING vs FAIL distinction not defined", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F7", "severity": "Minor", "claim": "KL8 fixture cannot tell target two from one", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F8", "severity": "Minor", "claim": "IN1/IN2 ids collide with existing IN ids; K4c/K4d never observed red in plan order", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": false, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}

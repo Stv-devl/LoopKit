@@ -1,0 +1,7 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "F9", "severity": "Minor", "claim": "IN72 cannot be observed red at step 5 (settings allows land at step 6)", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}
