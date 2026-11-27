@@ -470,7 +470,7 @@ def ledger_entry(fields: dict[str, str], agent_id: str) -> dict[str, str] | None
 
 def ledger_problem(fields: dict[str, str]) -> str:
     """The first field of a malformed verdict block that `ledger_entry` refuses, with its problem."""
-    kind, verdict = fields.get("kind"), fields.get("verdict", "")
+    kind = fields.get("kind")
     if kind == "decision":
         return "question missing" if not fields.get("question") else "verdict missing"
     if kind not in ("frozen-case", "declared-rewrite"):
