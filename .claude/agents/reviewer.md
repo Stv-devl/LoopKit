@@ -73,6 +73,9 @@ Every Critical and Major carries four fields more:
 - `Closure:`: the observable state that closes it, such as a named case that passes, a line
   that no longer exists, or a scenario that now gives the right result.
 
+The route file carries `class` on every finding, Minor included: give a Minor its `class` too
+(the same seven values), the route refuses a finding without one.
+
 ## Re-review after a fix batch
 
 This mode applies **only when** the launch hands you a fix diff (`kit-gate-route.py diff …
@@ -104,6 +107,7 @@ Report new findings with the fields above. Whether one is admissible, and whethe
   class: … · scenario: … · regression: … · Closure: …
 ### Minor
 - path:line — problem
+  class: <class>
 ### Verdict
 PASS / FAIL (FAIL if ≥1 Critical, or an uncovered acceptance criterion)
 ```

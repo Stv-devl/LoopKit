@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,7 @@ HOOK_STEMS = {
     ("require-red", "py"): "tdd-require-red-py",
     ("freeze", "py"): "tdd-freeze-tests-py",
 }
+HINTS = {"status": "; a fixed or refuted finding is dropped before the route"}
 BASE_LINE = re.compile(r"^Base:\s*(\S+)", re.MULTILINE)
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 GIT_DIFF = (
@@ -65,6 +67,10 @@ class GateDir:
     @property
     def fix_base(self) -> Path:
         return self.directory / "fix-base"
+
+    @property
+    def fix_base_round(self) -> Path:
+        return self.directory / "fix-base.round"
 
     @property
     def follow_ups(self) -> Path:
@@ -203,7 +209,11 @@ def enum_field(
     value = finding[key]
     if value is None and nullable:
         return None
-    check(isinstance(value, str) and value in allowed, where, f"{key} must be one of {allowed}")
+    check(
+        isinstance(value, str) and value in allowed,
+        where,
+        f"{key} must be one of {allowed}{HINTS.get(key, '')}",
+    )
     assert isinstance(value, str)
     return value
 
@@ -254,7 +264,8 @@ def parse_plan_finding(raw: dict[str, object], index: int) -> PlanFinding:
     kind = enum_field(raw, "kind", KINDS, where, nullable=True)
     if p1_class is not None:
         check(kind in ("demonstrated", "interpretation"), where,
-              "a P1 finding needs kind demonstrated or interpretation")
+              "a P1 finding needs kind demonstrated or interpretation; "
+              "a vigilance finding takes p1_class null")
     severity = enum_field(raw, "severity", SEVERITIES, where)
     status = enum_field(raw, "status", STATUSES, where)
     leg = enum_field(raw, "leg", LEGS, where)
@@ -472,7 +483,29 @@ def append_follow_ups(gate: GateDir, lines: list[str]) -> int:
     return len(added)
 
 
-def route_review(data: dict[str, object], gate: GateDir) -> dict[str, object]:
+def decide_fix_base(gate: GateDir, round_number: int, digest: str) -> str:
+    """Write the tree as fix-base when this batch needs a new one, else keep it."""
+    recorded = (
+        gate.fix_base_round.read_text(encoding="utf-8").split()
+        if gate.fix_base_round.is_file()
+        else None
+    )
+    keep = gate.fix_base.is_file() and (
+        recorded is None
+        or (
+            len(recorded) == 2
+            and recorded[0] == str(round_number)
+            and (round_number >= 2 or recorded[1] == digest)
+        )
+    )
+    if keep:
+        return "kept"
+    write_atomic(gate.fix_base, f"{snapshot_tree()}\n")
+    write_atomic(gate.fix_base_round, f"{round_number} {digest}\n")
+    return "written"
+
+
+def route_review(data: dict[str, object], gate: GateDir, digest: str) -> dict[str, object]:
     round_number = int_field(data, "round", "input")
     findings = [parse_review_finding(raw, i) for i, raw in enumerate(findings_of(data))]
     scope = review_scope(gate) if round_number >= 2 else None
@@ -494,7 +527,7 @@ def route_review(data: dict[str, object], gate: GateDir) -> dict[str, object]:
         if route == "follow-up"
     ]
     added = append_follow_ups(gate, lines)
-    return {
+    result: dict[str, object] = {
         "mode": "review",
         "round": round_number,
         "findings": [
@@ -506,6 +539,9 @@ def route_review(data: dict[str, object], gate: GateDir) -> dict[str, object]:
         "follow_ups": gate.follow_ups.as_posix(),
         "follow_ups_added": added,
     }
+    if next_step == "fix-batch":
+        result["fix_base"] = decide_fix_base(gate, round_number, digest)
+    return result
 
 
 def command_route(argument: str) -> int:
@@ -513,7 +549,8 @@ def command_route(argument: str) -> int:
     if path.suffix != ".json":
         refuse(f"{argument} must be a .json input file")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        data = json.loads(raw_bytes.decode("utf-8"))
     except OSError as error:
         refuse(f"cannot read {argument}: {error.strerror}")
     except ValueError as error:
@@ -523,9 +560,12 @@ def command_route(argument: str) -> int:
     if mode == "plan":
         result = route_plan(data)
     elif mode == "review":
-        result = route_review(data, gate)
+        result = route_review(data, gate, hashlib.sha256(raw_bytes).hexdigest())
     else:
-        refuse("input: mode must be plan or review")
+        refuse(
+            'input: mode must be plan or review; add "mode": "review" '
+            '(route-review-<round>.json) or "mode": "plan" (route-plan-<pass>.json)'
+        )
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -541,6 +581,7 @@ def command_snapshot(argument: str) -> int:
     gate = plan_argument(argument)
     sha = snapshot_tree()
     write_atomic(gate.fix_base, f"{sha}\n")
+    gate.fix_base_round.unlink(missing_ok=True)
     print(sha)
     return 0
 

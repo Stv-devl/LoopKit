@@ -30,7 +30,7 @@
 #          the project's: that repository's config can run programs on status/diff
 #   destructive (python, on the parsed call, a non-`!` alias expanded up to 5
 #          hops): ask on git init, on a git config that is not a full-spelling
-#          read (--get*, --list, get, list, one key), on clean without -n/-i, reset --hard, stash clear|drop,
+#          read (--get*, --list, get, list, one key), on clean without -n/-i, reset --hard, stash clear|drop or push|save with tracked changes,
 #          branch -D/-M/-C/-f, update-ref on HEAD/refs/heads or --stdin, a
 #          checkout/restore that overwrites `.`, `:/`, a glob, a directory or a
 #          named file with uncommitted changes (`git diff --quiet HEAD`, under the
@@ -835,10 +835,18 @@ def reset_rule(sub, args, directory, ctx):
     return "-"
 
 
+STASH_SUBS = {"list", "show", "drop", "pop", "apply", "branch", "push", "save", "clear", "create",
+              "store"}
+
+
 def stash_rule(sub, args, directory, ctx):
     if args and args[0] in ("clear", "drop"):
         return ask(f"git stash {args[0]} deletes stashed work that nothing else holds. "
                    "Show `git stash list` first.")
+    action = args[0] if args and args[0] in STASH_SUBS else "push"
+    if action in ("push", "save") and not worktree_clean(directory, [], ctx):
+        return ask("git stash would put tracked work aside: staged or unstaged changes leave the "
+                   "tree, or the hook could not check. Show the exact call, then let the user decide.")
     return "-"
 
 

@@ -37,11 +37,11 @@ VALIDATION_AUTO = "Validation: auto"
 ARBITER = "arbiter"
 VERDICT_HEAD = "ARBITER VERDICT"
 FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
-CASE_RE = re.compile(r"^[UMRB][0-9]+$")
+CASE_RE = re.compile(r"^[UMRBumrb][0-9]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 KEPT_ON_PLAN_GO = ("mode", "contract_go", "verdicts", "guarded", "released_at")
 BLOCK_HEADER = "Frozen cases to amend:"
-REWRITE_CASE_RE = re.compile(r"^(?:[UMRB][0-9]+|test_[A-Za-z0-9_]+)$")
+REWRITE_CASE_RE = re.compile(r"^(?:[UMRBumrb][0-9]+|test_[A-Za-z0-9_]+)$")
 ROW_RE = re.compile(r"^(\S+) \| ([UMRB][0-9]+|test_[A-Za-z0-9_]+) \| ([0-9a-f]{64})$")
 REPO_RE = r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
 BRANCH_RE = r"[A-Za-z0-9._/][A-Za-z0-9._/-]*"
@@ -458,12 +458,33 @@ def ledger_entry(fields: dict[str, str], agent_id: str) -> dict[str, str] | None
             return None
         if verdict not in (("unfreeze", "refuse") if kind == "frozen-case" else ("accept", "refuse")):
             return None
+        if CASE_RE.match(case):
+            case = case[0].upper() + case[1:]
         return {"kind": kind, "path": path, "id": case, "sha256": sha, "verdict": verdict,
                 "agent_id": agent_id, "at": now()}
     if kind == "decision" and fields.get("question") and verdict:
         return {"kind": kind, "question": fields["question"], "verdict": verdict,
                 "agent_id": agent_id, "at": now()}
     return None
+
+
+def ledger_problem(fields: dict[str, str]) -> str:
+    """The first field of a malformed verdict block that `ledger_entry` refuses, with its problem."""
+    kind, verdict = fields.get("kind"), fields.get("verdict", "")
+    if kind == "decision":
+        return "question missing" if not fields.get("question") else "verdict missing"
+    if kind not in ("frozen-case", "declared-rewrite"):
+        return "kind must be frozen-case, declared-rewrite or decision"
+    path, case, sha = fields.get("path", ""), fields.get("case", ""), fields.get("sha256", "")
+    if not path or " " in path or os.path.isabs(path) or path != os.path.normpath(path) \
+            or "//" in path or path.startswith("../"):
+        return "path missing or not a plain relative path"
+    if not (CASE_RE if kind == "frozen-case" else REWRITE_CASE_RE).match(case):
+        return "case must be a case id such as B204" + ("" if kind == "frozen-case" else " or a test_ name")
+    if not SHA_RE.match(sha):
+        return "sha256 missing or not 64 lowercase hex characters"
+    allowed = ("unfreeze", "refuse") if kind == "frozen-case" else ("accept", "refuse")
+    return "verdict must be " + " or ".join(allowed)
 
 
 def file_sha(path: str) -> str:
@@ -538,6 +559,8 @@ def subagent_stop(data: dict[str, object]) -> None:
     agent_id = data.get("agent_id")
     entry = ledger_entry(blocks[-1], agent_id if isinstance(agent_id, str) else "")
     if entry is None:
+        print(json.dumps({"systemMessage": "arbiter verdict not recorded: " + ledger_problem(blocks[-1])
+                          + "; the block was ignored, so no verdict backs its case"}))
         return
     tree = toplevel(data.get("cwd"))
     if tree is None:
@@ -582,7 +605,7 @@ def post_bash(data: dict[str, object]) -> None:
         drop_record(tree)
 
 
-UNFROZEN_LINE_RE = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+!?(?:[ \t]*,[ \t]*[UMRB][0-9]+!?)*)[ \t]*:.*")
+UNFROZEN_LINE_RE = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRBumrb][0-9]+!?(?:[ \t]*,[ \t]*[UMRBumrb][0-9]+!?)*)[ \t]*:.*")
 
 
 def comment_row_lines(tree: str, rows: object, verdicts: object = None) -> None:
@@ -601,7 +624,7 @@ def comment_row_lines(tree: str, rows: object, verdicts: object = None) -> None:
     changed = False
     for index, line in enumerate(lines):
         match = UNFROZEN_LINE_RE.fullmatch(line.strip())
-        if match and all((match.group(1), cid.rstrip("!")) in pairs for cid in re.split(r"[ \t]*,[ \t]*", match.group(2))):
+        if match and all((match.group(1), cid.rstrip("!").upper()) in pairs for cid in re.split(r"[ \t]*,[ \t]*", match.group(2))):
             lines[index] = "# " + line
             changed = True
     if changed:

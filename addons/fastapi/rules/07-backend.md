@@ -134,7 +134,7 @@ matches it. Python has its own trio, wired by `install.sh --fastapi`:
 | --- | --- | --- |
 | `tdd-prove-red-py.py` | Post | recording a marker for a failure that proves nothing |
 | `tdd-require-red-py.py` | Pre | **creating** a service module with no marker for its test |
-| `tdd-freeze-tests-py.py` | Pre | editing a proved test file, except a pure insertion |
+| `tdd-freeze-tests-py.py` | Pre | editing a proved test file, except a pure insertion or, in auto mode with an arbiter `unfreeze` verdict, import lines at the head of the file in their own Edit |
 
 They share `.claude/.tdd-red/` and `.claude/.tdd-unfrozen` with the TypeScript
 cycle and derive marker names the same way, so one exception list covers both and

@@ -47,8 +47,9 @@ lets it in. So read the **hunk itself**, never the requester's summary alone:
    side-effect `import './x'`, not a dynamic `import(` or `import.meta`, no
    text after the specifier on the same line, no binding named like a test global (`describe`, `it`, `test`,
    `expect`, `vi`, hooks) nor like any identifier already in the file, and no existing import
-   removed or changed. The freeze hook accepts the same; the imports go import-first (their own
-   Edit before the case body) or in one Edit with it.
+   removed or changed. The TypeScript freeze accepts the same, with the imports import-first (their own
+   Edit before the case body) or in one Edit with it. The Python freeze accepts import lines at the
+   head of the file with an unfreeze verdict, and the Python freeze takes the imports in their own Edit.
 4. Compute the new title's digest: `.claude/scripts/case-hash.sh '<new title>'`.
 
 A hunk that does not apply, touches another case, or weakens an assertion → `refuse`.
@@ -77,6 +78,8 @@ case: <id, e.g. U2>
 sha256: <64 lowercase hex of the new title>
 verdict: unfreeze | refuse
 ```
+
+In a frozen-case block the id is the case id in capitals: B204, never b204, and a Python test named test_b204_… → B204.
 
 Declared rewrite of a test-after file (plan step 7; the file is not frozen, so this never unfreezes
 anything). Judge the new title against the plan's reason and the spec as for a frozen case, with one

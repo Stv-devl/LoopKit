@@ -101,11 +101,12 @@ completeness:
       evidence: <path:line>
       failure_scenario: <concrete consequence>
       closure: <Closure: the observable state that closes it, or null>
-      status: new|fixed|not fixed   # on a rerun, per prior finding
+      status: new|fixed|not-fixed   # on a rerun, per prior finding
 quality:
   score: <0-100>
   findings:
     - <same fields>
 ```
 
+The route file takes `new` or `not-fixed` only: a fixed finding is left out of the route file.
 Use empty arrays when an axis is clean. Never turn the two scores into one verdict.

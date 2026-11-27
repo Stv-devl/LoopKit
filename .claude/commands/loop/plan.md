@@ -80,13 +80,46 @@ You **do not write code here**.
    same find-then-refute mechanics as `/loop:review`.
 
    **Route the survivors.** Write them with Write to
-   `docs/work/<slug>/route-plan-<pass>.json` (fields: `plan-critic.md` output plus
+   `docs/work/<slug>/route-plan-<pass>.json`, an object `{"mode": "plan", "pass": <pass>,
+   "findings": [...]}` (fields: `plan-critic.md` output plus
    `status`, `in_rewritten_section`, `hook`, `leg`, `test_path`), then run
    `python3 .claude/hooks/kit-gate-route.py route docs/work/<slug>/route-plan-<pass>.json`.
+   The allowed values: `severity` is `Critical`, `Major` or `Minor`; `status` is `new` or
+   `not-fixed` (a fixed finding is left out); `kind` is `demonstrated`, `interpretation` or
+   `vigilance` (or `null`); `p1_class` is `a` to `d`, or `null` for a vigilance finding (a P1 finding is
+   `demonstrated` or `interpretation`); `hook` is `require-red`, `freeze` or `null`; `leg` is
+   `claude` or `codex`.
+
    Fill `leg` from `.claude/workflow-routing.yml`: the `provider` of the role that owns the
    finding's step (`execute-green` and `review-fixes` may be `codex`); `execute-red` is
    always `claude`. `hook` is the guard hook the finding names (`require-red` or `freeze`)
    and `test_path` the test file it concerns, both `null` when the finding names none.
+   The skeleton below stays at column 0 so the contract tests can read it.
+
+Skeleton (accepted as written by `kit-gate-route.py route`, a pass-1 file with one complete finding; copy it and change the values):
+
+```json
+{
+  "mode": "plan",
+  "pass": 1,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "Major",
+      "claim": "the test plan has no case for an empty order",
+      "p1_class": "c",
+      "kind": "demonstrated",
+      "status": "new",
+      "in_rewritten_section": true,
+      "closure": "the plan lists a case for an empty order",
+      "hook": null,
+      "leg": "claude",
+      "test_path": null
+    }
+  ]
+}
+```
+
    The script decides the route; you apply it. First, whatever `next` is:
    - a `demonstrated` finding the verifier refuted is dropped before the route,
      never re-entered as `interpretation`;

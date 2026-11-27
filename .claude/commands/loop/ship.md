@@ -117,11 +117,28 @@ commit:
    six. Nothing selected → no auditor; the report prints `Audit: not armed — diff
    touches no audit surface (<the script's reason>); review security ran`.
 5. Write the auditor's Critical, Major and Minor items with Write to
-   `docs/work/<slug>/audit-1.json` (`surface`, `severity`, `path`, `line` or
+   `docs/work/<slug>/audit-1.json`, an object `{"findings": [...]}` (a bare list is refused;
+   each item holds `surface`, `severity`, `path`, `line` or
    `null`, `problem`) and run
    `python3 .claude/hooks/kit-audit-surface.py follow-ups docs/work/<slug>/audit-1.json`:
    every Major and Minor lands in `follow-ups.md`. Exit 2 means that JSON is wrong:
    correct it and rerun, never invent a line or drop a finding.
+
+Skeleton (accepted as written by `kit-audit-surface.py follow-ups`; copy it and change the values):
+
+```json
+{
+  "findings": [
+    {
+      "surface": "authz",
+      "severity": "Major",
+      "path": "server/routes/orders.py",
+      "line": 42,
+      "problem": "the delete route does not check the caller owns the order"
+    }
+  ]
+}
+```
 
 `next: stop` — a Critical — stops the ship like a red gate: the track stays in its
 worktree and the fix comes back through the loop with its reproduction test, never inline here. Not `critical` but the diff
@@ -150,7 +167,8 @@ Announce what needs deploying and **ask** before running it.
 ### 4. Commit
 
 First remove the applied `.tdd-unfrozen` entries in one Edit (delete the lines
-or comment them out: that Edit narrows the freeze and does not ask). Then
+or comment them out with the bare `# ` prefix of the exact line, nothing else: an annotated
+`#` line is denied; that Edit narrows the freeze and does not ask). Then
 hand the `github` agent the subject only — never body bullets; a body belongs
 to the PR. Delegate to the **`github` agent**: it stages, writes the Conventional Commit
 message, commits locally, and never signs. It commits **on a branch, never on

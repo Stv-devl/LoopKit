@@ -383,7 +383,7 @@ if os.environ.get("CWK_AUTO_VERDICTS") == "1":
     found = [v for v in (rec.get("verdicts") or []) if isinstance(v, dict) and v.get("kind") == "frozen-case"]
     rows |= {(v.get("path"), v.get("id")) for v in found if v.get("verdict") == "unfreeze"}
     refused = {(v.get("path"), v.get("id")) for v in found if v.get("verdict") == "refuse"}
-line_re = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+(?:[ \t]*,[ \t]*[UMRB][0-9]+)*)[ \t]*:[ \t]*\S.*")
+line_re = re.compile(r"(\S+)[ \t]+#[ \t]*([UMRBumrb][0-9]+(?:[ \t]*,[ \t]*[UMRBumrb][0-9]+)*)[ \t]*:[ \t]*\S.*")
 test_re = re.compile(r"(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+\.test\.tsx?|"
                      + r"(?:[A-Za-z0-9_.@-]+/)*" + re.escape(tests_root)
                      + r"/(?:[A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_]*\.py")
@@ -412,11 +412,55 @@ for line in file_lines(result):
         if not os.path.isfile(os.path.join(tree, target)):
             sys.exit(1)
         for case_id in re.split(r"[ \t]*,[ \t]*", match.group(2)):
+            case_id = case_id.upper()
             if (target, case_id) not in rows or (target, case_id) in refused:
                 sys.exit(1)
 sys.exit(0)
 ' "$abs" "$tree" "${CWK_CFG_TESTS_ROOT:-tests}" <<<"$INPUT"
 }
+# An annotated comment-out: a new `#` line that holds an entry line plus other text, the entry
+# line itself gone from the result. The bare `# <line>` and `#<line>` forms are not one.
+unfrozen_annotated_comment_out() {
+    local abs="$FILE_PATH"
+    [[ "$abs" == /* ]] || abs="${CWD:-$PWD}/$abs"
+    command -v python3 >/dev/null 2>&1 || return 1
+    python3 -I -c '
+import json, sys
+data = json.load(sys.stdin)
+ti = data.get("tool_input") or {}
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        current = fh.read()
+except OSError:
+    sys.exit(1)
+if data.get("tool_name") == "Write":
+    result = ti.get("content")
+    if not isinstance(result, str):
+        sys.exit(1)
+else:
+    old, new = ti.get("old_string"), ti.get("new_string")
+    if not isinstance(old, str) or not isinstance(new, str) or not old or old not in current:
+        sys.exit(1)
+    result = current.replace(old, new) if ti.get("replace_all") is True else current.replace(old, new, 1)
+before = set(current.split("\n"))
+entries = {part for part in before if part.strip() and not part.strip().startswith("#")}
+after_lines = result.split("\n")
+after = {part.strip() for part in after_lines}
+for line in after_lines:
+    if not line.strip().startswith("#") or line in before:
+        continue
+    if any(line in ("# " + entry, "#" + entry)
+           or line.strip() in ("# " + entry.strip(), "#" + entry.strip()) for entry in entries):
+        continue
+    if any(entry.strip() in line and entry.strip() not in after for entry in entries):
+        sys.exit(0)
+sys.exit(1)
+' "$abs" <<<"$INPUT"
+}
+if [[ "$REL" == .claude/.tdd-unfrozen && ( "$TOOL_NAME" == Write || "$TOOL_NAME" == Edit ) ]] \
+    && unfrozen_annotated_comment_out; then
+    deny ".tdd-unfrozen: a comment-out is the bare '# ' prefix of the exact existing line, nothing else; to drop an entry, delete its line"
+fi
 if [[ "$PF_AUTO" == 1 && "$REL" == .claude/.tdd-unfrozen ]]; then
     if unfrozen_removal_only || CWK_AUTO_VERDICTS=1 unfrozen_record_rows; then
         pf_ledger

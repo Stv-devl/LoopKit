@@ -142,7 +142,7 @@ pytest file no hook will ever prove.
   - no `python3 -`/`-c`: Read/Grep, or a kit script;
   - no `sed -i`/`perl -i`: Edit;
   - no `Any` in tests (Python `typing.Any`): a real type or `object`;
-  - a new import a frozen test case needs goes inside the case body (the freeze hook refuses an import-only insertion).
+  - a new import a frozen test case needs goes inside the case body: the TypeScript and Python freezes refuse an import-only insertion unless an unfreeze verdict backs it.
 - No implementation, no stub, no "minimal helper to make the import resolve". The
   import failing to resolve **is** a legitimate red.
 - **The case name is the case, in plain words.**

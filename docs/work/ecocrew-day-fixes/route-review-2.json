@@ -1,0 +1,11 @@
+{
+  "mode": "review",
+  "round": 2,
+  "findings": [
+    {"id": "R1", "severity": "Minor", "dimension": "correctness", "class": "correctness", "path": ".claude/hooks/protect-files.sh", "line": 445, "problem": "raw-line comparison over-denies an indented entry commented with its indent kept ('  # X', was the guarded ask in moi) and a LF Write over a CRLF .tdd-unfrozen (entries keep their \\r)", "scenario": null, "regression": true, "status": "new", "closure": "'  # X' on an indented entry and a LF Write over a CRLF file get the fix-base verdict (strip \\r like file_lines), or a case pins '  # X' as deny on purpose"},
+    {"id": "R2", "severity": "Minor", "dimension": "tests", "class": "test-quality", "path": ".claude/hooks/test-hooks.sh", "line": 7134, "problem": "UW6/UW6.2 pass at fix-base: C1's second half was never a defect, the comment presents it as fixed", "scenario": null, "regression": false, "status": "new", "closure": null},
+    {"id": "R3", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": ".claude/agents/implementer.md", "line": 62, "problem": "says the head-import exception is Python only and 'in its own Edit'; the TS freeze has it too (tdd-freeze-tests.sh:289) and both accept it with a pure new case", "scenario": null, "regression": true, "status": "new", "closure": null},
+    {"id": "R4", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": "addons/fastapi/rules/07-backend.md", "line": 137, "problem": "'import lines ... in their own Edit' contradicts the hook docstring (alone or with a pure new case; docstring/__future__/comments too)", "scenario": null, "regression": true, "status": "new", "closure": null},
+    {"id": "R5", "severity": "Minor", "dimension": "correctness", "class": "maintainability", "path": ".claude/commands/loop/plan.md", "line": 123, "problem": "C9 partial: step 6 still continues after the column-0 skeleton", "scenario": null, "regression": false, "status": "not-fixed", "closure": null}
+  ]
+}

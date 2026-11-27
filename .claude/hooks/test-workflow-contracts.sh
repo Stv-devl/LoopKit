@@ -1803,4 +1803,40 @@ pk_init14="$(section "$KIT_INIT" '14. The project values' 'Probe, once applied:'
 pk PK61 has_in "$pk_init14" 'project_config.py detect-server-roots'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'PK59-PK61: failing, see above' >&2; exit 1; }
 
+# PK61-PK69 (docs/specs/ecocrew-day-fixes.md): the prompts name the id format, the Python import head, the
+# status and class values the route accepts, the comment-out format and the route-written fix-base.
+pk_arb_flat="$(tr -s ' \n' ' ' <"$ARBITER")"
+pk "PK61 [arbiter id in capitals]" has_in "$pk_arb_flat" 'the id is the case id in capitals'
+pk "PK61 [arbiter test_b204 example]" has_in "$pk_arb_flat" 'test_b204_… → B204'
+pk "PK62 [arbiter python head]" has_in "$pk_arb_flat" 'the Python freeze takes the imports in their own Edit'
+pk "PK62 [arbiter python verdict]" has_in "$pk_arb_flat" 'import lines at the head'
+pk "PK62 [arbiter unfreeze verdict]" has_in "$pk_arb_flat" 'with an unfreeze verdict'
+pk_arb_one_edit="$({ grep -o '[^.]*in one Edit with it[^.]*' <<<"$pk_arb_flat" || true; })"
+pk "PK62 [one-Edit sentence is TypeScript]" has_in "$pk_arb_one_edit" 'TypeScript'
+pk "PK62 [one-Edit sentence is not Python]" lacks_in "$pk_arb_one_edit" 'Python'
+pk_tw_import="$(grep -F 'import a frozen test case needs' "$TEST_WRITER" || true)"
+pk "PK63 [test-writer unfreeze verdict]" has_in "$pk_tw_import" 'an unfreeze verdict'
+pk "PK63 [test-writer both freezes]" has_in "$pk_tw_import" 'TypeScript and Python'
+pk_ship4="$(section "$SHIP" '### 4. Commit' 'Also hand the agent' || true)"
+pk "PK64 [ship bare prefix]" has_in "$pk_ship4" 'the bare `# ` prefix'
+pk "PK64 [ship one Edit kept]" has_in "$pk_ship4" 'remove the applied `.tdd-unfrozen` entries in one Edit'
+pk "PK65 [plan-critic not-fixed]" has "$CRITIC" 'status: new|fixed|not-fixed'
+pk "PK65 [plan-critic fixed left out]" has "$CRITIC" 'a fixed finding is left out of the route file'
+pk "PK65 [T1 line kept]" has "$CRITIC" 'fixed | not fixed'
+pk_o5="$(section "$ORCHESTRATE" '## Phase 5 —' '## Phase 6 —' || true)"
+pk "PK66 [orchestrate route writes fix-base]" has_in "$pk_o5" 'writes `fix-base` on `fix-batch`'
+pk "PK66 [snapshot kept]" has_in "$pk_o5" 'kit-gate-route.py snapshot'
+pk "PK67 [reviewer class on every finding]" has "$RC_REVIEWER" 'route file carries `class` on every finding, Minor included'
+pk_rv3bis="$(section "$REVIEW" '3bis. **Route the survivors' '4. Report the refuted' | tr -s ' \n' ' ' || true)"
+pk_pl6="$(section "$PLAN" '6. **PLAN CRITIC GATE' '7. **TEST PLAN GATE' | tr -s ' \n' ' ' || true)"
+pk "PK68 [review mode]" has_in "$pk_rv3bis" '"mode": "review"'
+pk "PK68 [review status]" has_in "$pk_rv3bis" '`status` is `new` or `not-fixed`'
+pk "PK68 [review class]" has_in "$pk_rv3bis" 'one of `security, correctness, data-integrity, architecture, test-quality, maintainability, other`'
+pk "PK68 [plan mode]" has_in "$pk_pl6" '"mode": "plan"'
+pk "PK68 [plan kind]" has_in "$pk_pl6" '`kind` is `demonstrated`, `interpretation` or `vigilance`'
+pk "PK68 [plan p1_class]" has_in "$pk_pl6" '`p1_class` is `a` to `d`, or `null` for a vigilance finding'
+pk "PK69 [workflows stash ask]" has "$RC_WORKFLOWS" 'des changements suivis'
+pk "PK69 [PK50 needle kept]" has "$TEST_WRITER" 'import a frozen test case needs'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK61-PK69: failing, see above' >&2; exit 1; }
+
 echo 'workflow contract fixtures: green.'

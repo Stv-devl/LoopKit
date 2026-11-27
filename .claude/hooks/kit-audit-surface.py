@@ -253,7 +253,7 @@ def follow_ups(argument: str) -> dict[str, object]:
         refuse(f"{argument} cannot be read as JSON: {error}")
     findings = data.get("findings") if isinstance(data, dict) else None
     if not isinstance(findings, list):
-        refuse(f"{argument} has no findings list")
+        refuse(f'{argument} has no findings list; wrap the list as {{"findings": [...]}}')
     parsed = [finding_line(i, raw) for i, raw in enumerate(findings)]
     counts = {s: sum(1 for severity, _ in parsed if severity == s) for s in SEVERITIES}
     added = route.append_follow_ups(gate, [line for _, line in parsed if line is not None])
