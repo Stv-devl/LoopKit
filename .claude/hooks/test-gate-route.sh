@@ -446,7 +446,7 @@ ok G37 '.next == "write-closure"'
 [[ ! -e "$REPO/docs/work/fh/fix-base" ]] || fail G37 "fix-base written on write-closure"
 
 # G38 a plan route never writes fix-base
-gate_slug fi
+gate_slug 'fi'
 printf '%s\n' "$(pf F1 Major a demonstrated new true 'case X passes')" \
     | jq -sc '{mode: "plan", pass: 1, findings: .}' >"$REPO/docs/work/fi/p.json"
 OUT="$(kgr route docs/work/fi/p.json)"
