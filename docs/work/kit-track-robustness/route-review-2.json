@@ -1,0 +1,32 @@
+{
+  "mode": "review",
+  "round": 2,
+  "findings": [
+    {
+      "id": "R2a",
+      "severity": "Minor",
+      "dimension": "correctness",
+      "class": "maintainability",
+      "path": ".claude/scripts/kit-track.py",
+      "line": 316,
+      "problem": "`cannot read <rel>` does not say whether the main or the track copy was unreadable",
+      "scenario": "an unreadable main-side target is reported with the same text as an unreadable track file",
+      "regression": false,
+      "status": "new",
+      "closure": "the refusal names the tree (main or track) of the unreadable file"
+    },
+    {
+      "id": "R2b",
+      "severity": "Minor",
+      "dimension": "correctness",
+      "class": "correctness",
+      "path": ".claude/scripts/kit-track.py",
+      "line": 123,
+      "problem": "os.walk has no onerror: an unreadable directory under the track's docs/work/<slug> is skipped silently",
+      "scenario": "a chmod 000 subdirectory of docs/work/<slug> is left out of the copy-back with no refusal, then removed with the tree",
+      "regression": false,
+      "status": "new",
+      "closure": "walk refuses an unreadable directory with `cannot read <dir>` before any write"
+    }
+  ]
+}

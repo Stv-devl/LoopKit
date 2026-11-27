@@ -1,0 +1,11 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "F2", "severity": "Major", "claim": "verify-mismatch gap: reading-only check pending the user's go", "p1_class": "a", "kind": "interpretation", "status": "not-fixed", "in_rewritten_section": true, "closure": "the user's go on open question 3 is recorded in the plan's Gate", "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F15", "severity": "Minor", "claim": "KT44 KT28 wording impossible literally", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F16", "severity": "Minor", "claim": "WT17 first string already present outside the template", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F17", "severity": "Minor", "claim": "symlinked SKIP_DIR leaf not handled by K2", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null},
+    {"id": "F18", "severity": "Minor", "claim": "kit drift criterion covered only indirectly", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}

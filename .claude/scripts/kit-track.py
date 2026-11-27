@@ -4,8 +4,10 @@
     python3 .claude/scripts/kit-track.py fork <slug>
     python3 .claude/scripts/kit-track.py close <slug> [--merged]
 
-Run from the main tree's root. Exit 0 done, 2 refused (stderr `kit-track: <reason>`);
-a refusal creates and removes nothing. Guide: .claude/guides/10-worktrees.md.
+Run from the main tree's root. Exit 0 done, 2 refused (stderr `kit-track: <reason>`).
+A fork refusal creates nothing, or rolls back the worktree and branch it had created; a close
+refusal before the copy-back writes nothing, and one during it names the copies that landed.
+Guide: .claude/guides/10-worktrees.md.
 """
 
 from __future__ import annotations
@@ -31,16 +33,19 @@ ENV_SLOT = "local-kit-env"
 ROOT_FILES = ("CLAUDE.md", "AGENTS.md", "PRODUCT.md", "DESIGN.md", "workflow.py", "workflow.sh", "codex-handoff.sh")
 DOC_DIRS = ("docs/stories", "docs/prd", "docs/architecture", "docs/product", "docs/work", "docs/specs",
             "docs/research-cache")
-SKIP_DIRS = {"worktrees", "kit-backup", ".tdd-red", "__pycache__"}
+SKIP_DIRS = {"worktrees", "kit-backup", ".tdd-red", "__pycache__", ".ruff_cache"}
 SKIP_NAMES = {".tdd-unfrozen", ".loop-record.json", ".loop-record.lock", ".restart-ready", ".codex-ready",
-              ".quota-warning", ".kit-health.jsonl", ".hook-timings.log", "settings.local.json", ".kit-snapshot"}
-SKIP_PREFIXES = (".token-", ".eslint-queue")
+              ".quota-warning", ".kit-health.jsonl", ".hook-timings.log", "settings.local.json", ".kit-snapshot",
+              "project.proposed.json", "project.snapshot.json"}
+SKIP_PREFIXES = (".token-", ".eslint-queue", ".loop-record.")
 SESSION_DOCS = {"handoff.md", "codex-last-message.txt", "pr-body.md"}
 SECRET_RE = re.compile(r"^\.env(\..*)?$|\.pem$|\.key$|^\.?credentials(\.|$)")
+HEX_RE = re.compile(r"[0-9a-f]{64}")
+STRICT_TOPS = (".claude", *DOC_DIRS)
 
 
 class Refused(Exception):
-    """A precondition failed; nothing was changed."""
+    """A precondition or a step failed; the message says what, if anything, was changed."""
 
 
 class Parser(argparse.ArgumentParser):
@@ -104,34 +109,49 @@ def skipped(rel: str) -> bool:
     return False
 
 
-def walk(root: Path, top: str) -> Iterable[str]:
+def walk(root: Path, top: str) -> Iterable[tuple[str, bool]]:
+    """Every file under `top` as (path, is_symlink); SKIP_DIRS and symlinked dirs are not descended."""
     start = root / top
     if start.is_symlink():
-        raise Refused(f"symlink in the kit: {top}")
+        yield top, True
+        return
     if start.is_file():
-        yield top
+        yield top, False
         return
     if not start.is_dir():
         return
     for current, dirs, files in os.walk(start):
         here = Path(current)
-        for name in sorted(dirs + files):
+        kept = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in kept:
             if (here / name).is_symlink():
-                raise Refused(f"symlink in the kit: {(here / name).relative_to(root).as_posix()}")
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+                yield (here / name).relative_to(root).as_posix(), True
+        dirs[:] = [d for d in kept if not (here / d).is_symlink()]
         for name in sorted(files):
-            yield (here / name).relative_to(root).as_posix()
+            yield (here / name).relative_to(root).as_posix(), (here / name).is_symlink()
 
 
-def candidates(root: Path) -> list[str]:
+def candidates(root: Path) -> list[tuple[str, bool]]:
     tops = [".claude", *ROOT_FILES, *DOC_DIRS]
     docs = root / "docs"
     if docs.is_dir():
         tops += sorted(f"docs/{p.name}" for p in docs.iterdir() if p.name.startswith("design-system"))
-    found: list[str] = []
+    found: list[tuple[str, bool]] = []
     for top in tops:
-        found += [rel for rel in walk(root, top) if not skipped(rel)]
+        if (top in STRICT_TOPS or top.startswith("docs/design-system")) and (root / top).is_symlink():
+            raise Refused(f"symlink in the kit: {top}")
+        found += [(rel, link) for rel, link in walk(root, top) if not skipped(rel)]
     return found
+
+
+def kit_files(root: Path) -> list[str]:
+    """The git-ignored kit files to copy; a symlink among them is refused, one filtered out is not."""
+    found = candidates(root)
+    keep = set(ignored_only(root, [rel for rel, _ in found]))
+    for rel, link in found:
+        if link and rel in keep:
+            raise Refused(f"symlink in the kit: {rel}")
+    return [rel for rel, _ in found if rel in keep]
 
 
 def ignored_only(root: Path, paths: list[str]) -> list[str]:
@@ -197,24 +217,55 @@ def fork(slug: str) -> None:
         raise Refused(f"{rel_tree} already exists")
     if git(root, "rev-parse", "--quiet", "--verify", f"refs/heads/feat/{slug}").returncode == 0:
         raise Refused(f"branch feat/{slug} already exists")
-    files = ignored_only(root, candidates(root))
+    files = kit_files(root)
     base_sha = git_out(root, "rev-parse", "HEAD")
     added = git(root, "worktree", "add", rel_tree, "-b", f"feat/{slug}", base_name)
     if added.returncode != 0:
         raise Refused(f"git worktree add: {added.stderr.strip()}")
-    hashes: dict[str, str] = {}
-    for rel in files:
-        copy(root / rel, tree / rel)
-        hashes[rel] = sha256(root / rel)
-    snapshot = {"slug": slug, "base": base_name, "base_sha": base_sha, "files": hashes}
-    (tree / SNAPSHOT).write_text(json.dumps(snapshot, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        hashes: dict[str, str] = {}
+        for rel in files:
+            copy(root / rel, tree / rel)
+            hashes[rel] = sha256(root / rel)
+        snapshot = {"slug": slug, "base": base_name, "base_sha": base_sha, "files": hashes}
+        (tree / SNAPSHOT).write_text(json.dumps(snapshot, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        slot = env_slot(root)
+    except (OSError, ValueError) as error:
+        rollback(root, rel_tree, slug, error)
     print(f"forked {rel_tree} on feat/{slug} from {base_name} ({len(files)} kit files copied, git-ignored there)")
     print("next, by hand:")
     print(f"  1. copy your env file(s) (.env*) into {rel_tree}/ yourself: the kit never copies them")
     print(f"  2. install the project's dependencies inside {rel_tree}/")
     print(f"  3. start the track's own session: cd {rel_tree} && ./workflow.sh \"/loop:orchestrate <entry>\"")
     print("     (never EnterWorktree: the session must run the worktree's own kit)")
-    print(env_slot(root))
+    print(slot)
+
+
+def rollback(root: Path, rel_tree: str, slug: str, error: Exception) -> NoReturn:
+    """Undo a fork that failed after `git worktree add`: the tree, then the branch, never forced."""
+    branch = f"feat/{slug}"
+    if git(root, "worktree", "remove", rel_tree).returncode == 0 \
+            and git(root, "branch", "-d", branch).returncode == 0:
+        raise Refused(f"fork failed after the worktree was created: {error}; rolled back")
+    raise Refused(f"fork failed: {error}; rollback incomplete, run: git worktree remove {rel_tree} "
+                  f"&& git branch -d {branch}")
+
+
+def read_manifest(snap: Path) -> dict[str, str]:
+    """The `files` map of a `.kit-snapshot`, refused unless it maps paths to sha256 hex digests."""
+    try:
+        data = json.loads(snap.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise Refused(f"malformed .kit-snapshot: {error}") from error
+    if not isinstance(data, dict):
+        raise Refused("malformed .kit-snapshot: not a JSON object")
+    files = data.get("files")
+    if not isinstance(files, dict):
+        raise Refused("malformed .kit-snapshot: `files` is not an object")
+    for rel, digest in files.items():
+        if not isinstance(digest, str) or not HEX_RE.fullmatch(digest):
+            raise Refused(f"malformed .kit-snapshot: {rel} does not map to a sha256 digest")
+    return files
 
 
 def registered(root: Path, tree: Path) -> bool:
@@ -231,8 +282,16 @@ def owned_roots(slug: str) -> list[str]:
     return roots
 
 
-def hash_or_none(path: Path) -> str | None:
-    return sha256(path) if path.is_file() and not path.is_symlink() else None
+def plan_hash(path: Path, rel: str) -> str:
+    """sha256 for the planning phase: an unreadable file is a refusal, before anything is written."""
+    try:
+        return sha256(path)
+    except OSError as error:
+        raise Refused(f"cannot read {rel}: {error.strerror or error}; nothing written") from error
+
+
+def hash_or_none(path: Path, rel: str) -> str | None:
+    return plan_hash(path, rel) if path.is_file() and not path.is_symlink() else None
 
 
 def symlink_in(root: Path, rel: str) -> str | None:
@@ -250,48 +309,59 @@ class Closing:
 
     def __init__(self, root: Path, tree: Path, slug: str, manifest: dict[str, str]) -> None:
         self.root, self.tree, self.slug, self.manifest = root, tree, slug, manifest
-        self.copies: list[tuple[str, str]] = []
+        self.copies: list[tuple[str, str, str]] = []
         self.reports: list[str] = []
 
     def place(self, rel: str, track: str) -> None:
-        main = hash_or_none(self.root / rel)
+        main = hash_or_none(self.root / rel, rel)
         if main == track:
             return
         if (main is None and not os.path.lexists(self.root / rel)) or main == self.manifest.get(rel):
-            self.copies.append((rel, rel))
-            self.reports.append(f"copied {rel}")
+            self.copies.append((rel, rel, f"copied {rel}"))
             return
         side = f"{rel}.from-{self.slug}"
-        self.copies.append((rel, side))
-        self.reports.append(f"conflict {rel} → {side}")
+        self.copies.append((rel, side, f"conflict {rel} → {side}"))
 
     def owned(self, rel: str) -> None:
-        track = sha256(self.tree / rel)
+        track = plan_hash(self.tree / rel, rel)
         if self.manifest.get(rel) != track:
             self.place(rel, track)
 
     def research(self, rel: str) -> None:
-        track = sha256(self.tree / rel)
+        track = plan_hash(self.tree / rel, rel)
         known = self.manifest.get(rel)
         if known is None:
             self.place(rel, track)
         elif known != track:
             side = f"{rel}.from-{self.slug}"
-            self.copies.append((rel, side))
-            self.reports.append(f"research-cache modified {rel} → {side}")
+            self.copies.append((rel, side, f"research-cache modified {rel} → {side}"))
 
     def snapshot(self, rel: str) -> None:
-        if self.manifest.get(rel) != sha256(self.tree / rel):
+        if self.manifest.get(rel) != plan_hash(self.tree / rel, rel):
             self.reports.append(f"snapshot change ignored {rel}")
 
     def drift(self, track_files: list[str]) -> None:
         kit = [rel for rel in self.manifest if rel.startswith(".claude/") or rel in ROOT_FILES]
         for rel in sorted(set(kit) | {f for f in track_files if f.startswith(".claude/") or f in ROOT_FILES}):
             known = self.manifest.get(rel)
-            if hash_or_none(self.tree / rel) != known:
+            if hash_or_none(self.tree / rel, rel) != known:
                 self.reports.append(f"kit drift track-changed {rel}")
-            if known is not None and hash_or_none(self.root / rel) != known:
+            if known is not None and hash_or_none(self.root / rel, rel) != known:
                 self.reports.append(f"kit drift main-changed {rel}")
+
+
+def land(root: Path, tree: Path, src: str, dst: str, line: str, landed: int) -> None:
+    """Copy one file back, verify it, then print its report line at once, so a later failure
+    leaves every copy that landed already reported. Both failure kinds take the same refusal."""
+    before = "earlier copies landed, listed above; rerun close" if landed else "nothing copied yet"
+    try:
+        copy(tree / src, root / dst)
+        verified = sha256(root / dst) == sha256(tree / src)
+    except OSError as error:
+        raise Refused(f"copy-back of {src} to {dst} failed ({error}); {before}") from error
+    if not verified:
+        raise Refused(f"copy-back of {src} to {dst} did not verify; {before}")
+    print(line, flush=True)
 
 
 def close(slug: str, merged: bool) -> None:
@@ -304,7 +374,7 @@ def close(slug: str, merged: bool) -> None:
     snap = tree / SNAPSHOT
     if not snap.is_file():
         raise Refused(f"{rel_tree} has no {SNAPSHOT}: it was not forked by kit-track")
-    manifest: dict[str, str] = json.loads(snap.read_text(encoding="utf-8")).get("files", {})
+    manifest = read_manifest(snap)
     branch = f"feat/{slug}"
     is_merged = git(root, "merge-base", "--is-ancestor", branch, "HEAD").returncode == 0
     if not is_merged and not merged:
@@ -312,9 +382,12 @@ def close(slug: str, merged: bool) -> None:
     dirty = git_out(tree, "status", "--porcelain", "--untracked-files=normal")
     if dirty:
         raise Refused(f"{rel_tree} has uncommitted changes: {dirty.splitlines()[0]}")
-    track_files = ignored_only(tree, [rel for rel in candidates(tree) if rel != SNAPSHOT])
-    owned_files = ignored_only(tree, [rel for top in owned_roots(slug) for rel in walk(tree, top)
-                                      if not unsafe_name(rel)])
+    track_files = [rel for rel in kit_files(tree) if rel != SNAPSHOT]
+    owned_walk = [(rel, link) for top in owned_roots(slug) for rel, link in walk(tree, top) if not unsafe_name(rel)]
+    for rel, link in owned_walk:
+        if link:
+            raise Refused(f"symlink in the kit: {rel}")
+    owned_files = ignored_only(tree, [rel for rel, _ in owned_walk])
     plan = Closing(root, tree, slug, manifest)
     owned_set = set(owned_files)
     for rel in owned_files:
@@ -327,7 +400,7 @@ def close(slug: str, merged: bool) -> None:
         else:
             plan.snapshot(rel)
     plan.drift(track_files)
-    targets = [dst for _, dst in plan.copies]
+    targets = [dst for _, dst, _ in plan.copies]
     for dst in targets:
         link = symlink_in(root, dst)
         if link:
@@ -336,13 +409,8 @@ def close(slug: str, merged: bool) -> None:
     if tracked:
         raise Refused(f"copy-back target tracked in the main tree: {tracked.splitlines()[0]}; it travels with the "
                       "merge, resolve it by hand")
-    for src, dst in plan.copies:
-        try:
-            copy(tree / src, root / dst)
-        except OSError as error:
-            raise Refused(f"copy-back of {src} to {dst} failed ({error}); nothing removed") from error
-        if sha256(root / dst) != sha256(tree / src):
-            raise Refused(f"copy-back of {src} to {dst} did not verify; nothing removed")
+    for landed, (src, dst, line) in enumerate(plan.copies):
+        land(root, tree, src, dst, line, landed)
     for line in plan.reports:
         print(line)
     removed = git(root, "worktree", "remove", rel_tree)
