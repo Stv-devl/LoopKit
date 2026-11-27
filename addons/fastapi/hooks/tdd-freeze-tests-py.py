@@ -17,6 +17,15 @@
 # `.claude/.tdd-unfrozen` is the visible exception, shared with the TypeScript
 # cycle: a path, with a reason, in review.
 
+"""Freezes the pytest files of a test-first layer: a pure new case passes, every other edit is refused.
+
+In auto mode, with an arbiter `unfreeze` verdict for the file and no `refuse` verdict, whole import
+statements added to the import head (docstring, `from __future__`, comments, imports) pass too, rows
+mode or not, alone or with a pure new case. Refused even then: a Write, a changed or removed head
+line, a star import, a `pytestmark`-like binding, a name already used in the file. Known limit: an
+imported fixture (autouse, or one that shadows a conftest fixture by name) is not detected.
+"""
+
 import json
 import os
 import re
@@ -163,6 +172,84 @@ def patched_module_names(added: str, dotted: str, impl_rel: str) -> tuple:
     return (hits, "defined") if hits else ([], "")
 
 
+def insertion_refusal(current: str, old_string: str, new_string: str, impl_rel: str, dotted: str,
+                      with_head: bool = False) -> str:
+    """Why this Edit is not a pure insertion of a case carrying its own assertion, or "" when it is.
+
+    `with_head`: the Edit also adds head imports, so its anchor runs from the head to the insertion
+    point and only its last line is tested for opening a case.
+
+    The anchor must span whole lines: a partial anchor looks untouched while the rest of its
+    line is rewritten (measured: `slugify("A, B!")` cut out of its `assert`). Whether the
+    addition lands inside a case is decided by its own column, never by the anchor's
+    assertion, since the last line of the previous case is an assert by convention.
+    """
+    refused = ""
+    anchor_at = current.find(old_string) if old_string else -1
+
+    if not old_string:
+        refused = "the edit does not anchor on anything the file already contains"
+    elif old_string not in new_string:
+        refused = "the edit replaces the anchor instead of inserting after it"
+    elif anchor_at < 0:
+        refused = "the anchor does not appear in the file as it stands"
+    elif not _spans_whole_lines(current, anchor_at, len(old_string)):
+        refused = (
+            "the anchor covers only part of a line. A pure insertion anchors on whole "
+            "lines; a partial anchor leaves the rest of the line to be rewritten while "
+            "the anchor itself looks untouched"
+        )
+
+    if not refused:
+        added = new_string.replace(old_string, "", 1)
+        case_indent = enclosing_case_indent(current, anchor_at + len(old_string))
+        if case_indent is not None and added_base_indent(added) > case_indent:
+            refused = (
+                "the inserted block is indented into the body of the `def test_…` it "
+                "follows, so it lands INSIDE a case that already runs. A new case "
+                "dedents back to column %d" % case_indent
+            )
+        elif CASE_HEAD_RE.search(old_string.rsplit("\n", 1)[-1] if with_head else old_string):
+            refused = (
+                "the anchor opens an existing `def test_…`, so the insertion lands "
+                "INSIDE a case that already runs. Inserting a `return` at the top of a "
+                "case leaves every assertion byte-for-byte intact and kills it anyway"
+            )
+        elif not ASSERTION_RE.search(added):
+            refused = "the inserted block carries no assertion of its own"
+        elif top_level_control_flow(added):
+            refused = (
+                "the inserted block carries a return/raise at its own top level, which "
+                "skips the cases below it — `if True: return` on one line included"
+            )
+        elif SKIP_RE.search(added):
+            refused = (
+                "the inserted block skips or xfails a case. Nothing else catches this "
+                "on Python — ruff has no equivalent of `no-disabled-tests` — so a "
+                "skipped case would ship green and unnoticed"
+            )
+        elif PATCH_RE.search(added):
+            patched, kind = patched_module_names(added, dotted, impl_rel)
+            names = ", ".join("`%s`" % p for p in patched)
+            if kind == "defined":
+                refused = (
+                    "the inserted block patches %s — code DEFINED by the module under "
+                    "test (`%s`). Every assertion in this frozen file would then run "
+                    "against the patch and pass whatever the implementation does. "
+                    "Patching a name the service merely *imports* is a different thing "
+                    "and stays allowed: that is the form `patterns/pytest-backend.md` "
+                    "asks for" % (names, dotted)
+                )
+            elif kind == "unwritten":
+                refused = (
+                    "the inserted block patches %s on `%s`, which does not exist yet — "
+                    "you are between RED and GREEN. Nothing there can be patched "
+                    "legitimately, and a line added now is frozen into the file before "
+                    "the code it would neutralise is even written" % (names, dotted)
+                )
+    return refused
+
+
 def main() -> None:
     payload = lib.read_payload()
     tool_input = payload.get("tool_input") or {}
@@ -252,90 +339,16 @@ def main() -> None:
     old_string = tool_input.get("old_string") or ""
     new_string = tool_input.get("new_string") or ""
 
-    refused = ""
-    anchor_at = current.find(old_string) if old_string else -1
+    if auto and granted and not refused_ids and old_string:
+        bare = lib.without_head_imports(current, old_string, new_string)
+        if bare is not None and (bare == old_string or not insertion_refusal(current, old_string, bare, impl_rel, dotted, True)):
+            lib.notice(
+                "TDD: import statement(s) added to the head of the frozen test %s, backed by an arbiter "
+                "`unfreeze` verdict (auto mode). Say which case needs them in the PR body (Frozen cases)."
+                % file_path
+            )
 
-    if not old_string:
-        refused = "the edit does not anchor on anything the file already contains"
-    elif old_string not in new_string:
-        refused = "the edit replaces the anchor instead of inserting after it"
-    elif anchor_at < 0:
-        refused = "the anchor does not appear in the file as it stands"
-    elif not _spans_whole_lines(current, anchor_at, len(old_string)):
-        # THE hole this hook had. The assertion guard below tests the ANCHOR
-        # STRING, never the line it sits on — so truncating the anchor by one
-        # word made it stop "carrying an assertion" while the rest of the line
-        # was still there to be rewritten. Measured: anchor `slugify("A, B!")`
-        # taken out of `assert slugify("A, B!") == "a-b"` was ALLOWED, the real
-        # expectation ended up commented out and the spec became `is not None`.
-        #
-        # A pure insertion never needs a partial line. Requiring the anchor to
-        # start at a line start and end at a line end closes the whole class,
-        # rather than adding one more thing to look for inside it.
-        refused = (
-            "the anchor covers only part of a line. A pure insertion anchors on whole "
-            "lines; a partial anchor leaves the rest of the line to be rewritten while "
-            "the anchor itself looks untouched"
-        )
-
-    if not refused:
-        added = new_string.replace(old_string, "", 1)
-
-        # Whether the addition lands inside a case is decided by ITS OWN column,
-        # not by where the anchor sits. Python has no closing delimiter, so under
-        # the addon's Arrange -> Act -> Assert convention the last line of the
-        # previous case IS an assert — which is precisely the anchor this hook's
-        # own deny text prescribes. Refusing an anchor because it carries an
-        # assertion made the documented append unimplementable at the end of the
-        # file, and pushed the only working anchor to the import block at the
-        # top, inverting the required ordering. So the assertion in the anchor is
-        # no longer the question: the question is whether the added block dedents
-        # back out of the case.
-        case_indent = enclosing_case_indent(current, anchor_at + len(old_string))
-        if case_indent is not None and added_base_indent(added) > case_indent:
-            refused = (
-                "the inserted block is indented into the body of the `def test_…` it "
-                "follows, so it lands INSIDE a case that already runs. A new case "
-                "dedents back to column %d" % case_indent
-            )
-        elif CASE_HEAD_RE.search(old_string):
-            refused = (
-                "the anchor opens an existing `def test_…`, so the insertion lands "
-                "INSIDE a case that already runs. Inserting a `return` at the top of a "
-                "case leaves every assertion byte-for-byte intact and kills it anyway"
-            )
-        elif not ASSERTION_RE.search(added):
-            refused = "the inserted block carries no assertion of its own"
-        elif top_level_control_flow(added):
-            refused = (
-                "the inserted block carries a return/raise at its own top level, which "
-                "skips the cases below it — `if True: return` on one line included"
-            )
-        elif SKIP_RE.search(added):
-            refused = (
-                "the inserted block skips or xfails a case. Nothing else catches this "
-                "on Python — ruff has no equivalent of `no-disabled-tests` — so a "
-                "skipped case would ship green and unnoticed"
-            )
-        elif PATCH_RE.search(added):
-            patched, kind = patched_module_names(added, dotted, impl_rel)
-            names = ", ".join("`%s`" % p for p in patched)
-            if kind == "defined":
-                refused = (
-                    "the inserted block patches %s — code DEFINED by the module under "
-                    "test (`%s`). Every assertion in this frozen file would then run "
-                    "against the patch and pass whatever the implementation does. "
-                    "Patching a name the service merely *imports* is a different thing "
-                    "and stays allowed: that is the form `patterns/pytest-backend.md` "
-                    "asks for" % (names, dotted)
-                )
-            elif kind == "unwritten":
-                refused = (
-                    "the inserted block patches %s on `%s`, which does not exist yet — "
-                    "you are between RED and GREEN. Nothing there can be patched "
-                    "legitimately, and a line added now is frozen into the file before "
-                    "the code it would neutralise is even written" % (names, dotted)
-                )
+    refused = insertion_refusal(current, old_string, new_string, impl_rel, dotted)
 
     if refused and rows_mode:
         rows_verdict()

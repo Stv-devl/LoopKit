@@ -1,0 +1,7 @@
+{
+  "review": {
+    "count": 1,
+    "last": "2026-11-26T22:18:43.617851Z",
+    "reason": "T1: AM68 glob *verdict* is met by the fixed suffix loop-record.py:563 always appends, so any malformed-block message passes, whichever field it names"
+  }
+}

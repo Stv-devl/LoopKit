@@ -6986,6 +6986,245 @@ run_trial_auto_git_cases() {
     rm -rf "$tmp"
 }
 
+# SG1-SG17 (ecocrew-day-fixes leg 1): `git stash` (push/save) asks when the tree has tracked changes, staged
+# or unstaged; list/show and a tracked-clean tree pass; a kit change stays a kit deny.
+run_stash_guard_cases() {
+    local tmp t c ask='git stash would put tracked work aside'
+    tmp="$(mktemp -d)"
+    t="$tmp/moi"; am_git "$t" moi "$tmp/o1.git"
+    printf 'mod\n' >>"$t/src/a/x.utils.test.ts"
+    am_cmd SG1 ask "$t" 'git stash -q' "$ask"
+    am_cmd SG2 ask "$t" 'git stash' "$ask"
+    am_cmd SG3 ask "$t" 'git stash push -m x' "$ask"
+    am_cmd SG4 ask "$t" 'git stash save x' "$ask"
+    am_cmd SG5 ask "$t" 'ruff check . && git stash -q' "$ask"
+    am_cmd SG6 ask "$t" 'git -C src stash' "$ask"
+    am_cmd SG9 pass "$t" 'git stash list'
+    am_cmd SG10 pass "$t" 'git stash show'
+    am_cmd SG15 ask "$t" 'git stash -u' "$ask"
+    am_cmd SG16 ask "$t" 'git stash -p show' "$ask"
+    am_cmd SG14 ask "$t" 'GIT_DIR=x git stash' "$ask"
+    git -C "$t" checkout -q -- src/a/x.utils.test.ts
+    am_cmd SG8 pass "$t" 'git stash'
+    am_cmd SG14.2 ask "$t" 'GIT_INDEX_FILE=x git stash' "$ask"
+    printf 'u\n' >"$t/untracked.txt"
+    am_cmd SG11 pass "$t" 'git stash -u'
+    for c in 'git stash push --include-untracked' 'git stash -a' 'git stash --all' 'git stash -qu' 'git stash --incl'; do
+        am_cmd SG12 pass "$t" "$c"
+    done
+    printf 'mod\n' >>"$t/src/a/x.utils.test.ts"
+    git -C "$t" add src/a/x.utils.test.ts
+    am_cmd SG17 ask "$t" 'git stash' "$ask"
+    t="$tmp/auto"; am_git "$t" auto "$tmp/o2.git"
+    printf 'mod\n' >>"$t/src/a/x.utils.test.ts"
+    am_cmd SG7 deny "$t" 'git stash' 'auto mode — blocked stop:'
+    kb_repo "$tmp/kit" installed
+    printf 'mod\n' >"$tmp/kit/.claude/hooks/x"
+    kb_git SG13 deny "$tmp/kit" 'git stash' 'kit code changes in the LoopKit repo'
+    rm -rf "$tmp"
+}
+
+# day_v <path> <id> <verdict>: one frozen-case verdict entry (am_v is redefined by an earlier group).
+day_v() {
+    jq -cn --arg p "$1" --arg i "$2" --arg v "$3" --arg s "$AM_SHA" \
+        '{kind: "frozen-case", path: $p, id: $i, sha256: $s, verdict: $v, agent_id: "a", at: "t"}'
+}
+
+# day_block <kind> <path> <case> <verdict> [omit]: a fenced verdict block; [omit] names a field to leave out.
+day_block() {
+    printf '```\nARBITER VERDICT\nkind: %s\npath: %s\ncase: %s\nverdict: %s\n' "$1" "$2" "$3" "$4"
+    [[ "${5:-}" == sha256 ]] || printf 'sha256: %s\n' "$AM_SHA"
+    printf '```\n'
+}
+
+# AM64-AM74, UW1-UW4 (ecocrew-day-fixes leg 2): a lowercase case id in an arbiter block is ledgered in capitals
+# and read the same way by protect-files, `--clear` and both freezes; a malformed last block is reported;
+# an annotated comment-out of a `.tdd-unfrozen` line is denied.
+run_day_ids_cases() {
+    local tmp t r rec x='src/a/x.utils.test.ts' addon p b2 b2new u2 u2new line x2
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    lp_shim "$tmp/sh"
+    t="$tmp/a"; am_tree "$t" auto; rec="$t/.claude/.loop-record.json"
+    lp_run "$(am_stop "$t" arbiter "$(am_block "$x" b204 "$AM_SHA" unfreeze)" a64)" "$tmp/sh"
+    lp_rec AM64 'lowercase id ledgered in capitals' "$rec" '[.verdicts[] | {id, verdict}]' '[{"id":"B204","verdict":"unfreeze"}]'
+    am_verdicts "$t" "[$(day_v "$x" B204 unfreeze),$(day_v "$x" B205 unfreeze)]"
+    mkdir -p "$t/src/a"
+    printf 'x\n' >"$t/$x"
+    g15_expect AM65 pass "$(am_unfrozen_edit "$t" "$x  # b204: reason")"
+    g15_expect AM66 pass "$(am_unfrozen_edit "$t" "$x  # B204, b205: reason")"
+    # AM67, AM68 a malformed last block is reported by name and records nothing.
+    t="$tmp/b"; am_tree "$t" auto; rec="$t/.claude/.loop-record.json"
+    lp_run "$(am_stop "$t" arbiter "$(day_block frozen-case "$x" B204 unfreeze sha256)" a67)" "$tmp/sh"
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 && "$(jq -r '.systemMessage // ""' <<<"$LP_OUT")" == *'arbiter verdict not recorded'*sha256* ]] \
+        || fail loop-record.py AM67 "expected a systemMessage naming sha256, got exit $LP_CODE: ${LP_OUT:0:200}"
+    x2="$(jq -r '.systemMessage // ""' <<<"$LP_OUT")"
+    lp_rec AM67 'nothing recorded' "$rec" '.verdicts | length' 0
+    CASES=$((CASES + 1))
+    [[ "$x2" == *'sha256 missing or not 64 lowercase hex characters'* ]] \
+        || fail loop-record.py AM67.2 "expected the exact sha256 problem, got: ${x2:0:200}"
+    lp_run "$(am_stop "$t" arbiter "$(am_block "$x" B204 "$AM_SHA" maybe)" a68)" "$tmp/sh"
+    CASES=$((CASES + 1))
+    [[ "$LP_CODE" -eq 0 && "$(jq -r '.systemMessage // ""' <<<"$LP_OUT")" == *'arbiter verdict not recorded'*verdict* ]] \
+        || fail loop-record.py AM68 "expected a systemMessage naming verdict, got exit $LP_CODE: ${LP_OUT:0:200}"
+    lp_rec AM68 'nothing recorded' "$rec" '.verdicts | length' 0
+    CASES=$((CASES + 1))
+    x2="$(jq -r '.systemMessage // ""' <<<"$LP_OUT")"
+    [[ "$x2" == *'verdict must be unfreeze or refuse'* && "$x2" != *sha256* ]] \
+        || fail loop-record.py AM68.2 "expected the verdict problem and no sha256 text, got: ${x2:0:200}"
+    # AM69 a declared-rewrite id in capitals; a pytest name stays as written.
+    lp_run "$(am_stop "$t" arbiter "$(day_block declared-rewrite "$x" b204 accept)" a69)" "$tmp/sh"
+    lp_run "$(am_stop "$t" arbiter "$(day_block declared-rewrite "$x" test_s27_ac5_a accept)" a69b)" "$tmp/sh"
+    lp_rec AM69 'rewrite ids' "$rec" '[.verdicts[] | .id]' '["B204","test_s27_ac5_a"]'
+    # AM70 B204 after a ledgered b204 for the same path is a duplicate: the first stays.
+    t="$tmp/c"; am_tree "$t" auto; rec="$t/.claude/.loop-record.json"
+    lp_run "$(am_stop "$t" arbiter "$(am_block "$x" b204 "$AM_SHA" unfreeze)" a70)" "$tmp/sh"
+    lp_run "$(am_stop "$t" arbiter "$(am_block "$x" B204 "$AM_SHA" refuse)" a70b)" "$tmp/sh"
+    lp_rec AM70 'first stays' "$rec" '[.verdicts[] | {id, verdict}]' '[{"id":"B204","verdict":"unfreeze"}]'
+    # AM72 an arbiter with no block stays silent.
+    lp_run "$(am_stop "$t" arbiter 'Checked, nothing to record.' a72)" "$tmp/sh"
+    am_no_decision AM72 'no block'
+    # AM71 `--clear` comments out the lowercase line its verdict backed.
+    t="$tmp/d"; am_tree "$t" auto
+    am_verdicts "$t" "[$(day_v "$x" B204 unfreeze)]"
+    printf '%s  # b204: r\n' "$x" >"$t/.claude/.tdd-unfrozen"
+    (cd "$t" && CWK_HOOK_TIMING=0 python3 -I "$LP_HOOK" --clear)
+    CASES=$((CASES + 1))
+    [[ "$(<"$t/.claude/.tdd-unfrozen")" == "# $x  # b204: r" ]] \
+        || fail loop-record.py AM71 "--clear left: $(<"$t/.claude/.tdd-unfrozen")"
+    # AM73 Python, moi rows mode (a row for B1 only): the listed lowercase `b2` unfreezes case B2.
+    p="$tmp/py"; lp_py_project "$p"
+    jq '.rows = [{path: "tests/services/test_b.py", id: "B1", sha256: "e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b"}]' \
+        "$p/.claude/.loop-record.json" >"$p/.claude/r.x"
+    mv "$p/.claude/r.x" "$p/.claude/.loop-record.json"
+    printf '%s\n' 'tests/services/test_b.py  # b2: empty input is an error' >"$p/.claude/.tdd-unfrozen"
+    b2=$'def test_b2_returns_err():\n    assert g(0) == 0'
+    b2new=$'def test_b2_returns_err_on_empty():\n    assert g(0) == -1'
+    pv_expect AM73 pass \
+        "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/tests/services/test_b.py" --arg c "$p" \
+            --arg o "$b2" --arg n "$b2new" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    # AM74 TypeScript, moi rows mode (a row for U1 only): the listed lowercase `u2` unfreezes case U2.
+    u2="  it('U2 returns err', () => {"$'\n''    expect(f(0)).toBe(0)'$'\n''  })'
+    u2new="  it('U2 returns err on empty input', () => {"$'\n''    expect(f(0)).toBe(-1)'$'\n''  })'
+    p="$tmp/ts"
+    lp_freeze_project "$p" feat/s1 "$(jq -cn --arg p "$x" --arg h "$AM_SHA" '[{path: $p, id: "U1", sha256: $h}]')" "$x  # u2: r"
+    lp_freeze AM74 pass "$p" Edit "$(jq -cn --arg o "$u2" --arg n "$u2new" '{old_string:$o, new_string:$n}')"
+    # UW1-UW4 the bare `# ` prefix is the only comment-out; an annotated one is denied in both modes.
+    line="$x  # U2: r"
+    t="$tmp/u1"; am_tree "$t" auto
+    printf '%s\n' "$line" >"$t/.claude/.tdd-unfrozen"
+    uw() { project_hook_probe protect-files.sh "$t" "$(jq -cn --arg f "$t/.claude/.tdd-unfrozen" --arg o "$line" --arg n "$1" \
+        '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$o,new_string:$n}}')"; }
+    g15_expect UW1 deny "$(uw "# applied: $line")" "a comment-out is the bare '# ' prefix"
+    g15_expect UW1.2 deny "$(uw "# $line applied")" "a comment-out is the bare '# ' prefix"
+    g15_expect UW2 pass "$(uw "# $line")"
+    g15_expect UW4.2 pass "$(uw "#$line")"
+    t="$tmp/u2"; am_tree "$t" moi
+    printf '%s\n' "$line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW3 deny "$(uw "# applied: $line")" "a comment-out is the bare '# ' prefix"
+    g15_expect UW4 ask "$(uw "# entries for story 3"$'\n'"$line")" "guarded path:"
+    # UW5 the bare prefix of an indented entry's exact line is a comment-out; UW6 so is a bare comment-out of
+    # an entry whose text holds another entry deleted in the same Edit.
+    uw2() { project_hook_probe protect-files.sh "$t" "$(jq -cn --arg f "$t/.claude/.tdd-unfrozen" --arg o "$1" --arg n "$2" \
+        '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$o,new_string:$n}}')"; }
+    t="$tmp/u3"; am_tree "$t" auto
+    printf '  %s\n' "$line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW5 pass "$(uw2 "  $line" "#   $line")"
+    t="$tmp/u4"; am_tree "$t" auto
+    printf '%s\n%s\n' "$x" "$line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW6 pass "$(uw2 "$x"$'\n'"$line" "# $line")"
+    g15_expect UW6.2 deny "$(uw2 "$x"$'\n'"$line" "# applied: $line")" "a comment-out is the bare '# ' prefix"
+    # UW7 an indented entry commented with its indent kept is not an annotated comment-out: moi keeps the
+    # guarded ask. UW8-UW9 pin the CRLF read (universal newlines drop the \r): a bare comment-out, and a
+    # deletion that keeps a comment line.
+    uw3() { project_hook_probe protect-files.sh "$t" "$(jq -cn --arg f "$t/.claude/.tdd-unfrozen" --arg c "$1" \
+        '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}')"; }
+    t="$tmp/u5"; am_tree "$t" moi
+    printf '  %s\n' "$line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW7 ask "$(uw2 "  $line" "  # $line")" "guarded path:"
+    t="$tmp/u6"; am_tree "$t" auto
+    printf '%s\r\n' "$line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW8 pass "$(uw3 "# $line"$'\n')"
+    printf '%s\r\n%s\r\n' "$line" "# note $line" >"$t/.claude/.tdd-unfrozen"
+    g15_expect UW9 pass "$(uw3 "# note $line"$'\n')"
+    g15_expect UW9.2 deny "$(uw3 "# applied: $line"$'\n')" "a comment-out is the bare '# ' prefix"
+    rm -rf "$tmp"
+}
+
+# PI1-PI20 (ecocrew-day-fixes leg 3): in auto, with an `unfreeze` verdict for the path, whole import
+# statements added to the import head of a frozen pytest file pass, rows mode or not; every other change
+# stays refused. tests/services/test_b.py (lp_py_project) holds cases B1 and B2.
+run_py_import_head_cases() {
+    local tmp p t='tests/services/test_b.py' addon imp state body new id
+    local sha=e5241b6f59b70aaed1de135c6d62c92d86f4cb7e5eafb257c1e7a94a2a48f76b
+    tmp="$(mktemp -d)"
+    addon="${CWK_ADDON_HOOKS:-$HOOKS_DIR/../../addons/fastapi/hooks}"
+    imp='from app.services.b import g'
+    # pi_proj <name> <on|off> <verdicts json> [auto|moi]: the project, `.tdd-unfrozen` listing the file (on) or empty (off).
+    pi_proj() {
+        p="$tmp/$1"
+        lp_py_project "$p"
+        am_freeze_rec "$p" "${4:-auto}" "$3"
+        [[ "$2" == on ]] || : >"$p/.claude/.tdd-unfrozen"
+    }
+    # pi_edit <id> <want> <old> <new> [Write content]: tdd-freeze-tests-py.py on one Edit of the file of $p.
+    pi_edit() {
+        pv_expect "$1" "$2" "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/$t" --arg c "$p" \
+            --arg o "$3" --arg n "$4" '{tool_name:"Edit", cwd:$c, tool_input:{file_path:$f, old_string:$o, new_string:$n}}')")"
+    }
+    pi_add() { pi_edit "$1" "$2" "$imp" "$imp"$'\n'"$3"; }
+    local own other both
+    own="[$(day_v "$t" B2 unfreeze)]"
+    other="[$(day_v tests/services/test_c.py B2 unfreeze)]"
+    both="[$(day_v "$t" B1 unfreeze),$(day_v "$t" B2 refuse)]"
+
+    pi_proj p1 on "$own"
+    pi_add PI1 pass 'from datetime import UTC'
+    pi_proj p2 off "$own"
+    pi_add PI2 pass 'from datetime import UTC'
+    for state in on off; do
+        pi_proj "p3$state" "$state" "$other"
+        pi_add "PI3 $state" deny 'from datetime import UTC'
+        pi_proj "p4$state" "$state" "$own"
+        pi_edit "PI4 $state" deny "$imp" 'from app.services.b import g, h'
+        pi_add "PI5 $state" deny 'from x import g'
+    done
+    pi_proj p6 on "$own"
+    pi_add PI6 pass $'from x import (\n    a,\n    c,\n)'
+    pi_add PI7 pass 'import numpy as np'
+    pi_add PI7.2 deny 'import numpy as g'
+    pi_add PI8 deny 'X = 1'
+    pi_proj p9 on "$both"
+    pi_add PI9 deny 'from datetime import UTC'
+    pi_proj p10 on "$own"
+    printf '%s\n' '"""Cases of b."""' 'from __future__ import annotations' '' "$imp" '' '' 'def test_b1_returns_ok():' \
+        '    assert g(1) == 1' '' '' 'def test_b2_returns_err():' '    assert g(0) == 0' >"$p/$t"
+    pi_add PI10 pass 'import os'
+    pi_proj p11 on "$own"
+    pv_expect PI11 deny "$(rv2_pair "$addon" tdd-freeze-tests-py.py "$p" "$(jq -cn --arg f "$p/$t" --arg c "$p" \
+        --arg n "$(printf '%s\n' "$imp" 'from datetime import UTC' '' '' 'def test_b1_returns_ok():' '    assert g(1) == 1' '' '' \
+            'def test_b2_returns_err():' '    assert g(0) == 0')" '{tool_name:"Write", cwd:$c, tool_input:{file_path:$f, content:$n}}')")"
+    body="$(<"$p/$t")"
+    new="$imp"$'\n''from datetime import UTC'"${body#"$imp"}"$'\n\n\n''def test_b3_new():'$'\n''    assert g(3) == 3'
+    pi_edit PI12 pass "$body" "$new"
+    pi_edit PI13 deny '    assert g(1) == 1' $'    assert g(1) == 1\n    import os'
+    pi_proj p14 off "$own" moi
+    pi_add PI14 deny 'from datetime import UTC'
+    pi_proj p15 on "$own"
+    pi_add PI15 deny 'from x import *'
+    pi_add PI16 deny 'import os; g = 1'
+    pi_add PI16.2 pass 'import os  # for paths'
+    pi_add PI17 deny 'from h import pytestmark'
+    pi_add PI17.2 deny 'from h import setup_module'
+    pi_add PI17.3 deny 'from h import pytest_generate_tests'
+    new="$imp"$'\n''from datetime import UTC'"${body#"$imp"}"
+    pi_edit PI18 deny "$body" "${new/assert g(0) == 0/assert g(0) == 1}"
+    pi_edit PI19 deny "$imp" 'from datetime import UTC'
+    pi_edit PI20 deny '    assert g(1) == 1' $'    assert g(1) == 1\n\n\nimport os'
+    rm -rf "$tmp"
+}
+
 # G22.001-G22.009 (auto-mode step 5): in auto, the pass's PR is allowed only when its body carries,
 # byte for byte, the Guarded files touched block the hook recomputes; moi is unchanged.
 run_auto_mode_step5_cases() {
@@ -7491,6 +7730,14 @@ if [[ "${1:-}" == --lp3-only ]]; then
     printf 'Hook fixtures (loop-to-pr review 3 only): %d case(s), all green.\n' "$CASES"
     exit 0
 fi
+if [[ "${1:-}" == --day-only ]]; then
+    run_stash_guard_cases
+    run_day_ids_cases
+    run_py_import_head_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (ecocrew day fixes only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --trial-only ]]; then
     run_pw_cases
     run_git_guard_cases
@@ -7583,6 +7830,9 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_shell_guard_reason_split_case
     run_shell_guard_no_base_case
     run_git_guard_cases
+    run_stash_guard_cases
+    run_day_ids_cases
+    run_py_import_head_cases
     run_git_add_lock_case
     run_git_add_long_reason_case
     run_git_untrusted_repo_cases

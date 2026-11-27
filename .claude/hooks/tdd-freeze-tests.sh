@@ -202,10 +202,10 @@ listed = set()
 try:
     with open(listing, encoding="utf-8") as fh:
         for line in fh:
-            m = re.fullmatch(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+!?(?:[ \t]*,[ \t]*[UMRB][0-9]+!?)*)[ \t]*:.*", line.strip())
+            m = re.fullmatch(r"(\S+)[ \t]+#[ \t]*([UMRBumrb][0-9]+!?(?:[ \t]*,[ \t]*[UMRBumrb][0-9]+!?)*)[ \t]*:.*", line.strip())
             if m and "/" in m.group(1) and m.group(1) in path:
                 for tok in re.split(r"[ \t]*,[ \t]*", m.group(2)):
-                    listed.add(tok.rstrip("!"))
+                    listed.add(tok.rstrip("!").upper())
 except OSError:
     pass
 if auto:

@@ -1,0 +1,7 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "F6", "severity": "Major", "status": "new", "leg": "claude", "claim": "The entry says the route writes fix-base when none exists for that round and a second call does not overwrite; the rewritten Route contract wrote on every round-1 call where fix-base.round exists, so a round-1 rerun of the same file overwrote (proposed answer now written into the plan: fix-base.round records the route file digest; same file rerun kept, G49; new review's file written, G47).", "in_rewritten_section": true, "p1_class": "a", "kind": "interpretation", "closure": "Closure: a G case routes the same round-1 fix-batch file twice with a tracked change between the calls; the second call outputs kept and fix-base is byte-identical, while G47 (leftover base from a cleared review, new round-1 route file) still outputs written.", "hook": null, "test_path": null}
+  ]
+}

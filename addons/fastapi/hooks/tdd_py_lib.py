@@ -10,6 +10,7 @@
 # same reason: three hooks that each retype the layer list, the marker naming
 # and the runner resolution are three hooks that drift apart in silence.
 
+import ast
 import atexit
 import hashlib
 import json
@@ -558,9 +559,10 @@ def unfrozen_ids(path: str) -> set:
     except OSError:
         return ids
     for line in lines:
-        match = re.fullmatch(r"(\S+)[ \t]+#[ \t]*([UMRB][0-9]+!?(?:[ \t]*,[ \t]*[UMRB][0-9]+!?)*)[ \t]*:.*", line.strip())
+        match = re.fullmatch(r"(\S+)[ \t]+#[ \t]*([UMRBumrb][0-9]+!?(?:[ \t]*,[ \t]*[UMRBumrb][0-9]+!?)*)[ \t]*:.*",
+                             line.strip())
         if match and "/" in match.group(1) and match.group(1) in target:
-            ids.update(tok.rstrip("!") for tok in re.split(r"[ \t]*,[ \t]*", match.group(2)))
+            ids.update(tok.rstrip("!").upper() for tok in re.split(r"[ \t]*,[ \t]*", match.group(2)))
     return ids
 
 
@@ -682,6 +684,113 @@ def rows_refusal(path: str, rows: dict, current: str, tool_input: dict, tool_nam
         elif cid not in listed:
             return "case %s is neither a plan-gate row nor listed on a .tdd-unfrozen line for this path" % cid
     return ""
+
+
+HEAD_BANNED_NAMES = frozenset({
+    "pytestmark", "pytest_plugins", "setup_module", "teardown_module", "setup_function",
+    "teardown_function", "setUpModule", "tearDownModule",
+})
+
+
+def _head_statements(text: str):
+    """(statements, line count) of the import head of `text`: the module docstring and the leading
+    `import` / `from … import` statements, or None when the text does not parse."""
+    try:
+        body = ast.parse(text).body
+    except (SyntaxError, ValueError):
+        return None
+    head = []
+    for index, node in enumerate(body):
+        docstring = (index == 0 and isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                     and isinstance(node.value.value, str))
+        if not (docstring or isinstance(node, (ast.Import, ast.ImportFrom))):
+            break
+        head.append(node)
+    return head, (head[-1].end_lineno if head else 0)
+
+
+def _whole_lines(node, lines: list) -> bool:
+    """The statement starts its line and nothing but a `#` comment follows it on its last line."""
+    first = lines[node.lineno - 1].encode("utf-8")
+    last = lines[node.end_lineno - 1].encode("utf-8")
+    rest = last[node.end_col_offset:].strip()
+    return not first[:node.col_offset].strip() and (not rest or rest.startswith(b"#"))
+
+
+def _bindings(node) -> list:
+    """The names an import statement binds, or None for a star import."""
+    names = []
+    for alias in node.names:
+        if alias.name == "*":
+            return None
+        names.append(alias.asname or alias.name.split(".")[0])
+    return names
+
+
+def without_head_imports(current: str, old: str, new: str):
+    """`new` with the whole import statements it adds to the import head of `current` taken out, or None
+    when the Edit is not that: every existing head line must stay in order and unchanged, each added
+    line must be a blank or part of a whole import statement, no star import, no `pytestmark`-like
+    binding, no binding that is already an identifier of the file, and at least one statement."""
+    start = current.find(old)
+    if start < 0:
+        return None
+    result = current[:start] + new + current[start + len(old):]
+    before, after = _head_statements(current), _head_statements(result)
+    if before is None or after is None:
+        return None
+    cur_lines, res_lines = current.split("\n"), result.split("\n")
+    kept, index = [], 0
+    head_cur = cur_lines[:before[1]]
+    for line in res_lines[:after[1]]:
+        if index < len(head_cur) and line == head_cur[index]:
+            index += 1
+            kept.append(True)
+        else:
+            kept.append(False)
+    if index != len(head_cur):
+        return None
+    bound, added_statement = set(), False
+    covered = [False] * len(kept)
+    for node in after[0]:
+        flags = kept[node.lineno - 1:node.end_lineno]
+        covered[node.lineno - 1:node.end_lineno] = [True] * len(flags)
+        if all(flags):
+            continue
+        if any(flags) or not isinstance(node, (ast.Import, ast.ImportFrom)) or not _whole_lines(node, res_lines):
+            return None
+        names = _bindings(node)
+        if names is None:
+            return None
+        for name in names:
+            if name in HEAD_BANNED_NAMES or name.startswith("pytest_") or name in bound:
+                return None
+            bound.add(name)
+        added_statement = True
+    if not added_statement:
+        return None
+    present = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", current))
+    if bound & present:
+        return None
+    end = start + len(new)
+    runs, pos = [], 0
+    for number, line in enumerate(res_lines[:len(kept)]):
+        lo, pos = pos, pos + len(line) + 1
+        if kept[number]:
+            continue
+        if not (covered[number] or not line.strip()) or lo < start or lo + len(line) > end:
+            return None
+        if runs and runs[-1][1] + 1 == lo:
+            runs[-1][1] = lo + len(line)
+        else:
+            runs.append([lo, lo + len(line)])
+    bare, cursor = [], start
+    for lo, hi in runs:
+        lo, hi = (lo, hi + 1) if hi + 1 <= end else (max(lo - 1, start), hi)
+        bare.append(result[cursor:lo])
+        cursor = hi
+    bare.append(result[cursor:end])
+    return "".join(bare)
 
 
 def module_root_dir(path: str) -> str:

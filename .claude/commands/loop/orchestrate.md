@@ -434,8 +434,9 @@ and writes Minors and out-of-scope findings to `docs/work/<slug>/follow-ups.md`.
 `write-closure`, close those findings and rerun the route before anything else.
 
 On `fix-batch`, the `blocking` findings always leave the main thread, in three steps:
-1. Run `python3 .claude/hooks/kit-gate-route.py snapshot docs/work/<slug>/plan.md` first. It
-   records the batch's base in `fix-base`.
+1. The route already writes `fix-base` on `fix-batch` (the tree before this batch) when none
+   exists for the round. Still run `python3 .claude/hooks/kit-gate-route.py snapshot docs/work/<slug>/plan.md`
+   first: it re-records the batch's base in `fix-base`, and stays mandatory.
 2. Hand off the batch:
    - Codex routed for `review-fixes` and running → the handoff (`phase: review`,
      `review_status: fixes-handed-to-codex`, `codex_safe`), same guards,

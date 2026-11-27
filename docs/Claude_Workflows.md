@@ -165,7 +165,8 @@ autre appel qui nomme `git` et `add`, `stage`, `commit` ou `switch`, un
 chemins gardés (`docs/ADAPTATION.md` § 14). Les appels git qui perdent du
 travail demandent aussi : `git clean` sans `-n` effectif (le dernier de
 `-n`/`--dry-run`/`--no-dry-run` gagne), `reset --hard`, `checkout`/`restore`
-qui écrasent des fichiers modifiés, `stash drop`/`clear`, `branch -D`/`-M`/`-f`,
+qui écrasent des fichiers modifiés, `stash drop`/`clear`, un `stash` (`push`, `save`
+ou nu) quand l'arbre a des changements suivis, indexés ou non, `branch -D`/`-M`/`-f`,
 `update-ref` sur `HEAD` ou une branche, un `worktree add` passé par un alias
 (hors `.claude/worktrees/` ou forcé), et `fetch`/`pull`/`clone`/`ls-remote`
 avec `--upload-pack` (ou une abréviation, `-u`). Côté shell, demandent : une option

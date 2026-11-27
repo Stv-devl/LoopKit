@@ -236,9 +236,13 @@ dimension.
 3. Global verdict: **FAIL** if ≥1 Critical or an uncovered criterion, **CONCERNS**
    if only Major/Minor, else **PASS**.
 3bis. **Route the survivors.** Write them with Write to
-   `docs/work/<slug>/route-review-<round>.json`. Each one carries `id`, `severity`, `dimension`
+   `docs/work/<slug>/route-review-<round>.json`, an object `{"mode": "review", "round": <round>,
+   "findings": [...]}`. Each one carries `id`, `severity` (`Critical`, `Major` or `Minor`), `dimension`
    (one of `correctness, tests, db, security, ui`; a Stage 2.5 item takes the dimension of the
-   dependency it shadows), `class`, `path`, `line`, `problem`, `scenario`, `regression`, `status` and `closure`.
+   dependency it shadows), `class` (one of `security, correctness, data-integrity, architecture,
+   test-quality, maintainability, other`, on every finding, Minor included), `path`, `line`,
+   `problem`, `scenario`, `regression`, `status` and `closure`. `status` is `new` or `not-fixed`:
+   a finding the re-review answered `fixed`, or the verifier refuted, is dropped before the route.
    Round 1 is the first review: a fresh `/loop:review` is round 1, and only
    `orchestrate.md` Phase 5 step 3 increments the round. A prior finding the re-review
    answered `not fixed` enters the file again with `status: not-fixed`. The findings the
@@ -259,6 +263,32 @@ dimension.
 
    Whatever `next` is, rewrite the handoff state line for this round (`review_status`, the
    round and its verdict: `/loop:orchestrate`, "Automatic checkpoints") before the next step.
+   The skeleton below stays at column 0 so the contract tests can read it.
+
+Skeleton (accepted as written by `kit-gate-route.py route`, a round-1 file with one complete finding; copy it and change the values):
+
+```json
+{
+  "mode": "review",
+  "round": 1,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "Major",
+      "dimension": "correctness",
+      "class": "correctness",
+      "path": "src/features/orders/orders.utils.ts",
+      "line": 12,
+      "problem": "total() drops the last line item",
+      "scenario": "total([a, b]) returns a.price, expected a.price + b.price",
+      "regression": false,
+      "status": "new",
+      "closure": "the case total sums every line item passes"
+    }
+  ]
+}
+```
+
 4. Report the refuted findings in one line each — they are the proof the gate
    isn't rubber-stamping.
 5. Propose the fixes. Don't apply them without agreement, unless the caller

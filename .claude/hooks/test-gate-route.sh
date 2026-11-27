@@ -321,4 +321,193 @@ route_review 2 "$(rf F1 Minor correctness c.ts 2 'caller y, gets z' false new ''
 ok G31 '.findings[0].route == "follow-up" and .attempt.action == "pass" and .next == "clear"'
 grep -Fxq -- "- [correctness] c.ts:2 — problem F1 (minor)" "$T/follow-ups.md" || fail G31 "follow-up line"
 
+# ---- Fix-base written by the route, error hints and prompt skeletons (G32+) ----
+# Each case owns its slug dir; the shared docs/work/t and v dirs are never reused.
+
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm 'fixtures before fix-base cases'
+mkdir -p "$REPO/src"
+seq -f 'a %g' 1 10 >"$REPO/src/a.ts"
+seq -f 'b %g' 1 10 >"$REPO/src/b.ts"
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm 'src fixtures'
+
+# gate_slug <slug>: a gate dir whose plan.md holds Base:
+gate_slug() {
+    mkdir -p "$REPO/docs/work/$1"
+    printf '# Plan: %s\nBase: %s\n' "$1" "$BASE_SHA" >"$REPO/docs/work/$1/plan.md"
+}
+# slug_route <slug> <round> <finding-json>...
+slug_route() {
+    local slug="$1" round="$2"
+    shift 2
+    review_in "$REPO/docs/work/$slug" r.json "$round" "$@"
+    OUT="$(kgr route "docs/work/$slug/r.json")"
+}
+blocking_a() { rf F1 Major correctness src/a.ts 3 'call x, gets y' false not-fixed 'case X passes'; }
+sha_of() { sha256sum "$1" | cut -d' ' -f1; }
+skeleton() {
+    awk '/^Skeleton \(accepted as written by/ { f = 1; next }
+         f && /^```json/ { g = 1; next }
+         g && /^```/ { exit }
+         g { print }' "$1"
+}
+
+# G32 round 1, no fix-base: the route writes the working tree as the fix-base
+gate_slug fa
+{ echo 'edited 1'; seq -f 'a %g' 2 10; } >"$REPO/src/a.ts"
+slug_route fa 1 "$(blocking_a)"
+ok G32 '.next == "fix-batch" and .fix_base == "written"'
+[[ -f "$REPO/docs/work/fa/fix-base" && -f "$REPO/docs/work/fa/fix-base.round" ]] \
+    || fail G32 "fix-base or fix-base.round missing"
+[[ "$(cat "$REPO/docs/work/fa/fix-base.round")" == "1 "* ]] \
+    || fail G32 "fix-base.round: $(cat "$REPO/docs/work/fa/fix-base.round")"
+BLOB="$(git -C "$REPO" ls-tree "$(cat "$REPO/docs/work/fa/fix-base")" src/a.ts | awk '{print $3}')"
+[[ "$BLOB" == "$(git -C "$REPO" hash-object src/a.ts)" ]] || fail G32 "fix-base is not the working tree"
+
+# G33 a round-2 route with fix-base.round on the same round keeps the base
+gate_slug fb
+kgr snapshot docs/work/fb/plan.md >/dev/null
+printf '2 %s\n' "$(sha_of "$REPO/src/b.ts")" >"$REPO/docs/work/fb/fix-base.round"
+cp "$REPO/docs/work/fb/fix-base" "$SCRATCH/fb-before"
+{ echo 'edited b'; seq -f 'b %g' 2 10; } >"$REPO/src/b.ts"
+slug_route fb 2 "$(blocking_a)"
+ok G33 '.next == "fix-batch" and .fix_base == "kept"'
+cmp -s "$SCRATCH/fb-before" "$REPO/docs/work/fb/fix-base" || fail G33 "fix-base changed"
+git -C "$REPO" checkout -q -- src/b.ts
+
+# G34 after G32, a later change shows in `diff fix` with no manual snapshot
+{ echo 'edited b'; seq -f 'b %g' 2 10; } >"$REPO/src/b.ts"
+FIXD="$(kgr diff docs/work/fa/plan.md fix | grep '^diff --git')"
+grep -Fq 'src/b.ts' <<<"$FIXD" || fail G34 "diff lacks src/b.ts"
+! grep -Fq 'src/a.ts' <<<"$FIXD" || fail G34 "diff names the pre-route src/a.ts change"
+git -C "$REPO" checkout -q -- src/b.ts src/a.ts
+
+# G35 a round-2 route judges the round-1 base, then writes a new base for round 2
+gate_slug fc
+{ echo 'round one 1'; seq -f 'a %g' 2 10; } >"$REPO/src/a.ts"
+kgr snapshot docs/work/fc/plan.md >/dev/null
+printf '1 %s\n' "$(sha_of "$REPO/src/b.ts")" >"$REPO/docs/work/fc/fix-base.round"
+cp "$REPO/docs/work/fc/fix-base" "$SCRATCH/fc-before"
+{ echo 'batch edit'; seq -f 'b %g' 2 10; } >"$REPO/src/b.ts"
+slug_route fc 2 "$(rf F1 Major correctness src/b.ts 1 '' false new 'case X passes')"
+ok G35 '.findings[0].route == "blocking" and .findings[0].fix_introduced == true and .fix_base == "written"'
+! cmp -s "$SCRATCH/fc-before" "$REPO/docs/work/fc/fix-base" || fail G35 "fix-base not rewritten"
+[[ "$(cat "$REPO/docs/work/fc/fix-base.round")" == "2 "* ]] \
+    || fail G35 "fix-base.round: $(cat "$REPO/docs/work/fc/fix-base.round")"
+[[ -z "$(kgr diff docs/work/fc/plan.md fix)" ]] || fail G35 "fix-base is not the current tree"
+git -C "$REPO" checkout -q -- src/b.ts src/a.ts
+
+# G46 after a snapshot (no fix-base.round), a round-1 fix-batch keeps the base
+gate_slug fd
+kgr snapshot docs/work/fd/plan.md >/dev/null
+cp "$REPO/docs/work/fd/fix-base" "$SCRATCH/fd-before"
+{ echo 'after snapshot'; seq -f 'a %g' 2 10; } >"$REPO/src/a.ts"
+slug_route fd 1 "$(blocking_a)"
+ok G46 '.next == "fix-batch" and .fix_base == "kept"'
+cmp -s "$SCRATCH/fd-before" "$REPO/docs/work/fd/fix-base" || fail G46 "fix-base changed"
+[[ ! -e "$REPO/docs/work/fd/fix-base.round" ]] || fail G46 "fix-base.round created over a snapshot"
+git -C "$REPO" checkout -q -- src/a.ts
+
+# G47 a leftover base of an earlier review (other digest, round 1) is replaced
+gate_slug fe
+kgr snapshot docs/work/fe/plan.md >/dev/null
+printf '1 %s\n' "$(sha_of "$REPO/src/b.ts")" >"$REPO/docs/work/fe/fix-base.round"
+cp "$REPO/docs/work/fe/fix-base" "$SCRATCH/fe-before"
+{ echo 'new review'; seq -f 'a %g' 2 10; } >"$REPO/src/a.ts"
+slug_route fe 1 "$(blocking_a)"
+ok G47 '.next == "fix-batch" and .fix_base == "written"'
+! cmp -s "$SCRATCH/fe-before" "$REPO/docs/work/fe/fix-base" || fail G47 "fix-base not replaced"
+[[ -z "$(kgr diff docs/work/fe/plan.md fix)" ]] || fail G47 "fix-base is not the current tree"
+git -C "$REPO" checkout -q -- src/a.ts
+
+# G49 the same round-1 route file routed twice keeps the base the first call wrote
+gate_slug ff
+slug_route ff 1 "$(blocking_a)"
+ok G49 '.fix_base == "written"'
+cp "$REPO/docs/work/ff/fix-base" "$SCRATCH/ff-before"
+{ echo 'between calls'; seq -f 'b %g' 2 10; } >"$REPO/src/b.ts"
+OUT="$(kgr route docs/work/ff/r.json)"
+ok G49 '.fix_base == "kept"'
+cmp -s "$SCRATCH/ff-before" "$REPO/docs/work/ff/fix-base" || fail G49 "fix-base changed on the rerun"
+git -C "$REPO" checkout -q -- src/b.ts
+
+# G36 a review route ending in clear writes no fix-base and has no fix_base key
+gate_slug fg
+slug_route fg 1 "$(rf F1 Minor correctness src/a.ts 3 '' false new '')"
+ok G36 '.next == "clear" and (has("fix_base") | not)'
+[[ ! -e "$REPO/docs/work/fg/fix-base" && ! -e "$REPO/docs/work/fg/fix-base.round" ]] \
+    || fail G36 "fix-base written on clear"
+
+# G37 write-closure writes no fix-base
+gate_slug fh
+slug_route fh 1 "$(rf F1 Critical correctness src/a.ts 3 'call x, gets y' false new '')"
+ok G37 '.next == "write-closure"'
+[[ ! -e "$REPO/docs/work/fh/fix-base" ]] || fail G37 "fix-base written on write-closure"
+
+# G38 a plan route never writes fix-base
+gate_slug 'fi'
+printf '%s\n' "$(pf F1 Major a demonstrated new true 'case X passes')" \
+    | jq -sc '{mode: "plan", pass: 1, findings: .}' >"$REPO/docs/work/fi/p.json"
+OUT="$(kgr route docs/work/fi/p.json)"
+ok G38 '.mode == "plan" and (has("fix_base") | not)'
+[[ ! -e "$REPO/docs/work/fi/fix-base" ]] || fail G38 "plan route wrote fix-base"
+
+# G39 snapshot overwrites fix-base and deletes fix-base.round
+gate_slug fj
+kgr snapshot docs/work/fj/plan.md >/dev/null
+printf '1 %s\n' "$(sha_of "$REPO/src/b.ts")" >"$REPO/docs/work/fj/fix-base.round"
+cp "$REPO/docs/work/fj/fix-base" "$SCRATCH/fj-before"
+{ echo 'before second snapshot'; seq -f 'a %g' 2 10; } >"$REPO/src/a.ts"
+kgr snapshot docs/work/fj/plan.md >/dev/null
+! cmp -s "$SCRATCH/fj-before" "$REPO/docs/work/fj/fix-base" || fail G39 "fix-base not overwritten"
+[[ ! -e "$REPO/docs/work/fj/fix-base.round" ]] || fail G39 "fix-base.round survived the snapshot"
+git -C "$REPO" checkout -q -- src/a.ts
+
+# G40-G42 error hints
+gate_slug fk
+review_in "$REPO/docs/work/fk" r.json 1 "$(rf F1 Major correctness src/a.ts 3 '' false refuted 'case X passes')"
+refused G40 'a fixed or refuted finding is dropped before the route' route docs/work/fk/r.json
+printf '%s\n' "$(pf F1 Major b vigilance new true 'case X passes')" \
+    | jq -sc '{mode: "plan", pass: 1, findings: .}' >"$REPO/docs/work/fk/p.json"
+refused G41 'a vigilance finding takes p1_class null' route docs/work/fk/p.json
+printf '{"round": 1, "findings": []}\n' >"$REPO/docs/work/fk/m.json"
+refused G42 'add "mode": "review"' route docs/work/fk/m.json
+[[ ! -e "$REPO/docs/work/fk/fix-base" ]] || fail G40 "a refused route wrote fix-base"
+
+# G43 a round-2 route with no fix-base at all is still refused
+gate_slug fl
+review_in "$REPO/docs/work/fl" r.json 2 "$(blocking_a)"
+refused G43 'fix-base' route docs/work/fl/r.json
+[[ ! -e "$REPO/docs/work/fl/fix-base" ]] || fail G43 "fix-base written for round 2"
+
+# G44 the review.md 3bis skeleton is routed as written
+gate_slug sk
+skeleton "$HOOKS_DIR/../commands/loop/review.md" >"$REPO/docs/work/sk/route-review-1.json"
+[[ -s "$REPO/docs/work/sk/route-review-1.json" ]] || fail G44 "no skeleton block in review.md"
+OUT="$(kgr route docs/work/sk/route-review-1.json)"
+ok G44 '.mode == "review" and (.findings | length) >= 1'
+
+# G45 the plan.md step 6 skeleton is routed as written
+gate_slug sp
+skeleton "$HOOKS_DIR/../commands/loop/plan.md" >"$REPO/docs/work/sp/route-plan-1.json"
+[[ -s "$REPO/docs/work/sp/route-plan-1.json" ]] || fail G45 "no skeleton block in plan.md"
+OUT="$(kgr route docs/work/sp/route-plan-1.json)"
+ok G45 '.mode == "plan" and (.findings | length) >= 1'
+
+# G32.2 fix-base.round records the sha256 of the routed file's bytes, not of its path
+[[ "$(cut -d' ' -f2 "$REPO/docs/work/fa/fix-base.round")" == "$(sha_of "$REPO/docs/work/fa/r.json")" ]] \
+    || fail G32.2 "fix-base.round digest: $(cat "$REPO/docs/work/fa/fix-base.round")"
+
+# G50 a round-1 fix-batch file rewritten at the same path with other findings is a new review: new base
+gate_slug fm
+slug_route fm 1 "$(blocking_a)"
+ok G50 '.fix_base == "written"'
+cp "$REPO/docs/work/fm/fix-base" "$SCRATCH/fm-before"
+{ echo 'between reviews'; seq -f 'b %g' 2 10; } >"$REPO/src/b.ts"
+slug_route fm 1 "$(rf F2 Major correctness src/a.ts 4 'call z, gets w' false not-fixed 'case Y passes')"
+ok G50 '.next == "fix-batch" and .fix_base == "written"'
+! cmp -s "$SCRATCH/fm-before" "$REPO/docs/work/fm/fix-base" || fail G50 "fix-base not rewritten for the new content"
+git -C "$REPO" checkout -q -- src/b.ts
+
 echo 'gate route fixtures: green.'

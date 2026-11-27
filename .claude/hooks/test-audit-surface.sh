@@ -414,4 +414,23 @@ fin '{"surface":"authz","severity":"Major","path":"a.py","line":1}'
 refused A28 "" follow-ups "$T/audit-1.json"
 [[ ! -e "$REPO/$T/follow-ups.md" ]] || fail A28 "a refused input wrote follow-ups.md"
 
+# A47 a bare list in audit-1.json is refused and the text names the envelope (own audit dir)
+new_repo
+mkdir -p "$REPO/docs/work/au"
+printf '%s\n' '[{"surface":"authz","severity":"Major","path":"a.py","line":1,"problem":"p"}]' \
+    >"$REPO/docs/work/au/audit-1.json"
+refused A47 'wrap the list as {"findings": [...]}' follow-ups docs/work/au/audit-1.json
+[[ ! -e "$REPO/docs/work/au/follow-ups.md" ]] || fail A47 "a refused input wrote follow-ups.md"
+
+# A48 the ship.md 1bis skeleton is accepted by follow-ups as written (own audit dir)
+new_repo
+mkdir -p "$REPO/docs/work/sh"
+awk '/^Skeleton \(accepted as written by/ { f = 1; next }
+     f && /^```json/ { g = 1; next }
+     g && /^```/ { exit }
+     g { print }' "$HOOKS_DIR/../commands/loop/ship.md" >"$REPO/docs/work/sh/audit-1.json"
+[[ -s "$REPO/docs/work/sh/audit-1.json" ]] || fail A48 "no skeleton block in ship.md"
+OUT="$(kas follow-ups docs/work/sh/audit-1.json)"
+ok A48 '(.critical + .major + .minor) >= 1 and .next == "clear"'
+
 echo 'audit-surface fixtures: green.'

@@ -59,7 +59,7 @@ You receive **one** batch and make it pass, nothing more. The batch is one of:
   - no `python3 -`/`-c`: Read/Grep, or a kit script;
   - no `sed -i`/`perl -i`: Edit;
   - no `Any` in tests (Python `typing.Any`): a real type or `object`;
-  - a new import a frozen test case needs goes inside the case body (the freeze hook refuses an import-only insertion).
+  - a new import a frozen test case needs goes inside the case body (the freeze hooks refuse an import-only insertion; the one exception is a Python import at the head of the file, in auto mode with an arbiter `unfreeze` verdict, in its own Edit).
 - No refactor beyond the batch, no new behaviour the plan does not name.
 
 ## Return
