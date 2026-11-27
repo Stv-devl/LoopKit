@@ -687,7 +687,7 @@ pipeline complet, c'est la colonne « Shared foundations » de la story map de
 
 | Besoin | Outil |
 | --- | --- |
-| Cette session travaille sur la track | `EnterWorktree` (`name: <slug>`) — crée, entre, propose keep/remove en sortie |
+| Cette session travaille sur la track | `EnterWorktree` (`name: <slug>`) — crée, entre, propose keep/remove en sortie ; jamais en kit-local : `kit-track.py fork <slug>` puis `cd .claude/worktrees/<slug> && ./workflow.sh` |
 | Pré-créer une track sœur sans quitter la sienne | `git worktree add .claude/worktrees/<slug> -b feat/<slug>` |
 | Entrer dans un worktree existant | `EnterWorktree` (`path: …`) |
 | Sortir | `ExitWorktree` (`keep` \| `remove`) |

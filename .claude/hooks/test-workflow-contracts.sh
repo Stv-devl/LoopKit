@@ -1718,6 +1718,23 @@ pk WT14 has_in "$pk_o0" 'merge-base --is-ancestor feat/<slug>'
 pk WT14.2 has_in "$pk_tr0" 'merge-base --is-ancestor feat/<slug>'
 pk WT15 has_in "$pk_o0" 'main-tree handoff at `awaiting-merge` with `pr: none`'
 pk WT15.2 has_in "$pk_tr0" 'main-tree handoff at `awaiting-merge` with `pr: none`'
+# WT16-WT24 (kit-track-robustness): kit-local tracks are handed over, never entered, in every
+# place that says how a session takes a track; the closing rows match; WT1/WT2/WT13.2 complete.
+pk WT16 has "$TRACKS" 'a kit-local track is never entered: see above'
+pk_tr5="$(section "$TRACKS" 'Track <track-slug> —' 'Line 1 and line 3 carry' || true)"
+pk WT17 has_in "$pk_tr5" 'cd .claude/worktrees/<track-slug> && ./workflow.sh'
+pk WT17.2 has_in "$pk_tr5" 'local-kit-env lines fork printed'
+pk WT18 has_in "$pk_o05" 'a track that is not kit-local'
+pk_o0s4="$(section "$ORCHESTRATE" '4. **Take the entry**' '5. Announce each' || true)"
+pk WT19 has_in "$pk_o0s4" 'A kit-local hand-over (Phase 0.5) is not an exit'
+pk WT20 has_in "$pk_tr0" 'story `Approved`'
+pk WT20.2 has_in "$pk_tr0" '`orphaned:<b>`'
+pk WT21 has "$ROOT/docs/Claude_Workflows.md" 'jamais en kit-local'
+pk WT22 has "$TRACKS" 'git ls-tree -r --name-only HEAD -- .claude/hooks'
+pk WT23 in_order "$pk_o05" 'git ls-tree -r --name-only HEAD --' '.claude/hooks` prints nothing'
+pk WT24 has_in "$pk_local" 'pr: none'
+pk WT24.2 lacks_in "$pk_local" 'close <slug> --merged'
+pk WT24.3 lacks_in "$pk_local" 'loop-pr-state.sh'
 pk HF1 has "$ORCHESTRATE" 'rewrite its state line'
 for n in 'Contract gate' 'each plan-critic pass' 'the test-plan gate' 'each review round'; do pk "HF1 $n" has "$ORCHESTRATE" "$n"; done
 pk HF2 has "$PLAN" 'rewrite the handoff state line'

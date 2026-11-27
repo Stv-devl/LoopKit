@@ -236,7 +236,8 @@ Shell discipline for the whole pass:
    board line → `IN LOOP`, **only from the main tree**. In a worktree, say so and
    leave the board alone: `/loop:ship` moves the line after the merge. Any exit other than `/loop:ship` step 5 gives it
    back: the line → `BLOCKED` with its reason, from the main tree, and the story's
-   `Status` → `Approved`.
+   `Status` → `Approved`. A kit-local hand-over (Phase 0.5) is not an exit: the line stays
+   `IN LOOP`, owned by the track session.
 5. Announce each **SKIP** and why. No user surface (migration, job, backend-only,
    refactor) → INTERFACE SKIP. RESEARCH is **never** skipped (small: done inline at dispatch, `/loop:small` step 2).
 
@@ -262,8 +263,9 @@ tree, committed, and the tracks fork from that commit.
 `<slug>` is this pass's loop slug (`docs/stories/inbox/1.2.md` → `inbox-1.2`,
 never `inbox`). The fork always names its start point, the main tree's current
 branch, so git records `Created from <base>` for the loop record:
-`git worktree add .claude/worktrees/<slug> -b feat/<slug> <base>`. This session
-drives it → `EnterWorktree` with that worktree's `path`; another session will → hand over the path. Then every phase runs inside it, said in the opening
+`git worktree add .claude/worktrees/<slug> -b feat/<slug> <base>`. For a track that is not kit-local:
+this session drives it → `EnterWorktree` with that worktree's `path`; another session will → hand over
+the path. A kit-local track is always handed over, as above. Then every phase runs inside it, said in the opening
 line. **A loop pass is never an `isolation: "worktree"` subagent**: the loop has
 human gates and a subagent cannot hold them. One session drives one worktree; N
 tracks means N sessions. Announce the empty

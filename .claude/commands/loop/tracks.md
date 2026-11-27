@@ -36,7 +36,9 @@ a kit-local worktree handoff at `awaiting-merge` with `pr: none` is closable whe
 a main-tree handoff at `awaiting-merge` with `pr: none` and no `.claude/worktrees/<slug>` left (close already ran) is closable without `loop-pr-state.sh` or the default-branch sync when that same `merge-base --is-ancestor` succeeds: `/loop:ship` step 5, the handoff → `phase: shipped`, then `git branch -d feat/<slug>` (no `close`);
 the count below is computed **after** it, since a
 merged prerequisite unblocks its dependants; `closed` → board `BLOCKED` "PR closed
-unmerged"; anything else, one line, nothing moved. A PR still open is not `Done`.
+unmerged", story `Approved`; `orphaned:<b>` → say the commits never reached the default
+branch, and stop on that track; `open`, `stacked:<b>`, `unknown`, `none` → one line each,
+nothing moved. A PR still open is not `Done`.
 
 Stories: the directory passed as argument, else the one named by
 `docs/product/backlog.md`. Read each story's **Status** and **Depends on** — those
@@ -187,9 +189,10 @@ the second `git worktree add` refuses with "already exists". The bad case is
 succeeding — two tracks in one worktree, the first thing `10-worktrees.md`
 forbids.
 
-This session enters **at most one** — `EnterWorktree` with
-`name: "<track-slug>"`. The others are created and handed over: a session is in
-one worktree at a time, and this one does not pretend to drive them all.
+On a project that is not kit-local, this session enters **at most one** — `EnterWorktree`
+with `name: "<track-slug>"`. The others are created and handed over: a session is in
+one worktree at a time, and this one does not pretend to drive them all. Every
+track of a kit-local project is handed over, this session's included: a kit-local track is never entered: see above.
 
 ### 5. Hand over
 
@@ -200,6 +203,8 @@ Track <track-slug> — .claude/worktrees/<track-slug> on feat/<track-slug>, from
   1. copy your env file into it — an agent cannot (`protect-files`)
   2. install: <the install command; a fresh checkout has no node_modules>
   3. /loop:orchestrate docs/stories/<feature-slug>/<n>.md
+     kit-local: instead, apply the local-kit-env lines fork printed, then
+     cd .claude/worktrees/<track-slug> && ./workflow.sh "/loop:orchestrate docs/stories/<feature-slug>/<n>.md"
 ```
 
 Line 1 and line 3 carry **different** slugs — `inbox-1.2` and `inbox`. Writing

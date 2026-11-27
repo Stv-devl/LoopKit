@@ -663,6 +663,12 @@ PY
     RUN_OUT="$(printf '{"source":"clear"}' | CLAUDE_PROJECT_DIR="$track" python3 "$hook" 2>/dev/null)"
     RUN_RC=$?
     expect clear "N3 kit-local track worktree silent" "" 0
+
+    local nosnap="$SCRATCH/clear-track-nosnap/.claude/worktrees/inbox-1.3"
+    write_board "$nosnap" docs/specs/x.md READY
+    RUN_OUT="$(printf '{"source":"clear"}' | CLAUDE_PROJECT_DIR="$nosnap" python3 "$hook" 2>/dev/null)"
+    check clear "N3b worktree without .kit-snapshot names the feature" "got [$RUN_OUT]" \
+        grep -Fq 'Next feature (topmost READY): feature x' <<<"$RUN_OUT"
 }
 
 group_paths
@@ -671,8 +677,8 @@ group_dispatch
 group_scope
 group_clear
 
-if [[ "$CASES" -lt 91 ]]; then
-    fail harness floor "only $CASES case(s) ran, expected at least 91"
+if [[ "$CASES" -lt 92 ]]; then
+    fail harness floor "only $CASES case(s) ran, expected at least 92"
 fi
 
 if [[ "$FAILURES" -gt 0 ]]; then

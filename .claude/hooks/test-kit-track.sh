@@ -428,6 +428,216 @@ run_kt "$RN" close demo-1.1
 [[ "$(cat "$RN/docs/work/demo-1.1/research.md.from-demo-1.1" 2>/dev/null)" == 'track research' ]] || fail KT29 "no sidecar with the track's content"
 [[ "$OUT" == *"conflict docs/work/demo-1.1/research.md"* ]] || fail KT29 "conflict not reported"
 
+# ---------------------------------------------------------------- kit-track-robustness
+case_start  # KT30 a fork that fails after `git worktree add` rolls back; a second fork works
+R30="$SCRATCH/kt30"
+mkrepo "$R30"
+chmod 000 "$R30/.claude/hooks/hook-lib.sh"
+run_kt "$R30" fork demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"fork failed after the worktree was created"* ]] \
+    || fail KT30 "expected the rollback refusal, got $CODE: ${ERR:0:300}"
+[[ "$ERR" != *Traceback* ]] || fail KT30 "traceback"
+no_fork "$R30" KT30
+chmod 644 "$R30/.claude/hooks/hook-lib.sh"
+run_kt "$R30" fork demo-1.1
+[[ "$CODE" -eq 0 ]] || fail KT30 "second fork exited $CODE: $ERR"
+
+case_start  # KT31 a tracked CLAUDE.md -> AGENTS.md link does not block the fork
+R31="$SCRATCH/kt31"
+mkrepo "$R31"
+mv "$R31/CLAUDE.md" "$SCRATCH/kt31-claude.md"
+ln -s AGENTS.md "$R31/CLAUDE.md"
+git -C "$R31" add -f CLAUDE.md
+git -C "$R31" commit -q -m link
+run_kt "$R31" fork demo-1.1
+[[ "$CODE" -eq 0 && -f "$R31/.claude/worktrees/demo-1.1/.claude/.kit-snapshot" ]] \
+    || fail KT31 "fork with a tracked CLAUDE.md link exited $CODE: $ERR"
+
+case_start  # KT32 a symlinked skipped name does not block the fork
+R32="$SCRATCH/kt32"
+mkrepo "$R32"
+printf 'outside\n' > "$SCRATCH/kt32-local.json"
+mv "$R32/.claude/settings.local.json" "$SCRATCH/kt32-old.json"
+ln -s "$SCRATCH/kt32-local.json" "$R32/.claude/settings.local.json"
+run_kt "$R32" fork demo-1.1
+[[ "$CODE" -eq 0 ]] || fail KT32 "symlinked settings.local.json blocked the fork ($CODE): $ERR"
+
+case_start  # KT33 (pin) a symlink inside what is copied is still refused
+R33="$SCRATCH/kt33"
+mkrepo "$R33"
+printf 'outside\n' > "$SCRATCH/kt33-evil.sh"
+ln -s "$SCRATCH/kt33-evil.sh" "$R33/.claude/hooks/evil.sh"
+run_kt "$R33" fork demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *".claude/hooks/evil.sh"* ]] || fail KT33 "copied symlink not refused by name ($CODE): $ERR"
+no_fork "$R33" KT33
+
+case_start  # KT34 a .kit-snapshot that is not JSON: one-line refusal, nothing written
+R34="$SCRATCH/kt34"
+close_fixture "$R34"
+printf 'not json\n' > "$R34/.claude/worktrees/demo-1.1/.claude/.kit-snapshot"
+run_kt "$R34" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"malformed .kit-snapshot"* ]] || fail KT34 "expected malformed refusal ($CODE): ${ERR:0:300}"
+[[ "$ERR" != *Traceback* ]] || fail KT34 "traceback"
+[[ ! -e "$R34/docs/work/demo-1.1" && "$(cat "$R34/docs/stories/demo/1.1.md")" == 'Status: Approved' ]] || fail KT34 "main written"
+registered "$R34" || fail KT34 "worktree removed"
+
+case_start  # KT35 a .kit-snapshot whose files map to a non-hex value is refused
+R35="$SCRATCH/kt35"
+close_fixture "$R35"
+S35="$R35/.claude/worktrees/demo-1.1/.claude/.kit-snapshot"
+jq '.files |= with_entries(.value = "nothex")' "$S35" > "$SCRATCH/kt35-snap" && cp "$SCRATCH/kt35-snap" "$S35"
+run_kt "$R35" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"malformed .kit-snapshot"* ]] || fail KT35 "non-hex snapshot not refused ($CODE): ${ERR:0:300}"
+[[ ! -e "$R35/docs/work/demo-1.1" ]] || fail KT35 "main written"
+
+case_start  # KT37 an interrupted copy-back reports what landed; the rerun finishes
+R37="$SCRATCH/kt37"
+close_fixture "$R37"
+chmod 555 "$R37/docs/research-cache"
+run_kt "$R37" close demo-1.1
+OUT37="$OUT"
+[[ "$CODE" -eq 2 ]] || fail KT37 "interrupted copy-back exited $CODE"
+for f in docs/work/demo-1.1/handoff.md docs/work/demo-1.1/research.md docs/stories/demo/1.1.md; do
+    [[ "$OUT37" == *"copied $f"* ]] || fail KT37 "landed copy not reported: $f"
+done
+[[ "$OUT37" != *"copied docs/research-cache/x.md"* ]] || fail KT37 "the failed copy was reported as landed"
+[[ "$ERR" == *"docs/research-cache/x.md"* && "$ERR" == *"earlier copies landed"* ]] || fail KT37 "refusal lacks the file or the landed note: ${ERR:0:300}"
+chmod 755 "$R37/docs/research-cache"
+run_kt "$R37" close demo-1.1
+[[ "$CODE" -eq 0 && "$OUT" == *"copied docs/research-cache/x.md"* ]] || fail KT37 "rerun did not finish ($CODE): $OUT $ERR"
+
+case_start  # KT38 runtime files are neither copied nor in the snapshot
+R38="$SCRATCH/kt38"
+mkrepo "$R38"
+mkdir -p "$R38/.claude/.ruff_cache"
+for f in .claude/project.proposed.json .claude/project.snapshot.json .claude/.ruff_cache/x .claude/.loop-record.abc.tmp; do
+    printf 'runtime\n' > "$R38/$f"
+done
+run_kt "$R38" fork demo-1.1
+[[ "$CODE" -eq 0 ]] || fail KT38 "fork exited $CODE: $ERR"
+for f in .claude/project.proposed.json .claude/project.snapshot.json .claude/.ruff_cache/x .claude/.loop-record.abc.tmp; do
+    [[ ! -e "$R38/.claude/worktrees/demo-1.1/$f" ]] || fail KT38 "$f was copied"
+    jq -e --arg f "$f" '.files | has($f) | not' "$R38/.claude/worktrees/demo-1.1/.claude/.kit-snapshot" >/dev/null 2>&1 \
+        || fail KT38 "$f in the snapshot"
+done
+
+case_start  # KT39 (pin) a detached HEAD is refused
+R39="$SCRATCH/kt39"
+mkrepo "$R39"
+git -C "$R39" checkout -q --detach
+run_kt "$R39" fork demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *detached* ]] || fail KT39 "detached HEAD not refused ($CODE): $ERR"
+no_fork "$R39" KT39
+
+case_start  # KT40 (pin) fork from inside a worktree is refused
+run_kt "$WT" fork demo-1.2
+[[ "$CODE" -eq 2 && "$ERR" == *"run from the main tree"* ]] || fail KT40 "fork from a worktree not refused ($CODE): $ERR"
+[[ ! -e "$R/.claude/worktrees/demo-1.2" && ! -e "$WT/.claude/worktrees/demo-1.2" ]] || fail KT40 "a worktree was created"
+
+case_start  # KT41 (pin) close on a worktree whose snapshot was deleted
+R41="$SCRATCH/kt41"
+close_fixture "$R41"
+mv "$R41/.claude/worktrees/demo-1.1/.claude/.kit-snapshot" "$SCRATCH/kt41-snap"
+run_kt "$R41" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"has no .claude/.kit-snapshot"* ]] || fail KT41 "missing snapshot not refused ($CODE): $ERR"
+[[ ! -e "$R41/docs/work/demo-1.1" ]] || fail KT41 "main written"
+
+case_start  # KT42 (pin) a failed `git worktree remove` is refused after the reported copies
+R42="$SCRATCH/kt42"
+close_fixture "$R42"
+git -C "$R42" worktree lock .claude/worktrees/demo-1.1
+run_kt "$R42" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"rerun close once it is clean"* ]] || fail KT42 "locked removal not refused ($CODE): $ERR"
+[[ "$OUT" == *"copied docs/work/demo-1.1/research.md"* ]] || fail KT42 "landed copies not reported"
+git -C "$R42" worktree unlock .claude/worktrees/demo-1.1
+
+case_start  # KT43 (pin) a conflict close exits 0
+R43="$SCRATCH/kt43"
+close_fixture "$R43"
+printf 'Status: Done\n' > "$R43/docs/stories/demo/1.1.md"
+run_kt "$R43" close demo-1.1
+[[ "$CODE" -eq 0 && "$OUT" == *"conflict docs/stories/demo/1.1.md"* ]] || fail KT43 "conflict close exited $CODE: $ERR"
+
+case_start  # KT44 (pin) KT27/KT28 refusals: named as symlinks, main untouched
+R44="$SCRATCH/kt44a"
+close_fixture "$R44"
+mkdir -p "$SCRATCH/outside-44a" "$R44/docs/work/demo-1.1"
+printf 'outside\n' > "$SCRATCH/outside-44a/target.txt"
+ln -s "$SCRATCH/outside-44a/target.txt" "$R44/docs/work/demo-1.1/notes.md"
+printf 'track notes\n' > "$R44/.claude/worktrees/demo-1.1/docs/work/demo-1.1/notes.md"
+run_kt "$R44" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *symlink* && "$ERR" == *"docs/work/demo-1.1/notes.md"* ]] || fail KT44 "KT27 refusal ($CODE): $ERR"
+[[ ! -e "$R44/docs/work/demo-1.1/research.md" ]] || fail KT44 "KT27: research.md written in main"
+R44B="$SCRATCH/kt44b"
+close_fixture "$R44B"
+mkdir -p "$SCRATCH/outside-44b"
+ln -s "$SCRATCH/outside-44b" "$R44B/docs/work/demo-1.1"
+run_kt "$R44B" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *symlink* ]] || fail KT44 "KT28 refusal ($CODE): $ERR"
+[[ "$(cat "$R44B/docs/stories/demo/1.1.md")" == 'Status: Approved' && ! -e "$R44B/docs/research-cache/x.md" ]] \
+    || fail KT44 "KT28: main written"
+
+case_start  # KT45 (pin) a symlinked track session doc is refused on close
+R45="$SCRATCH/kt45"
+close_fixture "$R45"
+printf 'outside\n' > "$SCRATCH/kt45-target.md"
+mv "$R45/.claude/worktrees/demo-1.1/docs/work/demo-1.1/handoff.md" "$SCRATCH/kt45-handoff.md"
+ln -s "$SCRATCH/kt45-target.md" "$R45/.claude/worktrees/demo-1.1/docs/work/demo-1.1/handoff.md"
+run_kt "$R45" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"docs/work/demo-1.1/handoff.md"* ]] || fail KT45 "symlinked session doc not refused ($CODE): $ERR"
+[[ ! -e "$R45/docs/work/demo-1.1" ]] || fail KT45 "main written"
+
+case_start  # KT46 a symlinked SKIP_DIR leaf does not block the fork
+R46="$SCRATCH/kt46"
+mkrepo "$R46"
+mv "$R46/.claude/kit-backup" "$SCRATCH/outside-46"
+ln -s "$SCRATCH/outside-46" "$R46/.claude/kit-backup"
+run_kt "$R46" fork demo-1.1
+[[ "$CODE" -eq 0 ]] || fail KT46 "symlinked kit-backup blocked the fork ($CODE): $ERR"
+
+case_start  # KT47 (pin) a .kit-snapshot that is a JSON array is refused
+R47="$SCRATCH/kt47"
+close_fixture "$R47"
+printf '[]\n' > "$R47/.claude/worktrees/demo-1.1/.claude/.kit-snapshot"
+run_kt "$R47" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"malformed .kit-snapshot"* ]] || fail KT47 "array snapshot not refused ($CODE): ${ERR:0:300}"
+[[ "$ERR" != *Traceback* ]] || fail KT47 "traceback"
+[[ ! -e "$R47/docs/work/demo-1.1" && "$(cat "$R47/docs/stories/demo/1.1.md")" == 'Status: Approved' ]] || fail KT47 "main written"
+
+case_start  # KT48 (pin) a .kit-snapshot whose `files` is not an object is refused
+R48="$SCRATCH/kt48"
+close_fixture "$R48"
+printf '{"files":[]}\n' > "$R48/.claude/worktrees/demo-1.1/.claude/.kit-snapshot"
+run_kt "$R48" close demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"malformed .kit-snapshot"* ]] || fail KT48 "array files not refused ($CODE): ${ERR:0:300}"
+[[ "$ERR" != *Traceback* ]] || fail KT48 "traceback"
+[[ ! -e "$R48/docs/work/demo-1.1" && "$(cat "$R48/docs/stories/demo/1.1.md")" == 'Status: Approved' ]] || fail KT48 "main written"
+
+case_start  # KT49 (pin) a committed symlinked docs/stories top is refused on fork
+R49="$SCRATCH/kt49"
+mkrepo "$R49"
+mkdir -p "$SCRATCH/outside-49"
+rm -r "$R49/docs/stories"
+ln -s "$SCRATCH/outside-49" "$R49/docs/stories"
+git -C "$R49" add -f docs/stories
+git -C "$R49" commit -q -m stories-link
+run_kt "$R49" fork demo-1.1
+[[ "$CODE" -eq 2 && "$ERR" == *"symlink in the kit: docs/stories"* ]] || fail KT49 "symlinked docs/stories not refused ($CODE): ${ERR:0:300}"
+no_fork "$R49" KT49
+
+case_start  # KT50 an unreadable track file is refused on close, nothing written
+R50="$SCRATCH/kt50"
+close_fixture "$R50"
+if [[ "$(id -u)" -ne 0 ]]; then
+    chmod 000 "$R50/.claude/worktrees/demo-1.1/docs/work/demo-1.1/research.md"
+    run_kt "$R50" close demo-1.1
+    chmod 644 "$R50/.claude/worktrees/demo-1.1/docs/work/demo-1.1/research.md"
+    [[ "$CODE" -eq 2 && "$ERR" == *"cannot read docs/work/demo-1.1/research.md"* ]] || fail KT50 "unreadable file not refused ($CODE): ${ERR:0:300}"
+    [[ "$ERR" != *Traceback* ]] || fail KT50 "traceback"
+    [[ ! -e "$R50/docs/work/demo-1.1" && "$(cat "$R50/docs/stories/demo/1.1.md")" == 'Status: Approved' ]] || fail KT50 "main written"
+    registered "$R50" || fail KT50 "worktree removed"
+fi
+
 if [[ "$FAILS" -gt 0 ]]; then
     echo "kit-track fixtures: $FAILS failure(s) over $CASES cases." >&2
     exit 1
