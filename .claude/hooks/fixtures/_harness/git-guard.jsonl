@@ -679,3 +679,17 @@
 {"id":"G22.101.2","verdict":"allow","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push -u origin feat/s1","reason":"loop record"}
 {"id":"G22.104.2","verdict":"allow","setup":"lpassetsff","cwd":"__FEAT_TREE__/docs/work","command":"git -C __FEAT_TREE__ push origin refs/heads/pr-assets","reason":"pr-assets"}
 {"id":"G22.109.3","verdict":"pass","setup":"lp","cwd":"__FEAT_TREE__/docs/work","command":"cd __FEAT_TREE__ && git fetch origin audit/x 2>&1 | tail -1"}
+{"id":"G22.124","verdict":"ask","setup":"lpassetsdrop","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.125","verdict":"ask","setup":"lpassetsforeign","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.126","verdict":"ask","setup":"lpassetspath","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.127","verdict":"allow","setup":"lpassetstwo","command":"git push origin refs/heads/pr-assets","reason":"pr-assets"}
+{"id":"G22.128","verdict":"deny","setup":"lpwtignored","command":"git -C __FEAT_TREE__ worktree add .claude/worktrees/x -b feat/x2 main","reason":"kit-track.py fork"}
+{"id":"G22.129","verdict":"ask","setup":"lpwttracked","command":"git -C __FEAT_TREE__ worktree add .claude/worktrees/x -b feat/x2 main","reason":"not a plain git call"}
+{"id":"G22.130","verdict":"deny","setup":"lpwtignored","command":"git worktree add -b feat/x2 .claude/worktrees/x main","reason":"kit-track.py fork"}
+{"id":"G22.131","verdict":"deny","setup":"lpwtignored","command":"git worktree add __FEAT_TREE__/.claude/worktrees/x -b feat/x2 main","reason":"kit-track.py fork"}
+{"id":"G22.132","verdict":"deny","setup":"lpwtignored","command":"git -C __FEAT_TREE__ worktree add -b feat/x2 .claude/worktrees/x main","reason":"kit-track.py fork"}
+{"id":"G22.133","verdict":"deny","setup":"lpwtignored","command":"true; git -C __FEAT_TREE__ worktree add .claude/worktrees/x -b feat/x2 main","reason":"kit-track.py fork"}
+{"id":"G22.134","verdict":"ask","setup":"lpassetsmsg","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.135","verdict":"ask","setup":"lpassetsmerge","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.136","verdict":"ask","setup":"lpassetssha","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}
+{"id":"G22.137","verdict":"ask","setup":"lpassetsbare","command":"git push origin refs/heads/pr-assets","reason":"pushes to a remote"}

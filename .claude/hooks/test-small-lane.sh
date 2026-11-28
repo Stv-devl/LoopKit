@@ -671,14 +671,35 @@ PY
         grep -Fq 'Next feature (topmost READY): feature x' <<<"$RUN_OUT"
 }
 
+# D23 (kit-drift-fixes D8): a project that ignores .claude/ without tracking its kit is refused before
+# the go, naming the kit-local fork; a tracked kit under the same ignore line is not.
+group_kitlocal() {
+    local repo B=(src/features/b/b.utils.ts src/features/b/b.utils.test.ts)
+    repo="$(make_fixture)"; cd "$repo" || return
+    printf '.claude/\n' >.gitignore
+    git_q commit -q -am 'ignore the kit'
+    dispatch b "${B[@]}"
+    expect kitlocal D23 "kit-local project: a bare worktree would hold no kit; fork with python3 .claude/scripts/kit-track.py fork small-b alone from the project root" 1
+
+    repo="$(make_fixture)"; cd "$repo" || return
+    mkdir -p .claude/hooks
+    printf 'x\n' >.claude/hooks/x
+    git_q add -f .claude/hooks/x
+    printf '.claude/\n' >.gitignore
+    git_q commit -q -am 'tracked kit'
+    dispatch b "${B[@]}"
+    expect kitlocal D23.2 "ok" 0
+}
+
 group_paths
 group_plan
 group_dispatch
 group_scope
 group_clear
+group_kitlocal
 
-if [[ "$CASES" -lt 92 ]]; then
-    fail harness floor "only $CASES case(s) ran, expected at least 92"
+if [[ "$CASES" -lt 94 ]]; then
+    fail harness floor "only $CASES case(s) ran, expected at least 94"
 fi
 
 if [[ "$FAILURES" -gt 0 ]]; then

@@ -31,6 +31,13 @@ refuse() {
 main_tree="$(small_main_tree)"
 cd "$main_tree"
 
+# A kit-local project (it ignores .claude/ and tracks no kit) cannot take the bare `git worktree add`:
+# refused here, before the go, with the fork that does work.
+if git check-ignore -q .claude/hooks/probe 2>/dev/null \
+    && [[ -z "$(git ls-tree -r --name-only HEAD -- .claude/hooks 2>/dev/null)" ]]; then
+    refuse "kit-local project: a bare worktree would hold no kit; fork with python3 .claude/scripts/kit-track.py fork small-$name alone from the project root"
+fi
+
 in_loop_slugs() {
     [[ -f docs/product/backlog.md ]] || return 0
     python3 -I -B - "$SMALL_DIR/../hooks/next-feature-on-clear.py" docs/product/backlog.md "$branch" <<'PY'

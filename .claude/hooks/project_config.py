@@ -119,28 +119,46 @@ def _server_roots(path, value):
 
 
 SERVER_DIR_SEQUENCE = ("app", "alembic", "supabase")
+SERVER_DIR_MARKERS = {"app": ("main.py", "__init__.py"), "alembic": ("env.py",), "supabase": ("config.toml",)}
+SERVER_SEARCH_SKIP = {"venv"}
 
 
 def _is_server_dir(path, name):
     if os.path.islink(path) or not os.path.isdir(path):
         return False
-    if name == "app":
-        return any(os.path.isfile(os.path.join(path, entry)) for entry in ("main.py", "__init__.py"))
-    return True
+    return any(os.path.isfile(os.path.join(path, entry)) for entry in SERVER_DIR_MARKERS[name])
+
+
+def _search_parents(project_dir, rel):
+    base = os.path.join(project_dir, rel)
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for name in names:
+        path = os.path.join(base, name)
+        if name in RESERVED or name in SERVER_SEARCH_SKIP or name.startswith(".") \
+                or os.path.islink(path) or not os.path.isdir(path):
+            continue
+        out.append(f"{rel}/{name}" if rel else name)
+    return out
 
 
 def detect_server_roots(project_dir):
-    """The `server_roots` /kit:init proposes: each addon server folder (`app` holding
-    `main.py` or `__init__.py`, `alembic`, `supabase`) at the root or one folder down, the
-    root's first, then the parents sorted, `app`, `alembic`, `supabase` within a parent.
-    Reserved and hidden parents and symlinks are never searched or proposed."""
+    """The `server_roots` /kit:init proposes: each addon server folder holding its marker
+    (`app`: `main.py` or `__init__.py`; `alembic`: `env.py`; `supabase`: `config.toml`) at the
+    root or up to two folders down, the root's first, then depth one, then depth two, parents
+    sorted, `app`, `alembic`, `supabase` within a parent. Reserved, hidden, `venv` and symlinked
+    folders are never searched or proposed."""
     found = [name for name in SERVER_DIR_SEQUENCE if _is_server_dir(os.path.join(project_dir, name), name)]
-    for parent in sorted(os.listdir(project_dir)):
-        base = os.path.join(project_dir, parent)
-        if parent in RESERVED or parent.startswith(".") or os.path.islink(base) or not os.path.isdir(base):
-            continue
-        found += [f"{parent}/{name}" for name in SERVER_DIR_SEQUENCE
-                  if _is_server_dir(os.path.join(base, name), name)]
+    level = _search_parents(project_dir, "")
+    for depth in range(2):
+        for parent in level:
+            found += [f"{parent}/{name}" for name in SERVER_DIR_SEQUENCE
+                      if _is_server_dir(os.path.join(project_dir, parent, name), name)]
+        if depth == 0:
+            level = [child for parent in level for child in _search_parents(project_dir, parent)]
     return found
 
 
@@ -459,10 +477,15 @@ SUPABASE_CLIENT = {"module": "lib/supabase", "own_path": "lib/supabase.ts"}
 
 
 def wire(project_dir, addon):
-    """Adds an addon's values to the project's file; idempotent. Returns the changed key names."""
+    """Adds an addon's values to the project's file; idempotent. Returns the changed key names.
+    A server root declared under a prefix (`backend/app`) is the project's own placement of that
+    kind: its bare name is then not added to `server_roots`, but `protected_dirs` still gains it
+    (the guard matches the last segment, so it is what protects `backend/app`)."""
     config = load_strict(project_dir)
     raw = document(config)
     changed = []
+    placed = {root.rsplit("/", 1)[1] for root in raw["server_roots"] if "/" in root}
+    kinds = [d for d in ADDON_DIRS[addon] if d not in placed]
     dirs = raw["protected_dirs"]
     missing = [d for d in ADDON_DIRS[addon] if d not in dirs]
     if missing:
@@ -475,7 +498,7 @@ def wire(project_dir, addon):
         client.update(SUPABASE_CLIENT)
         changed.append("data_client")
     roots = raw["server_roots"]
-    new_roots = [d for d in ADDON_DIRS[addon] if d not in roots]
+    new_roots = [d for d in kinds if d not in roots]
     if new_roots:
         raw["server_roots"] = roots + new_roots
         changed.append("server_roots")

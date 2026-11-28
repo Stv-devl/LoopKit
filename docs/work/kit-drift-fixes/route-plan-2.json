@@ -1,0 +1,8 @@
+{
+  "mode": "plan",
+  "pass": 2,
+  "findings": [
+    {"id": "QF8", "severity": "Minor", "claim": "the Files table still said G22.124-129 and 'D8 kit-local line' after the rewrite", "p1_class": "c", "kind": "demonstrated", "status": "new", "in_rewritten_section": true, "closure": "the Files table names G22.124-133 and the D8 refusal", "hook": null, "leg": "claude", "test_path": null},
+    {"id": "QF9", "severity": "Minor", "claim": "the D8 check placed before cd main_tree would judge the caller's cwd tree, not the main tree kit-track fork judges", "p1_class": null, "kind": "vigilance", "status": "new", "in_rewritten_section": true, "closure": null, "hook": null, "leg": "claude", "test_path": null}
+  ]
+}

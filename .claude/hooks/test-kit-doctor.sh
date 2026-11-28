@@ -52,6 +52,40 @@ done
 # DW6 (local-kit-tracks): the worktree-kit divergence names the supported kit-local fork.
 grep -A3 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" | grep -Fq 'kit-track.py fork' \
     || { echo 'DW6: worktree-kit divergence does not name kit-track.py fork' >&2; exit 1; }
+# DW7-DW8 (kit-drift-fixes D13) one remedy per ignore line: a whole-.claude line, with no tracked kit,
+# is worktree-kit's alone; a narrower line stays ignored-loop-paths'.
+printf '.claude/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+[[ "$(grep -c 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT")" -eq 1 ]] \
+    || { echo 'DW7: worktree-kit not reported once' >&2; exit 1; }
+grep -q 'ok          ignored-loop-paths' <<<"$WT_OUTPUT" && grep -Fq 'reported by worktree-kit' <<<"$WT_OUTPUT" \
+    || { echo 'DW7: ignored-loop-paths reports the whole-.claude line too' >&2; exit 1; }
+printf '.claude/agents/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  ignored-loop-paths' <<<"$WT_OUTPUT" && grep -q '.claude/agents' <<<"$WT_OUTPUT" \
+    || { echo 'DW8: a .claude/agents/ line is no longer reported' >&2; exit 1; }
+# DW10 (review round 1 F3): a negated line re-includes the path, so it is not an ignored probe.
+printf 'settings.json\n!.claude/settings.json\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          ignored-loop-paths' <<<"$WT_OUTPUT" \
+    || { echo 'DW10: a negated re-include is reported as an ignored path' >&2; exit 1; }
+# DW11 (F4a): worktree-kit owns the exact line it names, whatever its pattern: a lone .claude/hooks/ line is
+# reported by worktree-kit only.
+printf '.claude/hooks/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" \
+    || { echo 'DW11: worktree-kit does not report a lone .claude/hooks/ line' >&2; exit 1; }
+grep -q 'ok          ignored-loop-paths' <<<"$WT_OUTPUT" \
+    || { echo 'DW11: ignored-loop-paths reports the line worktree-kit owns' >&2; exit 1; }
+# DW12 (F4b): with `.claude/*` then `.claude/hooks/`, the line worktree-kit names is its own and every other
+# ignored folder stays ignored-loop-paths'.
+printf '.claude/*\n.claude/hooks/\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+IGNORED_ROW="$(grep -A8 'DIVERGENCE  ignored-loop-paths' <<<"$WT_OUTPUT" || true)"
+grep -Fq '.claude/rules/' <<<"$IGNORED_ROW" \
+    || { echo 'DW12: .claude/rules/ is reported nowhere' >&2; exit 1; }
+! grep -Fq '.claude/hooks/' <<<"$IGNORED_ROW" \
+    || { echo 'DW12: .claude/hooks/ is reported twice' >&2; exit 1; }
 printf '.claude/worktrees/\n' > "$SCRATCH/.gitignore"
 WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" || { echo 'DW2: .claude/worktrees/ alone must be ok' >&2; exit 1; }
@@ -63,9 +97,26 @@ git -C "$SCRATCH" -c user.email=fixture@loopkit.invalid -c user.name=Fixture com
 printf '.claude/\n' > "$SCRATCH/.gitignore"
 WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
 grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" || { echo 'DW5: a tracked .claude/hooks must be ok under an ignore rule' >&2; exit 1; }
+# DW9 (kit-drift-fixes D13) with a tracked kit worktree-kit is ok, so ignored-loop-paths keeps the line:
+# reported once, never zero times.
+grep -q 'DIVERGENCE  ignored-loop-paths' <<<"$WT_OUTPUT" \
+    || { echo 'DW9: a whole-.claude line over a tracked kit is reported nowhere' >&2; exit 1; }
 git -C "$SCRATCH" update-ref -d HEAD
 git -C "$SCRATCH" rm -q --cached -f .claude/hooks/x
 rm "$SCRATCH/.claude/hooks/x"
+# DW13 (review round 2 N1): worktree-kit's remedy covers .claude/ only, so a `*` line it owns still leaves
+# docs/work/ to ignored-loop-paths.
+printf '*\n!*/\n!src/**\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'DIVERGENCE  worktree-kit' <<<"$WT_OUTPUT" \
+    || { echo 'DW13: worktree-kit does not report the `*` line' >&2; exit 1; }
+grep -A8 'DIVERGENCE  ignored-loop-paths' <<<"$WT_OUTPUT" | grep -Fq 'docs/work/' \
+    || { echo 'DW13: docs/work/ under a `*` line is reported nowhere' >&2; exit 1; }
+# DW14 (N2): a `!` line that re-includes the kit probe leaves worktree-kit ok.
+printf '*\n!*/\n!.claude/**\n' > "$SCRATCH/.gitignore"
+WT_OUTPUT="$(python3 "$SCRATCH/.claude/hooks/kit-doctor.py" || true)"
+grep -q 'ok          worktree-kit' <<<"$WT_OUTPUT" \
+    || { echo 'DW14: a re-included .claude/** is reported as worktree-kit' >&2; exit 1; }
 printf 'docs/work/*/handoff.md\n' > "$SCRATCH/.gitignore"
 
 mkdir -p "$SCRATCH/.claude/skills/templates" "$SCRATCH/.claude/skills/patterns"
@@ -341,6 +392,17 @@ printf '# Arch\n\n## Backend\n\nServer roots: `backend/app`.\n\n## Router\n' > "
 grep -Eq 'ok +server-roots' <<<"$(kd_roots '["backend/app"]')" || { echo 'KD28: backend/app pair not ok' >&2; exit 1; }
 printf '# Arch\n\n## Backend\n\nServer roots: `app`.\n\n## Router\n' > "$KD_ARCH"
 grep -Eq 'DIVERGENCE +server-roots' <<<"$(kd_roots '["backend/app"]')" || { echo 'KD28: backend/app against app not red' >&2; exit 1; }
+# KD29-KD30 (kit-drift-fixes D5) a declared root that is not on disk is reported, even when the rule
+# line agrees with it; once the folder exists it is not.
+printf '# Arch\n\n## Backend\n\nServer roots: `backend/app`.\n\n## Router\n' > "$KD_ARCH"
+KD_OUT="$(kd_roots '["backend/app"]')"
+grep -Eq 'MISSING +server-roots' <<<"$KD_OUT" && grep -Fq 'backend/app: not a directory' <<<"$KD_OUT" \
+    || { echo 'KD29: a declared root absent on disk is not reported' >&2; exit 1; }
+mkdir -p "$SCRATCH/backend/app"
+if grep -Fq 'backend/app: not a directory' <<<"$(kd_roots '["backend/app"]')"; then
+    echo 'KD30: a present root reported missing' >&2; exit 1
+fi
+rm -r "$SCRATCH/backend"
 rm "$KD_ARCH" "$SCRATCH/.claude/project.json"
 
 # kp_tree <dir> <installed|source>: a tmp root holding the kit's own copies of the prompts the

@@ -2186,6 +2186,35 @@ guarded_block_check() {
         || deny "auto mode: the PR body must carry the hook's Guarded files touched block, byte for byte: run \`python3 .claude/hooks/loop-record.py --guarded-block\` and paste its output into docs/work/<slug>/pr-body.md unchanged."
 }
 
+# Every commit the pr-assets push would add is this pass's own add commit, as kit-pr-assets.py commit
+# makes it: one parent (a parentless root only while the remote has no pr-assets), the message
+# `chore(pr-assets): add <branch> <sha7>`, and only added paths under `<branch>/`. A drop commit the
+# user declined, or another pass's commit, fails it: the push falls through to the asks.
+assets_range_ok() {
+    local tree="$1" branch="$2" remote="$3" range=refs/heads/pr-assets line msg sha7 status path
+    local -a f
+    [[ -z "$remote" ]] || range="$remote..refs/heads/pr-assets"
+    local commits
+    commits="$(git -C "$tree" rev-list --parents "$range" 2>/dev/null)" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r -a f <<< "$line"
+        if [[ "${#f[@]}" -eq 1 ]]; then
+            [[ -z "$remote" ]] || return 1
+        elif [[ "${#f[@]}" -ne 2 ]]; then
+            return 1
+        fi
+        msg="$(git -C "$tree" show -s --format=%B "${f[0]}" 2>/dev/null)" || return 1
+        [[ "$msg" == "chore(pr-assets): add $branch "* ]] || return 1
+        sha7="${msg#"chore(pr-assets): add $branch "}"
+        [[ "$sha7" =~ ^[0-9a-f]{7}$ ]] || return 1
+        while IFS=$'\t' read -r status path; do
+            [[ -n "$status" ]] || continue
+            [[ "$status" == A && "$path" == "$branch/"* ]] || return 1
+        done < <(git -C "$tree" diff-tree --root --no-commit-id -r --name-status "${f[0]}" 2>/dev/null)
+    done <<< "$commits"
+}
+
 record_allow() {
     local LC_ALL=C text="$COMMAND" tree rec head fields version branch base repo barrier base_ok slug
     local b="" ba="" r="" rslug cap rc released cdir="" assets="" remote_sha
@@ -2251,14 +2280,18 @@ record_allow() {
     remote_sha="$(GIT_TERMINAL_PROMPT=0 "$cap" -k 1 3 git -C "$tree" ls-remote --exit-code origin "refs/heads/$b" \
         </dev/null 2>/dev/null)" || rc=$?
     if [[ -n "$assets" ]]; then
-        # pr-assets: created, or fast-forwarded from the remote tip the local branch already contains.
+        # pr-assets: created, or fast-forwarded from the remote tip the local branch already contains,
+        # and carrying only this pass's own add commits.
         if [[ "$rc" -eq 0 ]]; then
             remote_sha="${remote_sha%%[[:space:]]*}"
             [[ "$remote_sha" =~ ^[0-9a-f]{40,64}$ ]] || return 0
             git -C "$tree" merge-base --is-ancestor "$remote_sha" refs/heads/pr-assets 2>/dev/null || return 0
-        elif [[ "$rc" -ne 2 ]]; then
+        elif [[ "$rc" -eq 2 ]]; then
+            remote_sha=""
+        else
             return 0
         fi
+        assets_range_ok "$tree" "$branch" "$remote_sha" || return 0
         decide allow "the pass's PR screenshots on pr-assets (created or fast-forwarded), from the loop record of the user's plan-gate go, with the server barrier on the default branch"
     fi
     [[ "$rc" -eq 2 ]] || return 0
@@ -2270,15 +2303,24 @@ record_allow
 # kit at all: no hooks, no scripts, no rules (EcoCrew agent-ia-4.4). Refuse it here, naming the line and
 # the supported kit-local fork (kit-track.py, which copies the kit; its own git calls never reach this hook).
 worktree_kit_check() {
-    local tree line
-    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?([^[:space:]]*/)?\.claude/worktrees/ ]] || return 0
+    local tree line dir
+    # `git -C <dir> worktree add` is the same fork, judged on the tree <dir> names.
+    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+(-C[[:space:]]+([^[:space:]\;\&\|]+)[[:space:]]+)?worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?([^[:space:]]*/)?\.claude/worktrees/ ]] || return 0
+    dir="${BASH_REMATCH[3]:-$BASE_DIR}"
+    [[ "$dir" == /* ]] || dir="$BASE_DIR/$dir"
     # Only the track fork (a branch created with -b/-B) needs the kit; a plain checkout of a base does not.
-    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?-[bB]([[:space:]]|$) ]] || return 0
-    tree="$(git -C "$BASE_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
-    git -C "$tree" check-ignore -q .claude/hooks/probe 2>/dev/null || return 0
+    [[ "$NORM" =~ (^|[[:space:]\;\&\|])git[[:space:]]+(-C[[:space:]]+[^[:space:]\;\&\|]+[[:space:]]+)?worktree[[:space:]]+add[[:space:]]([^\;\&\|]*[[:space:]])?-[bB]([[:space:]]|$) ]] || return 0
+    local git=(git -c core.fsmonitor=false) common own
+    # Another repository's config must not run before the foreign-repo ask: only the project's own
+    # repository (or a worktree of it, which shares its common dir) is read here.
+    common="$("${git[@]}" -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+    own="$("${git[@]}" -C "$BASE_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+    [[ "$common" == "$own" ]] || return 0
+    tree="$("${git[@]}" -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || return 0
+    "${git[@]}" -C "$tree" check-ignore -q .claude/hooks/probe 2>/dev/null || return 0
     # A tracked kit is carried by the worktree whatever ignore rule also matches the probe.
-    [[ -z "$(git -C "$tree" ls-tree -r --name-only HEAD -- .claude/hooks 2>/dev/null)" ]] || return 0
-    line="$(git -C "$tree" check-ignore -v .claude/hooks/probe 2>/dev/null | cut -f1)"
+    [[ -z "$("${git[@]}" -C "$tree" ls-tree -r --name-only HEAD -- .claude/hooks 2>/dev/null)" ]] || return 0
+    line="$("${git[@]}" -C "$tree" check-ignore -v .claude/hooks/probe 2>/dev/null | cut -f1)"
     deny "BLOCKED: this project's .gitignore ignores .claude/ (${line:-a .gitignore rule}), so a bare worktree under .claude/worktrees/ would hold no kit: no hooks, no scripts, no rules. Kit-local fork: run python3 .claude/scripts/kit-track.py fork <slug> alone from the project root (it creates the worktree and copies the kit); or version .claude/ (keep only .claude/worktrees/ and the session files ignored), commit, then fork. (.claude/guides/10-worktrees.md, \"Kit-local projects\")"
 }
 worktree_kit_check

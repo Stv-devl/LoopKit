@@ -151,6 +151,16 @@ mkdir -p "$IW_TARGET"
 printf '.claude/worktrees/\n' >"$IW_TARGET/.gitignore"
 IW_OUT="$("$ROOT/install.sh" "$IW_TARGET" --no-ci 2>&1)"
 if grep -Fq 'ignore .claude/ lui-même' <<<"$IW_OUT"; then echo 'IW2: warned on .claude/worktrees/ alone' >&2; exit 1; fi
+# IW4-IW6 (kit-drift-fixes D12): the glob spellings ignore the kit as well and are warned the same way.
+for spelling in '.claude/*' '/.claude/**' '**/.claude/'; do
+    IW_TARGET="$SCRATCH/iw-glob"
+    mkdir -p "$IW_TARGET"
+    printf 'node_modules/\n%s\n' "$spelling" >"$IW_TARGET/.gitignore"
+    IW_OUT="$("$ROOT/install.sh" "$IW_TARGET" --no-ci 2>&1)"
+    grep -Fq 'ignore .claude/ lui-même' <<<"$IW_OUT" \
+        || { echo "IW4: no warning for '$spelling' in .gitignore" >&2; exit 1; }
+    rm -r "$IW_TARGET"
+done
 
 # I1 key and credential files are ignored on a fresh install, counted in the
 # closing line, and back-filled once into an older kit's block.
@@ -793,6 +803,18 @@ jq -e '.server_roots == ["app","alembic"]' "$IN29/.claude/project.json" >/dev/nu
 "${WIRE[@]}" supabase >/dev/null 2>&1
 "${WIRE[@]}" fastapi >/dev/null 2>&1
 jq -e '.server_roots == ["app","alembic","supabase"]' "$IN29/.claude/project.json" >/dev/null
+# IN73 (kit-drift-fixes D3, amended in review round 1): prefixed roots are the project's own; re-wiring
+# fastapi adds no bare `app`/`alembic` to server_roots, but protected_dirs still gains them (it is what
+# makes `rm -rf backend/app` a protected-directory deny).
+IN73="$SCRATCH/in73"
+mkdir -p "$IN73/.claude"
+jq '.server_roots = ["backend/app","backend/alembic"] | .protected_dirs -= ["app","alembic"]' \
+    "$ROOT/.claude/project.json" >"$IN73/.claude/project.json"
+cp "$IN73/.claude/project.json" "$SCRATCH/in73-before.json"
+python3 -I -B "$ROOT/.claude/hooks/project_config.py" wire "$IN73" fastapi >/dev/null 2>&1
+jq -e --slurpfile b "$SCRATCH/in73-before.json" \
+    '.server_roots == $b[0].server_roots and (.protected_dirs | index("app") != null and index("alembic") != null)' "$IN73/.claude/project.json" >/dev/null \
+    || { echo 'IN73: wire fastapi changed server_roots on prefixed roots, or left app/alembic out of protected_dirs' >&2; exit 1; }
 
 # IN41 (review 1, F1, re-decided on kit-boundary): a target whose reader carries the previous api
 # number is migrated by the kit's reader and gets the current one; nothing is held back.
@@ -1077,6 +1099,15 @@ cmp -s "$IN70/.claude/overlays/commands/loop/ship.md" "$SCRATCH/in71-overlay.md"
 if jq -e '[.permissions.allow[] | select(contains("kit-lint"))] | length > 0' \
     "$IN70/.claude/settings.json" >/dev/null; then
     fail_in 'IN72: a target settings.json allows kit-lint'
+fi
+# IN74 (kit-drift-fixes D6): /kit:init's detect-server-roots runs without a prompt in a target, on its
+# exact read-only form only.
+jq -e '.permissions.allow | index("Bash(python3 -I .claude/hooks/project_config.py detect-server-roots .)") != null' \
+    "$IN70/.claude/settings.json" >/dev/null \
+    || fail_in 'IN74: a target settings.json lacks the exact detect-server-roots allow'
+if jq -e '[.permissions.allow[] | select(contains("project_config.py") and endswith("*)"))] | length > 0' \
+    "$IN70/.claude/settings.json" >/dev/null; then
+    fail_in 'IN74: a target settings.json allows a wider project_config.py form'
 fi
 
 echo 'install fixtures: green.'

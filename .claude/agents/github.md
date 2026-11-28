@@ -146,9 +146,12 @@ never write it); report the PR URL the command prints.
 Run them in the bare exact form from the project root (or the track's worktree root),
 never prefixed by a `cd`: the session cwd stays at the project root for every command
 you run; another tree is `git -C <tree> …`, a subfolder tool `pnpm --dir <sub> …`; if
-you start in a subfolder (a `cd` the caller left behind), use `git -C <root>` rather
-than a `cd <root> && …` before git, which the hook cannot place. In `auto`, any form
-the hook does not allow is a blocked stop: report it, never retry around it.
+you start in a subfolder (a `cd` the caller left behind), the pass's push and the
+pr-assets push take `git -C <absolute tree> …` naming this session's own tree (a relative
+`-C` or another tree falls through to the asks); the PR command runs only bare. After a
+`cd <project root> &&`, read-only git and `git fetch` (`<remote> [branch]`) pass, but a push
+asks and `git add` is denied. In `auto`, any form the hook does not allow is a blocked
+stop: report it, never retry around it.
 
 Anything else that **touches GitHub** — `gh pr merge`, `gh pr edit`, a force-push
 (`--force`, `--force-with-lease`), the `gh issue` commands, `gh … comment`, any other push —

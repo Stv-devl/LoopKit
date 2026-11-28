@@ -261,8 +261,9 @@ dimension.
    - `fix-batch`: the `blocking` findings are the batch (`orchestrate.md` Phase 5).
    - `clear`: the gate clears. A Minor never starts a fix batch.
 
-   Whatever `next` is, rewrite the handoff state line for this round (`review_status`, the
-   round and its verdict: `/loop:orchestrate`, "Automatic checkpoints") before the next step.
+   Whatever `next` is, rewrite the handoff state line for this round (`review_status` in the
+   frontmatter, the round and its verdict on the `## In progress` `Next:` line:
+   `/loop:orchestrate`, "Automatic checkpoints") before the next step.
    The skeleton below stays at column 0 so the contract tests can read it.
 
 Skeleton (accepted as written by `kit-gate-route.py route`, a round-1 file with one complete finding; copy it and change the values):

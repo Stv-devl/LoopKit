@@ -384,7 +384,8 @@ RETIRED_ALLOWS='["Bash(pnpm build *)", "Bash(pnpm test:run *)", "Bash(pnpm test:
 PROMPT_ALLOWS='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-attempts.py *)", "Bash(python3 .claude/hooks/kit-health.py *)",
   "Bash(python3 .claude/hooks/kit-doctor.py)",
-  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(.claude/scripts/small-dispatch-check.sh *)",
+  "Bash(python3 .claude/hooks/kit-doctor.py *)", "Bash(python3 -I .claude/hooks/project_config.py detect-server-roots .)",
+  "Bash(.claude/scripts/small-dispatch-check.sh *)",
   "Bash(.claude/scripts/small-paths.sh *)", "Bash(.claude/scripts/small-plan.sh *)",
   "Bash(.claude/scripts/small-scope.sh *)", "Bash(python3 .claude/hooks/loop-record.py --clear)", "Bash(python3 .claude/hooks/loop-record.py --block)",
   "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
@@ -952,7 +953,8 @@ elif [[ "$GITIGNORE_FILLED" -gt 0 ]]; then
 fi
 # Un projet qui ignore `.claude/` entier n'a aucun kit dans une worktree nue : /loop:tracks forke
 # alors par kit-track.py, qui y copie le kit. Avertir seulement — le .gitignore appartient au projet.
-if [[ -f "$TARGET/.gitignore" ]] && grep -qE '^[[:space:]]*/?\.claude/?[[:space:]]*$' "$TARGET/.gitignore"; then
+if [[ -f "$TARGET/.gitignore" ]] \
+    && grep -qE '^[[:space:]]*(/|\*\*/)?\.claude(/|/\*|/\*\*)?[[:space:]]*$' "$TARGET/.gitignore"; then
     echo "  ATTENTION : le .gitignore ignore .claude/ lui-même. Un git worktree add nu n'aurait ni hooks,"
     echo "  ni scripts, ni règles : il est refusé. Mode kit local : chaque piste se forke par"
     echo "  python3 .claude/scripts/kit-track.py fork <slug> (copie le kit, .claude/guides/10-worktrees.md)."
