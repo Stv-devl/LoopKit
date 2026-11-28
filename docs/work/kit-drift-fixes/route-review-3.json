@@ -1,0 +1,32 @@
+{
+  "mode": "review",
+  "round": 3,
+  "findings": [
+    {
+      "id": "M1",
+      "severity": "Minor",
+      "dimension": "correctness",
+      "class": "maintainability",
+      "path": ".claude/hooks/kit-doctor.py",
+      "line": 738,
+      "problem": "kit_ignore_state docstring, .claude/commands/kit/doctor.md:64 and plan step 8 still say ignored-loop-paths leaves the whole worktree-kit line to it; since N1 only the .claude/ probes under that line are handed over",
+      "scenario": "a * line yields worktree-kit DIVERGENCE plus ignored-loop-paths for docs/work/; a maintainer reading the docstring 'fixes' the double report and reintroduces N1",
+      "regression": true,
+      "status": "new",
+      "closure": "the docstring and doctor.md say only probes under .claude/ are left to worktree-kit, other folders on that line stay under ignored-loop-paths"
+    },
+    {
+      "id": "M2",
+      "severity": "Minor",
+      "dimension": "tests",
+      "class": "maintainability",
+      "path": ".claude/hooks/test-hooks.sh",
+      "line": 4795,
+      "problem": "the lp_assets_setup header comment names only lpassets, lpassetsblk, lpassetsff, lpassetsdiv; lpassetsbare and seven other variants are undocumented",
+      "scenario": "a future case author must rebuild each variant's state from the case arms",
+      "regression": false,
+      "status": "new",
+      "closure": "the header names each lpassets* variant with its state, or points to the case arms as the only source"
+    }
+  ]
+}

@@ -56,6 +56,7 @@ Worktree/branch: <path + branch, or main tree>
 
 ## In progress
 - <exact current task; RED/GREEN state if relevant>
+- Next: <the next action; after a review round, the round and its verdict>
 
 ## Remaining
 1. <next concrete action>

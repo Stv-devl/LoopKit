@@ -67,12 +67,20 @@ cwk_cfg_reason() {
     fi
 }
 
+# A degraded config asks where a hook would have passed. In auto mode nobody answers an ask, so when the
+# loop record proves auto on an absolute CLAUDE_PROJECT_DIR the ask is a blocked stop instead. Known limit:
+# auto is read from CLAUDE_PROJECT_DIR only, not from the command's own tree as enforce's ask() does;
+# anything unproven keeps the raw ask.
 __cwk_exit() {
-    local code=$?
+    local code=$? decision=ask reason="$CWK_CFG_REASON"
     if [[ "$code" == 0 && "$CWK_DEGRADED_ASK" == 1 && "$__CWK_DECIDED" != 1 \
           && "${CWK_CFG_DEGRADED:-0}" == 1 ]]; then
-        jq -n --arg r "$CWK_CFG_REASON" '{hookSpecificOutput: {hookEventName: "PreToolUse",
-            permissionDecision: "ask", permissionDecisionReason: $r}}' 2>/dev/null \
+        if [[ "${CLAUDE_PROJECT_DIR:-}" == /* ]] && declare -F cwk_auto_mode >/dev/null 2>&1 \
+              && cwk_auto_mode "$CLAUDE_PROJECT_DIR" >/dev/null 2>&1; then
+            decision=deny reason="auto mode — blocked stop: $CWK_CFG_REASON"
+        fi
+        jq -n --arg d "$decision" --arg r "$reason" '{hookSpecificOutput: {hookEventName: "PreToolUse",
+            permissionDecision: $d, permissionDecisionReason: $r}}' 2>/dev/null \
             || printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"the project config could not be read"}}\n'
     fi
     if declare -F __cwk_record >/dev/null 2>&1; then

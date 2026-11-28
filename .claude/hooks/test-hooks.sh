@@ -1126,6 +1126,45 @@ run_git_add_long_reason_case() {
     rm -r "$tmp"
 }
 
+# G22.128w: `git -C <foreign repo> worktree add .claude/worktrees/x -b y` from the project asks as a
+# foreign repo and runs nothing of that repo's config: its core.fsmonitor program never starts.
+run_git_wt_foreign_fsmonitor_case() {
+    local tmp proj foreign marker input out code verdict
+    tmp="$(mktemp -d)"
+    proj="$tmp/proj"
+    foreign="$tmp/foreign"
+    marker="$tmp/fsmonitor-ran"
+    git init -q -b main "$proj"
+    git -C "$proj" config user.email fixture@loopkit.invalid
+    git -C "$proj" config user.name Fixture
+    seed_project "$proj"
+    git -C "$proj" add .claude/project.json
+    git -C "$proj" commit -q -m seed
+    git init -q -b main "$foreign"
+    git -C "$foreign" config user.email fixture@loopkit.invalid
+    git -C "$foreign" config user.name Fixture
+    printf '.claude/\n' >"$foreign/.gitignore"
+    printf 'x\n' >"$foreign/x"
+    git -C "$foreign" add .gitignore x
+    git -C "$foreign" commit -q -m seed
+    printf '#!/bin/sh\ntouch "%s"\n' "$marker" >"$tmp/fsmonitor.sh"
+    chmod +x "$tmp/fsmonitor.sh"
+    git -C "$foreign" config core.fsmonitor "$tmp/fsmonitor.sh"
+    input="$(jq -cn --arg command "git -C $foreign worktree add .claude/worktrees/x -b y" --arg cwd "$proj" \
+        '{tool_name: "Bash", tool_input: {command: $command}, cwd: $cwd}')"
+    CASES=$((CASES + 1))
+    set +e
+    out="$(cd "$proj" && printf '%s' "$input" | CLAUDE_PROJECT_DIR="$proj" CWK_HOOK_TIMING=0 CWK_HEALTH_LOG=0 "$HOOKS_DIR/enforce-git-workflow.sh" 2>/dev/null)"
+    code=$?
+    set -e
+    verdict="$(semantic_verdict "$code" <(printf '%s' "$out"))"
+    [[ "$verdict" == ask ]] \
+        || fail enforce-git-workflow.sh G22.128w "expected the foreign-repo ask, got $verdict '${out:0:160}'"
+    [[ ! -e "$marker" ]] \
+        || fail enforce-git-workflow.sh G22.128w "the foreign repo's core.fsmonitor program ran"
+    rm -r "$tmp"
+}
+
 # Fills <dir> with a git dir in bare layout (core.bare=false, core.worktree=.) whose
 # config runs `touch <marker>` through core.fsmonitor or a filter's clean command.
 make_untrusted_repo() {
@@ -2001,6 +2040,14 @@ run_project_values_step3_cases() {
     out="$(pd_probe "$p" 'rm -rf frontend')"
     pv_expect PV5 "${out%%$'\n'*}" "$out" "" "Cannot delete protected directory"
 
+    p="$tmp/pv5w"
+    pv_project "$p" '.server_roots = ["backend/app","backend/alembic"] | .protected_dirs -= ["app","alembic"]'
+    mkdir -p "$p/backend/app"
+    out="$(pd_probe "$p" 'rm -rf backend/app')"
+    pv_expect PV5w "${out%%$'\n'*}" "$out" "" "Cannot delete protected directory"
+    python3 -I -B "$HOOKS_DIR/project_config.py" wire "$p" fastapi >/dev/null 2>&1
+    pv_expect PV5w deny "$(pd_probe "$p" 'rm -rf backend/app')" "Cannot delete protected directory"
+
     p="$tmp/pv6"
     pv_project "$p" '.env_template_suffixes = ["dist"]'
     printf 'A=1\n' >"$p/.env.dist"; printf 'A=1\n' >"$p/.env.example"
@@ -2388,16 +2435,17 @@ run_detect_server_roots_cases() {
     tmp="$(mktemp -d)"
 
     p="$tmp/sr1"; mkdir -p "$p/backend/app" "$p/backend/alembic"; : >"$p/backend/app/main.py"
+    : >"$p/backend/alembic/env.py"
     sr_detect_expect SR1 "$p" '["backend/app","backend/alembic"]'
 
-    p="$tmp/sr2"; mkdir -p "$p/app" "$p/alembic"; : >"$p/app/__init__.py"
+    p="$tmp/sr2"; mkdir -p "$p/app" "$p/alembic"; : >"$p/app/__init__.py"; : >"$p/alembic/env.py"
     sr_detect_expect SR2 "$p" '["app","alembic"]'
 
     p="$tmp/sr3"; mkdir -p "$p/frontend/app" "$p/node_modules/app"
     : >"$p/frontend/app/page.tsx"; : >"$p/node_modules/app/main.py"
     sr_detect_expect SR3 "$p" '[]'
 
-    p="$tmp/sr4"; mkdir -p "$p/supabase"
+    p="$tmp/sr4"; mkdir -p "$p/supabase"; : >"$p/supabase/config.toml"
     sr_detect_expect SR4 "$p" '["supabase"]'
 
     p="$tmp/sr5"; mkdir -p "$p/.hidden/app"; : >"$p/.hidden/app/main.py"
@@ -2408,12 +2456,45 @@ run_detect_server_roots_cases() {
     sr_detect_expect SR6 "$p" '[]'
 
     p="$tmp/sr8"; mkdir -p "$p/app" "$p/zz/alembic" "$p/aa/app" "$p/aa/supabase"
-    : >"$p/app/__init__.py"; : >"$p/aa/app/main.py"
+    : >"$p/app/__init__.py"; : >"$p/aa/app/main.py"; : >"$p/zz/alembic/env.py"; : >"$p/aa/supabase/config.toml"
     sr_detect_expect SR8 "$p" '["app","aa/app","aa/supabase","zz/alembic"]'
 
     p="$tmp/sr9"; mkdir -p "$p"
-    for letter in l k j i h g f e d c b a; do mkdir -p "$p/$letter/alembic"; done
+    for letter in l k j i h g f e d c b a; do mkdir -p "$p/$letter/alembic"; : >"$p/$letter/alembic/env.py"; done
     sr_detect_expect SR9 "$p" '["a/alembic","b/alembic","c/alembic","d/alembic","e/alembic","f/alembic","g/alembic","h/alembic","i/alembic","j/alembic","k/alembic","l/alembic"]'
+
+    # SR10-SR14 (kit-drift-fixes D2, D4): two folder levels down, depth by depth; alembic and supabase
+    # need their markers; reserved, hidden, venv and deeper folders are not walked.
+    p="$tmp/sr10"; mkdir -p "$p/services/api/app" "$p/backend/app"
+    : >"$p/services/api/app/main.py"; : >"$p/backend/app/main.py"
+    sr_detect_expect SR10 "$p" '["backend/app","services/api/app"]'
+
+    p="$tmp/sr11"; mkdir -p "$p/supabase" "$p/backend/supabase"
+    sr_detect_expect SR11 "$p" '[]'
+
+    p="$tmp/sr12"; mkdir -p "$p/alembic" "$p/backend/alembic"
+    sr_detect_expect SR12 "$p" '[]'
+
+    p="$tmp/sr13"
+    mkdir -p "$p/node_modules/x/app" "$p/.venv/x/app" "$p/venv/x/app" "$p/.hidden/x/app" "$p/svc" "$tmp/sr13-real/app"
+    : >"$p/node_modules/x/app/main.py"; : >"$p/.venv/x/app/main.py"; : >"$p/venv/x/app/main.py"
+    : >"$p/.hidden/x/app/main.py"; : >"$tmp/sr13-real/app/main.py"
+    ln -s "$tmp/sr13-real" "$p/svc/api"
+    sr_detect_expect SR13 "$p" '[]'
+
+    p="$tmp/sr14"; mkdir -p "$p/a/b/c/app"; : >"$p/a/b/c/app/main.py"
+    sr_detect_expect SR14 "$p" '[]'
+
+    # SR15 (review round 1 F2): an unreadable folder at depth one is skipped, the other roots still print.
+    # A root user reads any folder, so the case cannot fail there and is skipped.
+    if [[ "$(id -u)" -eq 0 ]]; then
+        printf 'SR15 skipped: running as root, chmod 000 does not hide a folder\n' >&2
+    else
+        p="$tmp/sr15"; mkdir -p "$p/backend/app" "$p/data/postgres"; : >"$p/backend/app/main.py"
+        chmod 000 "$p/data"
+        sr_detect_expect SR15 "$p" '["backend/app"]'
+        chmod 755 "$p/data"
+    fi
 
     CASES=$((CASES + 1))
     set +e
@@ -4714,17 +4795,57 @@ run_kit_prompts_step4_cases() {
 # lp_assets_setup <fixture repo> <variant>: a local refs/heads/pr-assets (the kit-pr-assets.py commit):
 # lpassets / lpassetsblk with no remote pr-assets, lpassetsff one commit ahead of origin's, lpassetsdiv
 # unrelated to origin's.
+# One pr-assets commit as kit-pr-assets.py makes it: <parent> is a sha or "-" (a root), each path is
+# added with a stub image, a path prefixed "-" is removed. Prints the commit sha.
+lp_assets_commit() {
+    local t="$1" parent="$2" msg="$3" idx blob tree p
+    shift 3
+    idx="$t/.assets-index"
+    rm -f "$idx"
+    [[ "$parent" == - ]] || GIT_INDEX_FILE="$idx" git -C "$t" read-tree "$parent"
+    blob="$(printf 'png\n' | git -C "$t" hash-object -w --stdin)"
+    for p in "$@"; do
+        if [[ "$p" == -* ]]; then
+            GIT_INDEX_FILE="$idx" git -C "$t" update-index --force-remove "${p#-}"
+        else
+            GIT_INDEX_FILE="$idx" git -C "$t" update-index --add --cacheinfo "100644,$blob,$p"
+        fi
+    done
+    tree="$(GIT_INDEX_FILE="$idx" git -C "$t" write-tree)"
+    rm -f "$idx"
+    if [[ "$parent" == - ]]; then
+        git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -m "$msg"
+    else
+        git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -p "$parent" -m "$msg"
+    fi
+}
+
 lp_assets_setup() {
-    local t="$1" tree c1 c2
-    tree="$(git -C "$t" mktree </dev/null)"
-    c1="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -m shots1)"
+    local t="$1" c1 c2 c3 shot1=feat/s1/abc1234/a-1-light-desktop.png shot2=feat/s1/def5678/a-1-light-desktop.png
+    c1="$(lp_assets_commit "$t" - 'chore(pr-assets): add feat/s1 abc1234' "$shot1")"
     case "$2" in
-        lpassetsff)
-            git -C "$t" push -q origin "$c1:refs/heads/pr-assets" 2>/dev/null
-            c2="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -p "$c1" -m shots2)" ;;
-        lpassetsdiv)
-            git -C "$t" push -q origin "$c1:refs/heads/pr-assets" 2>/dev/null
-            c2="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree "$tree" -m other)" ;;
+        lpassetsff | lpassetsdiv | lpassetsdrop | lpassetsforeign | lpassetspath | lpassetstwo | lpassetsmsg | lpassetsbare | lpassetssha | lpassetsmerge)
+            git -C "$t" push -q origin "$c1:refs/heads/pr-assets" 2>/dev/null ;;
+    esac
+    case "$2" in
+        lpassetsmsg) c2="$(lp_assets_commit "$t" "$c1" 'wip' "$shot2")" ;;
+        lpassetsbare) c2="$(lp_assets_commit "$t" "$c1" 'def5678' "$shot2")" ;;
+        lpassetssha) c2="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/s1 notahex' "$shot2")" ;;
+        lpassetsmerge)
+            c3="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/s1 def5678' "$shot2")"
+            c2="$(lp_assets_commit "$t" "$c3" 'chore(pr-assets): add feat/s1 0a1b2c3' feat/s1/0a1b2c3/a-1-light-desktop.png)"
+            c2="$(git -C "$t" -c user.email=fixture@loopkit.invalid -c user.name=Fixture commit-tree \
+                "$(git -C "$t" rev-parse "$c2^{tree}")" -p "$c3" -p "$c1" -m 'chore(pr-assets): add feat/s1 0a1b2c3')" ;;
+        lpassetsff) c2="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/s1 def5678' "$shot2")" ;;
+        lpassetsdiv) c2="$(lp_assets_commit "$t" - 'chore(pr-assets): add feat/s1 def5678' "$shot2")" ;;
+        lpassetsdrop) c2="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): drop feat/s1' "-$shot1")" ;;
+        lpassetsforeign)
+            c3="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/other 1234567' feat/other/1234567/b-1-light-desktop.png)"
+            c2="$(lp_assets_commit "$t" "$c3" 'chore(pr-assets): add feat/s1 def5678' "$shot2")" ;;
+        lpassetspath) c2="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/s1 def5678' "$shot2" other/x.png)" ;;
+        lpassetstwo)
+            c3="$(lp_assets_commit "$t" "$c1" 'chore(pr-assets): add feat/s1 def5678' "$shot2")"
+            c2="$(lp_assets_commit "$t" "$c3" 'chore(pr-assets): add feat/s1 0a1b2c3' feat/s1/0a1b2c3/a-1-light-desktop.png)" ;;
         *) c2="$c1" ;;
     esac
     git -C "$t" update-ref refs/heads/pr-assets "$c2"
@@ -4766,7 +4887,8 @@ lp_git_setup() {
             git -C "$t" config protocol.ext.allow always
             git -C "$t" remote set-url origin 'ext::sleep 30' ;;
         lpbasemain) printf 'Base: main\n' >"$feat/docs/work/s1/plan.md" ;;
-        lpassets | lpassetsff | lpassetsdiv | lpassetsblk) lp_assets_setup "$t" "$v"
+        lpassets | lpassetsff | lpassetsdiv | lpassetsblk | lpassetsdrop | lpassetsforeign | lpassetspath | lpassetstwo | lpassetsmsg | lpassetsbare | lpassetssha | lpassetsmerge)
+            lp_assets_setup "$t" "$v"
             [[ "$v" != lpassetsblk ]] || blocked=true ;;
         lpout)
             git init -q -b feat/s1 "$t/out"
@@ -6182,6 +6304,24 @@ am_tree() {
         mv "$d/.claude/.loop-record.json" "$d/.claude/.rec-target.json"
         ln -s .rec-target.json "$d/.claude/.loop-record.json"
     fi
+}
+
+# DG1-DG4 (kit-drift-fixes D9): a degraded config (no project.json) asks where a hook passed; in auto,
+# proven on an absolute CLAUDE_PROJECT_DIR, that ask is a blocked stop, in every hook sharing the trap.
+run_degraded_auto_cases() {
+    local tmp
+    tmp="$(mktemp -d)"
+    am_tree "$tmp/dg1" auto
+    rm -f "$tmp/dg1/.claude/project.json"
+    printf 'x\n' >"$tmp/dg1/x"
+    pv_expect DG1 deny "$(git_hook_probe 'git add x' "$tmp/dg1" "$tmp/dg1")" "auto mode — blocked stop:"
+    am_tree "$tmp/dg2" none
+    rm -f "$tmp/dg2/.claude/project.json"
+    printf 'x\n' >"$tmp/dg2/x"
+    pv_expect DG2 ask "$(git_hook_probe 'git add x' "$tmp/dg2" "$tmp/dg2")" "" "blocked stop"
+    pv_expect DG3 ask "$(PROBE_PROJECT=. git_hook_probe 'git add x' "$tmp/dg1" "$tmp/dg1")" "" "blocked stop"
+    pv_expect DG4 deny "$(pv_tool protect-files.sh "$tmp/dg1" Write src/a.ts)" "auto mode — blocked stop:"
+    rm -r "$tmp"
 }
 
 # am_class <tree> <rel> <want>: cwk_auto_class prints exactly <want>.
@@ -7738,6 +7878,15 @@ if [[ "${1:-}" == --day-only ]]; then
     printf 'Hook fixtures (ecocrew day fixes only): %d case(s), all green.\n' "$CASES"
     exit 0
 fi
+if [[ "${1:-}" == --drift-only ]]; then
+    run_git_guard_cases
+    run_git_wt_foreign_fsmonitor_case
+    run_degraded_auto_cases
+    run_detect_server_roots_cases
+    [[ "$FAILURES" -eq 0 ]] || { printf '%d fixture failure(s) across %d case(s).\n' "$FAILURES" "$CASES" >&2; exit 1; }
+    printf 'Hook fixtures (kit drift fixes only): %d case(s), all green.\n' "$CASES"
+    exit 0
+fi
 if [[ "${1:-}" == --trial-only ]]; then
     run_pw_cases
     run_git_guard_cases
@@ -7835,6 +7984,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_py_import_head_cases
     run_git_add_lock_case
     run_git_add_long_reason_case
+    run_git_wt_foreign_fsmonitor_case
     run_git_untrusted_repo_cases
     run_git_linked_worktree_case
     run_git_python_isolation_case
@@ -7849,6 +7999,7 @@ if [[ "${1:-}" != --fixtures-only ]]; then
     run_project_config_review1_cases
     run_project_values_cases
     run_project_values_step3_cases
+    run_degraded_auto_cases
     run_project_values_step4_cases
     run_project_values_step5_cases
     run_prove_red_package_cases

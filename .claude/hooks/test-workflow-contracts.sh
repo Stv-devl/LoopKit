@@ -763,13 +763,14 @@ HP_WANT='["Bash(pnpm exec tsc --noEmit)",
   "Bash(python3 .claude/hooks/kit-audit-surface.py *)", "Bash(python3 .claude/hooks/loop-record.py --clear)",
   "Bash(python3 .claude/hooks/loop-record.py --block)", "Bash(python3 .claude/hooks/loop-record.py --mode)", "Bash(python3 .claude/hooks/loop-record.py --guarded-block)",
   "Bash(.claude/scripts/loop-pr-state.sh *)", "Bash(.claude/scripts/case-hash.sh *)",
-  "Bash(python3 .claude/hooks/kit-health.py *)", "Bash(python3 .claude/scripts/kit-track.py fork *)"]'
+  "Bash(python3 .claude/hooks/kit-health.py *)", "Bash(python3 .claude/scripts/kit-track.py fork *)",
+  "Bash(python3 -I .claude/hooks/project_config.py detect-server-roots .)"]'
 for hp_suite in attempts audit-surface gate-route hooks kit-doctor measure rules-floor small-lane; do
     HP_WANT="$(jq -c --arg s "$hp_suite" \
         '. + ["Bash(bash .claude/hooks/test-\($s).sh)", "Bash(bash .claude/hooks/test-\($s).sh *)"]' <<<"$HP_WANT")"
 done
 HP_KIT="$(sed -n "/^PROMPT_ALLOWS='/,/]'\$/p" "$ROOT/install.sh" | sed "s/^PROMPT_ALLOWS='//; s/'\$//")"
-jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 37' >/dev/null
+jq -en --argjson kit "$HP_KIT" --argjson want "$HP_WANT" '($kit | sort) == ($want | sort) and ($want | length) == 38' >/dev/null
 jq -e --argjson want "$HP_WANT" '.permissions.allow as $a | all($want[]; . as $w | $a | index($w))' "$SETTINGS" >/dev/null
 # Ship audit C2: the kit-development suites run root files (install.sh, workflow.py,
 # codex-handoff.sh); their allows stay in the kit and never ride to a target.
@@ -1893,5 +1894,21 @@ pk "PK68 [plan p1_class]" has_in "$pk_pl6" '`p1_class` is `a` to `d`, or `null` 
 pk "PK69 [workflows stash ask]" has "$RC_WORKFLOWS" 'des changements suivis'
 pk "PK69 [PK50 needle kept]" has "$TEST_WRITER" 'import a frozen test case needs'
 [[ "$PK_FAIL" -eq 0 ]] || { echo 'PK61-PK69: failing, see above' >&2; exit 1; }
+
+# PK70, WT25, CW7, HF4 (kit-drift-fixes D6, D8, D10, D11): the prompts say what the hooks accept.
+pk_dsr='Bash(python3 -I .claude/hooks/project_config.py detect-server-roots .)'
+pk PK70 jq -e --arg a "$pk_dsr" '.permissions.allow | index($a) != null' "$SETTINGS"
+pk PK70.2 lacks "$SETTINGS" 'project_config.py detect-server-roots *'
+pk PK70.3 has "$ROOT/install.sh" "\"$pk_dsr\""
+pk_sm4="$(section "$SMALL" '4. Draft the small spec' '5. Ask exactly one' || true)"
+pk WT25 has_in "$pk_sm4" 'kit-track.py fork small-<name>'
+pk WT25.2 in_order "$(cat "$SMALL")" 'kit-track.py fork small-<name>' 'AskUserQuestion'
+pk CW7 has "$GITHUB_AGENT" 'git -C <absolute tree>'
+pk CW7.2 lacks "$GITHUB_AGENT" 'which the hook cannot place'
+pk CW7.3 has "$GITHUB_AGENT" 'read-only git and `git fetch`'
+pk_hf_tpl="$(section "$ROOT/.claude/commands/handoff/codex.md" '## In progress' '## Remaining' || true)"
+pk HF4 has_in "$pk_hf_tpl" '- Next:'
+pk HF4.2 has "$REVIEW" 'on the `## In progress` `Next:` line'
+[[ "$PK_FAIL" -eq 0 ]] || { echo 'PK70, WT25, CW7, HF4: failing, see above' >&2; exit 1; }
 
 echo 'workflow contract fixtures: green.'

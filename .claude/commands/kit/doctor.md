@@ -52,7 +52,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `data-client` | `01-stack.md`, "Where does the client live?" | `data_client.module` / `own_path` in `.claude/project.json` |
 | `client-copies` | `data_client.module` in `.claude/project.json` | the client imports and mocks of `templates/feature.md`, `fixtures.md`, `patterns/react-query.md`, and the instance file excluded in `tooling-config.md` |
 | `project-config` | `.claude/project.json`, read by `project_config.py` | every declared `app_roots` folder exists; an invalid file is reported, since the hooks then ignore it |
-| `server-roots` | `02-architecture.md`, the `Server roots:` line of `## Backend` (`none` = no root; a deleted section is fine with no root) | `server_roots` in `.claude/project.json`, which aims the ship audit's `authz` |
+| `server-roots` | `02-architecture.md`, the `Server roots:` line of `## Backend` (`none` = no root; a deleted section is fine with no root) | `server_roots` in `.claude/project.json`, which aims the ship audit's `authz`; each declared root must also be a folder on disk (`MISSING` names an absent one) |
 | `composition-roots` | `02-architecture.md`, the composition-root row | `data_client.composition_roots` in `.claude/project.json` |
 | `shared-dirs` | `02-architecture.md`'s **Forbidden** list, plus `CLAUDE.md` | `data_client.shared_dirs` in `.claude/project.json`. One line per copy; the reviewer checklist reads the project.json list and restates neither it nor its count; the "Allowed from anywhere" list of `02-architecture.md` stays manual |
 | `coverage-floor` | `05-testing.md`, lines/functions/branches | `thresholds` in `templates/tooling-config.md` |
@@ -61,7 +61,7 @@ Exit 0 = no divergence. Exit 1 = at least one.
 | `tdd-layers` | — | `tdd_layers` in `.claude/project.json`, `TEST_FIRST`, the `mutate` globs of `/audit:mutation` |
 | `gate-allowlist` | the `pnpm` calls in `/loop:ship`'s gate fence | `permissions.allow` in `settings.json` |
 | `ci-scripts` | `00-project.md`, the command fence | the `run:` lines of `.github/workflows/ci.yml` |
-| `ignored-loop-paths` | `docs/work/` and the shipped `.claude/` folders are versioned | `git check-ignore` on one probe path per folder; only the per-session handoff may be ignored |
+| `ignored-loop-paths` | `docs/work/` and the shipped `.claude/` folders are versioned | `git check-ignore` on one probe path per folder; only the per-session handoff may be ignored. The ignore line `worktree-kit` names (the one matching `.claude/hooks/probe` over an untracked kit) is left to it for its `.claude/` probes only, and a `!` re-include is not an ignore, so each folder gets one remedy: a broad line (`*`) that also ignores `docs/work/` is reported here for that folder |
 | `worktree-kit` | `.claude/` itself is not gitignored, so a loop worktree carries the kit | `git check-ignore -q .claude/hooks/probe` with nothing tracked under `.claude/hooks` (the probe `/loop:tracks`, `/loop:orchestrate` and the git hook share); names the ignoring line and the kit-local fork, `kit-track.py fork <slug>` |
 | `audit-flags` | the `pnpm audit` line of `/loop:ship`'s gate fence | the same line in `00-project.md` and `ci.yml`, all `--prod --audit-level=high` (dev CVEs are reported apart) |
 | `workflow-names` | `ci.yml`'s `name:` | the `workflow_run` trigger and `--workflow=` of `deploy.yml` |

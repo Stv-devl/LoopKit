@@ -144,11 +144,21 @@ def check_protected_dirs() -> list[Finding]:
 
 
 def check_server_roots() -> list[Finding]:
-    """The server folders, against `02-architecture.md`'s `Server roots:` line. The rule says
-    "fill or delete" its Backend section: deleted is fine only while no root is declared."""
+    """The server folders, against `02-architecture.md`'s `Server roots:` line, and on disk: a
+    declared root that is not a folder (a moved backend) leaves the authorization audit unarmed."""
     config, reason = project_values()
     if config is None:
         return unchecked("server-roots", reason)
+    absent = [root for root in config.server_roots if not (ROOT / root).is_dir()]
+    on_disk = [Finding("server-roots", MISSING, "a declared server root is not on disk",
+                       [f"{root}: not a directory  →  move it back, or correct server_roots in {PROJECT_JSON}"
+                        for root in absent])] if absent else []
+    return server_roots_rule(config) + on_disk
+
+
+def server_roots_rule(config) -> list[Finding]:
+    """The `Server roots:` line against `project.json`. The rule says "fill or delete" its Backend
+    section: deleted is fine only while no root is declared."""
     rule = ".claude/rules/02-architecture.md"
     doc = read(rule)
     if doc is None:
@@ -673,20 +683,73 @@ def check_ignored_loop_paths() -> list[Finding]:
         ".claude/guides/probe.md": ".claude/guides/", ".claude/settings.json": ".claude/settings.json",
     }
     try:
-        result = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "check-ignore", *probes],
+        result = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(ROOT), "check-ignore", "-v", *probes],
                                 capture_output=True, text=True)
+        divergent, named = kit_ignore_state()
     except FileNotFoundError:
         return skip("ignored-loop-paths", "git")
+    except RuntimeError:
+        return skip("ignored-loop-paths", "a git repository")
     if result.returncode not in (0, 1):
         return skip("ignored-loop-paths", "a git repository")
-    ignored = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    owned = _ignore_line_id(named) if divergent and named else None
+    ignored, handed_over = [], False
+    for line in result.stdout.splitlines():
+        if "\t" not in line:
+            continue
+        source, path = line.split("\t", 1)
+        if _ignore_source(source)[2].startswith("!"):
+            continue
+        if _ignore_line_id(source) == owned and path.strip().startswith(".claude/"):
+            handed_over = True
+        else:
+            ignored.append(path.strip())
     if not ignored:
+        if handed_over:
+            return [Finding("ignored-loop-paths", OK,
+                            "the whole-.claude line is reported by worktree-kit, its one remedy is there")]
         return [Finding("ignored-loop-paths", OK, "docs/work/ and the shipped .claude/ folders are tracked")]
     folders = sorted({probes[path] for path in ignored if path in probes})
     return [Finding("ignored-loop-paths", DIVERGENCE,
                     "gitignored, so a worktree never gets it and `git worktree remove` deletes it",
                     [f"{folder}  →  remove its .gitignore entry (only the per-session handoff file is meant to be ignored)"
                      for folder in folders])]
+
+
+IGNORE_SOURCE = re.compile(r"^(.*):(\d+):(.*)$")
+
+
+def _ignore_source(source: str) -> tuple[str, str, str]:
+    """`check-ignore -v`'s `<file>:<line>:<pattern>` as its three parts."""
+    found = IGNORE_SOURCE.match(source.strip())
+    return (found.group(1), found.group(2), found.group(3).strip()) if found else (source.strip(), "", "")
+
+
+def _ignore_line_id(source: str) -> str:
+    """The `<file>:<line>` of a `check-ignore -v` source: the line a divergence names."""
+    name, number, _pattern = _ignore_source(source)
+    return f"{name}:{number}"
+
+
+def kit_ignore_state() -> tuple[bool, str | None]:
+    """`(divergent, named_line)` for the kit probe `.claude/hooks/probe`: `named_line` is the
+    `.gitignore` source it matches (`<file>:<line>:<pattern>`, `None` when nothing ignores it or a
+    `!` line re-includes it); `divergent` is true when no `.claude/hooks` file is tracked, so a
+    worktree holds no kit. `worktree-kit` reports that line and its remedy, once; `ignored-loop-paths`
+    leaves it the `.claude/` probes that line matches, and keeps reporting any other folder it also
+    ignores (`docs/work/` under a `*` line), whose remedy `worktree-kit` does not cover. Raises RuntimeError when the folder is not a git repository."""
+    git = ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT)]
+    probe = subprocess.run([*git, "check-ignore", "-v", ".claude/hooks/probe"], capture_output=True, text=True)
+    if probe.returncode == 1:
+        return False, None
+    if probe.returncode != 0:
+        raise RuntimeError("not a git repository")
+    source = probe.stdout.split("\t", 1)[0].strip()
+    if _ignore_source(source)[2].startswith("!"):
+        return False, None
+    tracked = subprocess.run([*git, "ls-tree", "-r", "--name-only", "HEAD", "--", ".claude/hooks"],
+                             capture_output=True, text=True)
+    return not (tracked.returncode == 0 and tracked.stdout.strip()), source or "a .gitignore rule"
 
 
 def check_worktree_kit() -> list[Finding]:
@@ -698,21 +761,15 @@ def check_worktree_kit() -> list[Finding]:
     instead. This names the `.gitignore` line and the kit-local fork.
     """
     try:
-        git = ["git", "-c", "core.fsmonitor=false", "-C", str(ROOT)]
-        result = subprocess.run([*git, "check-ignore", "-q", ".claude/hooks/probe"], capture_output=True, text=True)
-        if result.returncode == 0:
-            tracked = subprocess.run([*git, "ls-tree", "-r", "--name-only", "HEAD", "--", ".claude/hooks"],
-                                     capture_output=True, text=True)
-            if tracked.returncode == 0 and tracked.stdout.strip():
-                return [Finding("worktree-kit", OK, ".claude/hooks is tracked: a loop worktree carries the kit")]
-            named = subprocess.run([*git, "check-ignore", "-v", ".claude/hooks/probe"], capture_output=True, text=True)
-            rule = named.stdout.split("\t", 1)[0].strip() or "a .gitignore rule"
+        divergent, rule = kit_ignore_state()
     except FileNotFoundError:
         return skip("worktree-kit", "git")
-    if result.returncode == 1:
-        return [Finding("worktree-kit", OK, ".claude/ is tracked: a loop worktree carries the kit")]
-    if result.returncode != 0:
+    except RuntimeError:
         return skip("worktree-kit", "a git repository")
+    if rule is None:
+        return [Finding("worktree-kit", OK, ".claude/ is tracked: a loop worktree carries the kit")]
+    if not divergent:
+        return [Finding("worktree-kit", OK, ".claude/hooks is tracked: a loop worktree carries the kit")]
     return [Finding("worktree-kit", DIVERGENCE,
                     ".claude/ is gitignored, so a worktree under .claude/worktrees/ holds no kit (no hooks, scripts or rules)",
                     [f"{rule}  →  remove it and commit .claude/ (keep .claude/worktrees/ and the session files ignored)",

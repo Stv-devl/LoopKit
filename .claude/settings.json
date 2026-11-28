@@ -49,6 +49,7 @@
       "Bash(python3 .claude/hooks/kit-audit-surface.py *)",
       "Bash(python3 .claude/hooks/kit-doctor.py)",
       "Bash(python3 .claude/hooks/kit-doctor.py *)",
+      "Bash(python3 -I .claude/hooks/project_config.py detect-server-roots .)",
       "Bash(python3 .claude/hooks/loop-record.py --clear)",
       "Bash(python3 .claude/hooks/loop-record.py --block)",
       "Bash(python3 .claude/hooks/loop-record.py --mode)",
